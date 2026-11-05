@@ -50,7 +50,7 @@ setInterval(async () => {
     if (!r.ok) return;  // signed out (401) or restarting: quiet, the next minute tries again
     const v = (await r.json()).version;
     if (CONFIG && v && v !== CONFIG.version && !document.querySelector('dialog[open]')) {
-      sessionStorage.setItem('pulsar-updated', v); location.reload();
+      sessionStorage.setItem('pulsar-updated', v); await warpIn(); location.reload();
     }
   } catch (e) { /* restarting: try again in a minute */ }
 }, 60 * 1000);
@@ -79,7 +79,7 @@ async function signInFromAddress() {
   if (CONFIG && !CONFIG.productive.active) toast('Productive is not connected yet: open Settings, top right, to add your token.', true);
   try {
     const was = sessionStorage.getItem('pulsar-updated');
-    if (was) { sessionStorage.removeItem('pulsar-updated'); toast(`Pulsar updated to ${was}.`); }
+    if (was) { sessionStorage.removeItem('pulsar-updated'); warpOut(); toast(`Pulsar updated to ${was}.`); }
   } catch (e) {}
   if (CONFIG) paintUpdate(CONFIG.update);
 })();

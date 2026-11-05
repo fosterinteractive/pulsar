@@ -105,6 +105,29 @@ function showSignIn() {
 /* the notice stays until the page is reloaded signed in: Escape does not dismiss it */
 $('#signin').addEventListener('cancel', ev => ev.preventDefault());
 $('#signin').addEventListener('close', () => { if (signedOut) $('#signin').showModal(); });
+/* Warp: an update looks like a jump to warp. Before the reload into the new version the page draws in a little, as
+   if space bent towards a point (warpIn); the new version snaps out of it, just past its size and back, with a small
+   flash in the logo's colours (warpOut). Under a second; nothing at all with reduced motion. */
+const WARP_HELD = {transform: 'scale(.95, .92)', filter: 'blur(1.2px) brightness(1.25)'};
+const calmMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+function warpIn() {
+  if (calmMotion()) return Promise.resolve();
+  return document.documentElement.animate([{transform: 'none', filter: 'none'}, WARP_HELD],
+    {duration: 420, easing: 'cubic-bezier(.55, 0, .9, .45)', fill: 'forwards'}).finished.catch(() => {});
+}
+function warpOut() {
+  const root = document.documentElement;
+  if (calmMotion()) { root.classList.remove('warp-held'); return; }
+  root.animate([WARP_HELD, {transform: 'scale(1.012, 1.018)', filter: 'blur(0) brightness(1.06)', offset: .5},
+                {transform: 'none', filter: 'none'}], {duration: 560, easing: 'cubic-bezier(.2, .9, .3, 1)'});
+  root.classList.remove('warp-held');  // the animation starts from the same place, so nothing jumps
+  const flash = document.createElement('div');
+  flash.className = 'warp-flash';
+  document.body.append(flash);
+  flash.animate([{opacity: 0, transform: 'scale(.25)'}, {opacity: 1, offset: .18}, {opacity: 0, transform: 'scale(2.6)'}],
+    {duration: 700, easing: 'cubic-bezier(.15, .7, .3, 1)'}).finished.catch(() => {}).then(() => flash.remove());
+}
+
 /* In the Pulsar window (Pulsar.app) the page can ask the app for things a browser does itself: printing, and a new
    sign-in (the app gets a fresh one-time code from its launcher). */
 const APP = window.webkit?.messageHandlers?.pulsar || null;

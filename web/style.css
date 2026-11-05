@@ -409,3 +409,10 @@ dialog#signin::backdrop { background: rgba(0,0,0,.45); }
 }
 dialog#signin code { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere;
   background: var(--chip, rgba(127,127,127,.12)); border-radius: 4px; padding: 1px 4px; user-select: all; }
+
+/* the warp of an update (core.js): the page held drawn in before the snap, and the flash in the logo's colours */
+html.warp-held { transform: scale(.95, .92); filter: blur(1.2px) brightness(1.25); }
+.warp-flash { position: fixed; inset: 0; z-index: 2147483647; pointer-events: none; opacity: 0;
+  background: radial-gradient(circle at 50% 45%, rgba(255,255,255,.95) 0, rgba(255,255,255,.55) 4%,
+    rgba(120,220,255,.32) 12%, rgba(160,110,255,.16) 24%, rgba(255,90,200,.06) 34%, transparent 46%); }
+@media (prefers-reduced-motion: reduce) { html.warp-held { transform: none; filter: none; } .warp-flash { display: none; } }
