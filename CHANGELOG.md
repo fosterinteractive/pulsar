@@ -4,6 +4,11 @@ What each Pulsar release changed, newest first.
 
 <!-- A release needs its entry before macos/release.sh runs: a "## X.Y.Z (YYYY-MM-DD)" heading and one "- " line. -->
 
+## 1.1.0 (2026-11-06)
+- Google Calendar: your meetings in the day, and their task offered when you log one.
+- The daily meeting ready to log in one click; a task linked in a Claude session offered first.
+- A new date picker, and this changelog.
+
 ## 1.0.15 (2026-11-05)
 - The Likely column works for everyone who uses Claude Code.
 

@@ -145,6 +145,11 @@ Settings are saved in `~/.config/pulsar/settings.json`; names and copies of fetc
   your last four weeks in Productive. When the tracker sees a call near that time (Zoom, Meet, Teams, a Slack huddle),
   the Logged column shows it as a dashed card with the task, the usual note and the call's length. One click opens it
   in the log dialog; nothing is logged until you click **Log in Productive**.
+- **Google Calendar.** In **Settings → Google Calendar**, **Connect** opens Google's sign-in; after **Allow**, a
+  Meetings column shows your meetings next to the rest of the day (↻ reads them again at once). Pulsar can only read
+  your events, never change them. **Log this time** on a meeting fills in its title as the note and offers first the
+  task you logged during its earlier ones, then your tasks whose names share a word with its title.
+  **Disconnect** removes the access, at Google too. Only fosterinteractive.com accounts can sign in.
 - **Report downloads.** In the Report, **Download** gives the days or the time entries as CSV (for Excel or
   Numbers), or a print view that saves as PDF.
 
@@ -185,10 +190,11 @@ If Pulsar does not open at all, send `~/Library/Logs/Pulsar.log` instead: in Fin
 | Copies of fetched days, names, the error log | `~/.cache/pulsar/` |
 | What the app wrote while starting | `~/Library/Logs/Pulsar.log` |
 | Your Productive API token | the login keychain, item `pulsar` (open Keychain Access to see it) |
+| Your Google Calendar access | the login keychain, item `pulsar`, account `google-calendar` |
 | The window's own data (its sign-in, theme, size) | `~/Library/WebKit/com.fosterinteractive.pulsar/`, `~/Library/Caches/com.fosterinteractive.pulsar/`, `~/Library/Preferences/com.fosterinteractive.pulsar.plist` |
 
-Nothing is kept anywhere else, and nothing leaves your Mac except what Pulsar asks Productive and GitHub (for
-updates).
+Nothing is kept anywhere else, and nothing leaves your Mac except what Pulsar asks Productive, Google Calendar (when
+you connect it) and GitHub (for updates).
 
 ## Remove Pulsar
 
@@ -201,10 +207,12 @@ updates).
      ~/Library/WebKit/com.fosterinteractive.pulsar ~/Library/Caches/com.fosterinteractive.pulsar
    defaults delete com.fosterinteractive.pulsar
    security delete-generic-password -s pulsar -a productive
+   security delete-generic-password -s pulsar -a google-calendar
    ```
 
-   The last line removes your Productive token from the keychain; it says the item could not be found if you never
-   saved one. Your time entries in Productive are not touched. If you also want Claude Code or ActivityWatch gone,
+   The last two lines remove your Productive token and Google Calendar access from the keychain; each says the item
+   could not be found if you never saved one. If you connected Google Calendar, also remove Pulsar at
+   [myaccount.google.com/connections](https://myaccount.google.com/connections) (Disconnect in Settings does both). Your time entries in Productive are not touched. If you also want Claude Code or ActivityWatch gone,
    they have their own uninstallers.
 
 ## For developers

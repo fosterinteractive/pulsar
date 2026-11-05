@@ -83,6 +83,9 @@ cp "$ROOT/pulsar.py" "$ROOT/README.md" "$ROOT/CHANGELOG.md" "$RES/"
 rsync -a --prune-empty-dirs --include '*/' --include '*.py' --include '*.html' --include '*.css' --include '*.js' \
   --include 'pulsar/google_client.json' \
   --exclude '__pycache__/' --exclude '.*' --exclude '*' "$ROOT/pulsar" "$ROOT/web" "$RES/"
+# The real Google sign-in client stays out of git, with whoever builds releases; the repo holds placeholders.
+CLIENT="${PULSAR_GOOGLE_CLIENT:-$HOME/.config/pulsar/google_client.json}"
+[ -f "$CLIENT" ] && cp "$CLIENT" "$RES/pulsar/google_client.json"
 
 # Ad-hoc signature: lets it run on Apple Silicon. It is not a Developer ID signature, so Gatekeeper
 # still asks for confirmation on first open.

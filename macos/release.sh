@@ -102,14 +102,19 @@ rm -f "$ZIP" "$OUT/latest.json" "$OUT/latest.json.sig"
 
 # Only files git tracks: an ignored .log or .env sitting in pulsar/ or web/ can never ship.
 git ls-files -z pulsar.py README.md CHANGELOG.md pulsar web > "$OUT/files.list"
-python3 - "$VERSION" "$ZIP" "$OUT/files.list" <<'PY'
-import sys, zipfile
-version, zip_path, listing = sys.argv[1:]
+# The Google sign-in client (Google Calendar) is kept out of git, in ~/.config/pulsar/google_client.json of whoever
+# releases; the zip carries it in place of the repo's placeholder. Without it, Settings says Calendar is not set up.
+CLIENT="${PULSAR_GOOGLE_CLIENT:-$HOME/.config/pulsar/google_client.json}"
+[ -f "$CLIENT" ] || echo "warning: no Google sign-in client at $CLIENT; this release cannot connect Google Calendar" >&2
+python3 - "$VERSION" "$ZIP" "$OUT/files.list" "$CLIENT" <<'PY'
+import os, sys, zipfile
+version, zip_path, listing, client = sys.argv[1:]
 top = f"pulsar-{version}"
 entries = sorted(p for p in open(listing, encoding="utf-8").read().split("\0") if p)
 with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
     for path in entries:
-        zf.write(path, f"{top}/{path}")
+        real = client if path == "pulsar/google_client.json" and os.path.isfile(client) else path
+        zf.write(real, f"{top}/{path}")
 print(f"{zip_path}: {len(entries)} files")
 PY
 
