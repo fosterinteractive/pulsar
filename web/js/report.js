@@ -91,7 +91,8 @@ function renderReport() {
   const work = days.filter(d => d.weekday < 5);
   const sum = (a, k) => a.reduce((s, d) => s + d[k], 0);
   const logged = sum(days, 'logged'), active = sum(days, 'active'), notLogged = sum(days, 'notLogged');
-  const billable = sum(days, 'billable');
+  const billable = sum(days, 'billable'), unknownBill = Math.max(0, logged - billable - sum(days, 'nonBillable'));
+  const knownBill = logged - unknownBill;  // billing Productive does not show this person counts as neither
   const approved = sum(days, 'approved'), target = work.length * TARGET, workLogged = sum(work, 'logged');
   const n8 = work.filter(d => d.logged >= TARGET).length, activeDays = days.filter(d => d.active > 0).length;
 
@@ -99,7 +100,8 @@ function renderReport() {
   for (const e of x.entries) {
     let p = projects.get(e.project);
     if (!p) projects.set(e.project, p = {name: e.project, minutes: 0, rows: new Map(), byDay: new Map()});
-    p.minutes += e.minutes; p.billable = (p.billable || 0) + (e.billable ? e.minutes : 0); p.byDay.set(e.date, (p.byDay.get(e.date) || 0) + e.minutes);
+    p.minutes += e.minutes; p.billable = (p.billable || 0) + (e.billable ? e.minutes : 0);
+    p.nonBillable = (p.nonBillable || 0) + (e.billable === false ? e.minutes : 0); p.byDay.set(e.date, (p.byDay.get(e.date) || 0) + e.minutes);
     const k = (e.budget || e.task) + '|' + e.service;
     let r = p.rows.get(k); if (!r) p.rows.set(k, r = {budget: e.budget || e.task, service: e.service, billable: e.billable, billing: e.billing, minutes: 0});
     r.minutes += e.minutes;
@@ -115,17 +117,18 @@ function renderReport() {
     ${tile('Active, work', dur(active), `${activeDays} ${activeDays === 1 ? 'day' : 'days'} with activity`)}
     ${tile('Active, not logged', dur(notLogged), active ? `${pct(notLogged, active)}% of active work time` : 'no activity recorded')}
     ${tile('Logged per workday', work.length ? dur(workLogged / work.length) : '–', `${n8} of ${work.length} workdays reached ${dur(TARGET)}`)}
-    ${tile('Billable', `${pct(billable, logged)}%`, `${dur(billable)} of ${dur(logged)} logged`)}
+    ${tile('Billable', knownBill ? `${pct(billable, knownBill)}%` : '–', !unknownBill ? `${dur(billable)} of ${dur(logged)} logged`
+      : knownBill ? `${dur(billable)} of ${dur(knownBill)} with known billing; ${dur(unknownBill)} unknown` : 'Productive does not show your billing')}
     ${tile('Approved', `${pct(approved, logged)}%`, `${dur(approved)} of ${dur(logged)}`)}
   </div>`;
   html += `<section class="chart"><div class="ch"><h2>Logged and active, by day</h2>
-      <div class="legend"><span><i style="background:var(--accent)"></i>Logged, billable</span><span><i style="background:var(--accent2)"></i>Logged, not billable</span><span><i style="background:var(--deemph)"></i>Active, work</span><span><i class="line"></i>${dur(TARGET)} target</span></div></div>
+      <div class="legend"><span><i style="background:var(--accent)"></i>Logged, billable</span><span><i style="background:var(--accent2)"></i>Logged, not billable</span>${unknownBill ? '<span><i style="background:var(--unknown)"></i>Logged, billing unknown</span>' : ''}<span><i style="background:var(--deemph)"></i>Active, work</span><span><i class="line"></i>${dur(TARGET)} target</span></div></div>
     <div class="take">${esc(work.length ? `${n8} of ${work.length} workdays reached ${dur(TARGET)} logged.${active ? ` Logged time is ${pct(logged, active)}% of active work time.` : ''}` : 'No workdays in this range.')}</div>
     <div class="plot" id="p-daily"></div></section>`;
   html += `<div class="two">
     <section class="chart"><div class="ch"><h2>Logged by project</h2></div>
       <div class="take">${esc(plist.length ? `${plist[0].name}: ${pct(plist[0].minutes, logged)}% of logged time, across ${plist.length} ${plist.length === 1 ? 'project' : 'projects'}.` : 'Nothing logged in this range.')}</div>
-      ${rankBars(plist.map(p => ({name: p.name, minutes: p.minutes, billable: p.billable,
+      ${rankBars(plist.map(p => ({name: p.name, minutes: p.minutes, billable: p.billable, nonBillable: p.nonBillable,
           more: rowsOf(p).slice(0, 6).map(r => [dur(r.minutes), r.budget + (r.service ? ' · ' + r.service : '')])})), logged)}
       ${plist.length ? `<details class="more"><summary>Budgets and services</summary><div class="tblwrap">${budgetTable(plist, rowsOf)}</div></details>` : ''}</section>
     <section class="chart"><div class="ch"><h2>Top apps and sites</h2></div>
@@ -196,12 +199,15 @@ function dailyChart(days) {
   days.forEach((d, i) => {
     const cx = ml + i * band + band / 2;
     if (d.active) s += colPath(cx - gw / 2, y(d.active), gw, y(0) - y(d.active), 'var(--deemph)');
-    if (d.logged) {
-      const b = Math.min(d.billable, d.logged), rest = d.logged - b;
-      if (b && rest) {
-        s += `<rect x="${cx - bw / 2}" y="${y(b)}" width="${bw}" height="${y(0) - y(b)}" fill="var(--accent)" stroke="var(--panel)" stroke-width="2" paint-order="stroke"/>`;
-        s += colPath(cx - bw / 2, y(d.logged), bw, Math.max(0, y(b) - y(d.logged) - 2), 'var(--accent2)', true);
-      } else s += colPath(cx - bw / 2, y(d.logged), bw, y(0) - y(d.logged), b ? 'var(--accent)' : 'var(--accent2)', true);
+    if (d.logged) {  // stacked from the baseline: billable, not billable, billing unknown; 2px of surface between
+      const parts = billParts(d.logged, d.billable, d.nonBillable);
+      let base = 0;
+      parts.forEach(([m, fill], k) => {
+        const y0 = y(base), y1 = y(base + m);
+        s += k === parts.length - 1 ? colPath(cx - bw / 2, y1, bw, Math.max(0, y0 - y1 - (k ? 2 : 0)), fill, true)
+          : `<rect x="${cx - bw / 2}" y="${y1}" width="${bw}" height="${Math.max(0, y0 - y1 - (k ? 2 : 0))}" fill="${fill}" stroke="var(--panel)" stroke-width="2" paint-order="stroke"/>`;
+        base += m;
+      });
     }
     if (i % every === 0) s += `<text class="tick" x="${cx}" y="${H - 6}" text-anchor="middle">${+d.date.slice(8)}</text>`;
   });
@@ -209,11 +215,24 @@ function dailyChart(days) {
     + `<text class="tick" x="${W - mr + 6}" y="${y(TARGET) + 4}">${dur(TARGET)}</text>`;
   days.forEach((d, i) => {
     s += `<rect class="hit" x="${ml + i * band}" y="${mt}" width="${band}" height="${ph}" ${tipAttr(dayLabel(d.date), [
-      [dur(d.logged), 'logged'], [dur(d.billable), 'billable', 'var(--accent)'], [dur(d.logged - d.billable), 'not billable', 'var(--accent2)'],
+      [dur(d.logged), 'logged'], [dur(d.billable), 'billable', 'var(--accent)'], [dur(d.nonBillable), 'not billable', 'var(--accent2)'],
+      ...(d.logged - d.billable - d.nonBillable > 0 ? [[dur(d.logged - d.billable - d.nonBillable), 'billing unknown', 'var(--unknown)']] : []),
       [dur(d.active), 'active, work', 'var(--deemph)'],
       [dur(d.notLogged), 'active, not logged'], [String(d.entries), d.entries === 1 ? 'entry' : 'entries']])}/>`;
   });
   el.innerHTML = s + '</svg>';
+}
+/* [minutes, colour] for billable, not billable and billing unknown, the empty ones left out */
+function billParts(total, billable, nonBillable) {
+  const b = Math.min(billable || 0, total), n = Math.min(nonBillable || 0, total - b);
+  return [[b, 'var(--accent)'], [n, 'var(--accent2)'], [total - b - n, 'var(--unknown)']].filter(p => p[0] > 0);
+}
+function barOf(it, max) {
+  const width = `width:${(it.minutes / max * 100).toFixed(1)}%`;
+  if (it.billable == null) return `<i style="${width}"></i>`;  // not about billing (apps and sites)
+  const parts = billParts(it.minutes, it.billable, it.nonBillable);
+  if (parts.length < 2) return `<i style="${width};background:${(parts[0] || [0, 'var(--unknown)'])[1]}"></i>`;
+  return `<span class="seg2" style="${width}">${parts.map(([m, fill]) => `<i style="flex:${m};background:${fill}"></i>`).join('')}</span>`;
 }
 function rankBars(items, total) {
   if (!items.length) return '';
@@ -221,9 +240,7 @@ function rankBars(items, total) {
   return items.map(it => `<div class="rb" ${tipAttr(it.name, [[dur(it.minutes), `${pct(it.minutes, total)}% of the total`],
     ...(it.billable != null ? [[dur(it.billable), 'billable', 'var(--accent)']] : []), ...(it.more || [])])}>
     <span class="rn">${'icon' in it ? icon(it.icon, it.name) : ''}<span>${esc(it.name)}</span></span>
-    <span class="rt">${it.billable != null && it.billable > 0 && it.billable < it.minutes
-      ? `<span class="seg2" style="width:${(it.minutes / max * 100).toFixed(1)}%"><i style="flex:${it.billable}"></i><i style="flex:${it.minutes - it.billable};background:var(--accent2)"></i></span>`
-      : `<i style="width:${(it.minutes / max * 100).toFixed(1)}%${it.billable === 0 ? ';background:var(--accent2)' : ''}"></i>`}</span>
+    <span class="rt">${barOf(it, max)}</span>
     <span class="rv num">${dur(it.minutes)}<small>${pct(it.minutes, total)}%</small></span></div>`).join('');
 }
 function budgetTable(plist, rowsOf) {

@@ -527,6 +527,23 @@ class UpdaterTest(unittest.TestCase):
         self.assertEqual(os.readlink(os.path.join(self.root, "previous")), "versions/1.0.0")
         self.assertTrue(execv.call_args[0][1][2].endswith("versions/1.1.0/pulsar.py"))
 
+    def test_closing_the_window_makes_a_ready_update_current_without_restarting(self):
+        manifest, data = self.release()
+        u = self.make(manifest, data)
+        self.assertEqual(u.check()["status"], "ready")
+        with mock.patch.object(updater.os, "execv", lambda *a: self.fail("restarted while quitting")):
+            u.switch_on_quit()
+        self.assertEqual(os.readlink(os.path.join(self.root, "current")), "versions/1.1.0")
+        self.assertEqual(os.readlink(os.path.join(self.root, "previous")), "versions/1.0.0")
+
+    def test_with_automatic_updates_off_closing_the_window_changes_nothing(self):
+        manifest, data = self.release()
+        u = self.make(manifest, data)
+        u.check()
+        u.auto = lambda: False
+        u.switch_on_quit()
+        self.assertEqual(os.readlink(os.path.join(self.root, "current")), "versions/1.0.0")
+
     def test_a_release_without_a_valid_signature_is_never_installed(self):
         other_key, _ = openssl_key(self.root, "someone-else")
         for kw in ({"signature": b""}, {"signature": b"garbage"}, {"signed_by": other_key}):

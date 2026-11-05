@@ -284,6 +284,7 @@ function renderAside(gapMin) {
   $('#worktime').innerHTML = `<h2>Work time</h2>
     <div class="kv big"><span>Logged</span><span class="num">${v(sum)}</span></div>
     ${bill ? `<div class="kv"><span>Billable</span><span class="num">${dur(bill.yes)}</span></div><div class="kv"><span>Not billable</span><span class="num">${dur(bill.no)}</span></div>` : ''}
+    ${sum && sum > (bill ? bill.yes + bill.no : 0) && bill ? `<div class="kv"><span>Billing unknown</span><span class="num">${dur(sum - bill.yes - bill.no)}</span></div>` : ''}
     <div class="kv"><span>Active, work</span><span class="num">${v(work)}</span></div>
     ${personal ? `<div class="kv"><span>Personal</span><span class="num">${dur(personal)}</span></div>` : ''}
     ${logged && act && !logged.error && !act.error ? `<div class="kv gap"><span>Active, not logged</span><span class="num">${dur(gapMin)}</span></div>` : ''}

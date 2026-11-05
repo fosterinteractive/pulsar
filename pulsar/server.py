@@ -558,6 +558,7 @@ class Handler(BaseHTTPRequestHandler):
             if urlparse(self.path).path == "/api/log":
                 return self.send_json(api_log(body))
             if urlparse(self.path).path == "/api/quit":
+                UPDATER.switch_on_quit()  # a ready update starts next time
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
                 return self.send_json({"ok": True})
             return self.send(404, b"not found", "text/plain")

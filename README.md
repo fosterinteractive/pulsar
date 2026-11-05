@@ -119,6 +119,48 @@ Settings are saved in `~/.config/pulsar/settings.json`; names and copies of fetc
 - **Report downloads.** In the Report, **Download** gives the days or the time entries as CSV (for Excel or
   Numbers), or a print view that saves as PDF.
 
+## If something goes wrong
+
+1. Click **Logs** at the top of Pulsar, choose how far back (24 hours, 7 or 30 days) and click **Download**. It
+   saves a text file with the errors, your macOS and Pulsar versions, and no tokens.
+2. Send that file to the person who shared Pulsar with you, with what you did, what you expected and what you saw
+   (a screenshot helps).
+
+If Pulsar does not open at all, send `~/Library/Logs/Pulsar.log` instead: in Finder, **Go → Go to Folder…**, paste
+`~/Library/Logs` and look for Pulsar.log.
+
+## Where Pulsar keeps things
+
+| What | Where |
+|---|---|
+| The app | `/Applications/Pulsar.app` |
+| The code it runs, with its updates | `~/Library/Application Support/Pulsar/` |
+| Settings, rules, the sign-in key and sessions | `~/.config/pulsar/` |
+| Copies of fetched days, names, the error log | `~/.cache/pulsar/` |
+| What the app wrote while starting | `~/Library/Logs/Pulsar.log` |
+| Your Productive API token | the login keychain, item `pulsar` (open Keychain Access to see it) |
+| The window's own data (its sign-in, theme, size) | `~/Library/WebKit/com.fosterinteractive.pulsar/`, `~/Library/Caches/com.fosterinteractive.pulsar/`, `~/Library/Preferences/com.fosterinteractive.pulsar.plist` |
+
+Nothing is kept anywhere else, and nothing leaves your Mac except what Pulsar asks Productive and GitHub (for
+updates).
+
+## Remove Pulsar
+
+1. Quit Pulsar (Cmd+Q).
+2. Drag **Pulsar** from Applications to the Trash. If you added it to **Login Items**, remove it there too.
+3. To remove what it kept as well, paste this into Terminal:
+
+   ```bash
+   rm -rf ~/Library/Application\ Support/Pulsar ~/.config/pulsar ~/.cache/pulsar ~/Library/Logs/Pulsar.log \
+     ~/Library/WebKit/com.fosterinteractive.pulsar ~/Library/Caches/com.fosterinteractive.pulsar
+   defaults delete com.fosterinteractive.pulsar
+   security delete-generic-password -s pulsar -a productive
+   ```
+
+   The last line removes your Productive token from the keychain; it says the item could not be found if you never
+   saved one. Your time entries in Productive are not touched. If you also want Claude Code or ActivityWatch gone,
+   they have their own uninstallers.
+
 ## For developers
 
 Python standard library only, no build step.

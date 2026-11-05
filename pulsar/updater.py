@@ -283,18 +283,34 @@ class Updater:
             return self._set("ready", f"Pulsar {latest} is ready. It starts when Pulsar has been idle for a few minutes, "
                                       "or now from Settings.")
 
+    def _switch(self) -> None:
+        """Point `current` at the ready version (and `previous` at the one running now). Called with the lock held."""
+        cur = os.path.join(self.root, "current")
+        if os.path.islink(cur):
+            link("previous", os.readlink(cur), self.root)
+        link("current", os.path.relpath(self.ready, self.root), self.root)
+        self._cleanup()
+
     def apply(self) -> None:
         """Move `current` to the ready version and restart this server in it (same arguments, same port)."""
         if not self.ready:
             return
         with self.lock:
-            cur = os.path.join(self.root, "current")
-            if os.path.islink(cur):
-                link("previous", os.readlink(cur), self.root)
-            link("current", os.path.relpath(self.ready, self.root), self.root)
-            self._cleanup()
+            self._switch()
             target = os.path.join(self.ready, "pulsar.py")
             os.execv(sys.executable, [sys.executable, "-B", target] + sys.argv[1:])
+
+    def switch_on_quit(self) -> None:
+        """The window was closed (the server is stopping): with automatic updates on, a ready version becomes current
+        now, so the next start runs it. Pulsar often runs for less than the idle time an update waits for. If the new
+        version does not start, the launcher goes back to previous."""
+        if not self.ready or not self.auto():
+            return
+        try:
+            with self.lock:
+                self._switch()
+        except OSError as exc:
+            self._set("failed", f"Switching to the new version failed: {exc}")
 
     def _cleanup(self) -> None:
         """Keep the current and the previous version, remove older ones."""
