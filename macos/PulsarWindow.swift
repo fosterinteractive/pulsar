@@ -150,7 +150,7 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
             return it
         }
         menu("Pulsar", [
-            item("About Pulsar", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            item("About Pulsar", #selector(showAbout), target: self),
             .separator(),
             item("Settings…", #selector(openSettings), ",", target: self),
             .separator(),
@@ -185,6 +185,30 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
         menu("Window", windowMenu)
         NSApp.mainMenu = main
         NSApp.windowsMenu = main.items.last?.submenu
+    }
+
+    /// The About panel with the version that is really running (the code updates itself, the app does not), its
+    /// pulsar's name, and one line about the name.
+    @objc private func showAbout() {
+        let bundled = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        let show = { (version: String) in
+            let line = NSAttributedString(string: "Pulsars are among the most precise clocks in the universe, hence the name.",
+                attributes: [.font: NSFont.systemFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor])
+            NSApp.orderFrontStandardAboutPanel(options: [.applicationVersion: version, .version: version, .credits: line])
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        guard let origin = origin, let url = URL(string: "api/version", relativeTo: origin) else { show(bundled); return }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 1.5
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            var version = bundled
+            if let data = data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let running = json["version"] as? String {
+                let name = json["codename"] as? String ?? ""
+                version = name.isEmpty ? running : "\(running) · \(name)"
+            }
+            DispatchQueue.main.async { show(version) }
+        }.resume()
     }
 
     @objc private func openSettings() {

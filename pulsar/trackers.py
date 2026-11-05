@@ -212,9 +212,9 @@ def activity_aw(base: str, t0: float, t1: float, classify: Classifier) -> list:
         return []
     present = merge([[parse_ts(ev["timestamp"]), parse_ts(ev["timestamp"]) + ev["duration"]]
                      for ev in raw["afk"] if (ev.get("data") or {}).get("status") == "not-afk"])
-    if not present:  # windows, but never at the keys: the AFK watcher stopped, or ActivityWatch lacks access
-        PROBLEMS["aw"] = ("ActivityWatch saw windows but never saw you at the computer in this time. Check that its "
-                          "AFK watcher runs and that ActivityWatch has Accessibility access.")
+    if not raw["afk"]:  # windows, but the AFK watcher recorded nothing at all: it stopped, or lacks access
+        PROBLEMS["aw"] = ("ActivityWatch saw windows but its AFK watcher recorded nothing, so Pulsar cannot tell when "
+                          "you were at the computer. Check that the AFK watcher runs and has Accessibility access.")
         return []
     return compact(clip_to_present(raw["window"], present, t0, t1, classify))
 

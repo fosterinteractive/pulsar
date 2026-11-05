@@ -125,11 +125,16 @@ def https(method: str, url: str, body: Optional[bytes] = None, headers: Optional
             data = resp.read()
         except (http.client.HTTPException, OSError) as exc:
             conn.close()
-            hung_up = isinstance(exc, (http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError))
-            if write or attempt == tries - 1 or (fresh and not hung_up):  # a timeout is not retried: it would only wait again
+            hung_up = isinstance(exc, (http.client.RemoteDisconnected, ConnectionResetError, ConnectionAbortedError,
+                                       BrokenPipeError))
+            if write or attempt == tries - 1 or not hung_up:  # a timeout is never retried: it would only wait again
                 raise
             if fresh:  # Productive hung up on a new connection: it is busy, so wait a moment before asking again
                 time.sleep(0.4 * (attempt + 1))
+            else:  # a kept-alive connection had gone stale: the others kept as long are stale too, so drop them all
+                with _pool_lock:
+                    for old in _pool.pop(u.hostname, []):
+                        old.close()
             continue
         if write or resp.will_close:
             conn.close()

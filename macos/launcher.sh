@@ -177,7 +177,7 @@ start_server() {
   /usr/bin/nohup "$PY" -c 'import os, sys
 if os.getpid() != os.getpgrp():
     os.setsid()
-os.execv("/usr/bin/python3", ["/usr/bin/python3", "-I", "-B"] + sys.argv[1:])' \
+os.execv("/usr/bin/python3", ["/usr/bin/python3", "-E", "-s", "-B"] + sys.argv[1:])' \
     "$real/pulsar.py" --no-open --port "$PORT" >>"$LOG" 2>&1 </dev/null &
   server=$!
   for _ in $(seq 1 60); do
@@ -264,6 +264,7 @@ if [ -n "$running" ] || [ -n "$pid" ]; then
     exit 0
   fi
   log "Stopping Pulsar $running to start $C"
+  CUR_LINK="$(/usr/bin/readlink "$ROOT/current")" PREV_LINK="$(/usr/bin/readlink "$ROOT/previous" 2>/dev/null)"
   quit_server
   for _ in $(seq 1 20); do
     [ -z "$(listener_pid)" ] && break
@@ -278,6 +279,12 @@ if [ -n "$running" ] || [ -n "$pid" ]; then
   fi
   # A port still taken is not the new version's fault: say so, and mark nothing bad.
   [ -n "$(listener_pid)" ] && fail_dialog "Pulsar could not start: the older Pulsar on port $PORT did not stop."
+  # An older Pulsar may move current while it quits (an update it had ready): this launcher's choice stands.
+  if [ "$(/usr/bin/readlink "$ROOT/current")" != "$CUR_LINK" ]; then
+    log "The older Pulsar moved current while quitting; back to $CUR_LINK"
+    set_link current "$CUR_LINK"
+    [ -n "$PREV_LINK" ] && [ -d "$ROOT/$PREV_LINK" ] && set_link previous "$PREV_LINK"
+  fi
 fi
 
 # 4. Start current. If it does not come up, try previous: if previous starts where current did not, current is the

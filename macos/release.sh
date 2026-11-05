@@ -63,6 +63,17 @@ if [ -z "$NOTES" ]; then
   [ -n "$NOTES" ] || die "the release notes are empty"
 fi
 
+# Each minor version is named after a real pulsar (pulsar/names.py): in the title, and one line in the notes.
+IFS=$'\t' read -r CODENAME CODELINE < <(python3 -E -s -c 'import sys
+sys.path.insert(0, sys.argv[1])
+from pulsar import names
+print("\t".join(names.codename(sys.argv[2])))' "$ROOT" "$VERSION")
+TITLE="Pulsar $VERSION"
+if [ -n "${CODENAME:-}" ]; then
+  TITLE="Pulsar $VERSION · $CODENAME"
+  NOTES="$NOTES Named after $CODENAME, $CODELINE."
+fi
+
 # --- build ---------------------------------------------------------------------------------------------
 echo "Setting the version to $VERSION (was $CURRENT)"
 python3 - "$VERSION" <<'PY'
@@ -108,19 +119,16 @@ PY
 # pulsar/updater.py and ignore anything else, so a release can only come from whoever holds this key.
 KEY="${PULSAR_SIGNING_KEY:-$HOME/.config/pulsar-release/update-signing-key.pem}"
 [ -f "$KEY" ] || die "the release signing key is missing: $KEY (see macos/README.md, 'The release key')"
-PUB_FROM_KEY="$(/usr/bin/openssl ec -in "$KEY" -pubout 2>/dev/null)"
-# The keys installed copies trust: PUBLIC_KEYS in pulsar/updater.py (the main one, then any reserve). The signing
-# key's public half must be one of them, whole.
-echo "$PUB_FROM_KEY" | python3 -c 'import re, sys
-pem = lambda t: re.findall(r"-----BEGIN PUBLIC KEY-----.*?-----END PUBLIC KEY-----", t, re.S)
-flat = lambda k: "".join(k.split())
-block = re.search(r"PUBLIC_KEYS = \((.*?)\n\)", open(sys.argv[1]).read(), re.S).group(1)
-mine = pem(sys.stdin.read())
-sys.exit(0 if mine and flat(mine[0]) in {flat(k) for k in pem(block)} else 1)' "$ROOT/pulsar/updater.py" \
-  || die "this key is not one pulsar/updater.py trusts (PUBLIC_KEYS); installed copies would refuse the release"
 /usr/bin/openssl dgst -sha256 -sign "$KEY" -out "$OUT/latest.json.sig" "$OUT/latest.json"
-/usr/bin/openssl dgst -sha256 -verify <(echo "$PUB_FROM_KEY") -signature "$OUT/latest.json.sig" "$OUT/latest.json" >/dev/null \
-  || die "the new signature does not verify"
+# The signature must pass the very check installed copies run, against PUBLIC_KEYS as Python reads them: a key that
+# is not listed, or listed in a form openssl cannot load, is caught here and not on everyone's Mac.
+python3 -E -s - "$ROOT" "$OUT/latest.json" "$OUT/latest.json.sig" <<'PY' || die "installed copies would refuse this release: its key is not one of PUBLIC_KEYS in pulsar/updater.py (or one of them cannot be read)"
+import sys
+sys.path.insert(0, sys.argv[1])
+from pulsar import updater
+data, sig = open(sys.argv[2], "rb").read(), open(sys.argv[3], "rb").read()
+sys.exit(0 if any(updater.verify(data, sig, key) for key in updater.PUBLIC_KEYS) else 1)
+PY
 
 "$ROOT/macos/build_app.sh" >/dev/null
 
@@ -132,7 +140,7 @@ echo "  $ROOT/dist/Pulsar.zip"
 echo "  sha256 $SHA"
 
 GH=(gh release create "v$VERSION" "$ZIP" "$OUT/latest.json" "$OUT/latest.json.sig" dist/Pulsar.zip --repo "$REPO"
-    --title "Pulsar $VERSION" --notes "$NOTES")
+    --title "$TITLE" --notes "$NOTES")
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
 if [ "$PUBLISH" != 1 ]; then
@@ -141,7 +149,7 @@ if [ "$PUBLISH" != 1 ]; then
   echo "To publish this build by hand:"
   echo "  git commit -m \"Pulsar $VERSION\" pulsar/__init__.py && git push origin $BRANCH"
   echo "  gh release create v$VERSION $ZIP $OUT/latest.json $OUT/latest.json.sig dist/Pulsar.zip --repo $REPO \\"
-  echo "    --title \"Pulsar $VERSION\" --notes \"${NOTES//\"/\\\"}\" --target <the commit you just pushed>"
+  echo "    --title \"$TITLE\" --notes \"${NOTES//\"/\\\"}\" --target <the commit you just pushed>"
   echo "Or undo the version change (git checkout pulsar/__init__.py) and run this again with --publish."
   exit 0
 fi

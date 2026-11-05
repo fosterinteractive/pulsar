@@ -119,17 +119,20 @@ class TrackersTest(unittest.TestCase):
                 self.assertEqual(trackers.activity_aw("http://localhost:5600", 0, 3600, trackers.classifier([])), [])
             self.assertIn(words, trackers.PROBLEMS.get("aw", ""))
 
-    def test_activitywatch_that_never_saw_you_at_the_keys_says_so(self):
-        trackers.PROBLEMS.clear()
-        def answer(url, timeout=0):
-            if url.endswith("/buckets/"):
-                return {"aw-watcher-window_mac": {}, "aw-watcher-afk_mac": {}}
-            if "window" in url:
-                return [{"timestamp": "1970-01-01T00:10:00Z", "duration": 600, "data": {"app": "Cursor", "title": "x"}}]
-            return [{"timestamp": "1970-01-01T00:00:00Z", "duration": 3600, "data": {"status": "afk"}}]
-        with mock.patch.object(trackers, "http_json", answer):
-            self.assertEqual(trackers.activity_aw("http://localhost:5600", 0, 3600, trackers.classifier([])), [])
-        self.assertIn("never saw you", trackers.PROBLEMS.get("aw", ""))
+    def test_an_afk_watcher_that_recorded_nothing_is_named_but_a_quiet_day_is_not(self):
+        def answer(afk):
+            def http_json(url, timeout=0):
+                if url.endswith("/buckets/"):
+                    return {"aw-watcher-window_mac": {}, "aw-watcher-afk_mac": {}}
+                if "window" in url:
+                    return [{"timestamp": "1970-01-01T00:10:00Z", "duration": 600, "data": {"app": "Cursor", "title": "x"}}]
+                return afk
+            return http_json
+        for afk, warned in (([], True), ([{"timestamp": "1970-01-01T00:00:00Z", "duration": 3600, "data": {"status": "afk"}}], False)):
+            trackers.PROBLEMS.clear()
+            with mock.patch.object(trackers, "http_json", answer(afk)):
+                self.assertEqual(trackers.activity_aw("http://localhost:5600", 0, 3600, trackers.classifier([])), [])
+            self.assertEqual("AFK watcher recorded nothing" in trackers.PROBLEMS.get("aw", ""), warned, afk)
 
     def test_personal_words_match_app_title_or_site_in_any_case(self):
         classify = trackers.classifier(["telegram", "YouTube"])
@@ -310,6 +313,21 @@ class ReadRetryTest(unittest.TestCase):
                     productive.https("GET", "https://example.invalid/x")
             self.assertEqual(len(calls), 3)
 
+    def test_three_stale_kept_alive_connections_do_not_exhaust_the_tries(self):
+        import http.client
+        class Dead:
+            sock = None
+            def request(self, *a, **k):
+                raise http.client.RemoteDisconnected("stale")
+            def close(self):
+                pass
+        Conn, calls = self.conn_class([None])
+        with mock.patch.dict(productive._pool, {"example.invalid": [Dead(), Dead(), Dead()]}, clear=True), \
+             mock.patch.object(productive.http.client, "HTTPSConnection", Conn):
+            self.assertEqual(productive.https("GET", "https://example.invalid/x"), (200, b"ok"))
+            self.assertEqual(productive._pool.get("example.invalid", []), [])  # the stale ones were dropped
+        self.assertEqual(len(calls), 1)
+
     def test_a_write_and_a_timeout_are_never_tried_twice(self):
         import http.client, socket
         for outcome, write in ((http.client.RemoteDisconnected("closed"), True), (socket.timeout("slow"), False)):
@@ -330,6 +348,15 @@ class ReadRetryTest(unittest.TestCase):
         self.assertEqual(got["tasks"], {})
         self.assertIn("expired", got["error"])
         self.assertEqual(seen, [])
+
+
+class NamesTest(unittest.TestCase):
+    def test_each_minor_version_has_its_pulsar_and_nothing_breaks_past_the_list(self):
+        from pulsar import names
+        self.assertEqual(names.codename("1.0.4")[0], "CP 1919")
+        self.assertEqual(names.codename("1.1.0")[0], "Vela")
+        self.assertEqual(names.codename("9.9.9"), ("", ""))
+        self.assertEqual(names.codename("x"), ("", ""))
 
 
 class ReasonTest(unittest.TestCase):
@@ -562,6 +589,12 @@ class UpdaterTest(unittest.TestCase):
             self.assertEqual(u.check()["status"], "latest")
         self.assertEqual(seen, ["warning"])
 
+    def test_every_listed_release_key_loads_in_the_macs_openssl(self):
+        import subprocess
+        for key in updater.PUBLIC_KEYS:
+            run = subprocess.run(["/usr/bin/openssl", "pkey", "-pubin", "-noout"], input=key.encode(), capture_output=True)
+            self.assertEqual(run.returncode, 0, key)
+
     def test_versions_compare_as_numbers(self):
         self.assertGreater(updater.vtuple("1.10.0"), updater.vtuple("1.9.3"))
         self.assertEqual(updater.vtuple("2"), (2, 0, 0))
@@ -575,24 +608,53 @@ class UpdaterTest(unittest.TestCase):
             u.apply()
         self.assertEqual(os.readlink(os.path.join(self.root, "current")), "versions/1.1.0")
         self.assertEqual(os.readlink(os.path.join(self.root, "previous")), "versions/1.0.0")
-        self.assertEqual(execv.call_args[0][1][1:3], ["-I", "-B"])  # isolated: no PYTHONPATH, no user packages
-        self.assertTrue(execv.call_args[0][1][3].endswith("versions/1.1.0/pulsar.py"))
+        self.assertEqual(execv.call_args[0][1][1:4], ["-E", "-s", "-B"])  # no PYTHON* variables, no user packages
+        self.assertTrue(execv.call_args[0][1][4].endswith("versions/1.1.0/pulsar.py"))
+
+    def running_from(self, version):
+        return mock.patch.object(updater, "app_dir", lambda: os.path.join(self.root, "versions", version))
 
     def test_closing_the_window_makes_a_ready_update_current_without_restarting(self):
         manifest, data = self.release()
         u = self.make(manifest, data)
         self.assertEqual(u.check()["status"], "ready")
-        with mock.patch.object(updater.os, "execv", lambda *a: self.fail("restarted while quitting")):
+        with self.running_from("1.0.0"), mock.patch.object(updater.os, "execv", lambda *a: self.fail("restarted while quitting")):
             u.switch_on_quit()
         self.assertEqual(os.readlink(os.path.join(self.root, "current")), "versions/1.1.0")
         self.assertEqual(os.readlink(os.path.join(self.root, "previous")), "versions/1.0.0")
+
+    def test_closing_leaves_current_alone_when_a_newer_app_has_moved_it(self):
+        manifest, data = self.release()
+        u = self.make(manifest, data)
+        u.check()
+        os.makedirs(os.path.join(self.root, "versions", "1.2.0", "pulsar"))
+        updater.link("current", "versions/1.2.0", self.root)  # the new app's launcher installed 1.2.0 meanwhile
+        with self.running_from("1.0.0"):
+            u.switch_on_quit()
+        self.assertEqual(os.readlink(os.path.join(self.root, "current")), "versions/1.2.0")
+        self.assertTrue(os.path.isdir(os.path.join(self.root, "versions", "1.0.0")))  # nothing cleaned up either
+
+    def test_closing_does_not_wait_for_a_download_in_progress(self):
+        manifest, data = self.release()
+        u = self.make(manifest, data)
+        u.check()
+        u.lock.acquire()
+        try:
+            t0 = time.time()
+            with self.running_from("1.0.0"):
+                u.switch_on_quit()
+            self.assertLess(time.time() - t0, 2)
+        finally:
+            u.lock.release()
+        self.assertEqual(os.readlink(os.path.join(self.root, "current")), "versions/1.0.0")
 
     def test_with_automatic_updates_off_closing_the_window_changes_nothing(self):
         manifest, data = self.release()
         u = self.make(manifest, data)
         u.check()
         u.auto = lambda: False
-        u.switch_on_quit()
+        with self.running_from("1.0.0"):
+            u.switch_on_quit()
         self.assertEqual(os.readlink(os.path.join(self.root, "current")), "versions/1.0.0")
 
     def test_a_release_signed_with_the_reserve_key_is_accepted(self):

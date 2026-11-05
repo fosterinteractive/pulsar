@@ -131,6 +131,23 @@ Settings are saved in `~/.config/pulsar/settings.json`; names and copies of fetc
 - **Report downloads.** In the Report, **Download** gives the days or the time entries as CSV (for Excel or
   Numbers), or a print view that saves as PDF.
 
+## Release names
+
+Pulsars are among the most precise clocks in the universe, hence the name. Each minor version is named after a real
+one, shown next to the version in Settings and in the release notes:
+
+| Version | Name | The pulsar |
+|---|---|---|
+| 1.0 | CP 1919 | The first pulsar found, by Jocelyn Bell Burnell in 1967; it pulses every 1.337 seconds |
+| 1.1 | Vela | A young pulsar in the Vela supernova remnant, turning 11 times a second |
+| 1.2 | Crab | Born in the supernova seen from Earth in 1054, turning 30 times a second |
+| 1.3 | Geminga | A nearby pulsar that is silent in radio and bright in gamma rays |
+| 1.4 | Hulse-Taylor | The binary pulsar whose shrinking orbit was the first evidence of gravitational waves |
+| 1.5 | Black Widow | A millisecond pulsar that is slowly boiling away its companion star |
+| 1.6 | Double Pulsar | The only known pair of pulsars orbiting each other |
+| 1.7 | Terzan 5ad | The fastest-spinning pulsar known, 716 turns a second |
+| 1.8 | Lich | The pulsar around which the first planets beyond the Solar System were found, in 1992 |
+
 ## If something goes wrong
 
 1. Click **Logs** at the top of Pulsar, choose how far back (24 hours, 7 or 30 days) and click **Download**. It

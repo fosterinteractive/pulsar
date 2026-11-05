@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, config, likely, logbook, productive, report, trackers, updater
+from . import __version__, config, likely, logbook, productive, report, trackers, updater, names
 
 UPDATER = updater.Updater(lambda: bool(config.load().get("auto_update", True)))
 
@@ -79,7 +79,9 @@ def current_settings() -> dict:
         return s
     try:
         found = productive.identify(s, conn)
-    except Exception:
+    except Exception as exc:  # the page still asks for the IDs; the reason goes to Logs (a refused token, say)
+        logbook.record("productive", f"Pulsar could not tell who you are in Productive: {exc}", kind="warning",
+                       once_per=600)
         return s
     found = {k: v for k, v in found.items() if v not in (None, "") and k in config.DEFAULTS}
     return config.update(found) if found else s
@@ -88,7 +90,7 @@ def current_settings() -> dict:
 def public_config(s: dict) -> dict:
     conn = productive.connection(s)
     return {
-        "version": __version__,
+        "version": __version__, "codename": names.codename(__version__)[0],
         "timezone": config.timezone_name(s), "timezoneSystem": config.system_timezone(), "timezoneSetting": s["timezone"],
         "targetMinutes": config.target_minutes(s), "targetHours": s["target_hours"], "personDayHours": s["person_day_hours"],
         "personalPatterns": s["personal_patterns"], "activitywatchUrl": s["activitywatch_url"], "rules": s["rules"],
@@ -223,7 +225,7 @@ def api_activity(q: dict) -> dict:
     if datetime.fromtimestamp(t0, tz).utcoffset() != datetime.fromtimestamp(t1 - 1, tz).utcoffset():
         for it in found[source]:  # the clocks change today: place everything by the clock, not by elapsed time
             it["s"], it["e"] = round(clock(t0 + it["s"] * 60, t0, tz), 3), round(clock(t0 + it["e"] * 60, t0, tz), 3)
-    for name, problem in trackers.PROBLEMS.items():
+    for name, problem in list(trackers.PROBLEMS.items()):
         logbook.record(f"tracker {name}", problem, kind="warning")
     return {"source": source, "minutes": minutes, "items": found[source], "problems": dict(trackers.PROBLEMS)}
 
@@ -468,7 +470,7 @@ class Handler(BaseHTTPRequestHandler):
                 path = trackers.ICONS.path(url.path[6:])
                 return self.file(path) if path else self.send(404, b"", "image/png")
             if url.path == "/api/version":  # polled by the page to notice a restart into a new version
-                return self.send_json({"version": __version__})
+                return self.send_json({"version": __version__, "codename": names.codename(__version__)[0]})
             if url.path.startswith("/api/") and url.path != "/api/config":
                 UPDATER.touch()
             if url.path == "/api/config":

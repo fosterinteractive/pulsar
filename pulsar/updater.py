@@ -192,7 +192,7 @@ def self_test(copy: str) -> bool:
     """Runs the new copy's own test; when it fails, its output goes to the error log."""
     from . import logbook
     try:
-        run = subprocess.run([sys.executable, "-I", "-B", os.path.join(copy, "pulsar.py"), "--self-test"],
+        run = subprocess.run([sys.executable, "-E", "-s", "-B", os.path.join(copy, "pulsar.py"), "--self-test"],
                              capture_output=True, text=True, timeout=60)
     except (subprocess.TimeoutExpired, OSError) as exc:
         logbook.record("updater", f"The new version's self-test did not run: {exc}")
@@ -310,7 +310,7 @@ class Updater:
         with self.lock:
             self._switch()
             target = os.path.join(self.ready, "pulsar.py")
-            os.execv(sys.executable, [sys.executable, "-I", "-B", target] + sys.argv[1:])
+            os.execv(sys.executable, [sys.executable, "-E", "-s", "-B", target] + sys.argv[1:])
 
     def switch_on_quit(self) -> None:
         """The window was closed (the server is stopping): with automatic updates on, a ready version becomes current
@@ -318,11 +318,19 @@ class Updater:
         version does not start, the launcher goes back to previous."""
         if not self.ready or not self.auto():
             return
+        cur = os.path.join(self.root, "current")
+        if os.path.realpath(cur) != os.path.realpath(app_dir()):
+            return  # someone else (a newer app) has moved current since this copy started: leave it to them
+        if vtuple(read_version(self.ready)) <= vtuple(__version__) or os.path.realpath(self.ready) == os.path.realpath(cur):
+            return
+        if not self.lock.acquire(timeout=0.5):
+            return  # a check or download is running: quitting must not wait for it; the next start checks again
         try:
-            with self.lock:
-                self._switch()
+            self._switch()
         except OSError as exc:
             self._set("failed", f"Switching to the new version failed: {exc}")
+        finally:
+            self.lock.release()
 
     def _cleanup(self) -> None:
         """Keep the current and the previous version, remove older ones."""

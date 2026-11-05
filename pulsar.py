@@ -14,7 +14,7 @@ import sys
 import threading
 import webbrowser
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # run with -I, Python adds nothing to the path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # its own package first, however it was started
 from pulsar import __version__  # noqa: E402
 from pulsar.server import serve  # noqa: E402
 

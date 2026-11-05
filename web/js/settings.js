@@ -101,7 +101,7 @@ $('#open-settings').onclick = openSettings;
 function paintUpdate(u) {
   if (!u) return;
   const offer = u.installed && (u.status === 'available' || u.status === 'ready');
-  $('#upd-version').textContent = u.current;
+  $('#upd-version').textContent = u.current + (CONFIG?.codename ? ` · ${CONFIG.codename}` : '');  // each minor version is a pulsar
   $('#upd-since').textContent = u.installed ? (u.since || '–') : `running from source (files changed ${u.since || '–'})`;
   $('#upd-checked').textContent = u.checked || 'not yet';
   const st = $('#update-status');

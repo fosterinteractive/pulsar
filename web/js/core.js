@@ -192,6 +192,7 @@ function lensTick(now) {
 function warpTo(level, instant = false) {
   const L = lensState;
   if (calmMotion()) return Promise.resolve();
+  if (L.rampDone) { L.rampDone(); L.rampDone = null; }  // an earlier ramp still waited on: settle it, or its caller hangs
   L.from = instant ? level : L.level; L.to = level; L.t0 = performance.now();
   L.dur = Math.max(1, 520 * Math.abs(level - L.from));
   L.ramped = new Promise(done => { L.rampDone = done; });
@@ -202,7 +203,7 @@ function warpTo(level, instant = false) {
 function warpRelease() {
   const L = lensState;
   if (!L.raf) return Promise.resolve();
-  cancelAnimationFrame(L.raf); L.raf = 0;
+  cancelAnimationFrame(L.raf); L.raf = 0; L.afterUpdate = false;
   if (L.rampDone) { L.rampDone(); L.rampDone = null; }
   const from = L.level; L.level = L.to = 0;
   return warpOut(from);
@@ -236,8 +237,8 @@ function warp() { return warpUntil(null, 0); }  // the whole jump in place (an O
    Whatever happens, it lets go after eight seconds. */
 try {
   if (sessionStorage.getItem('pulsar-updated') && !calmMotion()) {
-    warpTo(1, true);
-    setTimeout(() => { if (lensState.raf) warpRelease(); }, 8000);
+    warpTo(1, true); lensState.afterUpdate = true;
+    setTimeout(() => { if (lensState.raf && lensState.afterUpdate) warpRelease(); }, 8000);
   }
 } catch (e) {}
 
