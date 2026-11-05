@@ -46,6 +46,7 @@ older Safari, Pulsar opens in your browser instead.
   click **+** under *Open at Login* and choose Pulsar. It then starts when you log in and opens its window.
 - **Updates**: when a new version is out, **Settings → Update** installs it in a few seconds; you never download
   Pulsar again. It installs nothing by itself.
+- **What changed**: [CHANGELOG.md](CHANGELOG.md), also under **Settings → Version and updates → Changelog**.
 - **Stop it**: close the window or press Cmd+Q. Nothing keeps running in the background. (If Pulsar went to your
   browser because Safari is too old, it keeps running after you close the tab; logging out stops it.)
 - **If it says it could not start**: click **Show log** and send what it shows to the person who shared

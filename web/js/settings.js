@@ -203,3 +203,19 @@ $('#rules-list').addEventListener('click', async ev => {
   if (await saveRules(rules)) fillSettings(CONFIG);
 });
 document.addEventListener('click', ev => { if (ev.target.closest('[data-open-settings]')) openSettings(); });
+
+/* The changelog: this copy's CHANGELOG.md, read the first time it is opened. Each release folds. */
+$('#changelog').addEventListener('toggle', async ev => {
+  const box = $('#changelog-list');
+  if (!ev.target.open || box.dataset.loaded) return;
+  box.textContent = 'Loading…';
+  const r = await getJSON('/api/changelog');
+  if (r.error) { box.textContent = r.error; return; }  // not kept: opening it again asks again
+  box.dataset.loaded = '1';
+  const day = d => (validDate(d) ? new Date(d + 'T12:00:00Z').toLocaleDateString('en-GB',
+    {day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC'}) : '');
+  box.innerHTML = (r.releases || []).map(x => `<details class="rel"><summary><b class="num">${esc(x.version)}</b>
+    <span>${esc(x.codename)}</span><span class="when">${esc(day(x.date))}</span></summary>
+    <ul>${x.lines.map(l => `<li>${esc(l)}</li>`).join('')}</ul></details>`).join('')
+    || '<p class="hint">This copy has no changelog.</p>';
+});

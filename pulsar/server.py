@@ -518,6 +518,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"version": __version__, "codename": names.codename(__version__)[0]})
             if url.path == "/api/config":
                 return self.send_json(public_config(current_settings()))
+            if url.path == "/api/changelog":  # what each release changed, from this copy's CHANGELOG.md
+                from . import changelog
+                return self.send_json({"releases": changelog.read()})
             if url.path == "/api/report":
                 return self.send_json(api_report(q))
             if url.path in ("/api/logs", "/api/logs/download"):

@@ -76,7 +76,7 @@ cp "$MACOS/launcher.sh" "$APP/Contents/Resources/launcher.sh"
 chmod 755 "$APP/Contents/MacOS/Pulsar" "$APP/Contents/Resources/launcher.sh"
 
 RES="$APP/Contents/Resources/app"
-cp "$ROOT/pulsar.py" "$ROOT/README.md" "$RES/"
+cp "$ROOT/pulsar.py" "$ROOT/README.md" "$ROOT/CHANGELOG.md" "$RES/"
 # Only the app's own files: the .py modules and the page's html, css and js. Anything else that happens to sit in
 # these folders (a .env, a log, editor settings) never reaches the app or the public Pulsar.zip.
 rsync -a --prune-empty-dirs --include '*/' --include '*.py' --include '*.html' --include '*.css' --include '*.js' \
