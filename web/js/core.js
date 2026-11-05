@@ -151,8 +151,9 @@ function lensSetup() {
   if (!lens.core) {
     lens.core = document.createElement('div');
     lens.core.className = 'warp-core';
-    lens.core.style.background = `radial-gradient(circle at ${cx}px ${cy}px, rgba(0,0,0,.94) 0, rgba(0,0,0,.94) ${R * .42}px, `
-      + `rgba(0,0,0,.55) ${R * .6}px, rgba(0,0,0,0) ${R * .95}px)`;
+    // the core takes the theme's colour: a dark hole on the dark theme, a bright one on the light theme
+    lens.core.style.background = `radial-gradient(circle at ${cx}px ${cy}px, rgba(var(--warp-core), .94) 0, `
+      + `rgba(var(--warp-core), .94) ${R * .42}px, rgba(var(--warp-core), .55) ${R * .6}px, rgba(var(--warp-core), 0) ${R * .95}px)`;
     document.documentElement.append(lens.core);
   }
   return lens;

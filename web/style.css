@@ -5,7 +5,7 @@
   --seg: rgba(0,0,0,.05); --seg-on: #ffffff;
   /* charts: billable blue, not billable orange (validated as a pair, light and dark, colour-blind safe); billing
      Productive does not show this person in grey, set apart from the grey of active time behind it */
-  --accent: #2a78d6; --accent2: #eb6834; --unknown: #7d7c76; --deemph: #c4c3bc; --seq-lo: #e6effa; --seq-hi: #104281; --grid: #e1e0d9; --axis: #c3c2b7; --weekend: rgba(0,0,0,.025);
+  --accent: #2a78d6; --accent2: #eb6834; --unknown: #7d7c76; --warp-core: 255, 255, 255; --deemph: #c4c3bc; --seq-lo: #e6effa; --seq-hi: #104281; --grid: #e1e0d9; --axis: #c3c2b7; --weekend: rgba(0,0,0,.025);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -14,7 +14,7 @@
     --text: #f2f2f4; --muted: #9b9ba2; --faint: #5c5c63; --hover: rgba(255,255,255,.05);
     --gap: #f0a833; --now: #ff453a; --shadow: 0 12px 40px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
     --seg: rgba(255,255,255,.06); --seg-on: #3a3a3f;
-    --accent: #3987e5; --accent2: #d95926; --unknown: #9a9993; --deemph: #4a4a46; --seq-lo: #1c2736; --seq-hi: #9ec5f4; --grid: #2c2c2a; --axis: #383835; --weekend: rgba(255,255,255,.025);
+    --accent: #3987e5; --accent2: #d95926; --unknown: #9a9993; --warp-core: 0, 0, 0; --deemph: #4a4a46; --seq-lo: #1c2736; --seq-hi: #9ec5f4; --grid: #2c2c2a; --axis: #383835; --weekend: rgba(255,255,255,.025);
     color-scheme: dark;
   }
 }
@@ -24,7 +24,7 @@
   --text: #f2f2f4; --muted: #9b9ba2; --faint: #5c5c63; --hover: rgba(255,255,255,.05);
   --gap: #f0a833; --now: #ff453a; --shadow: 0 12px 40px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
   --seg: rgba(255,255,255,.06); --seg-on: #3a3a3f;
-  --accent: #3987e5; --accent2: #d95926; --unknown: #9a9993; --deemph: #4a4a46; --seq-lo: #1c2736; --seq-hi: #9ec5f4; --grid: #2c2c2a; --axis: #383835; --weekend: rgba(255,255,255,.025);
+  --accent: #3987e5; --accent2: #d95926; --unknown: #9a9993; --warp-core: 0, 0, 0; --deemph: #4a4a46; --seq-lo: #1c2736; --seq-hi: #9ec5f4; --grid: #2c2c2a; --axis: #383835; --weekend: rgba(255,255,255,.025);
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
