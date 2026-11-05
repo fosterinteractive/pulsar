@@ -713,39 +713,59 @@ def task_details(ids: list, settings: dict) -> dict:
     return found
 
 
-def _task_rows(conditions: list, settings: dict, limit: int = 200) -> list:
+def _task_rows(conditions: list, settings: dict, limit: int = 1000) -> list:
+    """The tasks matching `conditions`, page after page (200 each) up to `limit`: one page used to cut a long list."""
     conn = _need(settings)
+    out: list = []
     if conn["kind"] == "token":
-        query = {"include": "project", "page[size]": min(limit, 200)}
+        query, active_only = {"include": "project", "page[size]": min(limit, 200)}, False
         for c in conditions:  # the REST spellings of the same filters (not yet tried against Productive)
+            if c["field"] == "project.status":  # no such filter here: the included project's archived_at tells
+                active_only = True
+                continue
             key = {"assignee": "assignee_id", "workflow_status_category": "status", "title": "title"}[c["field"]]
             value = ",".join(c["value"]) if isinstance(c["value"], list) else c["value"]
             query[f"filter[{key}]" + ("[contains]" if c["operator"] == "contains" else "")] = value
-        status, doc = rest_get("/tasks", query, conn["token"], settings.get("org_id"))
-        if status != 200 or not isinstance(doc, dict):
-            raise ProductiveError(f"Productive did not list tasks ({why(status, doc)}).")
-        inc = _index(doc)
-        return [{"taskId": str(d.get("id")), "title": _attr(d, "title") or "",
-                 "project": _attr(inc.get(("projects", _rel(d, "project") or "")), "name") or "",
-                 "projectId": _rel(d, "project") or "", "serviceId": _rel(d, "service") or ""} for d in doc.get("data") or []]
-    d = parse_mcp(mcp_text("query_resources", {"resource_type": "tasks", "limit": limit, "sort": ["-last_activity_at"],
-                                               "filters": {"op": "and", "conditions": conditions},
-                                               "include_fields": ["title", "project", "project.name", "service", "closed_at"]}, conn["token"]))
-    cols = d["items"]["columns"]
-    inc = d.get("included") or {}
-    names = {f"{r[0]}:{r[1]}": dict(zip(inc.get("columns", []), r)).get("name") for r in inc.get("rows", [])}
-    out = []
-    for row in d["items"]["rows"]:
-        r = dict(zip(cols, row))
-        out.append({"taskId": str(r.get("id")), "title": (r.get("title") or "") + (" (closed)" if r.get("closed_at") else ""),
-                    "project": names.get(r.get("project") or "") or "",
-                     "projectId": (r.get("project") or ":").split(":")[1], "serviceId": (r.get("service") or ":").split(":")[1]})
+        for page in range(1, 1 + (limit + 199) // 200):
+            status, doc = rest_get("/tasks", {**query, "page[number]": page}, conn["token"], settings.get("org_id"))
+            if status != 200 or not isinstance(doc, dict):
+                raise ProductiveError(f"Productive did not list tasks ({why(status, doc)}).")
+            inc = _index(doc)
+            for d in doc.get("data") or []:
+                project = inc.get(("projects", _rel(d, "project") or ""))
+                if active_only and _attr(project, "archived_at"):
+                    continue
+                out.append({"taskId": str(d.get("id")), "title": _attr(d, "title") or "", "project": _attr(project, "name") or "",
+                            "projectId": _rel(d, "project") or "", "serviceId": _rel(d, "service") or ""})
+            pages = (doc.get("meta") or {}).get("total_pages")
+            if not isinstance(pages, int) or page >= pages:
+                break
+        return out[:limit]
+    for offset in range(0, limit, 200):
+        size = min(200, limit - offset)
+        d = parse_mcp(mcp_text("query_resources", {"resource_type": "tasks", "limit": size, "offset": offset,
+                                                   "sort": ["-last_activity_at"], "filters": {"op": "and", "conditions": conditions},
+                                                   "include_fields": ["title", "project", "project.name", "service", "closed_at"]},
+                               conn["token"]))
+        cols = d["items"]["columns"]
+        inc = d.get("included") or {}
+        names = {f"{r[0]}:{r[1]}": dict(zip(inc.get("columns", []), r)).get("name") for r in inc.get("rows", [])}
+        rows = d["items"]["rows"]
+        for row in rows:
+            r = dict(zip(cols, row))
+            out.append({"taskId": str(r.get("id")), "title": (r.get("title") or "") + (" (closed)" if r.get("closed_at") else ""),
+                        "project": names.get(r.get("project") or "") or "",
+                        "projectId": (r.get("project") or ":").split(":")[1], "serviceId": (r.get("service") or ":").split(":")[1]})
+        if len(rows) < size:
+            break
     return out
 
 
 def assigned_tasks(settings: dict) -> list:
+    """Open tasks assigned to you, in active projects only (an archived project's tasks cannot take time)."""
     return _task_rows([{"field": "assignee", "operator": "eq", "value": settings.get("person_id")},
-                       {"field": "workflow_status_category", "operator": "any_of", "value": ["1", "2"]}], settings)
+                       {"field": "workflow_status_category", "operator": "any_of", "value": ["1", "2"]},
+                       {"field": "project.status", "operator": "eq", "value": "1"}], settings)
 
 
 def search_tasks(q: str, settings: dict) -> list:

@@ -69,17 +69,23 @@ def write_json(path: str, data) -> None:
     config.write_atomic(path, json.dumps(data, ensure_ascii=False))
 
 
+_identify_failed = [0.0]
+
+
 def current_settings() -> dict:
     """Settings, with who you are filled in the first time Productive can tell."""
     s = config.load()
     if s.get("person_id") and s.get("org_id"):
         return s
+    if time.time() - _identify_failed[0] < 300:
+        return s  # it failed a moment ago: do not ask Productive again on every request
     conn = productive.connection(s)
     if not conn["kind"]:
         return s
     try:
         found = productive.identify(s, conn)
     except Exception as exc:  # the page still asks for the IDs; the reason goes to Logs (a refused token, say)
+        _identify_failed[0] = time.time()
         logbook.record("productive", f"Pulsar could not tell who you are in Productive: {exc}", kind="warning",
                        once_per=600)
         return s
@@ -305,6 +311,7 @@ def api_settings(body: dict) -> dict:
         # back unchanged does not count; only one the user typed differently is kept.
         typed = {k: changes[k] for k in ("person_id", "org_id") if k in changes and changes[k] != before.get(k)}
         changes.update({"person_id": "", "org_id": "", "person_name": "", "org_name": "", "person_day_hours": None, **typed})
+    _identify_failed[0] = 0.0
     s = config.update(changes)
     s = current_settings()
     return {"config": public_config(s), "test": test_productive(s)}
@@ -381,6 +388,24 @@ def api_log(body: dict) -> dict:
     a, b = begin.timestamp(), begin.timestamp() + minutes * 60
     if b > day_bounds(date, tz)[1]:
         raise ValueError("An entry cannot run past midnight; log the part after it on the next day.")
+    if body.get("dry"):
+        return _log_checked(body, s, date, begin, minutes, task_id, service_id, tz, a, b)
+    key = (date, start, minutes, task_id, service_id)
+    with _log_lock:  # one write at a time: two tabs, or two quick clicks, cannot both pass the overlap check
+        if time.time() - _just_logged.get(key, 0) < 60:
+            raise ValueError("This entry was logged a moment ago. Check the Logged column before logging it again.")
+        result = _log_checked(body, s, date, begin, minutes, task_id, service_id, tz, a, b)
+        if "created" in result:
+            _just_logged[key] = time.time()
+        return result
+
+
+_log_lock = threading.Lock()
+_just_logged: dict = {}  # (date, start, minutes, task, service) -> when it was written
+
+
+def _log_checked(body: dict, s: dict, date: str, begin, minutes: int, task_id: str, service_id: str, tz, a: float,
+                 b: float) -> dict:
     existing, problem, _ = productive.entries(date, date, s)
     if problem:
         raise RuntimeError(problem)
@@ -523,7 +548,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/session":  # a one-time sign-in code for a session token; the only POST open without one
             try:
-                length = min(int(self.headers.get("Content-Length") or 0), 4096)
+                length = max(0, min(int(self.headers.get("Content-Length") or 0), 4096))  # a negative one would read to EOF
                 code = json.loads(self.rfile.read(length) or b"{}").get("code")
             except (ValueError, AttributeError):
                 code = None

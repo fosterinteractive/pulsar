@@ -6,6 +6,7 @@ the range asked for, so a day and a month are handled the same way.
 
 from __future__ import annotations
 
+import atexit
 import bisect
 import json
 import os
@@ -13,6 +14,8 @@ import re
 import shutil
 import sqlite3
 import tempfile
+import threading
+import time
 import urllib.request
 from datetime import datetime, timezone
 from typing import Callable
@@ -122,15 +125,45 @@ def make_item(t0: float, t1: float, s: float, e: float, app: str, title: str, ho
 
 # ---- MemTime (a copy: the app keeps its database open) ------------------------------------
 
+_memtime_lock = threading.Lock()
+_memtime_copy = {"dir": "", "source": "", "at": 0.0}
+MEMTIME_COPY_FOR = 60  # seconds one copy serves every query (the database is tens of megabytes)
+
+
+def _memtime_db(db_path: str) -> str:
+    """A private copy of MemTime's database (MemTime keeps the original open and writing), made at most once a minute:
+    copying it for every query cost more than the query. The copy lives in this user's temporary folder and goes when
+    the next one is made, or when Pulsar quits."""
+    with _memtime_lock:
+        c = _memtime_copy
+        if c["dir"] and c["source"] == db_path and time.time() - c["at"] < MEMTIME_COPY_FOR \
+                and os.path.exists(os.path.join(c["dir"], "core.db")):
+            return os.path.join(c["dir"], "core.db")
+        fresh = tempfile.mkdtemp(prefix="pulsar-memtime-")
+        try:
+            for suffix in ("", "-wal", "-shm"):
+                if os.path.exists(db_path + suffix):
+                    shutil.copy2(db_path + suffix, os.path.join(fresh, "core.db" + suffix))
+        except OSError:
+            shutil.rmtree(fresh, ignore_errors=True)
+            raise
+        old, c["dir"], c["source"], c["at"] = c["dir"], fresh, db_path, time.time()
+        if old:
+            shutil.rmtree(old, ignore_errors=True)  # a query still reading it keeps its open file until it is done
+        return os.path.join(fresh, "core.db")
+
+
+@atexit.register
+def _forget_memtime_copy() -> None:
+    if _memtime_copy["dir"]:
+        shutil.rmtree(_memtime_copy["dir"], ignore_errors=True)
+
+
 def memtime_query(sql: str, args=(), db_path: str = MEMTIME_DB) -> list:
     if not os.path.exists(db_path):
         return []  # not installed: nothing to say
-    tmp = tempfile.mkdtemp()
     try:
-        for suffix in ("", "-wal", "-shm"):
-            if os.path.exists(db_path + suffix):
-                shutil.copy2(db_path + suffix, os.path.join(tmp, "core.db" + suffix))
-        db = sqlite3.connect(os.path.join(tmp, "core.db"))
+        db = sqlite3.connect(_memtime_db(db_path))
         try:
             return db.execute(sql, args).fetchall()
         finally:
@@ -138,8 +171,6 @@ def memtime_query(sql: str, args=(), db_path: str = MEMTIME_DB) -> list:
     except (sqlite3.Error, OSError) as exc:
         PROBLEMS["memtime"] = f"MemTime's database could not be read: {exc}"
         return []
-    finally:
-        shutil.rmtree(tmp, ignore_errors=True)
 
 
 _program_names: dict = {}

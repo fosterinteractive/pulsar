@@ -145,8 +145,9 @@ function render() {
   const end = Math.ceil(Math.max(...ends) / 60) * 60, height = end * ppm;
 
   // header
-  const label = new Intl.DateTimeFormat('en-GB', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC'})
-    .format(new Date(state.date + 'T12:00:00Z'));
+  const noon = new Date(state.date + 'T12:00:00Z');  // a date it cannot read shows as written, instead of stopping the page
+  const label = isNaN(noon) ? String(state.date || '') : new Intl.DateTimeFormat('en-GB', {weekday: 'long', day: 'numeric',
+    month: 'long', year: 'numeric', timeZone: 'UTC'}).format(noon);
   $('#dayname').textContent = label.charAt(0).toUpperCase() + label.slice(1);
   $('#date').value = state.date;
   document.querySelectorAll('#zoom button').forEach(b => b.classList.toggle('on', +b.dataset.v === Z));

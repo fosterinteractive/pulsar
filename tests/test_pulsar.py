@@ -382,6 +382,50 @@ class ReasonTest(unittest.TestCase):
                 self.assertEqual(productive.mcp_detect("t")["person_day_hours"], hours, day)
 
 
+class ReviewFixesTest(unittest.TestCase):
+    def test_memtime_is_copied_once_a_minute_not_for_every_query(self):
+        import sqlite3
+        folder = tempfile.mkdtemp()
+        db = os.path.join(folder, "core.db")
+        con = sqlite3.connect(db); con.execute("create table t (x)"); con.execute("insert into t values (1)"); con.commit(); con.close()
+        copies = []
+        real = trackers.shutil.copy2
+        with mock.patch.object(trackers.shutil, "copy2", lambda a, b: copies.append(a) or real(a, b)), \
+             mock.patch.dict(trackers._memtime_copy, {"dir": "", "source": "", "at": 0.0}):
+            for _ in range(3):
+                self.assertEqual(trackers.memtime_query("select x from t", db_path=db), [(1,)])
+            self.assertEqual(len([c for c in copies if c == db]), 1)
+            trackers._memtime_copy["at"] -= 61  # a minute later: a fresh copy
+            trackers.memtime_query("select x from t", db_path=db)
+            self.assertEqual(len([c for c in copies if c == db]), 2)
+
+    def test_a_failed_identify_is_not_retried_on_every_request(self):
+        calls = []
+        def identify(s, conn):
+            calls.append(1); raise productive.ProductiveError("refused")
+        with mock.patch.object(server.config, "load", lambda: {**config.DEFAULTS}), \
+             mock.patch.object(server.productive, "connection", lambda s: {"kind": "token", "token": "t"}), \
+             mock.patch.object(server.productive, "identify", identify), \
+             mock.patch.object(server, "_identify_failed", [0.0]):
+            for _ in range(5):
+                server.current_settings()
+        self.assertEqual(len(calls), 1)
+
+    def test_assigned_tasks_come_from_active_projects_page_after_page(self):
+        sent = []
+        def mcp(tool, args, token):
+            sent.append(args)
+            n = 200 if args["offset"] == 0 else 7
+            rows = ",".join(f'[{args["offset"] + i}, "T", "projects:1", "services:2", null]' for i in range(n))
+            return '```json\n{"items": {"columns": ["id", "title", "project", "service", "closed_at"], "rows": [%s]}}\n```' % rows
+        with mock.patch.object(productive, "connection", lambda s: {"kind": "claude-code", "token": "t"}), \
+             mock.patch.object(productive, "mcp_text", mcp):
+            tasks = productive.assigned_tasks({"person_id": "1"})
+        self.assertEqual(len(tasks), 207)                     # not cut at 200
+        self.assertEqual([a["offset"] for a in sent], [0, 200])
+        self.assertIn({"field": "project.status", "operator": "eq", "value": "1"}, sent[0]["filters"]["conditions"])
+
+
 class ClaudeCodeTokenTest(unittest.TestCase):
     """An expired Claude Code token is renewed by Claude Code itself (claude mcp get), then read again."""
 
@@ -482,6 +526,7 @@ class LogTest(unittest.TestCase):
             mock.patch.object(server.config, "tz", lambda s: timezone.utc),
             mock.patch.object(server.productive, "entries", lambda d0, d1, s: (self.existing, None, "token")),
             mock.patch.object(server.productive, "create_entry", lambda e, s: self.created.append(e) or {"id": "9"}),
+            mock.patch.dict(server._just_logged, clear=True),
         ]
         for p in self.patches:
             p.start()
@@ -492,6 +537,26 @@ class LogTest(unittest.TestCase):
 
     def body(self, **kw):
         return {"date": "2026-11-04", "start": "14:10", "minutes": 20, "taskId": "5", "serviceId": "6", **kw}
+
+    def test_the_same_entry_twice_within_a_minute_is_written_once(self):
+        self.existing = []
+        self.assertIn("created", server.api_log(self.body()))
+        with self.assertRaises(ValueError):
+            server.api_log(self.body())                      # a second tab, a double click
+        self.assertEqual(len(self.created), 1)
+        self.assertIn("created", server.api_log(self.body(start="15:00")))  # another entry is fine
+
+    def test_two_writes_at_once_take_turns(self):
+        import threading
+        self.existing = []
+        inside, most = [0], [0]
+        def slow(e, s):
+            inside[0] += 1; most[0] = max(most[0], inside[0]); time.sleep(0.05); inside[0] -= 1
+            return {"id": "9"}
+        with mock.patch.object(server.productive, "create_entry", slow):
+            ts = [threading.Thread(target=server.api_log, args=(self.body(start=f"1{i}:00"),)) for i in range(5, 8)]
+            [t.start() for t in ts]; [t.join() for t in ts]
+        self.assertEqual(most[0], 1)
 
     def test_an_overlap_is_shown_and_nothing_is_written(self):
         r = server.api_log(self.body())
@@ -795,6 +860,13 @@ class GuardTest(unittest.TestCase):
         c.request(method, path, body=body, headers=h)
         r = c.getresponse()
         return r.status, dict(r.getheaders()), r.read()
+
+    def test_a_negative_content_length_does_not_hold_the_sign_in(self):
+        t0 = time.time()
+        status = self.ask("/api/session", "POST", {"X-Pulsar": "1", "Content-Type": "application/json",
+                                                   "Content-Length": "-5"}, b"")[0]
+        self.assertEqual(status, 401)
+        self.assertLess(time.time() - t0, 3)  # answered at once, not after the 20 s socket timeout
 
     def token(self):
         code = config.new_signin_code()
