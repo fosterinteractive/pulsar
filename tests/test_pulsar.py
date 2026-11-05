@@ -65,13 +65,13 @@ class ConfigTest(unittest.TestCase):
         import json
         good = {"match": "kb-dev", "taskId": "123", "title": "QA", "project": "P"}
         self.write(json.dumps({"timezone": 5, "personal_patterns": "YouTube", "target_hours": True, "likely": "maybe",
-                               "auto_update": "no", "person_id": "42", "rules": [good, {"match": "x"}, "y"]}))
+                               "update_asked": "yesterday", "person_id": "42", "rules": [good, {"match": "x"}, "y"]}))
         s = config.load()
         self.assertEqual(s["timezone"], "")
         self.assertEqual(s["personal_patterns"], config.DEFAULTS["personal_patterns"])
         self.assertIsNone(s["target_hours"])
         self.assertEqual(s["likely"], "auto")
-        self.assertIs(s["auto_update"], True)
+        self.assertEqual(s["update_asked"], 0)
         self.assertEqual(s["person_id"], "42")  # the good values stay
         self.assertEqual(s["rules"], [good])     # and so do the good rules
         self.assertEqual(len(self.copies()), 1)
@@ -557,7 +557,7 @@ class UpdaterTest(unittest.TestCase):
             self.pub_pem = fh.read()
 
     def make(self, manifest, zip_bytes=b"", passes=True, signed_by=None, signature=None):
-        u = updater.Updater(lambda: True, root=self.root)
+        u = updater.Updater(root=self.root)
         raw = json_bytes(manifest)
         sig = signature if signature is not None else sign(signed_by or self.key, raw)
 
@@ -585,8 +585,8 @@ class UpdaterTest(unittest.TestCase):
         seen = []
         with mock.patch.object(updater, "fetch", gone), mock.patch.object(updater, "installed", lambda root=None: True), \
              mock.patch.object(logbook, "record", lambda *a, **k: seen.append(k.get("kind"))):
-            u = updater.Updater(lambda: True, manifest_url="https://example.invalid/latest.json")
-            self.assertEqual(u.check()["status"], "latest")
+            u = updater.Updater(manifest_url="https://example.invalid/latest.json")
+            self.assertEqual(u.check(install=True)["status"], "latest")
         self.assertEqual(seen, ["warning"])
 
     def test_every_listed_release_key_loads_in_the_macs_openssl(self):
@@ -595,6 +595,26 @@ class UpdaterTest(unittest.TestCase):
             run = subprocess.run(["/usr/bin/openssl", "pkey", "-pubin", "-noout"], input=key.encode(), capture_output=True)
             self.assertEqual(run.returncode, 0, key)
 
+    def test_a_check_never_downloads_and_counts_the_releases_behind(self):
+        manifest, data = self.release(versions=["1.0.1", "1.0.2", "1.0.3", "1.0.4", "1.1.0", "0.9.0", "../x"])
+        u = self.make(manifest, data)
+        with mock.patch.object(updater, "unpack", lambda *a: self.fail("downloaded without a click")):
+            state = u.check()
+        self.assertEqual((state["status"], state["behind"]), ("available", 5))
+        self.assertIn("5 releases behind", state["message"])
+        self.assertFalse(os.path.exists(os.path.join(self.root, "versions", "1.1.0")))
+
+    def test_without_a_list_of_versions_a_newer_release_counts_as_one(self):
+        manifest, data = self.release()
+        self.assertEqual(self.make(manifest, data).check()["behind"], 1)
+
+    def test_the_update_button_downloads_tests_and_restarts(self):
+        manifest, data = self.release()
+        u = self.make(manifest, data)
+        with mock.patch.object(updater.threading, "Timer") as timer:
+            self.assertEqual(u.install_now()["status"], "ready")
+        self.assertEqual(timer.call_args[0][1], u.apply)  # the restart into it is scheduled
+
     def test_versions_compare_as_numbers(self):
         self.assertGreater(updater.vtuple("1.10.0"), updater.vtuple("1.9.3"))
         self.assertEqual(updater.vtuple("2"), (2, 0, 0))
@@ -602,7 +622,7 @@ class UpdaterTest(unittest.TestCase):
     def test_a_signed_newer_release_is_checked_unpacked_and_made_ready(self):
         manifest, data = self.release()
         u = self.make(manifest, data)
-        self.assertEqual(u.check()["status"], "ready")
+        self.assertEqual(u.check(install=True)["status"], "ready")
         self.assertTrue(os.path.exists(os.path.join(self.root, "versions", "1.1.0", "pulsar.py")))
         with mock.patch.object(updater.os, "execv") as execv:
             u.apply()
@@ -611,52 +631,6 @@ class UpdaterTest(unittest.TestCase):
         self.assertEqual(execv.call_args[0][1][1:4], ["-E", "-s", "-B"])  # no PYTHON* variables, no user packages
         self.assertTrue(execv.call_args[0][1][4].endswith("versions/1.1.0/pulsar.py"))
 
-    def running_from(self, version):
-        return mock.patch.object(updater, "app_dir", lambda: os.path.join(self.root, "versions", version))
-
-    def test_closing_the_window_makes_a_ready_update_current_without_restarting(self):
-        manifest, data = self.release()
-        u = self.make(manifest, data)
-        self.assertEqual(u.check()["status"], "ready")
-        with self.running_from("1.0.0"), mock.patch.object(updater.os, "execv", lambda *a: self.fail("restarted while quitting")):
-            u.switch_on_quit()
-        self.assertEqual(os.readlink(os.path.join(self.root, "current")), "versions/1.1.0")
-        self.assertEqual(os.readlink(os.path.join(self.root, "previous")), "versions/1.0.0")
-
-    def test_closing_leaves_current_alone_when_a_newer_app_has_moved_it(self):
-        manifest, data = self.release()
-        u = self.make(manifest, data)
-        u.check()
-        os.makedirs(os.path.join(self.root, "versions", "1.2.0", "pulsar"))
-        updater.link("current", "versions/1.2.0", self.root)  # the new app's launcher installed 1.2.0 meanwhile
-        with self.running_from("1.0.0"):
-            u.switch_on_quit()
-        self.assertEqual(os.readlink(os.path.join(self.root, "current")), "versions/1.2.0")
-        self.assertTrue(os.path.isdir(os.path.join(self.root, "versions", "1.0.0")))  # nothing cleaned up either
-
-    def test_closing_does_not_wait_for_a_download_in_progress(self):
-        manifest, data = self.release()
-        u = self.make(manifest, data)
-        u.check()
-        u.lock.acquire()
-        try:
-            t0 = time.time()
-            with self.running_from("1.0.0"):
-                u.switch_on_quit()
-            self.assertLess(time.time() - t0, 2)
-        finally:
-            u.lock.release()
-        self.assertEqual(os.readlink(os.path.join(self.root, "current")), "versions/1.0.0")
-
-    def test_with_automatic_updates_off_closing_the_window_changes_nothing(self):
-        manifest, data = self.release()
-        u = self.make(manifest, data)
-        u.check()
-        u.auto = lambda: False
-        with self.running_from("1.0.0"):
-            u.switch_on_quit()
-        self.assertEqual(os.readlink(os.path.join(self.root, "current")), "versions/1.0.0")
-
     def test_a_release_signed_with_the_reserve_key_is_accepted(self):
         reserve_key, reserve_pub = openssl_key(self.root, "reserve")
         manifest, data = self.release()
@@ -664,14 +638,14 @@ class UpdaterTest(unittest.TestCase):
         with open(reserve_pub, encoding="utf-8") as fh:
             keys = (self.pub_pem, fh.read())
         with mock.patch.object(updater, "public_keys", lambda: keys):
-            self.assertEqual(u.check()["status"], "ready")
+            self.assertEqual(u.check(install=True)["status"], "ready")
 
     def test_a_release_without_a_valid_signature_is_never_installed(self):
         other_key, _ = openssl_key(self.root, "someone-else")
         for kw in ({"signature": b""}, {"signature": b"garbage"}, {"signed_by": other_key}):
             manifest, data = self.release()
             u = self.make(manifest, data, **kw)
-            state = u.check()
+            state = u.check(install=True)
             self.assertEqual(state["status"], "failed", kw)
             self.assertIn("not signed", state["message"])
             self.assertFalse(os.path.exists(os.path.join(self.root, "versions", "1.1.0")))
@@ -680,12 +654,12 @@ class UpdaterTest(unittest.TestCase):
 
     def test_a_download_outside_the_github_release_is_refused(self):
         manifest, data = self.release(url="https://evil.example/pulsar-1.1.0.zip")
-        self.assertEqual(self.make(manifest, data).check()["status"], "failed")
+        self.assertEqual(self.make(manifest, data).check(install=True)["status"], "failed")
 
     def test_odd_versions_are_refused_before_anything_is_touched(self):
         for version in ("../../x", "/tmp/x", "1.1", "1.1.0-beta"):
             u = self.make({"version": version, "url": URL, "sha256": "00"})
-            self.assertEqual(u.check()["status"], "failed", version)
+            self.assertEqual(u.check(install=True)["status"], "failed", version)
             for p in self.patches:
                 p.stop()
         with self.assertRaises(ValueError):
@@ -693,15 +667,15 @@ class UpdaterTest(unittest.TestCase):
 
     def test_a_wrong_checksum_changes_nothing(self):
         manifest, data = self.release(sha256="00")
-        self.assertEqual(self.make(manifest, data).check()["status"], "failed")
+        self.assertEqual(self.make(manifest, data).check(install=True)["status"], "failed")
         self.assertFalse(os.path.exists(os.path.join(self.root, "versions", "1.1.0")))
 
     def test_a_release_that_fails_its_self_test_is_marked_bad_and_skipped(self):
         manifest, data = self.release()
         u = self.make(manifest, data, passes=False)
-        self.assertEqual(u.check()["status"], "failed")
+        self.assertEqual(u.check(install=True)["status"], "failed")
         self.assertIn("1.1.0", updater.bad_versions(self.root))
-        self.assertEqual(u.check()["status"], "skipped")
+        self.assertEqual(u.check(install=True)["status"], "skipped")
 
     def test_files_outside_the_release_folder_are_refused(self):
         with self.assertRaises(ValueError):
@@ -710,13 +684,13 @@ class UpdaterTest(unittest.TestCase):
     def test_test_switches_are_ignored_by_an_installed_copy(self):
         with mock.patch.object(updater, "installed", lambda root=None: True), \
              mock.patch.dict(os.environ, {"PULSAR_UPDATE_URL": "http://evil.example/latest.json", "PULSAR_UPDATE_PUBKEY": self.pub}):
-            self.assertEqual(updater.Updater(lambda: True, root=self.root).manifest_url, updater.DEFAULT_MANIFEST)
+            self.assertEqual(updater.Updater(root=self.root).manifest_url, updater.DEFAULT_MANIFEST)
             self.assertEqual(updater.public_keys(), updater.PUBLIC_KEYS)
 
     def test_a_ready_update_stays_ready_on_the_next_check_and_odd_manifests_fail_cleanly(self):
         manifest, data = self.release()
         u = self.make(manifest, data)
-        self.assertEqual(u.check()["status"], "ready")
+        self.assertEqual(u.check(install=True)["status"], "ready")
         self.assertEqual(u.check(install=False)["status"], "ready")
         for p in self.patches:
             p.stop()
@@ -725,7 +699,7 @@ class UpdaterTest(unittest.TestCase):
             sig = sign(self.key, raw)
             with mock.patch.object(updater, "fetch", lambda url, limit, timeout=30, raw=raw, sig=sig: sig if url.endswith(".sig") else raw), \
                  mock.patch.object(updater, "public_keys", lambda: (self.pub_pem,)):
-                self.assertEqual(updater.Updater(lambda: True, root=self.root).check()["status"], "failed", bad)
+                self.assertEqual(updater.Updater(root=self.root).check()["status"], "failed", bad)
 
     def test_a_self_test_that_hangs_counts_as_failed(self):
         import subprocess
@@ -877,6 +851,13 @@ def json_load(b):
 
 
 class ValidateTest(unittest.TestCase):
+    def test_the_update_reminder_keeps_a_version_and_a_time_only(self):
+        self.assertEqual(server.validate({"update_skip": "1.2.0", "update_asked": 1762370000}),
+                         {"update_skip": "1.2.0", "update_asked": 1762370000})
+        for bad in ({"update_skip": "../x"}, {"update_asked": "now"}, {"update_asked": True}, {"update_asked": -1}):
+            with self.assertRaises(ValueError):
+                server.validate(bad)
+
     def test_settings_from_the_page_are_checked(self):
         self.assertEqual(server.validate({"timezone": "", "target_hours": "", "personal_patterns": "a\n\n b "}),
                          {"timezone": "", "target_hours": None, "personal_patterns": ["a", "b"]})

@@ -38,12 +38,16 @@ version, builds into `dist/`, shows what it will do and asks before it:
 Without `--publish` it only builds and prints the commands to publish by hand. It needs the GitHub CLI
 (`gh auth login`) for `--publish`. Write the notes for colleagues: one or two plain sentences.
 
-**What colleagues see.** Each Pulsar checks `releases/latest/download/latest.json` every few hours (unless
-automatic updates are switched off in Settings). A newer
-version's `latest.json` must carry a valid signature from the release key, then the download is checked against its
-SHA-256 and tested (`pulsar.py --self-test`, which starts a server and asks it for its version) in the background,
-then it takes over once the page has been left alone for a while, or at once from Settings. Nobody downloads
-the app again. A copy run from a git checkout only says that a newer version exists.
+**What colleagues see.** Each Pulsar checks `releases/latest/download/latest.json` every few hours and shows a newer
+version next to its own; it installs it only when the person clicks **Update** (versions up to 1.0.6 still installed
+by themselves, so they all reach 1.0.7 that way). On the click, `latest.json` must carry a valid signature from a
+release key, the download must match its SHA-256 and pass its self-test (`pulsar.py --self-test`, which starts a
+server and asks it for its version); then Pulsar restarts into it. `latest.json` also lists every version released
+so far (from the git tags): a copy five or more releases behind reminds its person once every two days, until they
+update or skip that release. A copy run from a git checkout only says that a newer version exists.
+
+Click-only updates also limit the damage of a stolen release key: a forged release reaches only the people who
+click Update, not everyone within six hours.
 
 **Keep the repository public.** Installed copies and the Pulsar.zip link download without a GitHub sign-in. In a
 private repository every download answers 404: Settings then says no release is published, and an installed

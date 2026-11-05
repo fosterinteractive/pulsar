@@ -134,8 +134,8 @@
         <p class="status" id="update-status"></p>
         <div class="btnrow"><button type="button" class="btn bordered" id="update-check">Check for updates</button>
           <button type="button" class="btn primary" id="update-now" hidden>Update</button></div>
-        <label class="check"><input type="checkbox" id="auto-update"> Install updates automatically</label>
-        <p class="hint">When this is off, Pulsar still checks every few hours and shows the Update button.</p>
+        <p class="hint">Pulsar looks for a new version every few hours and shows the Update button; it installs one only when
+          you click it.</p>
         <label class="check"><input type="checkbox" id="warp-on"> Warp animation on updates and refresh</label>
         <p class="hint" id="warp-hint">Option-click the version at the top to see it.</p>
       </section>
@@ -193,6 +193,14 @@
   <div class="df"><span class="hint grow">Kept for 31 days. Tokens and keys are removed before anything is written.</span>
     <button type="button" class="btn bordered" id="logs-download" data-days="1">Download</button>
     <button type="button" class="btn primary" data-close>Close</button></div>
+</dialog>
+<dialog id="updprompt" aria-labelledby="updprompt-title" aria-describedby="updprompt-text">
+  <h2 id="updprompt-title">A new Pulsar is out</h2>
+  <p id="updprompt-text"></p>
+  <p class="notes" id="updprompt-notes"></p>
+  <div class="df"><button type="button" class="btn bordered" id="updprompt-skip">Skip this release</button>
+    <button type="button" class="btn bordered" id="updprompt-later">Not now</button>
+    <button type="button" class="btn primary" id="updprompt-go" autofocus>Update</button></div>
 </dialog>
 <dialog id="signin" aria-labelledby="signin-title" aria-describedby="signin-text">
   <h2 id="signin-title">Not signed in</h2>

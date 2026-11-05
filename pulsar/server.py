@@ -22,7 +22,7 @@ import traceback
 
 from . import __version__, config, likely, logbook, productive, report, trackers, updater, names
 
-UPDATER = updater.Updater(lambda: bool(config.load().get("auto_update", True)))
+UPDATER = updater.Updater()
 
 WEB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -94,7 +94,7 @@ def public_config(s: dict) -> dict:
         "timezone": config.timezone_name(s), "timezoneSystem": config.system_timezone(), "timezoneSetting": s["timezone"],
         "targetMinutes": config.target_minutes(s), "targetHours": s["target_hours"], "personDayHours": s["person_day_hours"],
         "personalPatterns": s["personal_patterns"], "activitywatchUrl": s["activitywatch_url"], "rules": s["rules"],
-        "update": UPDATER.public(),
+        "update": {**UPDATER.public(), "skip": s["update_skip"], "asked": s["update_asked"]},
         "errors24h": sum(1 for e in logbook.read(1) if e["kind"] == "error"),
         "likely": {"setting": s["likely"], "available": likely.available(), "enabled": likely.enabled(s)},
         "productive": {"source": s["productive_source"], "active": conn["kind"], "problem": conn.get("problem"),
@@ -145,10 +145,16 @@ def validate(body: dict) -> dict:
         if body["productive_source"] not in ("auto", "token", "claude-code"):
             raise ValueError("The Productive source is auto, token or claude-code")
         out["productive_source"] = body["productive_source"]
-    if "auto_update" in body:
-        if not isinstance(body["auto_update"], bool):
-            raise ValueError("auto_update is true or false.")
-        out["auto_update"] = body["auto_update"]
+    if "update_skip" in body:  # "Skip this release" in the reminder
+        v = str(body["update_skip"] or "")
+        if v and not updater.VERSION_RE.fullmatch(v):
+            raise ValueError("update_skip is a version such as 1.2.0.")
+        out["update_skip"] = v
+    if "update_asked" in body:  # when the reminder last showed (seconds since 1970)
+        v = body["update_asked"]
+        if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v < 2 ** 40:
+            raise ValueError("update_asked is a time in seconds.")
+        out["update_asked"] = v
     if "rules" in body:
         rules = []
         if not isinstance(body["rules"], list) or not all(isinstance(r, dict) for r in body["rules"]):
@@ -471,8 +477,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self.file(path) if path else self.send(404, b"", "image/png")
             if url.path == "/api/version":  # polled by the page to notice a restart into a new version
                 return self.send_json({"version": __version__, "codename": names.codename(__version__)[0]})
-            if url.path.startswith("/api/") and url.path != "/api/config":
-                UPDATER.touch()
             if url.path == "/api/config":
                 return self.send_json(public_config(current_settings()))
             if url.path == "/api/report":
@@ -552,7 +556,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True})
             if urlparse(self.path).path == "/api/productive/test":
                 return self.send_json({"test": test_productive(current_settings())})
-            UPDATER.touch()
             if urlparse(self.path).path == "/api/update/check":
                 return self.send_json({"update": UPDATER.check()})
             if urlparse(self.path).path == "/api/update/install":
@@ -565,7 +568,6 @@ class Handler(BaseHTTPRequestHandler):
             if urlparse(self.path).path == "/api/log":
                 return self.send_json(api_log(body))
             if urlparse(self.path).path == "/api/quit":
-                UPDATER.switch_on_quit()  # a ready update starts next time
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
                 return self.send_json({"ok": True})
             return self.send(404, b"not found", "text/plain")

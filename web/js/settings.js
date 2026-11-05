@@ -110,8 +110,6 @@ function paintUpdate(u) {
   const now = $('#update-now');
   now.hidden = !offer;
   now.textContent = u.status === 'ready' ? `Restart into ${u.latest}` : `Update to ${u.latest}`;
-  $('#auto-update').checked = !!u.auto;
-  $('#auto-update').disabled = !u.installed;
   const chip = $('#ver-chip');
   chip.textContent = `v${u.current}` + (offer || (u.status === 'available') ? ` · ${u.latest} available` : '');
   chip.classList.toggle('has-update', u.status === 'available' || u.status === 'ready');
@@ -149,7 +147,8 @@ $('#update-check').onclick = async () => {
 };
 /* The warp follows the update: half way in while the new version downloads and tests itself, all the way in while
    Pulsar restarts, out once the new version has drawn its data (main.js). The dialog closes: it would not bend. */
-$('#update-now').onclick = async () => {
+$('#update-now').onclick = () => startUpdate();
+async function startUpdate() {
   const btn = $('#update-now'), u = CONFIG.update; btn.disabled = true;
   $('#update-status').textContent = u.status === 'ready' ? 'Restarting…' : `Downloading and checking Pulsar ${u.latest}…`;
   dlg.close();
@@ -162,14 +161,37 @@ $('#update-now').onclick = async () => {
   }
   warpRelease();
   toast(r.error || r.update?.message || 'Pulsar was not updated.', true);
+}
+
+/* The reminder: when this copy is five or more releases behind, ask once every two days, until it is updated or that
+   release is skipped (a newer one asks again). Pulsar never updates without a click. */
+const REMIND_BEHIND = 5, REMIND_EVERY = 2 * 24 * 3600;
+const remindDlg = $('#updprompt');
+function maybeRemind(u = CONFIG?.update) {
+  if (!u || !u.installed || u.status !== 'available' || (u.behind || 0) < REMIND_BEHIND) return;
+  if (u.skip === u.latest || Date.now() / 1000 - (u.asked || 0) < REMIND_EVERY) return;
+  if (signedOut || document.querySelector('dialog[open]')) return;
+  $('#updprompt-title').textContent = `Pulsar ${u.latest} is out`;
+  $('#updprompt-text').textContent = `This copy is ${u.current}, ${u.behind} releases behind. Updating takes a few seconds: `
+    + 'Pulsar downloads the new version, checks it and restarts into it.';
+  $('#updprompt-notes').textContent = u.notes || '';
+  remindDlg.showModal();
+  const now = Math.floor(Date.now() / 1000);
+  u.asked = now; postJSON('/api/settings', {update_asked: now});
+}
+$('#updprompt-go').onclick = () => { remindDlg.close(); startUpdate(); };
+$('#updprompt-later').onclick = () => remindDlg.close();
+$('#updprompt-skip').onclick = () => {
+  const u = CONFIG.update; remindDlg.close(); u.skip = u.latest;
+  postJSON('/api/settings', {update_skip: u.latest});
+  toast(`Pulsar ${u.latest} skipped. A newer release will ask again.`);
 };
-$('#auto-update').addEventListener('change', async ev => {
-  const on = ev.target.checked;
-  const r = await postJSON('/api/settings', {auto_update: on});
-  if (r.error) { toast(r.error, true); ev.target.checked = !on; return; }
-  applyConfig(r.config); paintUpdate(r.config.update);
-  toast(on ? 'Updates will install by themselves.' : 'Updates will wait for your click.');
-});
+/* what the server found since the page opened (it looks every few hours) */
+setInterval(async () => {
+  const c = await getJSON('/api/config');
+  if (c.error || !CONFIG) return;
+  CONFIG.update = c.update; paintUpdate(c.update); maybeRemind(c.update);
+}, 3 * 3600 * 1000);
 $('#ver-chip').onclick = ev => {
   if (ev.altKey) { warp(); return; }  // Option-click: the warp an update plays, to look at
   openSettings(); $('#updates').scrollIntoView({block: 'start'});

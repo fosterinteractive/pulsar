@@ -36,7 +36,6 @@ from . import __version__
 DEFAULT_MANIFEST = "https://github.com/fosterinteractive/pulsar/releases/latest/download/latest.json"
 ROOT = os.path.expanduser("~/Library/Application Support/Pulsar")
 CHECK_EVERY = 6 * 3600       # seconds between checks
-IDLE_BEFORE_RESTART = 10 * 60  # a ready update waits until the page has been left alone this long
 MAX_ZIP = 30 * 1024 * 1024
 RELEASES = "https://github.com/fosterinteractive/pulsar/releases/download/"
 VERSION_RE = re.compile(r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}")  # always used with fullmatch
@@ -204,17 +203,14 @@ def self_test(copy: str) -> bool:
 
 
 class Updater:
-    def __init__(self, auto: Callable[[], bool], manifest_url: Optional[str] = None, root: str = ROOT):
+    def __init__(self, manifest_url: Optional[str] = None, root: str = ROOT):
         if manifest_url is None:  # the env var points tests at a local server; ignored once installed
             manifest_url = (os.environ.get("PULSAR_UPDATE_URL") if overrides_allowed() else None) or DEFAULT_MANIFEST
-        self.auto, self.manifest_url, self.root = auto, manifest_url, root
-        self.state = {"status": "idle", "current": __version__, "latest": None, "message": "", "notes": "", "checked": None}
+        self.manifest_url, self.root = manifest_url, root
+        self.state = {"status": "idle", "current": __version__, "latest": None, "behind": 0, "message": "", "notes": "",
+                      "checked": None}
         self.ready: Optional[str] = None
-        self.last_activity = time.time()
         self.lock = threading.Lock()
-
-    def touch(self) -> None:
-        self.last_activity = time.time()
 
     def public(self) -> dict:
         """What Settings shows: the version, when this copy was put in place, the last check, and what to do."""
@@ -223,7 +219,7 @@ class Updater:
             since = time.strftime("%d %b %Y, %H:%M", time.localtime(stamp))
         except OSError:
             since = ""
-        return {**self.state, "installed": installed(self.root), "auto": bool(self.auto()), "since": since}
+        return {**self.state, "installed": installed(self.root), "since": since}
 
     def _set(self, status: str, message: str = "", **extra) -> dict:
         self.state.update(status=status, message=message, **extra)
@@ -232,7 +228,9 @@ class Updater:
             logbook.record("updater", message)
         return self.public()
 
-    def check(self, install: bool = True) -> dict:
+    def check(self, install: bool = False) -> dict:
+        """Asks GitHub what the latest release is. Downloads, verifies and tests it only with install=True (the
+        Update button); Pulsar never installs anything by itself."""
         with self.lock:
             self._set("checking", "Checking for a new version…")
             self.state["checked"] = time.strftime("%d %b %Y, %H:%M")  # an attempt counts as a check, whatever comes back
@@ -265,7 +263,10 @@ class Updater:
             latest = str(manifest.get("version") or "")
             if not VERSION_RE.fullmatch(latest):
                 return self._set("failed", "The update server sent a version Pulsar does not understand; nothing was changed.")
-            self.state.update(latest=latest, notes=str(manifest.get("notes") or ""))
+            # how many releases are newer than this copy: the signed list of every version, when the release has one
+            listed = [v for v in manifest.get("versions") or [] if isinstance(v, str) and VERSION_RE.fullmatch(v)]
+            behind = len({v for v in listed + [latest] if vtuple(v) > vtuple(__version__)})
+            self.state.update(latest=latest, notes=str(manifest.get("notes") or ""), behind=behind)
             if vtuple(latest) <= vtuple(__version__):
                 return self._set("latest", f"Pulsar {__version__} is the latest version.")
             if latest in bad_versions(self.root):
@@ -273,10 +274,10 @@ class Updater:
             if not installed(self.root):
                 return self._set("available", f"Pulsar {latest} is out. This copy runs from source: update it with git pull.")
             if self.ready and read_version(self.ready) == latest:  # already downloaded and tested
-                return self._set("ready", f"Pulsar {latest} is ready. It starts when Pulsar has been idle for a few minutes, "
-                                          "or now from Settings.")
+                return self._set("ready", f"Pulsar {latest} is downloaded and tested.")
             if not install:
-                return self._set("available", f"Pulsar {latest} is out.")
+                more = f" You are {behind} releases behind." if behind > 1 else ""
+                return self._set("available", f"Pulsar {latest} is out.{more} Click Update to install it.")
             url = str(manifest.get("url") or "")
             if not (overrides_allowed() and os.environ.get("PULSAR_UPDATE_URL")) and not url.startswith(f"{RELEASES}v{latest}/"):
                 return self._set("failed", f"Pulsar {latest} points to a download outside its GitHub release; ignored.")
@@ -292,8 +293,7 @@ class Updater:
                 shutil.rmtree(copy, ignore_errors=True)
                 return self._set("failed", f"Pulsar {latest} failed its own test, so it was not installed.")
             self.ready = copy
-            return self._set("ready", f"Pulsar {latest} is ready. It starts when Pulsar has been idle for a few minutes, "
-                                      "or now from Settings.")
+            return self._set("ready", f"Pulsar {latest} is downloaded and tested.")
 
     def _switch(self) -> None:
         """Point `current` at the ready version (and `previous` at the one running now). Called with the lock held."""
@@ -311,26 +311,6 @@ class Updater:
             self._switch()
             target = os.path.join(self.ready, "pulsar.py")
             os.execv(sys.executable, [sys.executable, "-E", "-s", "-B", target] + sys.argv[1:])
-
-    def switch_on_quit(self) -> None:
-        """The window was closed (the server is stopping): with automatic updates on, a ready version becomes current
-        now, so the next start runs it. Pulsar often runs for less than the idle time an update waits for. If the new
-        version does not start, the launcher goes back to previous."""
-        if not self.ready or not self.auto():
-            return
-        cur = os.path.join(self.root, "current")
-        if os.path.realpath(cur) != os.path.realpath(app_dir()):
-            return  # someone else (a newer app) has moved current since this copy started: leave it to them
-        if vtuple(read_version(self.ready)) <= vtuple(__version__) or os.path.realpath(self.ready) == os.path.realpath(cur):
-            return
-        if not self.lock.acquire(timeout=0.5):
-            return  # a check or download is running: quitting must not wait for it; the next start checks again
-        try:
-            self._switch()
-        except OSError as exc:
-            self._set("failed", f"Switching to the new version failed: {exc}")
-        finally:
-            self.lock.release()
 
     def _cleanup(self) -> None:
         """Keep the current and the previous version, remove older ones."""
@@ -350,23 +330,13 @@ class Updater:
         return state
 
     def run_forever(self) -> None:
-        """Checks every few hours either way; installs by itself only when automatic updates are on."""
-        next_check = time.time() + 30
+        """Looks for a new release every few hours, so Settings and the reminder know about it. Never installs."""
         while True:
-            time.sleep(30)
-            auto = self.auto()
-            if auto and self.ready and time.time() - self.last_activity > IDLE_BEFORE_RESTART:
-                try:
-                    self.apply()
-                except Exception as exc:
-                    self.ready = None
-                    self._set("failed", f"Switching to the new version failed: {exc}")
-            if time.time() >= next_check:
-                next_check = time.time() + CHECK_EVERY
-                try:
-                    self.check(install=auto)
-                except Exception as exc:  # the loop must survive anything
-                    self._set("failed", str(exc))
+            try:
+                self.check()
+            except Exception as exc:  # the loop must survive anything
+                self._set("failed", str(exc))
+            time.sleep(CHECK_EVERY)
 
     def start(self) -> None:
         threading.Thread(target=self.run_forever, daemon=True, name="pulsar-updater").start()

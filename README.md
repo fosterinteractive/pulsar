@@ -44,7 +44,8 @@ older Safari, Pulsar opens in your browser instead.
 
 - **Open it at login**: **System Settings → General → Login Items** (Login Items & Extensions on newer macOS),
   click **+** under *Open at Login* and choose Pulsar. It then starts when you log in and opens its window.
-- **Updates**: Pulsar updates itself; you do not need to download it again.
+- **Updates**: when a new version is out, **Settings → Update** installs it in a few seconds; you never download
+  Pulsar again. It installs nothing by itself.
 - **Stop it**: close the window or press Cmd+Q. Nothing keeps running in the background. (If Pulsar went to your
   browser because Safari is too old, it keeps running after you close the tab; logging out stops it.)
 - **If it says it could not start**: click **Show log** and send what it shows to the person who shared
@@ -118,9 +119,11 @@ Settings are saved in `~/.config/pulsar/settings.json`; names and copies of fetc
   signed in, click **Sign in**. To use Pulsar in a browser too while it runs, run
   `/usr/bin/python3 ~/Library/Application\ Support/Pulsar/current/pulsar.py --signin-url` (from a git checkout:
   `python3 pulsar.py --signin-url`) and open the address it prints within two minutes; it works once.
-- **Updates.** Pulsar asks GitHub every 6 hours whether a newer version exists (it sends nothing about you) and,
-  unless you turn it off in Settings, installs it by itself. Only releases signed with the maintainer's release key
-  are accepted. The repository must stay public: Pulsar downloads without signing in to GitHub, so from a private
+- **Updates.** Pulsar asks GitHub every 6 hours whether a newer version exists (it sends nothing about you) and
+  shows it next to the version at the top and in Settings. It installs a new version only when you click **Update**:
+  then it downloads it, checks its signature and runs its self-test before restarting into it. If you are five or more
+  releases behind, it reminds you once every two days; **Skip this release** stops the reminder until a newer one is
+  out. Only releases signed with the maintainer's release key are accepted. The repository must stay public: Pulsar downloads without signing in to GitHub, so from a private
   repository it gets nothing (and the Pulsar.zip link stops working too).
 - **Logs.** Errors and warnings are kept for 31 days in `~/.cache/pulsar/logs/`, with tokens removed. **Logs**
   at the top shows them; its **Download** button saves a text file to send to whoever maintains Pulsar. Productive

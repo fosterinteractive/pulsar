@@ -86,5 +86,5 @@ async function signInFromAddress() {
         .then(warpRelease).then(() => toast(`Pulsar updated to ${was}.`));
     }
   } catch (e) {}
-  if (CONFIG) paintUpdate(CONFIG.update);
+  if (CONFIG) { paintUpdate(CONFIG.update); setTimeout(() => maybeRemind(), 1500); }  // after the page has settled
 })();

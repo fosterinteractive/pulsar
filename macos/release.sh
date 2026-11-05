@@ -105,13 +105,16 @@ print(f"{zip_path}: {len(entries)} files")
 PY
 
 SHA="$(shasum -a 256 "$ZIP" | cut -d' ' -f1)"
+# Every version released so far and this one, signed with the rest: installed copies count how many they are behind.
+git fetch -q --tags origin 2>/dev/null || true
+VERSIONS="$( { git tag -l 'v*' | sed 's/^v//'; echo "$VERSION"; } | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -u -t. -k1,1n -k2,2n -k3,3n | paste -sd, -)"
 URL="https://github.com/$REPO/releases/download/v$VERSION/pulsar-$VERSION.zip"
-python3 - "$OUT/latest.json" "$VERSION" "$URL" "$SHA" "$NOTES" "$(date +%Y-%m-%d)" <<'PY'
+python3 - "$OUT/latest.json" "$VERSION" "$URL" "$SHA" "$NOTES" "$(date +%Y-%m-%d)" "$VERSIONS" <<'PY'
 import json, sys
-path, version, url, sha, notes, published = sys.argv[1:]
+path, version, url, sha, notes, published, versions = sys.argv[1:]
 with open(path, "w", encoding="utf-8") as fh:
-    json.dump({"version": version, "url": url, "sha256": sha, "notes": notes, "published": published},
-              fh, ensure_ascii=False, indent=2)
+    json.dump({"version": version, "url": url, "sha256": sha, "notes": notes, "published": published,
+               "versions": [v for v in versions.split(",") if v]}, fh, ensure_ascii=False, indent=2)
     fh.write("\n")
 PY
 

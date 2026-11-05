@@ -37,7 +37,8 @@ DEFAULTS = {
     "likely": "auto",            # auto | on | off: the column built from Claude Code sessions
     "productive_source": "auto",  # auto | token | claude-code
     "org_id": "", "org_name": "", "person_id": "", "person_name": "", "person_day_hours": None,
-    "auto_update": True,         # install new versions from GitHub by itself (installed copies only)
+    "update_skip": "",           # a release the person chose to skip in the reminder
+    "update_asked": 0,           # when the reminder last showed, in seconds
     "rules": [],                 # [{match, taskId, title, project}]: activity containing `match` belongs to that task
 }
 _lock = threading.Lock()
