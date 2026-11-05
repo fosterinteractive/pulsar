@@ -25,6 +25,7 @@ function fillSettings(c) {
   $('#likely-hint').textContent = c.likely.available ? '' : 'Shows when Claude Code sessions are on this computer.';
   $('#remove-token').hidden = !p.tokenSaved;
   paintUpdate(c.update);
+  paintCalendar(c);  // meetings.js
   const rules = c.rules || [];
   $('#rules-list').innerHTML = rules.length ? rules.map((r, i) => `<div class="rl"><span>“${esc(r.match)}”<small>${esc(r.title)} · ${esc(r.project)}</small></span>
     <button type="button" class="btn sm bordered" data-rule-del="${i}" aria-label="Delete the rule ${esc(r.match)}">Delete</button></div>`).join('')
@@ -58,6 +59,7 @@ function openSettings() {
     const st = $('#pd-status');
     st.textContent = connectionText(c.productive); st.classList.toggle('warn', !c.productive.active);
     paintUpdate(c.update);
+    paintCalendar(c);
   });
   const msg = $('#settings-msg'); msg.textContent = ''; msg.className = 'msg';
   const zones = $('#zones');

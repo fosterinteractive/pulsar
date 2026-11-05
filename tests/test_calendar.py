@@ -1,16 +1,20 @@
-"""The calendar source (pulsar/calendar.py) on made-up iCalendar text: no network, no keychain.
+"""Google Calendar (pulsar/calendar.py) on made-up data: Google's endpoints are faked, no network, no keychain.
 
     python3 -m unittest discover -s tests
 """
 
-import gzip
+import base64
+import hashlib
+import json
 import os
 import stat
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
+from urllib.parse import parse_qs, urlsplit
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Never the real settings, caches or log: point them at a scratch folder before importing.
@@ -23,317 +27,419 @@ from zoneinfo import ZoneInfo  # noqa: E402
 from pulsar import calendar, config, server  # noqa: E402
 
 TORONTO, KYIV = ZoneInfo("America/Toronto"), ZoneInfo("Europe/Kyiv")
-ADDRESS = "https://calendar.example.com/ical/someone%40example.com/private-0123abcd/basic.ics"
+CLIENT = {"installed": {"client_id": "123456789012-madeupclientid0000.apps.googleusercontent.com",
+                        "client_secret": "made-up-test-secret-0000", "project_id": "made-up"}}
+GRANTED = {"access_token": "ya29.made-up-access-1", "expires_in": 3599, "refresh_token": "1//made-up-refresh-token",
+           "scope": calendar.SCOPE, "token_type": "Bearer"}
 
 
-def ics(*events, head=()):
-    return "\r\n".join(["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Made up//EN", *head, *events, "END:VCALENDAR"]) + "\r\n"
+def timed(summary, start, end, **extra):
+    return {"id": summary.lower().replace(" ", "-"), "status": "confirmed", "summary": summary, "eventType": "default",
+            "start": {"dateTime": start}, "end": {"dateTime": end}, **extra}
 
 
-def vevent(*lines):
-    return "\r\n".join(["BEGIN:VEVENT", *lines, "END:VEVENT"])
+class FakeGoogle:
+    """Google's token, events and revoke endpoints: records every request and answers from a script."""
 
+    def __init__(self):
+        self.calls = []
+        self.token = []        # answers for the token endpoint, in order; then GRANTED-like renewals
+        self.events = []       # answers for the events list, in order; then the last one again
+        self.default_events = (200, {"summary": "ada@example.com", "items": []})
+        self.revoke = (200, {})
+        self.renewals = 0
 
-def on(text, day, tz=TORONTO):
-    return calendar.events_on(calendar.build(calendar.parse(text), tz), day, tz)
+    def __call__(self, method, url, form=None, headers=None, timeout=30):
+        self.calls.append({"method": method, "url": url, "form": dict(form or {}), "headers": dict(headers or {})})
+        base = url.split("?")[0]
+        if base == calendar.TOKEN_URL:
+            if self.token:
+                return self.token.pop(0)
+            self.renewals += 1
+            return 200, {"access_token": f"ya29.made-up-renewed-{self.renewals}", "expires_in": 3599,
+                         "scope": calendar.SCOPE, "token_type": "Bearer"}
+        if base == calendar.EVENTS_URL:
+            return self.events.pop(0) if self.events else self.default_events
+        if base == calendar.REVOKE_URL:
+            return self.revoke
+        raise AssertionError("a request to an address Pulsar never uses: " + base)
 
-
-def spans(text, day, tz=TORONTO):
-    return [(x["s"], x["e"]) for x in on(text, day, tz)]
-
-
-class ReadTest(unittest.TestCase):
-    def test_folded_lines_escapes_and_quoted_parameters(self):
-        text = ics(vevent("UID:a1", 'DTSTART;TZID="America/Toronto":20261105T100000',
-                          "DTEND;TZID=America/Toronto:20261105T103000",
-                          "SUMMARY:Design review\\, round two for the", "  next sprint",
-                          "LOCATION:Room 4", "DESCRIPTION:Agenda\\nfirst item",
-                          "BEGIN:VALARM", "SUMMARY:Reminder text", "TRIGGER:-PT10M", "END:VALARM"))
-        [ev] = on(text, "2026-11-05")
-        self.assertEqual(ev["title"], "Design review, round two for the next sprint")  # not the reminder's
-        self.assertEqual((ev["s"], ev["e"], ev["all_day"], ev["recurring"]), (600, 630, False, False))
-        self.assertEqual(ev["location"], "Room 4")
-        self.assertNotIn("description", ev)  # descriptions carry passcodes and notes: never sent to the page
-
-    def test_a_meeting_in_another_zone_lands_on_the_viewers_clock(self):
-        text = ics(vevent("UID:a2", "DTSTART;TZID=America/Toronto:20261105T093000",
-                          "DTEND;TZID=America/Toronto:20261105T100000", "SUMMARY:Standup"),
-                   vevent("UID:a3", "DTSTART:20261105T120000Z", "DURATION:PT15M", "SUMMARY:Check-in"))
-        self.assertEqual(spans(text, "2026-11-05", KYIV), [(840, 855), (990, 1020)])  # 12:00Z, 09:30 in Toronto
-
-    def test_outlook_zone_names_floating_times_and_cancelled_events(self):
-        text = ics(vevent("UID:b1", "DTSTART;TZID=Eastern Standard Time:20261105T140000",
-                          "DTEND;TZID=Eastern Standard Time:20261105T143000", "SUMMARY:Outlook meeting"),
-                   vevent("UID:b2", "DTSTART:20261105T080000", "DTEND:20261105T081500", "SUMMARY:Floating"),
-                   vevent("UID:b3", "DTSTART;TZID=America/Toronto:20261105T150000", "DTEND;TZID=America/Toronto:20261105T160000",
-                          "STATUS:CANCELLED", "SUMMARY:Called off"))
-        self.assertEqual([(x["title"], x["s"]) for x in on(text, "2026-11-05")],
-                         [("Floating", 480), ("Outlook meeting", 840)])
-
-    def test_whole_day_events_cover_each_day_up_to_their_end(self):
-        text = ics(vevent("UID:c1", "DTSTART;VALUE=DATE:20261104", "DTEND;VALUE=DATE:20261106", "SUMMARY:Conference"),
-                   vevent("UID:c2", "DTSTART;VALUE=DATE:20261105", "SUMMARY:Holiday"))
-        self.assertEqual(on(text, "2026-11-03"), [])
-        self.assertEqual([x["title"] for x in on(text, "2026-11-04")], ["Conference"])
-        both = on(text, "2026-11-05")
-        self.assertEqual(sorted(x["title"] for x in both), ["Conference", "Holiday"])
-        self.assertTrue(all(x["all_day"] and (x["s"], x["e"]) == (0, 1440) for x in both))
-        self.assertEqual(on(text, "2026-11-06"), [])  # DTEND is the first day after
-
-    def test_an_event_across_midnight_shows_on_both_days(self):
-        text = ics(vevent("UID:d1", "DTSTART;TZID=America/Toronto:20261105T230000",
-                          "DTEND;TZID=America/Toronto:20261106T010000", "SUMMARY:Release"))
-        self.assertEqual(spans(text, "2026-11-05"), [(1380, 1440)])
-        self.assertEqual(spans(text, "2026-11-06"), [(0, 60)])
-
-    def test_declined_and_the_meeting_link(self):
-        head = ("X-WR-CALNAME:someone@example.com", "X-WR-TIMEZONE:America/Toronto")
-        text = ics(vevent("UID:e1", "DTSTART;TZID=America/Toronto:20261105T110000", "DURATION:PT30M", "SUMMARY:Sync",
-                          "ATTENDEE;CN=Someone;PARTSTAT=DECLINED:mailto:someone@example.com",
-                          "ATTENDEE;CN=Other;PARTSTAT=ACCEPTED:mailto:other@example.com",
-                          "DESCRIPTION:Join: https://example.zoom.us/j/123456?pwd=abc <https://www.google.com/url?q=htt"
-                          "ps://example.zoom.us/j/123456>"),
-                   vevent("UID:e2", "DTSTART;TZID=America/Toronto:20261105T120000", "DURATION:PT30M", "SUMMARY:Pairing",
-                          "ATTENDEE;PARTSTAT=ACCEPTED:mailto:someone@example.com",
-                          "X-GOOGLE-CONFERENCE:https://meet.google.com/abc-defg-hij"),
-                   vevent("UID:e3", "DTSTART;TZID=America/Toronto:20261105T130000", "DURATION:PT30M", "SUMMARY:Notes",
-                          "URL:https://example.com/agenda"), head=head)
-        sync, pairing, notes = on(text, "2026-11-05")
-        self.assertEqual((sync["declined"], sync["url"]), (True, "https://example.zoom.us/j/123456?pwd=abc"))
-        self.assertEqual((pairing["declined"], pairing["url"]), (False, "https://meet.google.com/abc-defg-hij"))
-        self.assertEqual(notes["url"], "https://example.com/agenda")
-        self.assertNotIn("location", notes)
-
-
-class RepeatTest(unittest.TestCase):
-    def test_weekly_series_with_a_skipped_a_moved_and_a_cancelled_day(self):
-        text = ics(vevent("UID:scrum-1", "DTSTART;TZID=America/Toronto:20260105T093000",
-                          "DTEND;TZID=America/Toronto:20260105T094500", "SUMMARY:Scrum",
-                          "RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR", "EXDATE;TZID=America/Toronto:20261102T093000"),
-                   vevent("UID:scrum-1", "RECURRENCE-ID;TZID=America/Toronto:20261104T093000",
-                          "DTSTART;TZID=America/Toronto:20261104T110000", "DTEND;TZID=America/Toronto:20261104T111500",
-                          "SUMMARY:Scrum (moved)"),
-                   vevent("UID:scrum-1", "RECURRENCE-ID;TZID=America/Toronto:20261106T093000",
-                          "DTSTART;TZID=America/Toronto:20261106T093000", "STATUS:CANCELLED", "SUMMARY:Scrum"))
-        self.assertEqual(on(text, "2026-11-02"), [])                      # EXDATE
-        self.assertEqual(on(text, "2026-11-03"), [])                      # a Tuesday
-        [moved] = on(text, "2026-11-04")
-        self.assertEqual((moved["title"], moved["s"], moved["e"], moved["recurring"], moved["uid"]),
-                         ("Scrum (moved)", 660, 675, True, "scrum-1"))
-        self.assertEqual(on(text, "2026-11-06"), [])                      # cancelled on its own
-        self.assertEqual(spans(text, "2026-11-09"), [(570, 585)])        # the series goes on
-        self.assertEqual(spans(text, "2026-01-05"), [(570, 585)])        # and began on its first day
-
-    def test_a_daily_meeting_keeps_its_clock_time_across_the_clock_change(self):
-        text = ics(vevent("UID:f1", "DTSTART;TZID=America/Toronto:20261001T093000", "DURATION:PT15M",
-                          "SUMMARY:Daily", "RRULE:FREQ=DAILY"))
-        self.assertEqual(spans(text, "2026-10-30"), [(570, 585)])
-        self.assertEqual(spans(text, "2026-11-05"), [(570, 585)])         # Toronto left summer time on 1 November
-        self.assertEqual(spans(text, "2026-10-30", KYIV), [(930, 945)])  # six hours apart before,
-        self.assertEqual(spans(text, "2026-11-05", KYIV), [(990, 1005)])  # seven after
-
-    def test_count_and_until_end_a_series(self):
-        text = ics(vevent("UID:g1", "DTSTART;TZID=America/Toronto:20261102T080000", "DURATION:PT10M",
-                          "SUMMARY:Three times", "RRULE:FREQ=DAILY;COUNT=3"),
-                   vevent("UID:g2", "DTSTART;TZID=America/Toronto:20261102T093000", "DURATION:PT10M",
-                          "SUMMARY:Until", "RRULE:FREQ=DAILY;UNTIL=20261103T140000Z"))
-        self.assertEqual([x["title"] for x in on(text, "2026-11-02")], ["Three times", "Until"])
-        self.assertEqual([x["title"] for x in on(text, "2026-11-03")], ["Three times"])  # 09:30 here is 14:30Z
-        self.assertEqual([x["title"] for x in on(text, "2026-11-04")], ["Three times"])
-        self.assertEqual(on(text, "2026-11-05"), [])
-
-    def test_monthly_yearly_and_every_other_week(self):
-        def days(rule, start, dates, value=""):
-            text = ics(vevent("UID:h", f"DTSTART{value}:{start}", "SUMMARY:x", f"RRULE:{rule}"))
-            return [d for d in dates if on(text, d)]
-
-        nov = [f"2026-11-{d:02d}" for d in range(1, 31)]
-        self.assertEqual(days("FREQ=MONTHLY;BYDAY=-1FR", "20260130T100000", nov), ["2026-11-27"])
-        self.assertEqual(days("FREQ=MONTHLY;BYDAY=MO;BYSETPOS=1", "20260105T100000", nov), ["2026-11-02"])
-        self.assertEqual(days("FREQ=MONTHLY;BYMONTHDAY=31", "20260131T100000", nov + ["2026-12-31"]), ["2026-12-31"])
-        self.assertEqual(days("FREQ=MONTHLY;BYMONTHDAY=-1", "20260131T100000", nov), ["2026-11-30"])
-        self.assertEqual(days("FREQ=WEEKLY;INTERVAL=2;BYDAY=TH", "20261022T100000", nov), ["2026-11-05", "2026-11-19"])
-        self.assertEqual(days("FREQ=YEARLY", "20201105", nov, ";VALUE=DATE"), ["2026-11-05"])
-        self.assertEqual(days("FREQ=YEARLY;BYMONTH=11;BYDAY=4TH", "20201126T100000", nov), ["2026-11-26"])
-        self.assertEqual(days("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1", "20260102T100000", nov),
-                         ["2026-11-06", "2026-11-13", "2026-11-20", "2026-11-27"])
-
-    def test_a_rule_pulsar_does_not_expand_still_shows_its_first_day(self):
-        text = ics(vevent("UID:i1", "DTSTART:20261105T100000", "SUMMARY:x", "RRULE:FREQ=YEARLY;BYWEEKNO=20"))
-        self.assertEqual(len(on(text, "2026-11-05")), 1)
-        self.assertEqual(on(text, "2027-11-05"), [])
-
-    def test_years_of_daily_meetings_are_placed_quickly(self):
-        events = [vevent(f"UID:j{i}", f"DTSTART;TZID=America/Toronto:20100104T{9 + i % 8:02d}0000", "DURATION:PT15M",
-                         f"SUMMARY:Series {i}", "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR" if i % 2 else "RRULE:FREQ=DAILY")
-                  for i in range(300)]
-        built = calendar.build(calendar.parse(ics(*events)), TORONTO)
-        t0 = time.time()
-        got = calendar.events_on(built, "2026-11-05", TORONTO)
-        self.assertEqual(len(got), 300)
-        self.assertLess(time.time() - t0, 1.0)
-
-
-class DownloadTest(unittest.TestCase):
-    def test_webcal_is_https_and_nothing_else_is_accepted(self):
-        self.assertEqual(calendar.https_address("webcal://example.com/a.ics"), "https://example.com/a.ics")
-        for bad in ("http://example.com/a.ics", "file:///etc/passwd", "ftp://example.com/a.ics"):
-            with self.assertRaises(calendar.CalendarError):
-                calendar.https_address(bad)
-
-    def test_an_answer_is_unzipped_and_must_be_a_calendar(self):
-        text = ics(vevent("UID:k1", "DTSTART:20261105T100000Z", "SUMMARY:x"))
-        self.assertEqual(calendar.unpack(gzip.compress(text.encode()), "gzip"), text)
-        self.assertEqual(calendar.unpack(b"\xef\xbb\xbf" + text.encode()), text)  # a byte-order mark first
-        with self.assertRaises(calendar.CalendarError):
-            calendar.unpack(b"<!doctype html><title>Sign in</title>")
-        with mock.patch.object(calendar, "MAX_BYTES", 1000):
-            with self.assertRaises(calendar.CalendarError):
-                calendar.unpack(gzip.compress(b"BEGIN:VCALENDAR\r\n" + b"X" * 5000), "gzip")  # unzips past the limit
-
-    def test_a_refused_address_says_what_to_do_without_quoting_it(self):
-        message = calendar.http_reason(404)
-        self.assertIn("Copy the secret address again", message)
-        self.assertNotIn("private-", message)
+    def to(self, base):
+        return [c for c in self.calls if c["url"].split("?")[0] == base]
 
 
 class Isolated(unittest.TestCase):
-    """The address lives in a scratch file, never the keychain, and nothing is kept between tests."""
+    """Settings, the token and the Google client in a scratch folder; Google faked; nothing kept between tests."""
 
     def setUp(self):
         self.dir = tempfile.mkdtemp()
+        self.client_file = os.path.join(self.dir, "google_client.json")
+        with open(self.client_file, "w", encoding="utf-8") as fh:
+            json.dump(CLIENT, fh)
+        self.google = FakeGoogle()
+        self.opened = []
         self.patches = [mock.patch.object(config, "_keychain", lambda: False),
-                        mock.patch.object(config, "CALENDAR_FILE", os.path.join(self.dir, "calendar-url")),
-                        mock.patch.object(config, "CONFIG_DIR", self.dir)]
+                        mock.patch.object(config, "CONFIG_DIR", self.dir),
+                        mock.patch.object(config, "SETTINGS_FILE", os.path.join(self.dir, "settings.json")),
+                        mock.patch.object(config, "GOOGLE_TOKEN_FILE", os.path.join(self.dir, "google-token")),
+                        mock.patch.object(calendar, "CLIENT_FILE", self.client_file),
+                        mock.patch.object(calendar, "http", self.google),
+                        mock.patch.object(calendar, "open_browser", lambda url: self.opened.append(url) or True)]
         for p in self.patches:
             p.start()
-        config._calendar_cache[2] = False
-        calendar.forget()
+        self.reset()
+        config.update({"timezone": "America/Toronto"})
 
     def tearDown(self):
         for p in self.patches:
             p.stop()
-        config._calendar_cache[2] = False
+        self.reset()
+
+    @staticmethod
+    def reset():
+        config._google_cache[2] = False
         calendar.forget()
+        calendar._pending.clear()
+        calendar._access.update(token=None, expires=0.0)
+
+    def settings(self):
+        return config.load()
+
+    def begin(self, port=5610):
+        url = calendar.start(port)
+        q = {k: v[0] for k, v in parse_qs(urlsplit(url).query).items()}
+        return url, q
+
+    def connect(self):
+        _, q = self.begin()
+        self.google.token.append((200, dict(GRANTED)))
+        result = calendar.finish({"state": q["state"], "code": "4/made-up-code"})
+        self.assertTrue(result["ok"], result)
+        self.google.calls.clear()
+        return result
 
 
-class AddressTest(Isolated):
-    def test_the_address_is_kept_privately_and_odd_ones_are_refused(self):
-        config.set_calendar_url(ADDRESS)
-        self.assertEqual(config.get_calendar_url(), ADDRESS)
-        self.assertEqual(stat.S_IMODE(os.stat(config.CALENDAR_FILE).st_mode), 0o600)
-        for bad in ("http://example.com/a.ics", 'https://example.com/a".ics', "https://example.com/a b.ics",
-                    "https://example.com/a\\b.ics", "javascript:alert(1)"):
-            with self.assertRaises(ValueError):
-                config.set_calendar_url(bad)
-        config.delete_calendar_url()
-        self.assertIsNone(config.get_calendar_url())
+class ClientTest(Isolated):
+    def test_placeholders_mean_not_set_up(self):
+        with open(os.path.join(os.path.dirname(calendar.__file__), "google_client.json"), encoding="utf-8") as fh:
+            shipped = json.load(fh)
+        self.assertTrue({"client_id", "client_secret"} <= set(shipped["installed"]))  # the shape Google downloads
+        placeholders = {"installed": {"client_id": "REPLACE_WITH_THE_CLIENT_ID.apps.googleusercontent.com",
+                                      "client_secret": "REPLACE_WITH_THE_CLIENT_SECRET"}}
+        for doc in (placeholders, {}, [], {"installed": "x"}):
+            with open(self.client_file, "w", encoding="utf-8") as fh:
+                json.dump(doc, fh)
+            self.assertIsNone(calendar.client(), doc)
+            self.assertEqual(calendar.status(self.settings()), {"configured": False, "connected": False, "account": ""})
+            with self.assertRaises(calendar.CalendarError):
+                calendar.start(5610)
+        got = calendar.day("2026-11-05", self.settings())
+        self.assertEqual((got["connected"], got["events"]), (False, []))
+        self.assertEqual(self.google.calls, [])
+
+    def test_the_downloaded_file_is_read_as_it_comes(self):
+        self.assertEqual(calendar.client(), {"id": CLIENT["installed"]["client_id"],
+                                             "secret": CLIENT["installed"]["client_secret"]})
 
 
-class DayTest(Isolated):
-    SETTINGS = {**config.DEFAULTS, "timezone": "America/Toronto"}
-    TEXT = ics(vevent("UID:l1", "DTSTART;TZID=America/Toronto:20261105T093000", "DURATION:PT15M", "SUMMARY:Standup"))
+class SignInTest(Isolated):
+    def test_the_sign_in_address(self):
+        url, q = self.begin(5610)
+        self.assertTrue(url.startswith("https://accounts.google.com/o/oauth2/v2/auth?"))
+        self.assertEqual(q["redirect_uri"], "http://127.0.0.1:5610/oauth/google")
+        self.assertEqual(q["scope"], "https://www.googleapis.com/auth/calendar.events.readonly")  # that one only
+        self.assertEqual((q["response_type"], q["code_challenge_method"], q["access_type"], q["prompt"]),
+                         ("code", "S256", "offline", "consent"))
+        self.assertEqual(q["client_id"], CLIENT["installed"]["client_id"])
+        verifier = calendar._pending[q["state"]]["verifier"]
+        self.assertTrue(43 <= len(verifier) <= 128)
+        expect = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+        self.assertEqual(q["code_challenge"], expect)
+        _, again = self.begin(5610)
+        self.assertNotEqual(again["state"], q["state"])
+        self.assertNotEqual(again["code_challenge"], q["code_challenge"])
 
-    def test_no_address_is_a_setup_step(self):
-        got = calendar.day("2026-11-05", self.SETTINGS, get=lambda url: self.fail("nothing to download"))
-        self.assertEqual((got["events"], got["source"], got["needsSetup"]), ([], None, True))
+    def test_a_good_answer_connects_once(self):
+        _, q = self.begin()
+        verifier = calendar._pending[q["state"]]["verifier"]
+        self.google.token.append((200, dict(GRANTED)))
+        result = calendar.finish({"state": q["state"], "code": "4/made-up-code"})
+        self.assertTrue(result["ok"])
+        self.assertIn("ada@example.com", result["message"])
+        [exchange] = self.google.to(calendar.TOKEN_URL)
+        self.assertEqual(exchange["form"], {"code": "4/made-up-code", "client_id": CLIENT["installed"]["client_id"],
+                                            "client_secret": CLIENT["installed"]["client_secret"],
+                                            "redirect_uri": q["redirect_uri"], "grant_type": "authorization_code",
+                                            "code_verifier": verifier})
+        self.assertEqual(config.get_google_token(), GRANTED["refresh_token"])
+        self.assertEqual(stat.S_IMODE(os.stat(config.GOOGLE_TOKEN_FILE).st_mode), 0o600)
+        self.assertEqual(calendar.status(self.settings()),
+                         {"configured": True, "connected": True, "account": "ada@example.com"})
+        self.assertNotIn("1//made-up-refresh-token", json.dumps(self.settings()))  # never in settings.json
+        calls = len(self.google.calls)
+        again = calendar.finish({"state": q["state"], "code": "4/made-up-code"})  # the same answer a second time
+        self.assertEqual((again["ok"], again["known"]), (False, False))
+        self.assertEqual(len(self.google.calls), calls)
 
-    def test_the_calendar_is_downloaded_once_for_several_days(self):
-        config.set_calendar_url(ADDRESS)
-        calls = []
-        get = lambda url: calls.append(url) or self.TEXT  # noqa: E731
-        first = calendar.day("2026-11-05", self.SETTINGS, get)
-        calendar.day("2026-11-06", self.SETTINGS, get)
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(first["events"][0]["s"], 570)
-        self.assertEqual((first["source"], first["problem"], first["needsSetup"]), ("ics", None, False))
+    def test_an_unknown_or_late_state_does_nothing(self):
+        _, q = self.begin()
+        for bad in ("", "x" * 43, q["state"] + "x", None, ["a"]):
+            result = calendar.finish({"state": bad, "code": "4/made-up-code"})
+            self.assertEqual((result["ok"], result["known"]), (False, False), bad)
+        later = time.time() + calendar.STATE_TTL + 1
+        with mock.patch.object(calendar, "time", mock.Mock(time=lambda: later)):
+            result = calendar.finish({"state": q["state"], "code": "4/made-up-code"})
+        self.assertEqual((result["ok"], result["known"]), (False, False))
+        self.assertEqual(self.google.calls, [])
+        self.assertIsNone(config.get_google_token())
 
-    def test_when_the_address_fails_the_last_copy_stands_in_and_the_address_is_never_quoted(self):
-        config.set_calendar_url(ADDRESS)
-        now = [1_800_000_000.0]
-        clock = mock.Mock(time=lambda: now[0])
+    def test_a_refusal_or_a_missing_permission_keeps_nothing(self):
+        _, q = self.begin()
+        result = calendar.finish({"state": q["state"], "error": "access_denied"})
+        self.assertEqual((result["ok"], result["known"]), (False, True))
+        self.assertIn("chose not to allow", result["message"])
+        self.assertEqual(self.google.calls, [])
+        _, q = self.begin()
+        self.google.token.append((200, {**GRANTED, "scope": "openid"}))  # the calendar box left unticked
+        self.assertFalse(calendar.finish({"state": q["state"], "code": "4/made-up-code"})["ok"])
+        _, q = self.begin()
+        self.google.token.append((400, {"error": "invalid_grant", "error_description": "Bad Request"}))
+        result = calendar.finish({"state": q["state"], "code": "4/made-up-code"})
+        self.assertIn("invalid_grant", result["message"])
+        self.assertIsNone(config.get_google_token())
 
-        def broken(url):
-            raise calendar.CalendarError(calendar.http_reason(404))
 
-        with mock.patch.object(calendar, "time", clock):
-            calendar.day("2026-11-05", self.SETTINGS, lambda url: self.TEXT)
+class ReadTest(Isolated):
+    def test_the_request_for_a_day(self):
+        self.connect()
+        calendar.day("2026-11-05", self.settings())
+        [listing] = self.google.to(calendar.EVENTS_URL)
+        q = {k: v[0] for k, v in parse_qs(urlsplit(listing["url"]).query).items()}
+        self.assertEqual((q["timeMin"], q["timeMax"]), ("2026-11-05T00:00:00-05:00", "2026-11-06T00:00:00-05:00"))
+        self.assertEqual((q["singleEvents"], q["orderBy"]), ("true", "startTime"))
+        for part in ("summary", "start", "end", "status", "eventType", "attendees(self,responseStatus)", "hangoutLink",
+                     "conferenceData(entryPoints(entryPointType,uri))"):
+            self.assertIn(part, q["fields"])
+        self.assertEqual(listing["headers"]["Authorization"], "Bearer " + GRANTED["access_token"])
+        self.assertEqual(self.google.to(calendar.TOKEN_URL), [])  # the access token in memory was still good
+
+    def test_events_as_the_page_draws_them(self):
+        items = [
+            timed("Standup", "2026-11-05T09:30:00-05:00", "2026-11-05T10:00:00-05:00",
+                  hangoutLink="https://meet.google.com/abc-defg-hij", recurringEventId="series-1",
+                  htmlLink="https://www.google.com/calendar/event?eid=made-up"),
+            timed("Client call", "2026-11-05T17:00:00Z", "2026-11-05T18:00:00Z",
+                  conferenceData={"entryPoints": [{"entryPointType": "phone", "uri": "tel:+1-555-0100"},
+                                                  {"entryPointType": "video", "uri": "https://example.zoom.us/j/1"}]}),
+            timed("Review", "2026-11-05T14:00:00-05:00", "2026-11-05T14:30:00-05:00",
+                  location="Join https://example.zoom.us/j/2?pwd=x.", htmlLink="javascript:alert(1)"),
+            timed("Skipped", "2026-11-05T15:00:00-05:00", "2026-11-05T15:30:00-05:00",
+                  attendees=[{"self": True, "responseStatus": "declined"}]),
+            timed("Office", "2026-11-05T08:00:00-05:00", "2026-11-05T17:00:00-05:00", eventType="workingLocation"),
+            timed("Away", "2026-11-05T11:00:00-05:00", "2026-11-05T12:00:00-05:00", eventType="outOfOffice"),
+            timed("Called off", "2026-11-05T13:00:00-05:00", "2026-11-05T13:30:00-05:00", status="cancelled"),
+            timed("Release", "2026-11-05T23:00:00-05:00", "2026-11-06T01:00:00-05:00"),
+            {"id": "h", "summary": "Holiday", "start": {"date": "2026-11-05"}, "end": {"date": "2026-11-06"}},
+            {"id": "c", "summary": "Conference", "start": {"date": "2026-11-04"}, "end": {"date": "2026-11-07"}},
+            {"id": "n", "summary": "Tomorrow", "start": {"date": "2026-11-06"}, "end": {"date": "2026-11-07"}},
+        ]
+        got = calendar.events_on(items, "2026-11-05", TORONTO)
+        self.assertEqual([(x["title"], x["s"], x["e"], x["all_day"]) for x in got], [
+            ("Conference", 0, 1440, True), ("Holiday", 0, 1440, True), ("Standup", 570, 600, False),
+            ("Client call", 720, 780, False), ("Review", 840, 870, False), ("Skipped", 900, 930, False),
+            ("Release", 1380, 1440, False)])
+        by = {x["title"]: x for x in got}
+        self.assertEqual((by["Standup"]["url"], by["Standup"]["recurring"], by["Standup"]["uid"]),
+                         ("https://meet.google.com/abc-defg-hij", True, "series-1"))
+        self.assertTrue(by["Standup"]["link"].startswith("https://www.google.com/calendar/event"))
+        self.assertEqual(by["Client call"]["url"], "https://example.zoom.us/j/1")
+        self.assertEqual(by["Review"]["url"], "https://example.zoom.us/j/2?pwd=x")
+        self.assertNotIn("link", by["Review"])  # only https links reach the page
+        self.assertTrue(by["Skipped"]["declined"])
+        self.assertFalse(by["Standup"]["declined"])
+        self.assertEqual([(x["title"], x["s"], x["e"]) for x in calendar.events_on(items, "2026-11-06", TORONTO)
+                          if not x["all_day"]], [("Release", 0, 60)])
+        in_kyiv = {x["title"]: x["s"] for x in calendar.events_on(items, "2026-11-05", KYIV)}
+        self.assertEqual(in_kyiv["Standup"], 990)  # 09:30 in Toronto is 16:30 in Kyiv
+
+    def test_kept_five_minutes_and_fresh_asks_at_once(self):
+        self.connect()
+        self.google.default_events = (200, {"summary": "ada@example.com", "items": [
+            timed("Standup", "2026-11-05T09:30:00-05:00", "2026-11-05T10:00:00-05:00")]})
+        now = [time.time()]
+        with mock.patch.object(calendar, "time", mock.Mock(time=lambda: now[0])):
+            first = calendar.day("2026-11-05", self.settings())
+            calendar.day("2026-11-05", self.settings())
+            self.assertEqual(len(self.google.to(calendar.EVENTS_URL)), 1)
+            calendar.day("2026-11-05", self.settings(), fresh=True)  # the ↻ button
+            self.assertEqual(len(self.google.to(calendar.EVENTS_URL)), 2)
             now[0] += calendar.FRESH + 1
-            got = calendar.day("2026-11-05", self.SETTINGS, broken)
-            self.assertEqual(len(got["events"]), 1)
-            self.assertIn("Showing the calendar as it was at", got["problem"])
-            now[0] += calendar.KEEP
-            got = calendar.day("2026-11-05", self.SETTINGS, broken)
-            self.assertEqual(got["events"], [])
-        for text in (got["problem"], str(got)):
-            self.assertNotIn("private-0123abcd", text)
+            calendar.day("2026-11-05", self.settings())
+            self.assertEqual(len(self.google.to(calendar.EVENTS_URL)), 3)
+            self.google.events.append((0, {"error": "Google took too long to answer"}))
+            now[0] += calendar.FRESH + 1
+            stale = calendar.day("2026-11-05", self.settings())
+        self.assertEqual((first["connected"], first["account"], len(first["events"])), (True, "ada@example.com", 1))
+        self.assertEqual(len(stale["events"]), 1)
+        self.assertIn("Showing the meetings as read at", stale["problem"])
+        self.google.events.append((403, {"error": {"code": 403, "errors": [{"reason": "accessNotConfigured"}]}}))
+        got = calendar.day("2026-11-06", self.settings())
+        self.assertEqual(got["events"], [])
+        self.assertIn("API is not enabled", got["problem"])
 
-    def test_a_failure_is_not_retried_on_every_request(self):
-        config.set_calendar_url(ADDRESS)
-        calls = []
 
-        def broken(url):
-            calls.append(url)
-            raise calendar.CalendarError("The calendar could not be reached (it took too long to answer).")
+class TokenTest(Isolated):
+    def test_an_expired_access_token_is_renewed_from_the_refresh_token(self):
+        self.connect()
+        calendar._access["expires"] = 0.0
+        calendar.day("2026-11-05", self.settings())
+        [renew] = self.google.to(calendar.TOKEN_URL)
+        self.assertEqual(renew["form"], {"grant_type": "refresh_token", "refresh_token": GRANTED["refresh_token"],
+                                         "client_id": CLIENT["installed"]["client_id"],
+                                         "client_secret": CLIENT["installed"]["client_secret"]})
+        [listing] = self.google.to(calendar.EVENTS_URL)
+        self.assertEqual(listing["headers"]["Authorization"], "Bearer ya29.made-up-renewed-1")
 
-        for _ in range(3):
-            got = calendar.day("2026-11-05", self.SETTINGS, broken)
-        self.assertEqual(len(calls), 1)
-        self.assertEqual((got["events"], got["source"]), ([], "ics"))
+    def test_a_refused_access_token_is_renewed_once(self):
+        self.connect()
+        self.google.events.append((401, {"error": {"code": 401, "status": "UNAUTHENTICATED"}}))
+        got = calendar.day("2026-11-05", self.settings())
+        self.assertEqual(got["problem"], None)
+        self.assertEqual([c["headers"]["Authorization"] for c in self.google.to(calendar.EVENTS_URL)],
+                         ["Bearer " + GRANTED["access_token"], "Bearer ya29.made-up-renewed-1"])
+
+    def test_access_withdrawn_at_google_disconnects(self):
+        self.connect()
+        calendar._access["expires"] = 0.0
+        self.google.token.append((400, {"error": "invalid_grant", "error_description": "Token has been expired or revoked."}))
+        got = calendar.day("2026-11-05", self.settings())
+        self.assertEqual((got["connected"], got["account"], got["events"]), (False, "", []))
+        self.assertEqual(got["problem"], calendar.LAPSED)
+        self.assertIsNone(config.get_google_token())
+
+
+class DisconnectTest(Isolated):
+    def test_disconnect_revokes_and_forgets(self):
+        self.connect()
+        out = calendar.disconnect(self.settings())
+        [revoke] = self.google.to(calendar.REVOKE_URL)
+        self.assertEqual(revoke["form"], {"token": GRANTED["refresh_token"]})
+        self.assertEqual((out["told"], out["calendar"]["connected"]), (True, False))
+        self.assertIsNone(config.get_google_token())
+        self.assertEqual(self.settings()["calendar_account"], "")
+        self.assertIsNone(calendar._access["token"])
+
+    def test_offline_it_still_forgets_and_says_where_to_finish(self):
+        self.connect()
+        self.google.revoke = (0, {"error": "Google could not be looked up"})
+        out = calendar.disconnect(self.settings())
+        self.assertFalse(out["told"])
+        self.assertIn("myaccount.google.com", out["message"])
+        self.assertIsNone(config.get_google_token())
 
 
 class ServerTest(Isolated):
-    def settings(self, body):
-        with mock.patch.object(server.config, "update", lambda ch: {**config.DEFAULTS, **ch}), \
-             mock.patch.object(server, "current_settings", lambda: dict(config.DEFAULTS)), \
-             mock.patch.object(server, "test_productive", lambda s: {"ok": True}), \
-             mock.patch.object(server.productive, "connection", lambda s: {"kind": None}), \
-             mock.patch.object(server.calendar, "check", lambda s: {"ok": True, "message": "checked"}):
-            return server.api_settings(body)
+    """The HTTP boundary: the callback's narrow exception, and nothing more, on a real server on a free port."""
 
-    def test_a_bad_address_changes_nothing(self):
-        with self.assertRaises(ValueError):
-            self.settings({"calendar_url": "http://example.com/a.ics"})
-        self.assertIsNone(config.get_calendar_url())
-
-    def test_saving_an_address_checks_it_and_the_page_never_gets_it_back(self):
-        out = self.settings({"calendar_url": ADDRESS})
-        self.assertEqual(config.get_calendar_url(), ADDRESS)
-        self.assertEqual(out["calendarTest"]["message"], "checked")
-        self.assertEqual(out["config"]["calendar"], {"saved": True})
-        self.assertNotIn("private-0123abcd", repr(out))
-        out = self.settings({"remove_calendar_url": True})
-        self.assertIsNone(config.get_calendar_url())
-        self.assertEqual(out["config"]["calendar"], {"saved": False})
-        self.assertNotIn("calendarTest", out)
-
-    def test_the_route_answers_a_signed_in_page_only(self):
-        import json
-        import threading
+    def setUp(self):
+        super().setUp()
+        more = [mock.patch.object(config, "SECRET_FILE", os.path.join(self.dir, "secret")),
+                mock.patch.object(config, "SIGNIN_FILE", os.path.join(self.dir, "signin-code")),
+                mock.patch.object(config, "SESSIONS_FILE", os.path.join(self.dir, "sessions.json")),
+                mock.patch.object(server.productive, "connection", lambda s: {"kind": None, "problem": "not connected"})]
+        for p in more:
+            p.start()
+        self.patches += more
         from http.server import ThreadingHTTPServer
-        with mock.patch.object(config, "SECRET_FILE", os.path.join(self.dir, "secret")), \
-             mock.patch.object(config, "SIGNIN_FILE", os.path.join(self.dir, "signin-code")), \
-             mock.patch.object(config, "SESSIONS_FILE", os.path.join(self.dir, "sessions.json")):
-            httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
-            threading.Thread(target=httpd.serve_forever, daemon=True).start()
-            try:
-                import http.client
-                port = httpd.server_address[1]
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+        self.port = self.httpd.server_address[1]
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+        self.key = {"X-Pulsar-Key": config.session_secret()}
 
-                def ask(path, headers=None):
-                    c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
-                    c.request("GET", path, headers={"Host": f"127.0.0.1:{port}", **(headers or {})})
-                    r = c.getresponse()
-                    return r.status, json.loads(r.read() or b"null")
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        super().tearDown()
 
-                self.assertEqual(ask("/api/calendar?date=2026-11-05")[0], 401)
-                key = {"X-Pulsar-Key": config.session_secret()}
-                self.assertEqual(ask("/api/calendar", key)[0], 400)
-                status, body = ask("/api/calendar?date=2026-11-05", key)
-                self.assertEqual((status, body["needsSetup"], body["events"]), (200, True, []))
-            finally:
-                httpd.shutdown()
-                httpd.server_close()
+    def ask(self, path, method="GET", headers=None, body=None):
+        import http.client
+        c = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        c.request(method, path, body=body, headers={"Host": f"127.0.0.1:{self.port}", **(headers or {})})
+        r = c.getresponse()
+        return r.status, dict(r.getheaders()), r.read()
+
+    FROM_GOOGLE = {"Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document"}
+
+    def test_connect_needs_the_session_and_opens_google(self):
+        post = {"X-Pulsar": "1", "Content-Type": "application/json"}
+        self.assertEqual(self.ask("/api/calendar/connect", "POST", post, b"{}")[0], 401)
+        status, _, body = self.ask("/api/calendar/connect", "POST", {**post, **self.key}, b"{}")
+        answer = json.loads(body)
+        self.assertEqual((status, answer["opened"], self.opened), (200, True, [answer["url"]]))
+        q = parse_qs(urlsplit(answer["url"]).query)
+        self.assertEqual(q["redirect_uri"], [f"http://127.0.0.1:{self.port}/oauth/google"])
+
+    def test_the_callback_from_google_finishes_the_sign_in_without_a_session(self):
+        _, q = self.begin(self.port)
+        self.google.token.append((200, dict(GRANTED)))
+        path = f"/oauth/google?state={q['state']}&code=4/made-up-code&scope={calendar.SCOPE}"
+        status, headers, body = self.ask(path, headers=self.FROM_GOOGLE)  # another site's navigation, no session
+        self.assertEqual(status, 200)
+        self.assertIn(b"Google Calendar is connected", body)
+        self.assertIn("frame-ancestors 'none'", headers["Content-Security-Policy"])
+        self.assertNotIn(b"made-up-refresh", body)
+        self.assertNotIn(b"ya29", body)
+        self.assertEqual(config.get_google_token(), GRANTED["refresh_token"])
+        status, _, body = self.ask(path, headers=self.FROM_GOOGLE)  # the same answer again: used up
+        self.assertEqual(status, 400)
+        self.assertIn(b"not waiting for this answer", body)
+
+    def test_the_callback_does_nothing_without_a_state_pulsar_handed_out(self):
+        self.begin(self.port)
+        for path in ("/oauth/google?state=made-up-state-0000000000000000&code=4/x", "/oauth/google?code=4/x",
+                     "/oauth/google"):
+            status, _, body = self.ask(path, headers=self.FROM_GOOGLE)
+            self.assertEqual(status, 400, path)
+        self.assertEqual(self.google.calls, [])
+        self.assertIsNone(config.get_google_token())
+
+    def test_only_a_page_load_reaches_the_callback(self):
+        _, q = self.begin(self.port)
+        path = f"/oauth/google?state={q['state']}&code=4/made-up-code"
+        for extra in ({"Sec-Fetch-Dest": "iframe"}, {"Sec-Fetch-Dest": "image"}, {"Sec-Fetch-Mode": "cors"},
+                      {"Sec-Fetch-Mode": "no-cors"}, {"Upgrade": "websocket"}):
+            self.assertEqual(self.ask(path, headers={**self.FROM_GOOGLE, **extra})[0], 403, extra)
+        self.assertEqual(self.google.calls, [])
+        self.google.token.append((200, dict(GRANTED)))  # the state was not used up by the refused requests
+        self.assertEqual(self.ask(path, headers=self.FROM_GOOGLE)[0], 200)
+        self.assertEqual(self.ask(f"/oauth/google?state={q['state']}", "POST",
+                                  {**self.FROM_GOOGLE, "Content-Type": "application/json"}, b"{}")[0], 403)
+
+    def test_the_exception_covers_that_one_path_only(self):
+        self.connect()
+        for path in ("/api/calendar?date=2026-11-05", "/oauth/google/", "/oauth/googlex", "/api/calendar/status"):
+            self.assertEqual(self.ask(path, headers=self.FROM_GOOGLE)[0], 403, path)  # another site: refused
+            self.assertEqual(self.ask(path)[0], 401, path)                             # no session: refused
+
+    def test_the_day_and_the_settings_through_the_api(self):
+        self.connect()
+        self.google.default_events = (200, {"summary": "ada@example.com", "items": [
+            timed("Standup", "2026-11-05T09:30:00-05:00", "2026-11-05T10:00:00-05:00")]})
+        status, _, body = self.ask("/api/calendar?date=2026-11-05", headers=self.key)
+        got = json.loads(body)
+        self.assertEqual((status, got["connected"], [(x["title"], x["s"]) for x in got["events"]]),
+                         (200, True, [("Standup", 570)]))
+        self.ask("/api/calendar?date=2026-11-05", headers=self.key)
+        self.ask("/api/calendar?date=2026-11-05&fresh=1", headers=self.key)
+        self.assertEqual(len(self.google.to(calendar.EVENTS_URL)), 2)  # kept once, then asked again on ↻
+        self.assertEqual(self.ask("/api/calendar?date=2026-02-30", headers=self.key)[0], 400)
+        _, _, body = self.ask("/api/config", headers=self.key)
+        self.assertEqual(json.loads(body)["calendar"], {"configured": True, "connected": True, "account": "ada@example.com"})
+        self.assertNotIn(b"made-up-refresh", body)
+        status, _, body = self.ask("/api/calendar/disconnect", "POST",
+                                   {**self.key, "X-Pulsar": "1", "Content-Type": "application/json"}, b"{}")
+        self.assertEqual((status, json.loads(body)["calendar"]["connected"]), (200, False))
+        self.assertEqual(json.loads(self.ask("/api/calendar/status", headers=self.key)[2])["connected"], False)
 
 
 if __name__ == "__main__":

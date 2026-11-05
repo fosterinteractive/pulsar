@@ -1,0 +1,29 @@
+/* The Meetings column (js/meetings.js): there only while Google Calendar is connected, and narrow */
+.meetcol { display: none; }
+.has-meetings .meetcol { display: block; }
+.has-meetings .cols, .has-meetings .grid {
+  grid-template-columns: 56px minmax(0,.62fr) minmax(0,1.1fr) minmax(0,.85fr) minmax(0,1.2fr);
+}
+.has-meetings.no-likely .cols, .has-meetings.no-likely .grid {
+  grid-template-columns: 56px minmax(0,.62fr) minmax(0,1.1fr) minmax(0,1.3fr);
+}
+
+/* all-day events: small lines under the column's title, never on the time axis */
+.colhead .allday:empty { display: none; }
+.colhead .allday { margin-top: 4px; display: grid; gap: 2px; }
+.colhead .allday div { font-size: 11px; line-height: 1.35; color: var(--text); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; padding: 1px 6px; border-radius: 4px; background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
+.colhead .allday div.declined { color: var(--muted); background: transparent; border: 1px dashed var(--line); }
+
+.card.meet { border: 0; border-left: 3px solid var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--card)); }
+.card.meet .t { font-weight: 600; font-size: 12px; }
+.card.meet .d { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* declined: faint, and it says so in words */
+.card.meet.declined { background: transparent; border: 1px dashed var(--line); border-left: 3px dashed var(--faint); }
+.card.meet.declined .t { font-weight: 500; color: var(--muted); text-decoration: line-through; text-decoration-color: var(--faint); }
+.card.meet .dec { color: var(--muted); font-size: 10.5px; font-style: italic; flex: none; }
+
+.pop .links { display: flex; gap: 14px; flex-wrap: wrap; margin: 6px 0 0; white-space: normal; }
+.pop .links a { color: var(--accent); font-size: 12.5px; }
+.pop .links a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+#gcal-link a { color: var(--accent); }

@@ -1,7 +1,7 @@
-"""Settings, the time zone, the Productive token and the calendar's iCal address.
+"""Settings, the time zone, the Productive token and Google Calendar's refresh token.
 
-Settings live in ~/.config/pulsar/settings.json (or $XDG_CONFIG_HOME/pulsar). The token and the calendar address
-never go there: on macOS they are kept in the login keychain, elsewhere in files only their owner can read.
+Settings live in ~/.config/pulsar/settings.json (or $XDG_CONFIG_HOME/pulsar). The tokens never go there: on macOS
+they are kept in the login keychain, elsewhere in files only their owner can read.
 """
 
 from __future__ import annotations
@@ -40,6 +40,7 @@ DEFAULTS = {
     "update_skip": "",           # a release the person chose to skip in the reminder
     "update_asked": 0,           # when the reminder last showed, in seconds
     "rules": [],                 # [{match, taskId, title, project}]: activity containing `match` belongs to that task
+    "calendar_account": "",      # the Google account whose calendar is connected (its email), shown in Settings
 }
 _lock = threading.Lock()
 
@@ -250,36 +251,37 @@ def delete_token() -> None:
     _delete_secret(KEYCHAIN_ACCOUNT, TOKEN_FILE)
 
 
-# ---- the calendar's secret address -------------------------------------------------------
-# A private iCal address reads the whole calendar without a password, so it is kept like the token: in the keychain
-# on macOS, elsewhere in a file only its owner can read. It never goes into settings.json, the page or the log.
+# ---- Google Calendar's refresh token ------------------------------------------------------
+# What lets Pulsar read the person's calendar events (pulsar/calendar.py), so it is kept like the Productive token:
+# in the keychain on macOS, elsewhere in a file only its owner can read. It never goes into settings.json, the page or
+# the log. The access token made from it lives in memory only.
 
-CALENDAR_FILE = os.path.join(CONFIG_DIR, "calendar-url")
-KEYCHAIN_CALENDAR = "calendar"
-# https or webcal, and only characters a URL needs: no quotes, backslashes or spaces, so it passes `security -i` intact.
-CALENDAR_URL_RE = re.compile(r"^(?:https|webcal)://[A-Za-z0-9.\-]+(?::\d{1,5})?/[A-Za-z0-9\-._~%!$&()*+,;=:@/?]{1,2000}$")
-_calendar_cache: list = [0.0, None, False]  # time, address, filled
-
-
-def get_calendar_url() -> str | None:
-    if _calendar_cache[2] and time.time() - _calendar_cache[0] < 60:
-        return _calendar_cache[1]
-    url = _read_secret(KEYCHAIN_CALENDAR, CALENDAR_FILE, "calendar address")
-    _calendar_cache[:] = [time.time(), url, True]
-    return url
+GOOGLE_TOKEN_FILE = os.path.join(CONFIG_DIR, "google-token")
+KEYCHAIN_GOOGLE = "google-calendar"
+# Google's refresh tokens ("1//0g…") use these characters; nothing that could break out of `security -i`'s quotes.
+GOOGLE_TOKEN_RE = re.compile(r"^[A-Za-z0-9._~+/=\-]{10,2048}$")
+_google_cache: list = [0.0, None, False]  # time, token, filled
 
 
-def set_calendar_url(url: str) -> None:
-    _calendar_cache[2] = False
-    url = url.strip()
-    if not CALENDAR_URL_RE.match(url):
-        raise ValueError("That does not look like a calendar's iCal address (it starts with https:// or webcal://).")
-    _write_secret(KEYCHAIN_CALENDAR, CALENDAR_FILE, url, "calendar address")
+def get_google_token() -> str | None:
+    if _google_cache[2] and time.time() - _google_cache[0] < 60:
+        return _google_cache[1]
+    token = _read_secret(KEYCHAIN_GOOGLE, GOOGLE_TOKEN_FILE, "Google Calendar access")
+    _google_cache[:] = [time.time(), token, True]
+    return token
 
 
-def delete_calendar_url() -> None:
-    _calendar_cache[2] = False
-    _delete_secret(KEYCHAIN_CALENDAR, CALENDAR_FILE)
+def set_google_token(token: str) -> None:
+    _google_cache[2] = False
+    token = (token or "").strip()
+    if not GOOGLE_TOKEN_RE.match(token):
+        raise ValueError("Google answered with a token Pulsar does not recognise; nothing was saved.")
+    _write_secret(KEYCHAIN_GOOGLE, GOOGLE_TOKEN_FILE, token, "Google Calendar access")
+
+
+def delete_google_token() -> None:
+    _google_cache[2] = False
+    _delete_secret(KEYCHAIN_GOOGLE, GOOGLE_TOKEN_FILE)
 
 
 # ---- the keychain, or a private file -----------------------------------------------------
