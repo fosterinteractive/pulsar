@@ -117,6 +117,7 @@ function warpIn() {
 }
 function warpOut() {
   const root = document.documentElement;
+  root.getAnimations().forEach(a => a.cancel());  // a warpIn still holding the page (Option-click replays both)
   if (calmMotion()) { root.classList.remove('warp-held'); return; }
   root.animate([WARP_HELD, {transform: 'scale(1.012, 1.018)', filter: 'blur(0) brightness(1.06)', offset: .5},
                 {transform: 'none', filter: 'none'}], {duration: 560, easing: 'cubic-bezier(.2, .9, .3, 1)'});

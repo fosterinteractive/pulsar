@@ -149,7 +149,10 @@ $('#auto-update').addEventListener('change', async ev => {
   applyConfig(r.config); paintUpdate(r.config.update);
   toast(on ? 'Updates will install by themselves.' : 'Updates will wait for your click.');
 });
-$('#ver-chip').onclick = () => { openSettings(); $('#updates').scrollIntoView({block: 'start'}); };
+$('#ver-chip').onclick = ev => {
+  if (ev.altKey) { warpIn().then(warpOut); return; }  // Option-click: the warp an update plays, to look at
+  openSettings(); $('#updates').scrollIntoView({block: 'start'});
+};
 $('#rule-add').onclick = () => openRule('');
 $('#rules-list').addEventListener('click', async ev => {
   const b = ev.target.closest('[data-rule-del]'); if (!b) return;
