@@ -79,7 +79,7 @@ async function signInFromAddress() {
   if (CONFIG && !CONFIG.productive.active) toast('Productive is not connected yet: open Settings, top right, to add your token.', true);
   try {
     const was = sessionStorage.getItem('pulsar-updated');
-    if (was) { sessionStorage.removeItem('pulsar-updated'); warpOut(); toast(`Pulsar updated to ${was}.`); }
+    if (was) { sessionStorage.removeItem('pulsar-updated'); toast(`Pulsar updated to ${was}.`); }  // core.js warped out already
   } catch (e) {}
   if (CONFIG) paintUpdate(CONFIG.update);
 })();

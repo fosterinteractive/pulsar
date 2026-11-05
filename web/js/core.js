@@ -105,29 +105,95 @@ function showSignIn() {
 /* the notice stays until the page is reloaded signed in: Escape does not dismiss it */
 $('#signin').addEventListener('cancel', ev => ev.preventDefault());
 $('#signin').addEventListener('close', () => { if (signedOut) $('#signin').showModal(); });
-/* Warp: an update looks like a jump to warp. Before the reload into the new version the page draws in a little, as
-   if space bent towards a point (warpIn); the new version snaps out of it, just past its size and back, with a small
-   flash in the logo's colours (warpOut). Under a second; nothing at all with reduced motion. */
-const WARP_HELD = {transform: 'scale(.95, .92)', filter: 'blur(1.2px) brightness(1.25)'};
+/* Warp: an update looks like a jump past a black hole. Before the reload into the new version, space around the
+   middle of the page bends like a gravitational lens: what lies behind the centre is smeared into a ring (an Einstein
+   ring), a dark core opens and the page draws in a little (warpIn). The new version comes out of it: the lens
+   collapses, the page springs just past its size and back, and a small flash in the logo's colours goes off
+   (warpOut). Under a second; nothing at all with reduced motion.
+
+   The lens is an SVG displacement filter on <body>. Its map says, for each point of the page, where its light comes
+   from: for a point lens the image at distance r from the centre shows the source at r - R²/r, so each point is pulled
+   R²/r towards (and, inside the ring, past) the centre. The map is drawn once per window size; the animation only
+   changes its strength. The core and the flash sit outside <body>, so the lens does not bend them. */
 const calmMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+const LENS_PX = 240;  // the largest pull, in pixels, at full strength
+let lens = null;      // {w, h, map: <feDisplacementMap>, core: <div>}
+
+function lensSetup() {
+  const W = innerWidth, H = innerHeight, cx = W / 2, cy = H * .45, R = Math.min(W, H) * .15;
+  if (!lens || lens.w !== W || lens.h !== H) {
+    const cw = 256, ch = Math.max(1, Math.round(cw * H / W));
+    const canvas = document.createElement('canvas'); canvas.width = cw; canvas.height = ch;
+    const g = canvas.getContext('2d'), img = g.createImageData(cw, ch);
+    for (let j = 0; j < ch; j++) for (let i = 0; i < cw; i++) {
+      const x = (i + .5) / cw * W - cx, y = (j + .5) / ch * H - cy, r = Math.hypot(x, y) || 1;
+      const pull = Math.min(R * R / r, LENS_PX * .98) * Math.exp(-Math.max(0, r - 3 * R) / (2 * R));  // fades far out
+      const k = (j * cw + i) * 4;
+      img.data[k] = 127.5 + 127.5 * pull * x / r / LENS_PX;      // red: how far to the right the light comes from
+      img.data[k + 1] = 127.5 + 127.5 * pull * y / r / LENS_PX;  // green: how far down
+      img.data[k + 2] = 0; img.data[k + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+    document.getElementById('warp-svg')?.remove();
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.id = 'warp-svg'; svg.setAttribute('width', '0'); svg.setAttribute('height', '0');
+    svg.setAttribute('aria-hidden', 'true'); svg.style.position = 'absolute';
+    svg.innerHTML = `<filter id="warp-lens" filterUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"
+        color-interpolation-filters="sRGB"><feImage href="${canvas.toDataURL()}" x="0" y="0" width="${W}" height="${H}"
+        preserveAspectRatio="none" result="map"/><feDisplacementMap in="SourceGraphic" in2="map" scale="0"
+        xChannelSelector="R" yChannelSelector="G"/></filter>`;
+    document.documentElement.append(svg);
+    lens = {w: W, h: H, map: svg.querySelector('feDisplacementMap'), core: null};
+  }
+  if (!lens.core) {
+    lens.core = document.createElement('div');
+    lens.core.className = 'warp-core';
+    lens.core.style.background = `radial-gradient(circle at ${cx}px ${cy}px, rgba(0,0,0,.94) 0, rgba(0,0,0,.94) ${R * .42}px, `
+      + `rgba(0,0,0,.55) ${R * .6}px, rgba(0,0,0,0) ${R * .95}px)`;
+    document.documentElement.append(lens.core);
+  }
+  return lens;
+}
+/* one frame of the warp: strength of the lens (0..1), the page's scale, the core's opacity */
+function lensFrame(strength, scale, core) {
+  const l = lensSetup(), body = document.body;
+  l.map.setAttribute('scale', String(strength * 2 * LENS_PX));
+  body.style.filter = strength > .001 ? 'url(#warp-lens)' : '';
+  body.style.transform = Math.abs(scale - 1) > .0005 ? `scale(${scale})` : '';
+  l.core.style.opacity = String(core);
+}
+function lensEnd() {
+  document.body.style.filter = ''; document.body.style.transform = '';
+  lens?.core?.remove(); if (lens) lens.core = null;
+  document.documentElement.classList.remove('warp-held');
+}
+function tween(ms, step) {
+  return new Promise(done => {
+    const t0 = performance.now();
+    const frame = now => { const t = Math.min(1, (now - t0) / ms); step(t); t < 1 ? requestAnimationFrame(frame) : done(); };
+    requestAnimationFrame(frame);
+  });
+}
 function warpIn() {
   if (calmMotion()) return Promise.resolve();
-  return document.documentElement.animate([{transform: 'none', filter: 'none'}, WARP_HELD],
-    {duration: 420, easing: 'cubic-bezier(.55, 0, .9, .45)', fill: 'forwards'}).finished.catch(() => {});
+  return tween(520, t => { const e = t * t * t; lensFrame(e, 1 - .035 * e, Math.min(1, e * 1.4)); });
 }
 function warpOut() {
-  const root = document.documentElement;
-  root.getAnimations().forEach(a => a.cancel());  // a warpIn still holding the page (Option-click replays both)
-  if (calmMotion()) { root.classList.remove('warp-held'); return; }
-  root.animate([WARP_HELD, {transform: 'scale(1.012, 1.018)', filter: 'blur(0) brightness(1.06)', offset: .5},
-                {transform: 'none', filter: 'none'}], {duration: 560, easing: 'cubic-bezier(.2, .9, .3, 1)'});
-  root.classList.remove('warp-held');  // the animation starts from the same place, so nothing jumps
+  if (calmMotion()) { lensEnd(); return; }
   const flash = document.createElement('div');
   flash.className = 'warp-flash';
-  document.body.append(flash);
+  document.documentElement.append(flash);
   flash.animate([{opacity: 0, transform: 'scale(.25)'}, {opacity: 1, offset: .18}, {opacity: 0, transform: 'scale(2.6)'}],
     {duration: 700, easing: 'cubic-bezier(.15, .7, .3, 1)'}).finished.catch(() => {}).then(() => flash.remove());
+  document.documentElement.classList.remove('warp-held');
+  tween(520, t => {
+    const out = 1 - Math.pow(1 - Math.min(1, t / .55), 3);  // the lens and the core are gone a little after half way
+    const spring = t < .45 ? .965 + .047 * (t / .45) : 1.012 - .012 * ((t - .45) / .55);  // to just past full size, back
+    lensFrame(1 - out, spring, 1 - out);
+  }).then(lensEnd);
 }
+/* a page that has just restarted into a new version warps out at once, before anything else draws */
+try { if (sessionStorage.getItem('pulsar-updated')) warpOut(); } catch (e) {}
 
 /* In the Pulsar window (Pulsar.app) the page can ask the app for things a browser does itself: printing, and a new
    sign-in (the app gets a fresh one-time code from its launcher). */
