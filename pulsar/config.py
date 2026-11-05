@@ -1,7 +1,7 @@
-"""Settings, the time zone, and the Productive token.
+"""Settings, the time zone, the Productive token and the calendar's iCal address.
 
-Settings live in ~/.config/pulsar/settings.json (or $XDG_CONFIG_HOME/pulsar). The token never goes
-there: on macOS it is kept in the login keychain, elsewhere in a file only its owner can read.
+Settings live in ~/.config/pulsar/settings.json (or $XDG_CONFIG_HOME/pulsar). The token and the calendar address
+never go there: on macOS they are kept in the login keychain, elsewhere in files only their owner can read.
 """
 
 from __future__ import annotations
@@ -234,21 +234,7 @@ def get_token() -> str | None:
 
 
 def _read_token() -> str | None:
-    if _keychain():
-        run = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT,
-                              "-w"], capture_output=True, text=True, timeout=15)
-        if run.returncode not in (0, 44):  # 44: no such item; anything else is a keychain that said no (locked, denied)
-            from . import logbook
-            logbook.record("keychain", f"The keychain did not give Pulsar its Productive token (security exit "
-                                       f"{run.returncode}: {run.stderr.strip()[:200]}). Unlock the login keychain, or "
-                                       "allow Pulsar when macOS asks.", kind="warning", once_per=3600)
-        token = run.stdout.strip()
-        return token or None
-    try:
-        with open(TOKEN_FILE, encoding="utf-8") as fh:
-            return fh.read().strip() or None
-    except OSError:
-        return None
+    return _read_secret(KEYCHAIN_ACCOUNT, TOKEN_FILE, "Productive token")
 
 
 def set_token(token: str) -> None:
@@ -256,28 +242,88 @@ def set_token(token: str) -> None:
     token = token.strip()
     if not TOKEN_RE.match(token):
         raise ValueError("That does not look like a Productive token (letters, digits, - and _ only).")
-    if _keychain():
-        # Through `security -i` on stdin, so the token never shows in the process list.
-        cmd = f'add-generic-password -U -s {KEYCHAIN_SERVICE} -a {KEYCHAIN_ACCOUNT} -w "{token}"\n'
-        run = subprocess.run(["/usr/bin/security", "-i"], input=cmd, capture_output=True, text=True, timeout=15)
-        if run.returncode != 0 or _read_token() != token:
-            raise RuntimeError("Could not save the token in the keychain: " + (run.stderr or run.stdout).strip()[:200])
-        return
-    ensure_dirs()
-    fd = os.open(TOKEN_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as fh:
-        fh.write(token)
-    os.chmod(TOKEN_FILE, 0o600)
+    _write_secret(KEYCHAIN_ACCOUNT, TOKEN_FILE, token, "token")
 
 
 def delete_token() -> None:
     _token_cache[2] = False
+    _delete_secret(KEYCHAIN_ACCOUNT, TOKEN_FILE)
+
+
+# ---- the calendar's secret address -------------------------------------------------------
+# A private iCal address reads the whole calendar without a password, so it is kept like the token: in the keychain
+# on macOS, elsewhere in a file only its owner can read. It never goes into settings.json, the page or the log.
+
+CALENDAR_FILE = os.path.join(CONFIG_DIR, "calendar-url")
+KEYCHAIN_CALENDAR = "calendar"
+# https or webcal, and only characters a URL needs: no quotes, backslashes or spaces, so it passes `security -i` intact.
+CALENDAR_URL_RE = re.compile(r"^(?:https|webcal)://[A-Za-z0-9.\-]+(?::\d{1,5})?/[A-Za-z0-9\-._~%!$&()*+,;=:@/?]{1,2000}$")
+_calendar_cache: list = [0.0, None, False]  # time, address, filled
+
+
+def get_calendar_url() -> str | None:
+    if _calendar_cache[2] and time.time() - _calendar_cache[0] < 60:
+        return _calendar_cache[1]
+    url = _read_secret(KEYCHAIN_CALENDAR, CALENDAR_FILE, "calendar address")
+    _calendar_cache[:] = [time.time(), url, True]
+    return url
+
+
+def set_calendar_url(url: str) -> None:
+    _calendar_cache[2] = False
+    url = url.strip()
+    if not CALENDAR_URL_RE.match(url):
+        raise ValueError("That does not look like a calendar's iCal address (it starts with https:// or webcal://).")
+    _write_secret(KEYCHAIN_CALENDAR, CALENDAR_FILE, url, "calendar address")
+
+
+def delete_calendar_url() -> None:
+    _calendar_cache[2] = False
+    _delete_secret(KEYCHAIN_CALENDAR, CALENDAR_FILE)
+
+
+# ---- the keychain, or a private file -----------------------------------------------------
+
+def _read_secret(account: str, path: str, what: str) -> str | None:
     if _keychain():
-        subprocess.run(["/usr/bin/security", "delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT],
+        run = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account,
+                              "-w"], capture_output=True, text=True, timeout=15)
+        if run.returncode not in (0, 44):  # 44: no such item; anything else is a keychain that said no (locked, denied)
+            from . import logbook
+            logbook.record("keychain", f"The keychain did not give Pulsar its {what} (security exit "
+                                       f"{run.returncode}: {run.stderr.strip()[:200]}). Unlock the login keychain, or "
+                                       "allow Pulsar when macOS asks.", kind="warning", once_per=3600)
+        return run.stdout.strip() or None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read().strip() or None
+    except OSError:
+        return None
+
+
+def _write_secret(account: str, path: str, value: str, what: str) -> None:
+    """`value` must already be checked: it goes inside double quotes on `security -i`'s command line."""
+    if _keychain():
+        # Through `security -i` on stdin, so the value never shows in the process list.
+        cmd = f'add-generic-password -U -s {KEYCHAIN_SERVICE} -a {account} -w "{value}"\n'
+        run = subprocess.run(["/usr/bin/security", "-i"], input=cmd, capture_output=True, text=True, timeout=15)
+        if run.returncode != 0 or _read_secret(account, path, what) != value:
+            raise RuntimeError(f"Could not save the {what} in the keychain: " + (run.stderr or run.stdout).strip()[:200])
+        return
+    ensure_dirs()
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(value)
+    os.chmod(path, 0o600)
+
+
+def _delete_secret(account: str, path: str) -> None:
+    if _keychain():
+        subprocess.run(["/usr/bin/security", "delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account],
                        capture_output=True, text=True, timeout=15)
         return
     try:
-        os.remove(TOKEN_FILE)
+        os.remove(path)
     except OSError:
         pass
 

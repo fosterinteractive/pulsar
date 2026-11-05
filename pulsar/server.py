@@ -1,7 +1,7 @@
 """The local web server: the page, its files, and a small JSON API. Listens on 127.0.0.1 only.
 
-Reads go to the trackers and Productive. It writes your settings and caches (owner-only files), the token (keychain
-or a private file), and a time entry in Productive only when you log one in the page. A POST must carry the X-Pulsar header, which a page on another site cannot
+Reads go to the trackers, Productive and your calendar's iCal address. It writes your settings and caches (owner-only
+files), the token and the calendar address (keychain or a private file), and a time entry in Productive only when you log one in the page. A POST must carry the X-Pulsar header, which a page on another site cannot
 send without the browser asking this server first, and this server never says yes.
 """
 
@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, config, likely, logbook, productive, report, trackers, updater, names
+from . import __version__, calendar, config, likely, logbook, productive, report, trackers, updater, names
 
 UPDATER = updater.Updater()
 
@@ -106,6 +106,7 @@ def public_config(s: dict) -> dict:
         "productive": {"source": s["productive_source"], "active": conn["kind"], "problem": conn.get("problem"),
                        "tokenSaved": bool(config.get_token()), "orgId": s["org_id"], "orgName": s["org_name"],
                        "personId": s["person_id"], "personName": s["person_name"]},
+        "calendar": {"saved": bool(config.get_calendar_url())},  # never the address itself: it reads the calendar
     }
 
 
@@ -259,6 +260,14 @@ def api_entries(q: dict) -> dict:
             "warning": problem, "needsSetup": bool(problem) and source is None}
 
 
+def api_calendar(q: dict) -> dict:
+    """The day's events from the calendar's iCal address (pulsar/calendar.py), in minutes from midnight."""
+    got = calendar.day(q["date"], config.load())
+    if got["problem"] and got["source"]:  # an address that does not read (no address at all is a setup step)
+        logbook.record("calendar", got["problem"], kind="warning", once_per=600)
+    return got
+
+
 def api_proposal(q: dict) -> dict:
     s = config.load()
     if not likely.enabled(s):
@@ -301,6 +310,9 @@ def api_settings(body: dict) -> dict:
     token = str(body.get("token") or "").strip()
     if token and not config.TOKEN_RE.match(token):  # check before anything is removed or replaced
         raise ValueError("That does not look like a Productive token (letters, digits, - and _ only).")
+    calendar_url = str(body.get("calendar_url") or "").strip()
+    if calendar_url and not config.CALENDAR_URL_RE.match(calendar_url):
+        raise ValueError("That does not look like a calendar's iCal address (it starts with https:// or webcal://).")
     before = config.load()
     if body.get("remove_token") and not token:
         config.delete_token()
@@ -311,10 +323,19 @@ def api_settings(body: dict) -> dict:
         # back unchanged does not count; only one the user typed differently is kept.
         typed = {k: changes[k] for k in ("person_id", "org_id") if k in changes and changes[k] != before.get(k)}
         changes.update({"person_id": "", "org_id": "", "person_name": "", "org_name": "", "person_day_hours": None, **typed})
+    if calendar_url or body.get("remove_calendar_url"):
+        if calendar_url:
+            config.set_calendar_url(calendar_url)
+        else:
+            config.delete_calendar_url()
+        calendar.forget()
     _identify_failed[0] = 0.0
     s = config.update(changes)
     s = current_settings()
-    return {"config": public_config(s), "test": test_productive(s)}
+    out = {"config": public_config(s), "test": test_productive(s)}
+    if calendar_url:
+        out["calendarTest"] = calendar.check(s)
+    return out
 
 
 # ---- tasks, services, logging ----------------------------------------------------------------------------
@@ -540,7 +561,7 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/tasks/search":
                 return self.send_json(api_search(q))
             routes = {"/api/activity": api_activity, "/api/entries": api_entries, "/api/proposal": api_proposal,
-                      "/api/tasks/suggest": api_suggest, "/api/services": api_services}
+                      "/api/tasks/suggest": api_suggest, "/api/services": api_services, "/api/calendar": api_calendar}
             if url.path not in routes:
                 return self.send(404, b"not found", "text/plain")
             if not DATE.match(q.get("date", "")):
