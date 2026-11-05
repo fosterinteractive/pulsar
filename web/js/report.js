@@ -316,20 +316,14 @@ function daysTable(days) {
 let resizeTimer;
 addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (state.view === 'report' && R.data) dailyChart(R.days); }, 150); });
 document.querySelectorAll('#range button').forEach(b => b.onclick = () => { R.range = b.dataset.v; loadReport(); });
-/* typing a date changes it segment by segment: wait for a pause (or leaving the field) before loading */
-let rdateTimer;
+/* a day picked in the calendar (datepick.js) fires one change: load at once */
 function checkCustomRange() {
-  clearTimeout(rdateTimer);
   const a = $('#rfrom').value, b = $('#rto').value, problem = rangeProblem(a, b);
   $('#rmsg').textContent = problem;
-  if (problem || (a === R.from && b === R.to)) return;  // nothing changed: tabbing through the fields does not reload
+  if (problem || (a === R.from && b === R.to)) return;  // nothing changed: nothing to reload
   R.range = 'custom'; R.from = a; R.to = b; loadReport();
 }
-for (const el of [$('#rfrom'), $('#rto')]) {
-  el.addEventListener('input', () => { clearTimeout(rdateTimer); rdateTimer = setTimeout(checkCustomRange, 700); });
-  el.addEventListener('change', () => { clearTimeout(rdateTimer); rdateTimer = setTimeout(checkCustomRange, 700); });
-  el.addEventListener('blur', checkCustomRange);
-}
+for (const el of [$('#rfrom'), $('#rto')]) el.addEventListener('change', checkCustomRange);
 
 /* ---------- download: CSV for spreadsheets, print for PDF ---------- */
 function toCSV(rows) {  // the BOM makes Excel read the file as UTF-8
