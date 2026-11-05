@@ -34,9 +34,22 @@ function fillSettings(c) {
   st.classList.toggle('warn', !p.active);
 }
 
+function paintWarp() {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  $('#warp-on').checked = !warpOff() && !reduce;
+  $('#warp-on').disabled = reduce;
+  $('#warp-hint').textContent = reduce ? 'Off while macOS has Reduce motion on (System Settings > Accessibility > Display).'
+    : 'Option-click the version at the top to see it.';
+}
+$('#warp-on').addEventListener('change', ev => {
+  try { ev.target.checked ? localStorage.removeItem(WARP_KEY) : localStorage.setItem(WARP_KEY, 'off'); } catch (e) {}
+  toast(ev.target.checked ? 'The warp is on.' : 'The warp is off.');
+});
+
 function openSettings() {
   if (!CONFIG) return;
   fillSettings(CONFIG);
+  paintWarp();
   /* the connection may have changed since the page loaded (a token renewed or expired): ask again, and refresh only
      what the person does not type into */
   getJSON('/api/config').then(c => {

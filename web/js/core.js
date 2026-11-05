@@ -115,7 +115,10 @@ $('#signin').addEventListener('close', () => { if (signedOut) $('#signin').showM
    from: for a point lens the image at distance r from the centre shows the source at r - R²/r, so each point is pulled
    R²/r towards (and, inside the ring, past) the centre. The map is drawn once per window size; the animation only
    changes its strength. The core and the flash sit outside <body>, so the lens does not bend them. */
-const calmMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+/* off with macOS's Reduce motion, or with the Warp animation box in Settings (kept on this computer, like the theme) */
+const WARP_KEY = 'pulsar-warp';
+function warpOff() { try { return localStorage.getItem(WARP_KEY) === 'off'; } catch (e) { return false; } }
+const calmMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches || warpOff();
 const LENS_PX = 240;  // the largest pull, in pixels, at full strength
 let lens = null;      // {w, h, map: <feDisplacementMap>, core: <div>}
 
