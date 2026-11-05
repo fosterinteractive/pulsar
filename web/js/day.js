@@ -7,6 +7,7 @@ function load({fresh = false, keepScroll = false} = {}) {
     getJSON(`/api/activity?date=${d}&source=${state.source}`).then(x => { if (d === state.date) { state.act = x; render(); } return x; }),
     getJSON(`/api/entries?date=${d}`).then(x => { if (d === state.date) { state.logged = x; render(); loadEstimates(); } return x; }),
     getJSON(`/api/proposal?date=${d}${fresh ? '&fresh=1' : ''}`).then(x => { if (d === state.date) { state.likely = x; render(); } return x; }),
+    loadMeetings(d, fresh),  // meetings.js
   ]);
 }
 
@@ -181,6 +182,7 @@ function render() {
   grid.querySelectorAll('.rule,.now').forEach(n => n.remove());
   grid.insertAdjacentHTML('beforeend', rules);
   if (state.date === todayLocal()) grid.insertAdjacentHTML('beforeend', `<div class="now" style="top:${nowMin() * ppm}px"></div>`);
+  renderMeetings(ppm);  // meetings.js: the Meetings column, only while Google Calendar is connected
 
   assignHues([...(logged?.entries || []).map(x => x.project), ...(CONFIG?.rules || []).map(r => r.project),
               ...(state.repeats || []).map(r => r.project)]);
@@ -399,6 +401,7 @@ document.addEventListener('click', ev => {
   const card = ev.target.closest('.card');
   if (!card) { if (!ev.target.closest('.pop')) closePop(); return; }
   const i = +card.dataset.i, Z = state.zoom;
+  if (card.dataset.k === 'meet') return openMeeting(i, ev);  // meetings.js
   if (card.dataset.k === 'repeat') {
     const x = repeatCache[i];
     closePop();

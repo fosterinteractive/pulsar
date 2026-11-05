@@ -77,9 +77,11 @@ chmod 755 "$APP/Contents/MacOS/Pulsar" "$APP/Contents/Resources/launcher.sh"
 
 RES="$APP/Contents/Resources/app"
 cp "$ROOT/pulsar.py" "$ROOT/README.md" "$ROOT/CHANGELOG.md" "$RES/"
-# Only the app's own files: the .py modules and the page's html, css and js. Anything else that happens to sit in
-# these folders (a .env, a log, editor settings) never reaches the app or the public Pulsar.zip.
+# Only the app's own files: the .py modules, the page's html, css and js, and the Google sign-in client
+# (pulsar/google_client.json). Anything else that happens to sit in these folders (a .env, a log, editor settings)
+# never reaches the app or the public Pulsar.zip.
 rsync -a --prune-empty-dirs --include '*/' --include '*.py' --include '*.html' --include '*.css' --include '*.js' \
+  --include 'pulsar/google_client.json' \
   --exclude '__pycache__/' --exclude '.*' --exclude '*' "$ROOT/pulsar" "$ROOT/web" "$RES/"
 
 # Ad-hoc signature: lets it run on Apple Silicon. It is not a Developer ID signature, so Gatekeeper

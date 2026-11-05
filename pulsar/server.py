@@ -1,7 +1,7 @@
 """The local web server: the page, its files, and a small JSON API. Listens on 127.0.0.1 only.
 
-Reads go to the trackers and Productive. It writes your settings and caches (owner-only files), the token (keychain
-or a private file), and a time entry in Productive only when you log one in the page. A POST must carry the X-Pulsar header, which a page on another site cannot
+Reads go to the trackers, Productive and Google Calendar. It writes your settings and caches (owner-only files), the
+tokens (keychain or a private file), and a time entry in Productive only when you log one in the page. A POST must carry the X-Pulsar header, which a page on another site cannot
 send without the browser asking this server first, and this server never says yes.
 """
 
@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, config, likely, logbook, productive, report, trackers, updater, names
+from . import __version__, calendar, config, likely, logbook, productive, report, trackers, updater, names
 
 UPDATER = updater.Updater()
 
@@ -106,6 +106,7 @@ def public_config(s: dict) -> dict:
         "productive": {"source": s["productive_source"], "active": conn["kind"], "problem": conn.get("problem"),
                        "tokenSaved": bool(config.get_token()), "orgId": s["org_id"], "orgName": s["org_name"],
                        "personId": s["person_id"], "personName": s["person_name"]},
+        "calendar": calendar.status(s),  # configured, connected, account: never a token
     }
 
 
@@ -257,6 +258,15 @@ def api_entries(q: dict) -> dict:
     out.sort(key=lambda x: (x["s"] is None, x["s"] or 0))
     return {"entries": out, "source": source, "fetched": None if from_copy else datetime.now(tz).strftime("%d.%m %H:%M"),
             "warning": problem, "needsSetup": bool(problem) and source is None}
+
+
+def api_calendar(q: dict) -> dict:
+    """The day's meetings from Google Calendar (pulsar/calendar.py), in minutes from midnight. fresh=1 (the ↻ button)
+    asks Google at once instead of using the copy kept for five minutes."""
+    got = calendar.day(q["date"], config.load(), fresh=q.get("fresh") == "1")
+    if got["problem"]:
+        logbook.record("calendar", got["problem"], kind="warning", once_per=600)
+    return got
 
 
 def api_proposal(q: dict) -> dict:
@@ -608,6 +618,8 @@ class Handler(BaseHTTPRequestHandler):
         if not self.local():
             return self.send(403, b"forbidden", "text/plain")
         url = urlparse(self.path)
+        if url.path == calendar.CALLBACK:  # Google's answer to a sign-in: its own narrow rules, below
+            return self.google_callback(url)
         navigation = self.headers.get("Sec-Fetch-Mode") == "navigate" and url.path == "/"
         if self.cross_site() and not navigation:  # a link from elsewhere may open the page, nothing more
             return self.send_json({"error": "refused"}, 403)
@@ -659,8 +671,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(api_estimates(q))
             if url.path == "/api/tasks/search":
                 return self.send_json(api_search(q))
+            if url.path == "/api/calendar/status":  # polled by Settings while the person signs in to Google
+                return self.send_json(calendar.status(config.load()))
             routes = {"/api/activity": api_activity, "/api/entries": api_entries, "/api/proposal": api_proposal,
-                      "/api/tasks/suggest": api_suggest, "/api/services": api_services, "/api/repeats": api_repeats}
+                      "/api/tasks/suggest": api_suggest, "/api/services": api_services, "/api/repeats": api_repeats,
+                      "/api/calendar": api_calendar}
             if url.path not in routes:
                 return self.send(404, b"not found", "text/plain")
             if not DATE.match(q.get("date", "")):
@@ -726,11 +741,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True})
             if urlparse(self.path).path == "/api/log":
                 return self.send_json(api_log(body))
+            if urlparse(self.path).path == "/api/calendar/connect":
+                url = calendar.start(self.server.server_address[1])
+                try:
+                    opened = bool(calendar.open_browser(url))  # the default browser; the page also offers the link
+                except Exception:
+                    opened = False
+                return self.send_json({"url": url, "opened": opened})
+            if urlparse(self.path).path == "/api/calendar/disconnect":
+                return self.send_json(calendar.disconnect(config.load()))
             if urlparse(self.path).path == "/api/quit":
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
                 return self.send_json({"ok": True})
             return self.send(404, b"not found", "text/plain")
-        except (ValueError, RuntimeError, productive.ProductiveError) as exc:
+        except (ValueError, RuntimeError, productive.ProductiveError, calendar.CalendarError) as exc:
             if not isinstance(exc, ValueError):  # Productive refused or did not answer: worth a line in Logs
                 logbook.record(f"POST {urlparse(self.path).path}", str(exc), kind="warning")
             return self.send_json({"error": str(exc)}, 400)
@@ -739,6 +763,39 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:  # never drop the connection: say what went wrong
             logbook.record(f"POST {urlparse(self.path).path}", f"{type(exc).__name__}: {exc}", detail=traceback.format_exc())
             return self.send_json({"error": f"{type(exc).__name__}: {exc}"}, 500)
+
+    def google_callback(self, url):
+        """Google sends the browser back here after the person allows Pulsar (or does not). The request arrives as a
+        top-level navigation from accounts.google.com, in whichever browser opened the sign-in, which may hold no
+        Pulsar session: so the cross-site rule and the sign-in check above cannot apply to it. Instead:
+        * only a page load counts: a request a page elsewhere makes as an image, a frame or a fetch is refused, so no
+          other site can read the answer (and the answer is a short page with no data in it anyway);
+        * it does nothing at all without a `state` this server handed out for a sign-in started in Settings (which
+          needs the session) in the last 10 minutes and not used yet; the state is used up on first sight;
+        * with one, it can do one thing only: finish that sign-in (calendar.finish: trade the code and the PKCE
+          verifier for tokens). It takes no other parameter, reads nothing else and sends the browser nowhere."""
+        mode, dest = self.headers.get("Sec-Fetch-Mode"), self.headers.get("Sec-Fetch-Dest")
+        if (mode and mode != "navigate") or (dest and dest != "document") or self.headers.get("Upgrade"):
+            return self.send(403, b"forbidden", "text/plain")
+        q = {k: v[0] for k, v in parse_qs(url.query).items() if k in ("state", "code", "error")}
+        try:
+            result = calendar.finish(q)
+        except Exception as exc:  # the keychain said no, say: the person sees why, the log keeps the detail
+            logbook.record("calendar", f"Connecting Google Calendar failed: {type(exc).__name__}: {exc}",
+                           detail=traceback.format_exc())
+            result = {"ok": False, "known": True, "message": f"Pulsar could not finish connecting ({type(exc).__name__}). "
+                                                             "See Logs in Pulsar, then try again."}
+        if not result["known"]:
+            logbook.record("calendar", "An answer from Google arrived for a sign-in Pulsar was not waiting for; it was "
+                                       "ignored.", kind="warning")
+        import html
+        title = "Google Calendar is connected" if result["ok"] else "Google Calendar is not connected"
+        page = (f'<!doctype html><html lang="en"><meta charset="utf-8"><meta name="color-scheme" content="light dark">'
+                f'<meta name="viewport" content="width=device-width, initial-scale=1"><title>Pulsar: {title}</title>'
+                f'<body style="font: 15px/1.5 -apple-system, system-ui, sans-serif; max-width: 34em; margin: 12vh auto; '
+                f'padding: 0 20px"><h1 style="font-size: 20px">{title}</h1><p>{html.escape(result["message"])}</p>'
+                f'</body></html>')
+        return self.send(200 if result["ok"] else 400, page.encode("utf-8"), "text/html; charset=utf-8")
 
     def file(self, path: str):
         try:
