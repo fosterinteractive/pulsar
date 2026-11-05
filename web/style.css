@@ -270,7 +270,8 @@ header { flex-wrap: wrap; row-gap: 8px; }
   cursor: pointer; font-variant-numeric: tabular-nums; }
 .ver:hover { color: var(--text); }
 .ver:empty { display: none; }
-.ver.has-update { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text); }
+.ver.has-update { background: #2a78d6; color: #fff; font-weight: 600; }  /* a newer version is out: hard to miss (4.6:1) */
+.ver.has-update:hover { color: #fff; filter: brightness(1.08); }
 #updates .kv { font-size: 12.5px; }
 .btnrow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 .btn.primary { background: var(--text); color: var(--bg); }
