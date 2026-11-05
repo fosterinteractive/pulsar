@@ -442,3 +442,20 @@ dialog#updprompt::backdrop { background: rgba(0,0,0,.35); }
 
 /* the log dialog's task notes: overdue, due today, blocked stand out (the words say it, the colour helps) */
 .pk .pk-warn { color: var(--gap); font-weight: 600; }
+
+/* the changelog in Settings: closed until asked for, each release folds (settings.js) */
+#changelog { margin: 6px 0 8px; font-size: 12.5px; }
+#changelog summary { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; cursor: pointer; list-style: none; border-radius: 4px; }
+#changelog summary::-webkit-details-marker { display: none; }
+#changelog summary::before { content: "›"; color: var(--faint); width: 8px; flex: none; transition: transform .12s ease; }
+#changelog[open] > summary::before, .rel[open] > summary::before { transform: rotate(90deg); }
+#changelog > summary { color: var(--accent); width: max-content; gap: 6px; }
+#changelog > summary::before { color: inherit; }
+#changelog > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#changelog-list { margin-top: 6px; max-height: 260px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 2px 6px; }
+.rel + .rel { border-top: 1px solid var(--line2); }
+.rel > summary { padding: 6px 4px; }
+.rel > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }  /* inside the list, which clips */
+.rel > summary span { color: var(--muted); }
+.rel .when { margin-left: auto; white-space: nowrap; }
+.rel ul { margin: 0 0 8px; padding-left: 34px; line-height: 1.45; }

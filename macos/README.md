@@ -23,9 +23,10 @@ newer for the window (older: the window hands the page to the default browser).
 macos/release.sh 1.1.0 --notes "Adds the week view. Fixes the totals on days without entries." --publish
 ```
 
-Run it from a clean `main` with the changes you want to ship committed. It refuses a git tree with changes,
-a version that is not newer than `__version__` in `pulsar/__init__.py`, and failing tests. Then it sets the
-version, builds into `dist/`, shows what it will do and asks before it:
+Run it from a clean `main` with the changes you want to ship committed, and their entry in `CHANGELOG.md`
+(`## 1.1.0 (2026-11-20)` and a `- ` line, a few words per change). It refuses a git tree with changes, a version
+that is not newer than `__version__` in `pulsar/__init__.py`, a version with no `CHANGELOG.md` entry, and failing
+tests. Then it sets the version, builds into `dist/`, shows what it will do and asks before it:
 
 1. commits the version change as "Pulsar 1.1.0" and pushes the branch;
 2. creates the public release `v1.1.0` on `fosterinteractive/pulsar` at that commit, with four files:

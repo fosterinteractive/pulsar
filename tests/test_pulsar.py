@@ -359,6 +359,28 @@ class NamesTest(unittest.TestCase):
         self.assertEqual(names.codename("x"), ("", ""))
 
 
+class ChangelogTest(unittest.TestCase):
+    def test_each_release_comes_with_its_date_codename_and_lines(self):
+        from pulsar import changelog
+        text = ("# Changelog\n\n- not a release yet\n<!-- a note -->\n\n## 1.1.0 (2026-11-20)\n- Week view.\n"
+                "* Faster report.\nA stray sentence.\n\n## v1.0.1\n-   Safer logging.  \n")
+        self.assertEqual(changelog.parse(text), [
+            {"version": "1.1.0", "date": "2026-11-20", "codename": "Vela", "lines": ["Week view.", "Faster report."]},
+            {"version": "1.0.1", "date": "", "codename": "CP 1919", "lines": ["Safer logging."]}])
+
+    def test_this_copy_lists_its_own_version_and_every_release_newest_first(self):
+        from pulsar import __version__, changelog
+        releases = changelog.read()
+        self.assertIn(__version__, [r["version"] for r in releases])
+        self.assertTrue(all(r["lines"] and r["date"] for r in releases))
+        order = [updater.vtuple(r["version"]) for r in releases]
+        self.assertEqual(order, sorted(set(order), reverse=True))
+
+    def test_a_copy_without_a_changelog_shows_none(self):
+        from pulsar import changelog
+        self.assertEqual(changelog.read(os.path.join(tempfile.mkdtemp(), "CHANGELOG.md")), [])
+
+
 class ReasonTest(unittest.TestCase):
     def test_a_request_without_an_answer_says_why(self):
         import socket
@@ -1079,6 +1101,13 @@ class GuardTest(unittest.TestCase):
     def test_the_launcher_proves_itself_with_the_key(self):
         self.assertEqual(self.ask("/api/logs?days=1", headers={"X-Pulsar-Key": config.session_secret()})[0], 200)
         self.assertEqual(self.ask("/api/logs?days=1", headers={"X-Pulsar-Key": "0" * 64})[0], 401)
+
+    def test_the_changelog_is_for_signed_in_pages(self):
+        from pulsar import __version__
+        self.assertEqual(self.ask("/api/changelog")[0], 401)
+        status, _, body = self.ask("/api/changelog", headers=self.token())
+        self.assertEqual(status, 200)
+        self.assertIn(__version__, [r["version"] for r in json_load(body)["releases"]])
 
     def test_other_sites_names_and_websocket_handshakes_are_refused(self):
         tok = self.token()

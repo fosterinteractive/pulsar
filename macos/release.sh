@@ -4,7 +4,8 @@
 #   macos/release.sh 1.1.0 --notes "Adds the week view."             build only, then print the next steps
 #   macos/release.sh 1.1.0 --notes "Adds the week view." --publish   build, commit the version, push, release
 #
-# Refuses a git tree with changes, a version that is not newer than pulsar/__init__.py, and failing tests.
+# Refuses a git tree with changes, a version that is not newer than pulsar/__init__.py, a version with no entry
+# in CHANGELOG.md, and failing tests.
 # Then it sets __version__ and builds, in dist/:
 #   release/pulsar-<version>.zip   the code, one top folder pulsar-<version>/ (what the in-app updater downloads)
 #   release/latest.json            {version, url, sha256, notes, published} (what the in-app updater reads)
@@ -26,7 +27,7 @@ while [ $# -gt 0 ]; do
     --publish) PUBLISH=1 ;;
     --notes) [ $# -ge 2 ] || die "--notes needs a text"; NOTES="$2"; shift ;;
     --notes=*) NOTES="${1#--notes=}" ;;
-    -h|--help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) [ -z "$VERSION" ] || die "one version only"; VERSION="$1" ;;
   esac
@@ -46,6 +47,14 @@ v = lambda s: tuple(int(p) for p in s.split("."))
 sys.exit(0 if v(sys.argv[1]) > v(sys.argv[2]) else 1)' "$VERSION" "$CURRENT" ||
   { [ "$VERSION" = "$CURRENT" ] && [ -z "$(git tag -l "v$VERSION")" ] && echo "First release of $VERSION"; } ||
   die "$VERSION is not newer than the current version $CURRENT"
+
+# What changed, for colleagues: Settings shows this copy's CHANGELOG.md, so every release needs its entry there.
+python3 -E -s - "$ROOT" "$VERSION" <<'PY' || die "CHANGELOG.md has no entry for $VERSION: add \"## $VERSION ($(date +%Y-%m-%d))\" and a \"- \" line under it, then commit it"
+import sys
+sys.path.insert(0, sys.argv[1])
+from pulsar import changelog
+sys.exit(0 if any(r["version"] == sys.argv[2] and r["lines"] for r in changelog.read()) else 1)
+PY
 
 echo "Running the tests"
 python3 -m unittest discover -s tests -q || die "the tests fail; nothing was changed"
@@ -92,7 +101,7 @@ mkdir -p "$OUT"
 rm -f "$ZIP" "$OUT/latest.json" "$OUT/latest.json.sig"
 
 # Only files git tracks: an ignored .log or .env sitting in pulsar/ or web/ can never ship.
-git ls-files -z pulsar.py README.md pulsar web > "$OUT/files.list"
+git ls-files -z pulsar.py README.md CHANGELOG.md pulsar web > "$OUT/files.list"
 python3 - "$VERSION" "$ZIP" "$OUT/files.list" <<'PY'
 import sys, zipfile
 version, zip_path, listing = sys.argv[1:]
