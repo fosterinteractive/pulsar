@@ -90,6 +90,11 @@ codesign --verify --deep --strict "$APP"
 
 ditto -c -k --keepParent "$APP" "$DIST/Pulsar.zip"
 
+# A build is not an install: keep this copy out of Spotlight and the Apps list, so the Mac shows one Pulsar,
+# the one in Applications. (Opening this copy registers it again.)
+touch "$DIST/.metadata_never_index"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -u "$APP" 2>/dev/null || true
+
 echo "Done:"
 echo "  $APP"
 echo "  $DIST/Pulsar.zip ($(du -h "$DIST/Pulsar.zip" | cut -f1 | tr -d ' '))"
