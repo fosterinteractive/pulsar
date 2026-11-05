@@ -570,6 +570,14 @@ class RepeatsTest(unittest.TestCase):
         self.assertEqual([server.is_call(x) for x in no], [False] * 4)
 
 
+class AwayTest(unittest.TestCase):
+    def test_gaps_of_five_minutes_or_more_between_activity_are_away(self):
+        items = [item(540, 600), item(603, 640, app="Slack"), item(650, 700), item(690, 720), item(800, 810, cat="personal")]
+        self.assertEqual(server.away(items), [{"s": 640, "e": 650, "off": False}, {"s": 720, "e": 800, "off": False}])
+        self.assertTrue(server.away([item(60, 120), item(400, 420)])[0]["off"])  # a night between: time off
+        self.assertEqual(server.away([]), [])
+
+
 class MeetingTasksTest(unittest.TestCase):
     """Logging a meeting: the task logged during its earlier ones first, then tasks sharing a word with its title."""
 

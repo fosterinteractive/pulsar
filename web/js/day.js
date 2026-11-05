@@ -199,7 +199,17 @@ function render() {
     const problem = (act.problems || {})[act.source] || (!total ? Object.values(act.problems || {})[0] : '');
     $('#h-act').textContent = problem ? problem : !total && !other ? 'No activity recorded' : `${src} · ${dur(total)}${hint}`;
     $('#h-act').classList.toggle('warn', !!problem);
-    laneAct.innerHTML = blocksCache.length ? blocksCache.map((b, i) => {
+    // away from the computer: a hatched rail on the column's left edge, above the cards (a 30-minute card can hide a
+    // 20-minute break), and its length in words where no card covers it. A click logs it (a call away from the desk).
+    const covered = (a, b) => blocksCache.some(k => k.start * Z < b && k.end * Z > a);
+    const awayHTML = (act.away || []).map(x => {
+      const h = (x.e - x.s) * ppm, len = dur(x.e - x.s), word = x.off ? 'Off' : 'Away';
+      return `<div class="awayband${x.off ? ' off' : ''}" data-a="${Math.round(x.s)}" data-b="${Math.round(x.e)}" style="top:${x.s * ppm}px;height:${h}px"
+        title="${word} from the computer ${hm(x.s)}–${hm(x.e)}, ${len}. Click to log it." tabindex="0" role="button"
+        aria-label="${word} ${hm(x.s)}–${hm(x.e)}, ${len}: log this time"></div>`
+        + (h >= 18 && !covered(x.s, x.e) ? `<div class="awaylabel" style="top:${x.s * ppm + 4}px">${word} · ${len}</div>` : '');
+    }).join('');
+    laneAct.innerHTML = (blocksCache.length ? blocksCache.map((b, i) => {
       const x = {s: b.start * Z, e: b.end * Z};
       const byRule = new Map();  // the block belongs to a rule's project when most of its time matches it
       for (const a of b.items) { const r = ruleOf(a.it); if (r) byRule.set(r.project, (byRule.get(r.project) || 0) + a.min); }
@@ -208,7 +218,7 @@ function render() {
       return `<div class="card act ${b.it.cat}${b.rule ? ' ruled' : ''}" data-k="act" data-i="${i}" style="${b.rule ? `--c:${color(b.rule)};` : ''}${place(x, ppm, 18)}"${b.rule ? ` title="${esc(b.rule)}"` : ''}
         tabindex="0" role="button" aria-label="${esc(`Activity ${hm(x.s)}–${hm(x.e)}: ${b.title}, ${dur(b.total)}`)}">
         <div class="row">${icon(b.it.icon, b.it.app)}<span class="t">${esc(b.title)}</span><span class="m num">${dur(b.total)}</span></div></div>`;
-    }).join('') : '<div class="state">No activity on this day.</div>';
+    }).join('') : '<div class="state">No activity on this day.</div>') + awayHTML;
   }
 
   // likely
@@ -317,6 +327,7 @@ function renderAside(gapMin) {
     <div class="kv"><span>Active, work</span><span class="num">${v(work)}</span></div>
     ${personal ? `<div class="kv"><span>Personal</span><span class="num">${dur(personal)}</span></div>` : ''}
     ${logged && act && !logged.error && !act.error ? `<div class="kv gap"><span>Active, not logged</span><span class="num">${dur(gapMin)}</span></div>` : ''}
+    ${act?.away?.some(x => !x.off) ? `<div class="kv"><span>Away, breaks</span><span class="num">${dur(act.away.filter(x => !x.off).reduce((s, x) => s + x.e - x.s, 0))}</span></div>` : ''}
     <div class="bar"><i style="width:${Math.min(100, (sum || 0) / TARGET * 100)}%"></i></div>
     <div class="kv"><span>Daily target</span><span class="num">${dur(TARGET)}</span></div>`;
 
@@ -387,7 +398,7 @@ function openPop(html, ev) {
   pop.style.top = Math.max(12, Math.min(ev.clientY - 20, innerHeight - r.height - 12)) + 'px';
 }
 document.addEventListener('click', ev => {
-  const logBtn = ev.target.closest('[data-log-a], .gaprail');
+  const logBtn = ev.target.closest('[data-log-a], .gaprail, .awayband');
   if (logBtn) {
     const a = +(logBtn.dataset.logA ?? logBtn.dataset.a), b = +(logBtn.dataset.logB ?? logBtn.dataset.b);
     const linked = logBtn.dataset.likely != null ? likelyTasks(likelyCache[+logBtn.dataset.likely]) : [];
@@ -459,7 +470,7 @@ function activateByKey(el) {
 document.addEventListener('keydown', ev => {
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName) || ev.target.closest('dialog')) return;
   if (state.view === 'report') { if (ev.key === 'Escape') tipEl.classList.remove('on'); return; }
-  if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.matches?.('.card[data-k], .gaprail')) {
+  if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.matches?.('.card[data-k], .gaprail, .awayband')) {
     ev.preventDefault(); activateByKey(ev.target); return;
   }
   if (ev.key === 'Escape') closePop(true);

@@ -240,7 +240,24 @@ def api_activity(q: dict) -> dict:
             it["s"], it["e"] = round(clock(t0 + it["s"] * 60, t0, tz), 3), round(clock(t0 + it["e"] * 60, t0, tz), 3)
     for name, problem in list(trackers.PROBLEMS.items()):
         logbook.record(f"tracker {name}", problem, kind="warning")
-    return {"source": source, "minutes": minutes, "items": found[source], "problems": dict(trackers.PROBLEMS)}
+    return {"source": source, "minutes": minutes, "items": found[source], "problems": dict(trackers.PROBLEMS),
+            "away": away(found[source])}
+
+
+AWAY_MIN = 5    # minutes without anything on screen that count as being away from the computer
+OFF_MIN = 180   # from this long it is time off (a night, an afternoon off), not a break: shown, never added up
+
+
+def away(items: list) -> list:
+    """The stretches between the day's first and last activity when nothing was on screen for at least AWAY_MIN
+    minutes: ActivityWatch's AFK time, MemTime's offline time, a computer asleep. [{s, e, off}] in minutes; off is a
+    stretch of OFF_MIN or more."""
+    out, end = [], None
+    for it in sorted(items, key=lambda x: x["s"]):
+        if end is not None and it["s"] - end >= AWAY_MIN:
+            out.append({"s": round(end, 2), "e": round(it["s"], 2), "off": it["s"] - end >= OFF_MIN})
+        end = it["e"] if end is None else max(end, it["e"])
+    return out
 
 
 def api_entries(q: dict) -> dict:
