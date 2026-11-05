@@ -1,3 +1,5 @@
+<img src="macos/AppIcon-1024.png" width="112" align="right" alt="Pulsar's icon: a pulsar, a bright core with two beams, on a dark tile">
+
 # Pulsar
 
 Your working day as your computer saw it, next to what you logged in Productive. It shows when you worked, on

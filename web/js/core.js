@@ -179,18 +179,24 @@ function warpIn() {
   return tween(520, t => { const e = t * t * t; lensFrame(e, 1 - .035 * e, Math.min(1, e * 1.4)); });
 }
 function warpOut() {
-  if (calmMotion()) { lensEnd(); return; }
+  if (calmMotion()) { lensEnd(); return Promise.resolve(); }
   const flash = document.createElement('div');
   flash.className = 'warp-flash';
   document.documentElement.append(flash);
   flash.animate([{opacity: 0, transform: 'scale(.25)'}, {opacity: 1, offset: .18}, {opacity: 0, transform: 'scale(2.6)'}],
     {duration: 700, easing: 'cubic-bezier(.15, .7, .3, 1)'}).finished.catch(() => {}).then(() => flash.remove());
   document.documentElement.classList.remove('warp-held');
-  tween(520, t => {
+  return tween(520, t => {
     const out = 1 - Math.pow(1 - Math.min(1, t / .55), 3);  // the lens and the core are gone a little after half way
     const spring = t < .45 ? .965 + .047 * (t / .45) : 1.012 - .012 * ((t - .45) / .55);  // to just past full size, back
     lensFrame(1 - out, spring, 1 - out);
   }).then(lensEnd);
+}
+/* the whole jump in place, for the refresh button and an Option-click on the version; one at a time */
+let warping = null;
+function warp() {
+  if (!warping) warping = warpIn().then(warpOut).finally(() => { warping = null; });
+  return warping;
 }
 /* a page that has just restarted into a new version warps out at once, before anything else draws */
 try { if (sessionStorage.getItem('pulsar-updated')) warpOut(); } catch (e) {}

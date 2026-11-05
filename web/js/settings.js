@@ -150,7 +150,7 @@ $('#auto-update').addEventListener('change', async ev => {
   toast(on ? 'Updates will install by themselves.' : 'Updates will wait for your click.');
 });
 $('#ver-chip').onclick = ev => {
-  if (ev.altKey) { warpIn().then(warpOut); return; }  // Option-click: the warp an update plays, to look at
+  if (ev.altKey) { warp(); return; }  // Option-click: the warp an update plays, to look at
   openSettings(); $('#updates').scrollIntoView({block: 'start'});
 };
 $('#rule-add').onclick = () => openRule('');

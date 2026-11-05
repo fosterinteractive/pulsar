@@ -435,6 +435,7 @@ $('#date').onchange = e => {
 };
 $('#date').addEventListener('blur', e => { if (e.target.value !== state.date) e.target.value = state.date; });
 $('#refresh').onclick = async () => {
+  warp();  // while everything reloads
   if (state.view === 'report') return loadReport(true);
   const btn = $('#refresh'), before = state.logged, d = state.date;
   btn.classList.add('busy');
