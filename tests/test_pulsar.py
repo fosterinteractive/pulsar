@@ -399,6 +399,13 @@ class ReviewFixesTest(unittest.TestCase):
             trackers.memtime_query("select x from t", db_path=db)
             self.assertEqual(len([c for c in copies if c == db]), 2)
 
+    def test_assigned_tasks_come_overdue_due_today_blocked_or_started_then_the_rest(self):
+        t = lambda i, due=None, status="To Do": {"taskId": i, "due": due, "status": status, "blocked": "block" in status.lower()}
+        order = server.urgent_first([t("rest"), t("later", "2026-11-20"), t("doing", status="In Progress"),
+                                     t("stuck", status="Blocked"), t("today", "2026-11-05"), t("late", "2026-11-01"),
+                                     t("later2", "2026-11-10")], "2026-11-05")
+        self.assertEqual([x["taskId"] for x in order], ["late", "today", "doing", "stuck", "later2", "later", "rest"])
+
     def test_a_failed_identify_is_not_retried_on_every_request(self):
         calls = []
         def identify(s, conn):
@@ -416,12 +423,19 @@ class ReviewFixesTest(unittest.TestCase):
         def mcp(tool, args, token):
             sent.append(args)
             n = 200 if args["offset"] == 0 else 7
-            rows = ",".join(f'[{args["offset"] + i}, "T", "projects:1", "services:2", null]' for i in range(n))
-            return '```json\n{"items": {"columns": ["id", "title", "project", "service", "closed_at"], "rows": [%s]}}\n```' % rows
+            # the last task is someone else's: Productive matched it through an open to-do of person 1
+            rows = ",".join(f'[{args["offset"] + i}, "T", "projects:1", "services:2", null, '
+                            f'"people:{9 if args["offset"] and i == n - 1 else 1}", "2026-11-0{i % 9 + 1}", "workflow_statuses:5"]'
+                            for i in range(n))
+            return ('```json\n{"items": {"columns": ["id", "title", "project", "service", "closed_at", "assignee", "due_date", '
+                    '"workflow_status"], "rows": [%s]}, "included": {"columns": ["type", "id", "name"], "rows": '
+                    '[["projects", "1", "P"], ["workflow_statuses", "5", "Blocked"]]}}\n```' % rows)
         with mock.patch.object(productive, "connection", lambda s: {"kind": "claude-code", "token": "t"}), \
              mock.patch.object(productive, "mcp_text", mcp):
             tasks = productive.assigned_tasks({"person_id": "1"})
-        self.assertEqual(len(tasks), 207)                     # not cut at 200
+        self.assertEqual(len(tasks), 206)                     # not cut at 200, and not someone else's
+        self.assertEqual((tasks[0]["project"], tasks[0]["due"], tasks[0]["status"], tasks[0]["blocked"]), ("P", "2026-11-01", "Blocked", True))
+        self.assertNotIn("assignee", tasks[0])
         self.assertEqual([a["offset"] for a in sent], [0, 200])
         self.assertIn({"field": "project.status", "operator": "eq", "value": "1"}, sent[0]["filters"]["conditions"])
 

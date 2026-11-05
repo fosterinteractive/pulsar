@@ -46,6 +46,16 @@ function dedupe(groups) {
   const seen = new Set();
   return groups.map(g => ({...g, tasks: g.tasks.filter(t => !seen.has(t.taskId) && seen.add(t.taskId))}));
 }
+/* what Productive says of a task, in words (never colour alone): overdue or due when, blocked or in progress */
+function taskNote(t) {
+  const today = todayLocal(), bits = [];
+  const when = d => dayLabel(d, {day: 'numeric', month: 'short'});
+  if (t.due) bits.push(t.due < today ? `<span class="pk-warn">overdue, due ${esc(when(t.due))}</span>`
+    : t.due === today ? '<span class="pk-warn">due today</span>' : `due ${esc(when(t.due))}`);
+  if (t.blocked) bits.push(`<span class="pk-warn">${esc((t.status || 'blocked').toLowerCase())}</span>`);
+  else if (/progress/i.test(t.status || '')) bits.push('in progress');
+  return bits.length ? ' · ' + bits.join(' · ') : '';
+}
 function makePicker(listEl, searchEl, onPick) {
   let selected = null, groups = [], base = [], timer, loading = false, searched = '';
   function draw() {
@@ -54,7 +64,7 @@ function makePicker(listEl, searchEl, onPick) {
       + (g.note ? `<div class="note">${esc(g.note)}</div>` : '')
       + g.tasks.map(t => `<button type="button" class="pk${selected?.taskId === t.taskId ? ' on' : ''}" data-id="${esc(t.taskId)}"
           role="option" aria-selected="${selected?.taskId === t.taskId}"><span class="pk-t">${esc(t.title)}</span>
-          <span class="pk-p">${esc(t.project)}${g.showMin && t.minutes ? ' · ' + dur(t.minutes) + ' here' : ''}</span></button>`).join('')).join('')
+          <span class="pk-p">${esc(t.project)}${g.showMin && t.minutes ? ' · ' + dur(t.minutes) + ' here' : ''}${taskNote(t)}</span></button>`).join('')).join('')
       || `<div class="note">${esc(empty)}</div>`;
   }
   /* a redraw replaces the buttons: the one that had the focus gets it back */
@@ -161,7 +171,10 @@ async function loadServices(task) {
   f.service.innerHTML = (pick ? '' : '<option value="">Pick a service</option>') + list.map(x =>
     `<option value="${esc(x.id)}"${pick?.id === x.id ? ' selected' : ''}>${esc(x.name.trim())}${x.budget ? ' · ' + esc(x.budget) : ''}${
       x.billable ? ' · billable' : x.billable === false ? ' · not billable' : ''}</option>`).join('');
-  f.service.disabled = false; setLogMsg('');
+  f.service.disabled = false;
+  // a blocked task can still take time (the blocker may be what you worked on), but say so before anything is written
+  setLogMsg(task.blocked ? `This task is ${(task.status || 'blocked').toLowerCase()} in Productive. You can still log to it.` : '',
+            !!task.blocked);
 }
 
 logForm.addEventListener('submit', async ev => {

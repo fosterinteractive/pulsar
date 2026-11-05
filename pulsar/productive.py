@@ -718,7 +718,7 @@ def _task_rows(conditions: list, settings: dict, limit: int = 1000) -> list:
     conn = _need(settings)
     out: list = []
     if conn["kind"] == "token":
-        query, active_only = {"include": "project", "page[size]": min(limit, 200)}, False
+        query, active_only = {"include": "project,workflow_status", "page[size]": min(limit, 200)}, False
         for c in conditions:  # the REST spellings of the same filters (not yet tried against Productive)
             if c["field"] == "project.status":  # no such filter here: the included project's archived_at tells
                 active_only = True
@@ -735,30 +735,52 @@ def _task_rows(conditions: list, settings: dict, limit: int = 1000) -> list:
                 project = inc.get(("projects", _rel(d, "project") or ""))
                 if active_only and _attr(project, "archived_at"):
                     continue
-                out.append({"taskId": str(d.get("id")), "title": _attr(d, "title") or "", "project": _attr(project, "name") or "",
-                            "projectId": _rel(d, "project") or "", "serviceId": _rel(d, "service") or ""})
+                status = inc.get(("workflow_statuses", _rel(d, "workflow_status") or ""))
+                out.append(_task_item(str(d.get("id")), _attr(d, "title") or "", _attr(project, "name") or "",
+                                      _rel(d, "project") or "", _rel(d, "service") or "", _attr(d, "due_date"),
+                                      _attr(status, "name"), _rel(d, "assignee")))
             pages = (doc.get("meta") or {}).get("total_pages")
             if not isinstance(pages, int) or page >= pages:
                 break
-        return out[:limit]
+        return _really_assigned(out[:limit], conditions)
     for offset in range(0, limit, 200):
         size = min(200, limit - offset)
         d = parse_mcp(mcp_text("query_resources", {"resource_type": "tasks", "limit": size, "offset": offset,
                                                    "sort": ["-last_activity_at"], "filters": {"op": "and", "conditions": conditions},
-                                                   "include_fields": ["title", "project", "project.name", "service", "closed_at"]},
+                                                   "include_fields": ["title", "project", "project.name", "service", "closed_at",
+                                                                      "due_date", "assignee", "workflow_status.name"]},
                                conn["token"]))
         cols = d["items"]["columns"]
         inc = d.get("included") or {}
-        names = {f"{r[0]}:{r[1]}": dict(zip(inc.get("columns", []), r)).get("name") for r in inc.get("rows", [])}
+        related = {f"{r[0]}:{r[1]}": dict(zip(inc.get("columns", []), r)) for r in inc.get("rows", [])}
         rows = d["items"]["rows"]
         for row in rows:
             r = dict(zip(cols, row))
-            out.append({"taskId": str(r.get("id")), "title": (r.get("title") or "") + (" (closed)" if r.get("closed_at") else ""),
-                        "project": names.get(r.get("project") or "") or "",
-                        "projectId": (r.get("project") or ":").split(":")[1], "serviceId": (r.get("service") or ":").split(":")[1]})
+            ref = lambda k: (r.get(k) or ":").split(":")[1]
+            out.append(_task_item(str(r.get("id")), (r.get("title") or "") + (" (closed)" if r.get("closed_at") else ""),
+                                  (related.get(r.get("project") or "") or {}).get("name") or "", ref("project"), ref("service"),
+                                  r.get("due_date"), (related.get(r.get("workflow_status") or "") or {}).get("name"),
+                                  ref("assignee")))
         if len(rows) < size:
             break
-    return out
+    # The assignee filter also matches tasks where the person only has an open to-do (Productive's own docs say so):
+    # keep the tasks really assigned to them.
+    return _really_assigned(out, conditions)
+
+
+def _really_assigned(tasks: list, conditions: list) -> list:
+    """With an assignee filter, only the tasks whose assignee is that person: Productive's filter also matches tasks
+    where the person only has an open to-do (its own docs say so). The assignee is not passed on."""
+    person = next((str(c["value"]) for c in conditions if c["field"] == "assignee"), None)
+    return [{k: v for k, v in t.items() if k != "assignee"} for t in tasks if not person or t["assignee"] == person]
+
+
+def _task_item(task_id: str, title: str, project: str, project_id: str, service_id: str, due, status, assignee) -> dict:
+    """One task for the pickers: its due date and workflow status too, so the log dialog can put the urgent ones first
+    and say when a task is blocked."""
+    return {"taskId": task_id, "title": title, "project": project, "projectId": project_id, "serviceId": service_id,
+            "due": due if isinstance(due, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", due) else None,
+            "status": status or "", "blocked": bool(re.search(r"block", status or "", re.I)), "assignee": assignee or ""}
 
 
 def assigned_tasks(settings: dict) -> list:

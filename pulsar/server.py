@@ -351,12 +351,26 @@ def api_suggest(q: dict) -> dict:
             t["count"] += 1
         recent = sorted(by_task.values(), key=lambda t: (t["last"], t["count"]), reverse=True)
         try:
-            seen = set(by_task)
-            assigned = [t for t in productive.assigned_tasks(s) if t["taskId"] not in seen]
+            mine = productive.assigned_tasks(s)
         except Exception:
-            assigned = []
+            mine = []
+        known = {t["taskId"]: t for t in mine}
+        for t in recent:  # what Productive says of the tasks you logged to: due date, status, blocked
+            t.update({k: known[t["taskId"]][k] for k in ("due", "status", "blocked")} if t["taskId"] in known else {})
+        assigned = urgent_first([t for t in mine if t["taskId"] not in by_task], today(config.tz(s)))
         _recent[key] = (time.time(), {"recent": recent, "assigned": assigned})
     return _recent[key][1]
+
+
+def urgent_first(tasks: list, today_iso: str) -> list:
+    """Overdue, due today, blocked or in progress, then the rest (each by due date, then as Productive listed them)."""
+    def rank(item):
+        i, t = item
+        due = t.get("due") or ""
+        group = 0 if due and due < today_iso else 1 if due == today_iso else \
+            2 if t.get("blocked") or "progress" in (t.get("status") or "").lower() else 3
+        return group, due or "9999-12-31", i
+    return [t for _, t in sorted(enumerate(tasks), key=rank)]
 
 
 def api_search(q: dict) -> dict:

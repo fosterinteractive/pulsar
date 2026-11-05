@@ -435,3 +435,6 @@ dialog#updprompt::backdrop { background: rgba(0,0,0,.35); }
 #updprompt p { margin: 0 0 8px; font-size: 13px; line-height: 1.5; }
 #updprompt .notes { color: var(--muted); }
 #updprompt .df { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
+
+/* the log dialog's task notes: overdue, due today, blocked stand out (the words say it, the colour helps) */
+.pk .pk-warn { color: var(--gap); font-weight: 600; }
