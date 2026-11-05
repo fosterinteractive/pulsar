@@ -382,6 +382,73 @@ class ReasonTest(unittest.TestCase):
                 self.assertEqual(productive.mcp_detect("t")["person_day_hours"], hours, day)
 
 
+class SessionsTest(unittest.TestCase):
+    """The built-in Likely column, on a made-up Claude Code session in a made-up repository."""
+
+    def setUp(self):
+        from pulsar import sessions
+        self.sessions = sessions
+        sessions._repo_of.clear()
+        self.root = tempfile.mkdtemp()
+        self.repo = os.path.join(self.root, "checkouts", "repo")
+        os.makedirs(os.path.join(self.repo, ".git"))
+        os.makedirs(os.path.join(self.repo, "src"))
+        with open(os.path.join(self.repo, ".git", "config"), "w") as fh:
+            fh.write('[core]\n\tbare = false\n[remote "origin"]\n\turl = git@github.com:acme/acme-site.git\n')
+        self.projects = os.path.join(self.root, "projects", "-acme")
+        os.makedirs(self.projects)
+        self.t0 = datetime(2026, 11, 4, tzinfo=timezone.utc).timestamp()
+
+    def at(self, minute):
+        return datetime.fromtimestamp(self.t0 + minute * 60, timezone.utc).isoformat().replace("+00:00", "Z")
+
+    def write_session(self):
+        import json
+        lines = [
+            {"type": "custom-title", "customTitle": "Fix the checkout form"},
+            {"type": "user", "timestamp": self.at(10), "cwd": self.repo, "origin": {"kind": "human"},
+             "message": {"content": "The checkout button does nothing"}},
+            {"type": "assistant", "timestamp": self.at(11), "message": {"content": [
+                {"type": "tool_use", "name": "Edit", "input": {"file_path": os.path.join(self.repo, "src", "form.js")}}]}},
+            {"type": "assistant", "timestamp": self.at(25), "message": {"content": [{"type": "text", "text": "Done."}]}},
+            {"type": "user", "timestamp": self.at(26), "cwd": self.repo, "origin": {"kind": "task-notification"},
+             "message": {"content": "<task-notification>tests passed</task-notification>"}},
+        ]
+        with open(os.path.join(self.projects, "abcd1234.jsonl"), "w") as fh:
+            fh.write("\n".join(json.dumps(x) for x in lines) + "\n")
+
+    def test_minutes_go_to_the_session_on_screen_named_by_its_repository(self):
+        self.write_session()
+        items = [{"s": 9, "e": 30, "app": "Cursor", "title": "Fix the checkout form", "host": "", "url": "", "cat": "work"},
+                 {"s": 30, "e": 40, "app": "zoom.us", "title": "Zoom Meeting", "host": "", "url": "", "cat": "work"},
+                 {"s": 40, "e": 45, "app": "Telegram", "title": "Chat", "host": "", "url": "", "cat": "personal"}]
+        got = self.sessions.propose(self.t0, self.t0 + 86400, items, "ActivityWatch", os.path.dirname(self.projects))
+        self.assertEqual(got["working"], 31)                 # work windows only, the meeting included as work time
+        self.assertEqual([(e["project"], e["s"], e["e"]) for e in got["entries"]], [("acme-site", 9, 30)])
+        e = got["entries"][0]
+        self.assertEqual((e["titles"], e["messages"], e["first_message"]),
+                         (["Fix the checkout form"], 1, "The checkout button does nothing"))
+
+    def test_without_a_tracker_the_agents_run_time_is_the_work(self):
+        self.write_session()
+        got = self.sessions.propose(self.t0, self.t0 + 86400, [], "no tracker", os.path.dirname(self.projects))
+        self.assertEqual(got["tracker"], "no tracker")
+        self.assertTrue(got["entries"] and all(e["project"] == "acme-site" for e in got["entries"]))
+
+    def test_names_that_say_nothing_fall_back_to_the_folder(self):
+        pantheon = os.path.join(self.root, "sgc-main")
+        os.makedirs(os.path.join(pantheon, ".git"))
+        with open(os.path.join(pantheon, ".git", "config"), "w") as fh:
+            fh.write('[remote "origin"]\n\turl = ssh://codeserver.dev.x@codeserver.dev.x.drush.in:2222/~/repository.git\n')
+        self.assertEqual(self.sessions.repo_name(pantheon), "sgc-main")
+        bare = os.path.join(self.root, "agent-run", "repo")
+        os.makedirs(os.path.join(bare, ".git"))
+        self.assertEqual(self.sessions.repo_name(bare), "agent-run")
+
+    def test_claude_codes_own_files_are_no_project(self):
+        self.assertIsNone(self.sessions.project_of_path(os.path.join(self.sessions.HOME, ".claude", "skills", "x", "SKILL.md")))
+
+
 class ReviewFixesTest(unittest.TestCase):
     def test_memtime_is_copied_once_a_minute_not_for_every_query(self):
         import sqlite3

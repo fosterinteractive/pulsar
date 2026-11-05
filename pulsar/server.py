@@ -263,7 +263,7 @@ def api_proposal(q: dict) -> dict:
     s = config.load()
     if not likely.enabled(s):
         return {"disabled": True, "entries": []}
-    return likely.proposal(q["date"], config.timezone_name(s), today(config.tz(s)), q.get("fresh") == "1")
+    return likely.proposal(q["date"], config.timezone_name(s), today(config.tz(s)), q.get("fresh") == "1", s)
 
 
 def api_report(q: dict) -> dict:

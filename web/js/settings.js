@@ -22,7 +22,7 @@ function fillSettings(c) {
   f.activitywatch_url.value = c.activitywatchUrl || '';
   f.likely.value = c.likely.setting === 'off' ? 'off' : 'auto';
   f.likely.disabled = !c.likely.available;
-  $('#likely-hint').textContent = c.likely.available ? '' : 'Needs Claude Code and its fi-time-from-activity skill on this computer.';
+  $('#likely-hint').textContent = c.likely.available ? '' : 'Shows when Claude Code sessions are on this computer.';
   $('#remove-token').hidden = !p.tokenSaved;
   paintUpdate(c.update);
   const rules = c.rules || [];

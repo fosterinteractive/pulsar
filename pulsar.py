@@ -22,7 +22,7 @@ from pulsar.server import serve  # noqa: E402
 def self_test() -> int:
     """Imports every module and checks the page's files: the updater runs this before it trusts a new version."""
     import os
-    from pulsar import config, likely, productive, report, server, trackers, updater  # noqa: F401
+    from pulsar import config, likely, names, productive, report, server, sessions, trackers, updater  # noqa: F401
     web = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
     need = ["index.html", "style.css"] + [f"js/{n}.js" for n in ("core", "day", "report", "settings", "log", "main")]
     missing = [n for n in need if not os.path.exists(os.path.join(web, n))]

@@ -1,7 +1,8 @@
 """The "Likely" column: which Claude Code session, which project, minute by minute.
 
-Only for people who work in Claude Code and have the fi-time-from-activity skill, whose activity_blocks.py
-does the work. Everyone else never sees the column.
+For anyone with Claude Code sessions on this computer (~/.claude/projects): sessions.py works it out from the sessions
+and the activity tracker. Where the fi-time-from-activity skill is installed, its activity_blocks.py is used instead
+(it carries its owner's own logging rules). Without Claude Code sessions the column never shows.
 """
 
 from __future__ import annotations
@@ -22,7 +23,12 @@ _cache: dict = {}
 
 
 def available() -> bool:
-    return os.path.exists(SCRIPT) and os.path.isdir(SESSIONS)
+    return os.path.isdir(SESSIONS)
+
+
+def own_script() -> bool:
+    """The fi-time-from-activity skill is installed: its script makes the column."""
+    return os.path.exists(SCRIPT)
 
 
 def enabled(settings: dict) -> bool:
@@ -38,7 +44,7 @@ _locks: dict = {}
 TODAY_FOR = 180  # seconds a proposal for today is reused: the script reads every session of the day (~3 s)
 
 
-def proposal(date: str, tz_name: str, today: str, fresh: bool) -> dict:
+def proposal(date: str, tz_name: str, today: str, fresh: bool, settings: dict | None = None) -> dict:
     """The proposal for a day: past days once, today again after three minutes (or on ↻). One run per day at a time;
     a request that arrives while it runs waits for it instead of starting another."""
     key = (date, tz_name)
@@ -47,15 +53,31 @@ def proposal(date: str, tz_name: str, today: str, fresh: bool) -> dict:
         cached = _cache.get(key)
         if cached and not fresh and (date < today or time.time() - cached[0] < TODAY_FOR):
             return cached[1]
-        result = _run(date, tz_name)
+        result = _run(date, tz_name) if own_script() else _built_in(date, settings or config.load())
         if not result.get("error"):
             _cache[key] = (time.time(), result)
         return result
 
 
-def _run(date: str, tz_name: str) -> dict:
+def _built_in(date: str, settings: dict) -> dict:
+    """sessions.py on the day's activity from the tracker that saw more of it."""
+    from datetime import datetime, timedelta
+    from . import sessions, trackers
     if not available():
-        return {"error": "Needs Claude Code sessions and the fi-time-from-activity skill.", "entries": []}
+        return {"error": "No Claude Code sessions on this computer.", "entries": []}
+    tz = config.tz(settings)
+    day = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=tz)
+    t0, t1 = day.timestamp(), (day + timedelta(days=1)).timestamp()
+    found = trackers.both(t0, t1, settings.get("activitywatch_url") or config.DEFAULTS["activitywatch_url"],
+                          trackers.classifier(settings.get("personal_patterns") or []))
+    source = trackers.pick(found, "auto")
+    names = {"aw": "ActivityWatch", "memtime": "MemTime"}
+    return sessions.propose(t0, t1, found.get(source) or [], names.get(source, source) if found.get(source) else "no tracker")
+
+
+def _run(date: str, tz_name: str) -> dict:
+    if not own_script():
+        return {"error": "The fi-time-from-activity skill is not installed.", "entries": []}
     os.makedirs(config.CACHE_DIR, exist_ok=True)
     fd, out = tempfile.mkstemp(prefix=f"proposal-{date}-", suffix=".json", dir=config.CACHE_DIR)
     os.close(fd)

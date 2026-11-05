@@ -101,7 +101,7 @@ Code and reconnect Productive. A token of your own never expires, so it is the s
 | Daily target | your organization's working day in Productive, else 8 h |
 | Personal windows | Telegram, WhatsApp, YouTube, Netflix, Instagram, Facebook, TikTok, Reddit (one word per line; a window whose app, title or site contains one counts as personal) |
 | ActivityWatch address | `http://localhost:5600` |
-| Likely column | shown when Claude Code sessions and the `fi-time-from-activity` skill are on this computer |
+| Likely column | shown when Claude Code sessions are on this computer (`~/.claude/projects`) |
 
 Settings are saved in `~/.config/pulsar/settings.json`; names and copies of fetched days are cached in
 `~/.cache/pulsar/`. Delete either folder to start again.
@@ -134,6 +134,11 @@ Settings are saved in `~/.config/pulsar/settings.json`; names and copies of fetc
   smooth on any Mac (a Pulsar.app downloaded before 1.0.12 shows the version without the bend; download Pulsar.zip
   again to get it). In a browser it is the version without the bend. Turn it off in **Settings → Version and updates**; it is off anyway while macOS has
   **Reduce motion** on.
+- **Likely, for Claude Code users.** Pulsar reads your Claude Code sessions (`~/.claude/projects`, on this Mac
+  only) and shows, minute by minute, which session you were most likely working in: the one whose title your editor
+  showed, else one that was running, else the one you used last in that sitting. Each block is named after the git
+  repository the session's files are in. Meetings and your personal windows go to no session. Nothing is sent
+  anywhere, and it never logs anything by itself.
 - **Report downloads.** In the Report, **Download** gives the days or the time entries as CSV (for Excel or
   Numbers), or a print view that saves as PDF.
 
@@ -207,7 +212,8 @@ pulsar/
   trackers.py          ActivityWatch and MemTime readers
   productive.py        Productive: REST with a token, or Claude Code's MCP connection (renewed through
                        `claude mcp get`); billing; tasks; writing
-  likely.py            the Likely column (runs fi-time-from-activity's activity_blocks.py)
+  likely.py            the Likely column: sessions.py, or the fi-time-from-activity skill where it is installed
+  sessions.py          Claude Code sessions -> which project each minute of work went to
   report.py            a range of days in numbers (no I/O)
   server.py            HTTP routes, the JSON API and its guards
   updater.py           signed self-update from GitHub releases
