@@ -1,6 +1,6 @@
-<img src="macos/AppIcon-1024.png" width="112" align="right" alt="Pulsar's icon: a pulsar, a bright core with two beams, on a dark tile">
+<p align="center"><img src="macos/AppIcon-1024.png" width="128" alt="Pulsar's icon: a pulsar, a bright core with two beams, on a dark tile"></p>
 
-# Pulsar
+<h1 align="center">Pulsar</h1>
 
 Your working day as your computer saw it, next to what you logged in Productive. It shows when you worked, on
 what, and which active time has no entry yet. It runs on your own computer, and window titles never leave it.
