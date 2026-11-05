@@ -222,6 +222,7 @@ web/
   index.html, style.css
   js/theme-early.js    the saved theme before the first paint
   js/core.js           state, formatting, theme, toast
+  js/datepick.js       the calendar behind every date field
   js/day.js            the day view
   js/report.js         the report, its charts and downloads
   js/settings.js       the settings dialog and updates

@@ -438,3 +438,34 @@ dialog#updprompt::backdrop { background: rgba(0,0,0,.35); }
 
 /* the log dialog's task notes: overdue, due today, blocked stand out (the words say it, the colour helps) */
 .pk .pk-warn { color: var(--gap); font-weight: 600; }
+
+/* date fields (datepick.js): a button with the day in words, and its month calendar */
+.dp-btn { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 4px 10px; border: 0; border-radius: 8px;
+  background: var(--seg); color: var(--text); font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer;
+  font-variant-numeric: tabular-nums; }
+.dp-btn:hover { box-shadow: inset 0 0 0 1px var(--line); }
+.dp-btn[aria-expanded="true"] { background: var(--seg-on); box-shadow: 0 1px 2px rgba(0,0,0,.08), inset 0 0 0 1px var(--line); }
+.dp-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dp-btn .dp-ic { color: var(--muted); flex: none; }
+.field .dp-btn { height: auto; padding: 6px 9px; font-size: 13px; background: var(--bg); border: 1px solid var(--line); min-width: 0; }
+.field .dp-btn span { color: inherit; }
+.dp { position: fixed; z-index: 80; width: 268px; padding: 10px 10px 8px; background: var(--card); color: var(--text);
+  border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.10), 0 1px 2px rgba(0,0,0,.06); }
+.dp[hidden] { display: none; }
+.dp-h { display: flex; align-items: center; gap: 2px; margin: 0 0 4px; }
+.dp-title { flex: 1; padding-left: 6px; font-size: 13px; font-weight: 600; }
+.dp-h .btn { width: 28px; height: 26px; padding: 0; font-size: 16px; line-height: 1; color: var(--muted); }
+.dp-h .btn:hover { color: var(--text); }
+.dp-grid { width: 100%; border-collapse: separate; border-spacing: 2px; table-layout: fixed; }
+.dp-grid th { padding: 2px 0 4px; font-size: 11px; font-weight: 500; color: var(--muted); }
+.dp-grid td { height: 32px; padding: 0; border-radius: 8px; text-align: center; font-size: 12.5px; font-variant-numeric: tabular-nums;
+  cursor: pointer; }
+.dp-grid td.dp-out { cursor: default; }
+.dp-grid td[data-date]:hover { background: var(--hover); }
+.dp-grid .we { color: var(--muted); }
+.dp-grid td[aria-current="date"] { font-weight: 600; box-shadow: inset 0 0 0 1px var(--muted); }
+.dp-grid td[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 85%, #000); color: #fff; font-weight: 600; box-shadow: none; }
+.dp-grid td:focus { outline: none; }
+.dp-grid td:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dp-grid td[aria-selected="true"]:focus-visible { outline-offset: 2px; }
+.dp-f { display: flex; margin-top: 4px; padding: 8px 2px 0; border-top: 1px solid var(--line2); }
