@@ -111,70 +111,44 @@ function showSignIn() {
 /* the notice stays until the page is reloaded signed in: Escape does not dismiss it */
 $('#signin').addEventListener('cancel', ev => ev.preventDefault());
 $('#signin').addEventListener('close', () => { if (signedOut) $('#signin').showModal(); });
-/* Warp: an update looks like a jump past a black hole. Before the reload into the new version, space around the
-   middle of the page bends like a gravitational lens: what lies behind the centre is smeared into a ring (an Einstein
-   ring), a dark core opens and the page draws in a little (warpIn). The new version comes out of it: the lens
-   collapses, the page springs just past its size and back, and a small flash in the logo's colours goes off
-   (warpOut). Under a second; nothing at all with reduced motion.
-
-   The lens is an SVG displacement filter on <body>. Its map says, for each point of the page, where its light comes
-   from: for a point lens the image at distance r from the centre shows the source at r - R²/r, so each point is pulled
-   R²/r towards (and, inside the ring, past) the centre. The map is drawn once per window size; the animation only
-   changes its strength. The core and the flash sit outside <body>, so the lens does not bend them. */
+/* Warp: an update looks like a jump past a black hole. The page is drawn in towards a point, a core opens there with
+   a thin ring of light around it (as light bent around a black hole makes an Einstein ring), and then everything lets
+   go with a small flash. Only transform and opacity change, which the graphics card does for free: an SVG
+   displacement filter bent the page for real but recomputed every pixel on every frame (20-35 fps). Under a second;
+   nothing at all with reduced motion or with the switch in Settings off. The core and the flash sit outside <body>,
+   so the pull does not shrink them. */
 /* off with macOS's Reduce motion, or with the Warp animation box in Settings (kept on this computer, like the theme) */
 const WARP_KEY = 'pulsar-warp';
 function warpOff() { try { return localStorage.getItem(WARP_KEY) === 'off'; } catch (e) { return false; } }
 const calmMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches || warpOff();
-const LENS_PX = 240;  // the largest pull, in pixels, at full strength
-let lens = null;      // {w, h, map: <feDisplacementMap>, core: <div>}
+let lens = null;  // {core: <div>}
 
 function lensSetup() {
+  if (lens?.core) return lens;
   const W = innerWidth, H = innerHeight, cx = W / 2, cy = H * .45, R = Math.min(W, H) * .15;
-  if (!lens || lens.w !== W || lens.h !== H) {
-    const cw = 256, ch = Math.max(1, Math.round(cw * H / W));
-    const canvas = document.createElement('canvas'); canvas.width = cw; canvas.height = ch;
-    const g = canvas.getContext('2d'), img = g.createImageData(cw, ch);
-    for (let j = 0; j < ch; j++) for (let i = 0; i < cw; i++) {
-      const x = (i + .5) / cw * W - cx, y = (j + .5) / ch * H - cy, r = Math.hypot(x, y) || 1;
-      const pull = Math.min(R * R / r, LENS_PX * .98) * Math.exp(-Math.max(0, r - 3 * R) / (2 * R));  // fades far out
-      const k = (j * cw + i) * 4;
-      img.data[k] = 127.5 + 127.5 * pull * x / r / LENS_PX;      // red: how far to the right the light comes from
-      img.data[k + 1] = 127.5 + 127.5 * pull * y / r / LENS_PX;  // green: how far down
-      img.data[k + 2] = 0; img.data[k + 3] = 255;
-    }
-    g.putImageData(img, 0, 0);
-    document.getElementById('warp-svg')?.remove();
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.id = 'warp-svg'; svg.setAttribute('width', '0'); svg.setAttribute('height', '0');
-    svg.setAttribute('aria-hidden', 'true'); svg.style.position = 'absolute';
-    svg.innerHTML = `<filter id="warp-lens" filterUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}"
-        color-interpolation-filters="sRGB"><feImage href="${canvas.toDataURL()}" x="0" y="0" width="${W}" height="${H}"
-        preserveAspectRatio="none" result="map"/><feDisplacementMap in="SourceGraphic" in2="map" scale="0"
-        xChannelSelector="R" yChannelSelector="G"/></filter>`;
-    document.documentElement.append(svg);
-    lens = {w: W, h: H, map: svg.querySelector('feDisplacementMap'), core: null};
-  }
-  if (!lens.core) {
-    lens.core = document.createElement('div');
-    lens.core.className = 'warp-core';
-    // the core takes the theme's colour: a dark hole on the dark theme, a bright one on the light theme
-    lens.core.style.background = `radial-gradient(circle at ${cx}px ${cy}px, rgba(var(--warp-core), .94) 0, `
-      + `rgba(var(--warp-core), .94) ${R * .42}px, rgba(var(--warp-core), .55) ${R * .6}px, rgba(var(--warp-core), 0) ${R * .95}px)`;
-    document.documentElement.append(lens.core);
-  }
-  return lens;
+  const core = document.createElement('div');
+  core.className = 'warp-core';
+  // the core takes the theme's colour (a dark hole on the dark theme, a bright one on the light theme), then the ring
+  core.style.background = `radial-gradient(circle at ${cx}px ${cy}px, rgba(var(--warp-core), .94) 0, `
+    + `rgba(var(--warp-core), .94) ${R * .42}px, rgba(var(--warp-core), .5) ${R * .62}px, rgba(var(--warp-core), 0) ${R * .8}px, `
+    + `rgba(190, 170, 255, 0) ${R * .9}px, rgba(190, 170, 255, .38) ${R}px, rgba(120, 220, 255, .16) ${R * 1.08}px, `
+    + `rgba(120, 220, 255, 0) ${R * 1.25}px)`;
+  core.style.transformOrigin = `${cx}px ${cy}px`;
+  document.documentElement.append(core);
+  document.body.style.transformOrigin = `50% ${cy}px`;
+  document.body.style.willChange = 'transform';
+  return (lens = {core});
 }
-/* one frame of the warp: strength of the lens (0..1), the page's scale, the core's opacity */
+/* one frame of the warp: how far it has pulled (0..1), the page's scale, the core's opacity */
 function lensFrame(strength, scale, core) {
-  const l = lensSetup(), body = document.body;
-  l.map.setAttribute('scale', String(strength * 2 * LENS_PX));
-  body.style.filter = strength > .001 ? 'url(#warp-lens)' : '';
-  body.style.transform = Math.abs(scale - 1) > .0005 ? `scale(${scale})` : '';
+  const l = lensSetup();
+  document.body.style.transform = Math.abs(scale - 1) > .0005 ? `scale(${scale})` : '';
   l.core.style.opacity = String(core);
+  l.core.style.transform = `scale(${.5 + .5 * Math.min(1, strength)})`;
 }
 function lensEnd() {
-  document.body.style.filter = ''; document.body.style.transform = '';
-  lens?.core?.remove(); if (lens) lens.core = null;
+  document.body.style.transform = ''; document.body.style.willChange = ''; document.body.style.transformOrigin = '';
+  lens?.core?.remove(); lens = null;
   document.documentElement.classList.remove('warp-held');
 }
 function tween(ms, step) {
@@ -192,7 +166,7 @@ function lensTick(now) {
   L.level = L.from + (L.to - L.from) * t * t * t;
   if (t >= 1 && L.rampDone) { L.rampDone(); L.rampDone = null; }
   const s = Math.max(0, L.level * (1 + (t >= 1 ? .06 * Math.sin(now / 240) : 0)));  // breathing while held
-  lensFrame(s, 1 - .035 * s, Math.min(1, s * 1.4));
+  lensFrame(s, 1 - .06 * s, Math.min(1, s * 1.4));
   L.raf = requestAnimationFrame(lensTick);
 }
 function warpTo(level, instant = false) {
@@ -223,7 +197,7 @@ function warpOut(from = 1) {
   flash.animate([{opacity: 0, transform: 'scale(.25)'}, {opacity: 1, offset: .18}, {opacity: 0, transform: 'scale(2.6)'}],
     {duration: 700, easing: 'cubic-bezier(.15, .7, .3, 1)'}).finished.catch(() => {}).then(() => flash.remove());
   document.documentElement.classList.remove('warp-held');
-  const s0 = 1 - .035 * from;
+  const s0 = 1 - .06 * from;
   return tween(520, t => {
     const out = 1 - Math.pow(1 - Math.min(1, t / .55), 3);  // the lens and the core are gone a little after half way
     const spring = t < .45 ? s0 + (1.012 - s0) * (t / .45) : 1.012 - .012 * ((t - .45) / .55);  // just past full size, back

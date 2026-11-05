@@ -412,7 +412,7 @@ dialog#signin code { font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospa
   background: var(--chip, rgba(127,127,127,.12)); border-radius: 4px; padding: 1px 4px; user-select: all; }
 
 /* the warp of an update (core.js): the page held drawn in before the snap, and the flash in the logo's colours */
-html.warp-held body { transform: scale(.965); }
+html.warp-held body { transform: scale(.94); transform-origin: 50% 45vh; }
 .warp-core { position: fixed; inset: 0; z-index: 2147483646; pointer-events: none; opacity: 0; }
 .warp-flash { position: fixed; inset: 0; z-index: 2147483647; pointer-events: none; opacity: 0;
   background: radial-gradient(circle at 50% 45%, rgba(255,255,255,.95) 0, rgba(255,255,255,.55) 4%,

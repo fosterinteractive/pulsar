@@ -128,8 +128,8 @@ Settings are saved in `~/.config/pulsar/settings.json`; names and copies of fetc
 - **Logs.** Errors and warnings are kept for 31 days in `~/.cache/pulsar/logs/`, with tokens removed. **Logs**
   at the top shows them; its **Download** button saves a text file to send to whoever maintains Pulsar. Productive
   not being connected is shown on the page, not logged; a Claude Code token that could not be renewed is.
-- **The warp.** An update bends the page like a gravitational lens while it loads, then lets go with a small flash;
-  the refresh button plays a short one. Turn it off in **Settings → Version and updates**; it is off anyway while macOS has
+- **The warp.** An update draws the page in towards a black hole (a bright one on the light theme) with a ring of
+  light around it while it loads, then lets go with a small flash; the refresh button plays a short one. Turn it off in **Settings → Version and updates**; it is off anyway while macOS has
   **Reduce motion** on.
 - **Report downloads.** In the Report, **Download** gives the days or the time entries as CSV (for Excel or
   Numbers), or a print view that saves as PDF.
