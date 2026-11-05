@@ -361,3 +361,55 @@ def propose(t0: float, t1: float, items: list, tracker: str, projects_dir: str =
                      "messages": len(typed), "first_message": (typed[0][1] if typed else "")[:200]})
     return {"tracker": tracker, "working": sum(present), "proposed": sum(r["minutes"] for r in rows),
             "unplaced": [], "logging": 0, "entries": rows}
+
+
+# ---- Productive tasks named in a session ------------------------------------------------------------------
+
+TASK_LINK = re.compile(r"app\.productive\.io/[^\s/]+/(?:projects/\d+/)?tasks/(?:task/)?(\d+)")
+
+
+def task_links(t0: float, projects_dir: str = PROJECTS_DIR) -> list:
+    """Every session used since the day began that has a Productive task link the person typed or pasted:
+    [{titles, links: [(time, task id), ...]}]. Only typed messages count, never what a tool returned."""
+    found = []
+    for path in glob.glob(os.path.join(projects_dir, "*", "*.jsonl")):
+        try:
+            if os.path.getmtime(path) < t0 - 3600:
+                continue
+            titles, links = set(), []
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    if '"ai-title"' in line or '"custom-title"' in line or "productive.io" in line:
+                        try:
+                            r = json.loads(line)
+                        except ValueError:
+                            continue
+                        name = r.get("customTitle") or r.get("aiTitle")
+                        if r.get("type") in ("ai-title", "custom-title") and name:
+                            titles.add(norm_title(name))
+                            continue
+                        text = human_prompt(r)
+                        if text and r.get("timestamp"):
+                            t = parse_ts(r["timestamp"])
+                            links += [(t, x) for x in TASK_LINK.findall(text)]
+        except (OSError, ValueError, TypeError):
+            continue
+        if links and titles:
+            found.append({"titles": {x for x in titles if len(x) >= 5}, "links": sorted(links)})
+    return found
+
+
+LINK_BEFORE = 3 * 3600  # a link typed this long before a row still names its task; older ones were about other work
+
+
+def attach_tasks(rows: list, t0: float, found: list) -> None:
+    """Give each Likely row the Productive tasks linked in its sessions while it ran or in the three hours before,
+    the latest first. Older links are left out: a long session moves through many tasks
+    (on one person's real days, links from any time picked the logged task for 3 rows of 25; this window, for 6 of 8)."""
+    for row in rows:
+        keys = {k for k in (norm_title(t) for t in row.get("titles") or []) if len(k) >= 5}
+        a, b = t0 + row["s"] * 60 - LINK_BEFORE, t0 + row["e"] * 60
+        links = [x for f in found if any(t.startswith(k) or k.startswith(t) for k in keys for t in f["titles"])
+                 for x in f["links"] if a <= x[0] <= b]
+        if links:
+            row["tasks"] = list(dict.fromkeys(tid for _, tid in sorted(links, reverse=True)))[:4]

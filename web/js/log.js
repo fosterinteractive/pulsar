@@ -126,32 +126,37 @@ logForm.elements.date.addEventListener('change', () => {
   fillSuggestions(date, []);
 });
 
-async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = []} = {}) {
+/* lead: a group offered first and picked, {label, tasks} or {label, ids} (the page knows only the tasks' ids) */
+async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = [], note = '', lead = null} = {}) {
   if (!CONFIG?.productive.active) { toast('Connect Productive in Settings first.', true); openSettings(); return; }
   const f = logForm.elements;
   start = Math.max(0, Math.min(1435, Math.round(start)));  // inside the day: hm() would wrap 24:00 to 00:00
   minutes = Math.max(1, Math.min(1440 - start, Math.round(minutes)));
-  f.date.value = date; f.start.value = hm(start); f.minutes.value = minutes; f.note.value = '';
+  f.date.value = date; f.start.value = hm(start); f.minutes.value = minutes; f.note.value = note || '';
   f.service.innerHTML = '<option value="">Pick a task first</option>'; f.service.disabled = true;
   logForce = false; setLogMsg(''); $('#log-save').textContent = 'Log in Productive';
   logDlg.showModal();
   logPicker.loading();
-  fillSuggestions(date, hint);
+  fillSuggestions(date, hint, lead);
 }
 
 /* each request has a number: an answer that arrives after a newer request (the dialog reopened, the date changed)
    is dropped, so it can never pick its own task over the one on screen */
 let suggestSeq = 0;
-async function fillSuggestions(date, hint) {
+async function fillSuggestions(date, hint, lead = null) {
   const seq = ++suggestSeq;
-  const s = await suggestions(date);
+  const [s, named] = await Promise.all([suggestions(date),
+    lead?.ids?.length ? getJSON(`/api/tasks/estimates?ids=${lead.ids.join(',')}`) : null]);
   if (seq !== suggestSeq || !logDlg.open || logForm.elements.date.value !== date) return;
-  const ruled = hint.map(h => ({...((s.recent || []).find(t => t.taskId === h.taskId) || {}), ...h, minutes: Math.round(h.minutes)}));
+  const known = t => ({...((s.recent || []).find(x => x.taskId === t.taskId) || {}), ...t});
+  const ruled = hint.map(h => ({...known(h), minutes: Math.round(h.minutes)}));
+  const led = (lead?.tasks || (lead?.ids || []).map(id => named?.tasks?.[id]).filter(t => t?.title)).map(known);
   logPicker.set(dedupe([
+    {label: lead?.label || '', tasks: led},
     {label: 'From your rules, in this time', tasks: ruled, showMin: true},
     {label: 'You logged to these lately', tasks: (s.recent || []).slice(0, 10)},
     {label: 'Assigned to you', tasks: (s.assigned || []).slice(0, 10)},
-  ]), ruled[0] || null);
+  ]), led[0] || ruled[0] || null);
 }
 
 async function loadServices(task) {

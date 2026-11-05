@@ -1,12 +1,21 @@
 /* Day view: one day on one time axis (activity, likely, logged) */
 function load({fresh = false, keepScroll = false} = {}) {
   const d = state.date;
-  if (!keepScroll) { state.act = state.likely = state.logged = null; render(); }
+  if (!keepScroll) { state.act = state.likely = state.logged = state.repeats = null; render(); }
+  loadRepeats();
   return Promise.all([
     getJSON(`/api/activity?date=${d}&source=${state.source}`).then(x => { if (d === state.date) { state.act = x; render(); } return x; }),
     getJSON(`/api/entries?date=${d}`).then(x => { if (d === state.date) { state.logged = x; render(); loadEstimates(); } return x; }),
     getJSON(`/api/proposal?date=${d}${fresh ? '&fresh=1' : ''}`).then(x => { if (d === state.date) { state.likely = x; render(); } return x; }),
   ]);
+}
+
+/* entries you log at the same time most days (the daily meeting), offered when the tracker saw the call: a hint,
+   so a failure shows nothing rather than an error */
+async function loadRepeats() {
+  const d = state.date;
+  const x = await getJSON(`/api/repeats?date=${d}&source=${state.source}`);
+  if (d === state.date) { state.repeats = x.repeats || []; render(); }
 }
 
 /* each task's estimate and the time everyone logged on it, for the Tasks box */
@@ -81,6 +90,12 @@ function activityBlocks(items, Z, end) {
 const busiest = m => [...m].sort((x, y) => y[1] - x[1])[0]?.[0];
 const topWindow = a => ({...a.it, title: busiest(a.titles) ?? a.it.title, url: busiest(a.urls) || ''});
 
+/* the Productive tasks linked in a Likely block's sessions, from its longest rows first */
+function likelyTasks(b) {
+  return [...new Set([...(b?.entries || [])].filter(e => e.project === b.project).sort((p, q) => q.minutes - p.minutes)
+    .flatMap(e => e.tasks || []))].slice(0, 4);
+}
+
 /* the proposal, by slot too: the project with most minutes in a slot, equal neighbours joined */
 function likelyBlocks(entries, Z, end) {
   const slots = Array.from({length: Math.ceil(end / Z)}, () => ({tot: 0, projects: new Map(), entries: new Set()}));
@@ -135,7 +150,7 @@ function place(x, ppm, minPx, inset = 3) {
 }
 
 /* ---------- render ---------- */
-let blocksCache = [], likelyCache = [], loggedCache = [];
+let blocksCache = [], likelyCache = [], loggedCache = [], repeatCache = [];
 function render() {
   const Z = state.zoom, ppm = ppmOf(Z);
   const act = state.act, likely = state.likely, logged = state.logged;
@@ -167,7 +182,8 @@ function render() {
   grid.insertAdjacentHTML('beforeend', rules);
   if (state.date === todayLocal()) grid.insertAdjacentHTML('beforeend', `<div class="now" style="top:${nowMin() * ppm}px"></div>`);
 
-  assignHues([...(logged?.entries || []).map(x => x.project), ...(CONFIG?.rules || []).map(r => r.project)]);
+  assignHues([...(logged?.entries || []).map(x => x.project), ...(CONFIG?.rules || []).map(r => r.project),
+              ...(state.repeats || []).map(r => r.project)]);
   // activity
   const laneAct = $('#lane-act');
   if (!act) { laneAct.innerHTML = '<div class="state">loading…</div>'; $('#h-act').textContent = '…'; }
@@ -216,7 +232,11 @@ function render() {
   if (!logged) { laneLogged.innerHTML = '<div class="state">reading Productive…</div>'; $('#h-logged').textContent = '…'; }
   else if (logged.error) { laneLogged.innerHTML = `<div class="state err">${esc(logged.error)}${logged.needsSetup ? '<div><button class="btn bordered" data-open-settings>Open Settings</button></div>' : ''}</div>`; $('#h-logged').textContent = 'error'; }
   else {
-    loggedCache = lanes(logged.entries.map(x => ({...x})), ppm, 18);
+    // a repeat is offered until its task has an entry that day
+    const done = new Set(logged.entries.map(x => x.taskId));
+    const laid = lanes([...logged.entries.map(x => ({...x})),
+                        ...(state.repeats || []).filter(r => !done.has(r.taskId)).map(r => ({...r, repeat: true}))], ppm, 18);
+    loggedCache = laid.filter(x => !x.repeat); repeatCache = laid.filter(x => x.repeat);
     const sum = logged.entries.reduce((s, x) => s + x.minutes, 0);
     const head = $('#h-logged');
     head.textContent = logged.warning ? logged.warning : `Productive · ${dur(sum)} · updated ${logged.fetched.split(' ')[1]}`;
@@ -228,6 +248,12 @@ function render() {
         <div class="row"><span class="t">${esc(x.project)}</span>${x.billable ? `<span class="bill" title="Billable${x.billing ? ': ' + esc(x.billing) : ''}">$</span>` : ''}<span class="m num">${dur(x.minutes)}</span></div>
         ${h > 34 ? `<div class="d">${esc(x.task)}</div>` : ''}
         ${lines ? `<div class="n" style="-webkit-line-clamp:${lines}">${esc(x.note)}</div>` : ''}</div>`;
+    }).join('') + repeatCache.map((x, i) => {
+      const h = (x.e - x.s) * ppm, why = `Logged at about ${hm(x.at)} on ${x.days} days; ${x.seen} seen today. Click to log it.`;
+      return `<div class="card repeat" data-k="repeat" data-i="${i}" style="--c:${color(x.project)};${place(x, ppm, 18)}" title="${esc(why)}"
+        tabindex="0" role="button" aria-label="${esc(`Not logged yet, usually logged at this time: ${x.title}, ${hm(x.s)}–${hm(x.e)}, ${dur(x.minutes)}. Log it`)}">
+        <div class="row"><span class="t">${esc(x.title)}</span><span class="m num">${dur(x.minutes)}</span></div>
+        ${h > 34 ? `<div class="d">Usual · ${esc(x.seen)} seen · click to log</div>` : ''}</div>`;
     }).join('');
     // active minutes (not personal) with no entry on them. The number counts each minute's active share, as the
     // report does; the amber rails mark stretches of at least 3 mostly-active minutes, for the eye and the click.
@@ -362,13 +388,24 @@ document.addEventListener('click', ev => {
   const logBtn = ev.target.closest('[data-log-a], .gaprail');
   if (logBtn) {
     const a = +(logBtn.dataset.logA ?? logBtn.dataset.a), b = +(logBtn.dataset.logB ?? logBtn.dataset.b);
-    pop.classList.remove('on'); openLog({start: a, minutes: b - a, hint: rulesInRange(a, b)}); return;
+    const linked = logBtn.dataset.likely != null ? likelyTasks(likelyCache[+logBtn.dataset.likely]) : [];
+    pop.classList.remove('on');
+    openLog({start: a, minutes: b - a, hint: rulesInRange(a, b),
+             lead: linked.length ? {label: 'Linked in the Claude session', ids: linked} : null});
+    return;
   }
   const ruleBtn = ev.target.closest('[data-rule-text]');
   if (ruleBtn) { pop.classList.remove('on'); openRule(ruleBtn.dataset.ruleText); return; }
   const card = ev.target.closest('.card');
   if (!card) { if (!ev.target.closest('.pop')) closePop(); return; }
   const i = +card.dataset.i, Z = state.zoom;
+  if (card.dataset.k === 'repeat') {
+    const x = repeatCache[i];
+    closePop();
+    openLog({start: x.s, minutes: x.minutes, note: x.note,
+             lead: {label: `Usually at this time (${x.days} days)`, tasks: [{taskId: x.taskId, title: x.title, project: x.project}]}});
+    return;
+  }
   if (card.dataset.k === 'act') {
     const b = blocksCache[i];
     openPop(`<div class="ph"><div><h3>${hm(b.start * Z)}–${hm(b.end * Z)}</h3><div class="sub">${dur(b.total)} active</div></div>
@@ -384,7 +421,7 @@ document.addEventListener('click', ev => {
   } else if (card.dataset.k === 'likely') {
     const b = likelyCache[i];
     openPop(`<div class="ph"><div><h3>${hm(b.start * Z)}–${hm(b.end * Z)}</h3><div class="sub">${dur(b.total)} from Claude sessions</div></div>
-      <button class="btn bordered sm" data-log-a="${b.start * Z}" data-log-b="${b.end * Z}">Log this time</button></div>` +
+      <button class="btn bordered sm" data-log-a="${b.start * Z}" data-log-b="${b.end * Z}" data-likely="${i}">Log this time</button></div>` +
       b.entries.map(x => `<div class="li"><div class="t"><div><b>${esc(x.project)}</b> · ${esc(x.titles.join(', ') || '(untitled)')}</div>
         <small>${hm(x.s)}–${hm(x.e)} · ${x.kind === 'parallel' ? 'parallel, moved down' : 'focused'} · ${esc(x.messages)} messages${x.first_message ? ' · ' + esc(x.first_message) : ''}</small></div>
         <span class="num">${dur(x.minutes)}</span></div>`).join(''), ev);
@@ -470,6 +507,7 @@ $('#source-select').addEventListener('change', ev => {
   state.source = ev.target.value; syncURL(); state.act = null; render();
   const d = state.date;
   getJSON(`/api/activity?date=${d}&source=${state.source}`).then(x => { if (d === state.date) { state.act = x; render(); } });
+  loadRepeats();  // the call is looked for in the tracker shown
 });
 // today: refresh everything once an hour; the ↻ buttons do it on demand
 setInterval(async () => {

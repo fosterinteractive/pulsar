@@ -26,7 +26,7 @@ const state = {
   date: validDate(params.get('date')) ? params.get('date') : todayLocal(),
   zoom: ZOOMS.includes(+params.get('zoom')) ? +params.get('zoom') : 30,
   source: SOURCES.includes(params.get('source')) ? params.get('source') : 'auto',
-  act: null, likely: null, logged: null, scrolledFor: null,
+  act: null, likely: null, logged: null, repeats: null, scrolledFor: null,
 };
 
 /* today as YYYY-MM-DD in the chosen zone, built from its parts: what a locale's date looks like changes between macOS

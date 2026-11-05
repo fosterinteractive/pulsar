@@ -138,7 +138,12 @@ Settings are saved in `~/.config/pulsar/settings.json`; names and copies of fetc
   only) and shows, minute by minute, which session you were most likely working in: the one whose title your editor
   showed, else one that was running, else the one you used last in that sitting. Each block is named after the git
   repository the session's files are in. Meetings and your personal windows go to no session. Nothing is sent
-  anywhere, and it never logs anything by itself.
+  anywhere, and it never logs anything by itself. If you pasted a Productive task link into that session in the three
+  hours before, **Log this time** offers that task first.
+- **The daily meeting, ready to log.** An entry you log at the same time on most days (a daily scrum) is noticed from
+  your last four weeks in Productive. When the tracker sees a call near that time (Zoom, Meet, Teams, a Slack huddle),
+  the Logged column shows it as a dashed card with the task, the usual note and the call's length. One click opens it
+  in the log dialog; nothing is logged until you click **Log in Productive**.
 - **Report downloads.** In the Report, **Download** gives the days or the time entries as CSV (for Excel or
   Numbers), or a print view that saves as PDF.
 

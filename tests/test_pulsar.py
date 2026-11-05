@@ -449,6 +449,105 @@ class SessionsTest(unittest.TestCase):
         self.assertIsNone(self.sessions.project_of_path(os.path.join(self.sessions.HOME, ".claude", "skills", "x", "SKILL.md")))
 
 
+class TaskLinksTest(SessionsTest):
+    """A Productive task link typed in a Claude session names the task of the Likely rows it was typed for."""
+
+    def write_linked(self, typed_at, typed="https://app.productive.io/1-acme/tasks/111 please look"):
+        import json
+        lines = [{"type": "custom-title", "customTitle": "Fix the checkout form"},
+                 {"type": "user", "timestamp": self.at(typed_at), "cwd": self.repo, "origin": {"kind": "human"},
+                  "message": {"content": typed}},
+                 {"type": "user", "timestamp": self.at(typed_at + 1), "cwd": self.repo, "toolUseResult": {},
+                  "message": {"content": [{"type": "tool_result", "content": "https://app.productive.io/1-acme/tasks/999"}]}}]
+        with open(os.path.join(self.projects, "linked01.jsonl"), "w") as fh:
+            fh.write("\n".join(json.dumps(x) for x in lines) + "\n")
+
+    def rows(self):
+        return [{"s": 300, "e": 360, "titles": ["Fix the checkout form"]},
+                {"s": 300, "e": 360, "titles": ["Another session"]}]
+
+    def test_a_typed_link_names_the_rows_task_and_tool_output_does_not(self):
+        self.write_linked(250)
+        found = self.sessions.task_links(self.t0, os.path.dirname(self.projects))
+        rows = self.rows()
+        self.sessions.attach_tasks(rows, self.t0, found)
+        self.assertEqual(rows[0].get("tasks"), ["111"])
+        self.assertNotIn("tasks", rows[1])                      # another session's row gets nothing
+
+    def test_a_link_typed_hours_before_the_row_is_about_other_work(self):
+        self.write_linked(60)                                   # four hours before the row
+        rows = self.rows()
+        self.sessions.attach_tasks(rows, self.t0, self.sessions.task_links(self.t0, os.path.dirname(self.projects)))
+        self.assertNotIn("tasks", rows[0])
+
+    def test_both_link_shapes_are_read(self):
+        self.write_linked(250, "see https://app.productive.io/1-acme/projects/5/tasks/task/222?filter=x")
+        found = self.sessions.task_links(self.t0, os.path.dirname(self.projects))
+        self.assertEqual([tid for f in found for _, tid in f["links"]], ["222"])
+
+
+class RepeatsTest(unittest.TestCase):
+    """The daily meeting: an entry logged at the same time most days is offered when the tracker sees the call."""
+    TZ = timezone.utc
+
+    def entry(self, date, hm, minutes, task="7", note="Daily meeting"):
+        h, m = map(int, hm.split(":"))
+        start = datetime.strptime(date, "%Y-%m-%d").replace(hour=h, minute=m, tzinfo=self.TZ).timestamp()
+        return {"date": date, "start": start, "minutes": minutes, "taskId": task, "task": f"Task {task}",
+                "project": "Internal", "serviceId": "70", "service": "Meetings", "note": note}
+
+    def history(self):
+        days = ["2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06", "2026-11-09", "2026-11-10"]
+        rows = [self.entry(d, "16:25", 50 + i) for i, d in enumerate(days)]
+        rows[2] = self.entry(days[2], "15:25", 55)                   # the week the clocks differed
+        rows.append(self.entry(days[1], "16:15", 10, note="Status update"))  # a short note before the call, same task
+        # a task worked on every day, three times by chance at about 14:00: not a repeat
+        rows += [self.entry(d, t, 40, task="8", note="dev") for d, t in
+                 zip(days, ["14:00", "14:02", "14:04", "10:00", "11:30", "17:00", "09:10"])]
+        return rows
+
+    def test_the_daily_meeting_is_found_and_work_logged_all_day_is_not(self):
+        got = server.repeating(self.history(), self.TZ, "2026-11-11")
+        self.assertEqual([(p["taskId"], p["at"], p["days"], p["note"]) for p in got], [("7", 16 * 60 + 25, 6, "Daily meeting")])
+        self.assertEqual(got[0]["weekdays"], [0, 1, 3, 4])            # the day at 15:25 is not one of them
+        self.assertEqual(got[0]["minutes"], 54)
+
+    def test_a_repeat_not_seen_for_ten_days_has_stopped(self):
+        self.assertEqual(server.repeating(self.history(), self.TZ, "2026-11-25"), [])
+
+    def calls(self):
+        return [item(15 * 60 + 20, 15 * 60 + 30, app="Slack", title="Huddle: design"),
+                item(16 * 60 + 27, 16 * 60 + 40, app="zoom.us", title="Zoom Meeting"),
+                item(16 * 60 + 40, 17 * 60, app="Cursor", title="meeting notes"),    # an editor tab is not a call
+                item(17 * 60, 17 * 60 + 20, app="zoom.us", title="Zoom Meeting"),       # back to the call 20 min later
+                item(9 * 60, 9 * 60 + 30, app="Google Chrome", title="Meeting agenda", host="docs.google.com")]
+
+    def test_the_call_nearest_the_usual_time_gives_the_entry(self):
+        pattern = server.repeating(self.history(), self.TZ, "2026-11-11")
+        got = server.repeat_suggestions(pattern, self.calls(), weekday=1)
+        self.assertEqual([(x["taskId"], x["s"], x["minutes"], x["seen"]) for x in got], [("7", 16 * 60 + 25, 55, "zoom.us")])
+
+    def test_no_call_or_another_weekday_offers_nothing(self):
+        pattern = server.repeating(self.history(), self.TZ, "2026-11-11")
+        self.assertEqual(server.repeat_suggestions(pattern, self.calls()[2:3] + self.calls()[4:], weekday=1), [])
+        self.assertEqual(server.repeat_suggestions(pattern, self.calls(), weekday=2), [])
+
+    def test_a_long_call_is_cut_at_half_as_long_again_as_usual(self):
+        pattern = server.repeating(self.history(), self.TZ, "2026-11-11")
+        long_call = [item(16 * 60 + 25 + k * 15, 16 * 60 + 35 + k * 15, app="zoom.us", title="Zoom Meeting") for k in range(12)]
+        self.assertEqual(server.repeat_suggestions(pattern, long_call, weekday=0)[0]["minutes"], 80)
+
+    def test_call_windows(self):
+        yes = [item(0, 1, app="Google Chrome", title="Meet - abc-defg-hij", host="meet.google.com"),
+               item(0, 1, app="Google Chrome", title="x", host="meet.google.com") | {"url": "https://meet.google.com/abc-defg-hij"},
+               item(0, 1, app="Slack", title="Huddle with Ann"), item(0, 1, app="zoom.us", title="Zoom Meeting")]
+        no = [item(0, 1, app="zoom.us", title="Zoom Workplace"), item(0, 1, app="Slack", title="fi-scrum (Channel)"),
+              item(0, 1, app="Google Chrome", title="Google Meet", host="meet.google.com") | {"title": "Meeting notes"},
+              item(0, 1, app="Finder", title="meeting recordings")]
+        self.assertEqual([server.is_call(x) for x in yes], [True] * 4)
+        self.assertEqual([server.is_call(x) for x in no], [False] * 4)
+
+
 class ReviewFixesTest(unittest.TestCase):
     def test_memtime_is_copied_once_a_minute_not_for_every_query(self):
         import sqlite3

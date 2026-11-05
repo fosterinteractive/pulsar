@@ -373,6 +373,123 @@ def urgent_first(tasks: list, today_iso: str) -> list:
     return [t for _, t in sorted(enumerate(tasks), key=rank)]
 
 
+# ---- entries that repeat: the daily meeting --------------------------------------------------------------
+
+REPEAT_DAYS = 28    # how far back the history goes
+REPEAT_NEAR = 5     # minutes: entries starting this close count as the same time (a meeting starts on the minute)
+REPEAT_MIN_DAYS = 3
+REPEAT_SHARE = 0.5  # of the days a task was logged, how many must be at that time: work logged all day is not a repeat
+REPEAT_STALE = 10   # days: a repeat not seen this long has stopped (a meeting that was cancelled)
+CALL_WINDOW = 75    # minutes around the usual time to look for the call (wide enough for an hour's clock change)
+CALL_GAP = 20       # minutes: the call goes on while its window shows again within this; people work during calls
+_repeats: dict = {}
+
+
+def is_call(it: dict) -> bool:
+    """A window of a call in progress: Zoom's meeting window, a Meet or Teams call, a Slack huddle, Webex."""
+    app, title = it.get("app") or "", it.get("title") or ""
+    where = f"{it.get('host') or ''} {it.get('url') or ''}"
+    if re.search(r"zoom", app, re.I):
+        return bool(re.search(r"meeting|webinar", title, re.I))
+    if re.search(r"teams", app, re.I) or "teams.microsoft" in where:
+        return bool(re.search(r"meeting|call", title, re.I))
+    if re.search(r"slack", app, re.I):
+        return bool(re.search(r"huddle", title, re.I))
+    if re.search(r"webex|facetime", app, re.I):
+        return True
+    return bool(re.search(r"meet\.google\.com/[a-z]{3}-[a-z]{4}-[a-z]{3}|zoom\.us/(wc|j)/", where)
+                or re.match(r"Meet\s*[-–]\s*[a-z]{3}-[a-z]{4}-[a-z]{3}", title) or "Google Meet" in title)
+
+
+def repeating(rows: list, tz, date: str) -> list:
+    """Tasks logged at the same time of day on at least three days of the history, and on at least half the days
+    they were logged at all (the daily meeting, not a task worked on all day): the usual start and length, the note
+    written most often, and the weekdays it happened on."""
+    by_task: dict = {}
+    for r in rows:
+        if r.get("start") is None or not r.get("taskId") or r.get("date", "") >= date:
+            continue
+        t = datetime.fromtimestamp(r["start"], tz)
+        by_task.setdefault(r["taskId"], []).append((t.hour * 60 + t.minute, t.weekday(), r))
+    out = []
+    for task_id, xs in by_task.items():
+        best: list = []
+        for at, _, _ in xs:
+            near = [x for x in xs if abs(x[0] - at) <= REPEAT_NEAR]
+            if len({x[2]["date"] for x in near}) > len({x[2]["date"] for x in best}):
+                best = near
+        per_day: dict = {}
+        for x in best:  # one entry a day: the longest at that time
+            d = x[2]["date"]
+            if d not in per_day or x[2]["minutes"] > per_day[d][2]["minutes"]:
+                per_day[d] = x
+        logged_days = {x[2]["date"] for x in xs}
+        if len(per_day) < max(REPEAT_MIN_DAYS, REPEAT_SHARE * len(logged_days)):
+            continue
+        last = max(per_day)
+        if (datetime.strptime(date, "%Y-%m-%d") - datetime.strptime(last, "%Y-%m-%d")).days > REPEAT_STALE:
+            continue
+        starts = sorted(x[0] for x in per_day.values())
+        lengths = sorted(x[2]["minutes"] for x in per_day.values())
+        notes: dict = {}
+        for d in sorted(per_day):
+            n = (per_day[d][2].get("note") or "").strip()
+            if n:
+                notes[n] = notes.get(n, 0) + 1
+        latest = per_day[last][2]
+        out.append({"taskId": task_id, "title": latest.get("task") or "", "project": latest.get("project") or "",
+                    "serviceId": latest.get("serviceId"), "service": latest.get("service") or "",
+                    "at": starts[len(starts) // 2], "minutes": lengths[len(lengths) // 2],
+                    "note": max(notes, key=lambda n: notes[n]) if notes else "", "days": len(per_day),
+                    "weekdays": sorted({x[1] for x in per_day.values()})})
+    return sorted(out, key=lambda x: x["at"])
+
+
+def repeat_suggestions(patterns: list, items: list, weekday: int) -> list:
+    """The repeats seen in a day's activity: a call near the usual time, on a weekday it happened on before. The
+    call runs from its first window to its last (windows less than 20 minutes apart), at most half as long again as
+    usual; a start within 10 minutes of the usual time, or of an hour either side (the clocks changed), is the usual
+    (people join a few minutes late, or open the call's window later)."""
+    spans: list = []
+    for it in sorted((it for it in items if it.get("cat") == "work" and is_call(it)), key=lambda it: it["s"]):
+        if spans and it["s"] - spans[-1][1] <= CALL_GAP:
+            spans[-1][1] = max(spans[-1][1], it["e"])
+        else:
+            spans.append([it["s"], it["e"], it.get("app") or "a call"])
+    out = []
+    for p in patterns:
+        near = [x for x in spans if abs(x[0] - p["at"]) <= CALL_WINDOW]
+        if weekday not in p["weekdays"] or not near:
+            continue
+        a, b, app = min(near, key=lambda x: abs(x[0] - p["at"]))
+        start = next((u for u in (p["at"], p["at"] - 60, p["at"] + 60) if abs(a - u) <= 10), int(round(a / 5) * 5))
+        minutes = max(5, min(int(round((b - start) / 5) * 5), int(round(p["minutes"] * 1.5 / 5) * 5)))
+        out.append({**p, "s": start, "e": start + minutes, "minutes": minutes, "seen": app})
+    return out
+
+
+def api_repeats(q: dict) -> dict:
+    """Entries you log at the same time most days, offered on a day the tracker saw the call. Nothing is written."""
+    s = current_settings()
+    if not s.get("person_id"):
+        return {"repeats": []}
+    date, tz = q["date"], config.tz(s)
+    key = (date, s.get("person_id"))
+    if key not in _repeats or time.time() - _repeats[key][0] > 3600:
+        d0 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=REPEAT_DAYS)).strftime("%Y-%m-%d")
+        d1 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+        rows, problem, _, from_copy = productive_rows(d0, d1, s)
+        if problem and not from_copy:
+            return {"repeats": [], "error": problem}
+        _repeats[key] = (time.time(), repeating(rows, tz, date))
+    t0, t1 = day_bounds(date, tz)
+    found = trackers.both(t0, t1, s["activitywatch_url"], trackers.classifier(s["personal_patterns"]))
+    items = found[trackers.pick(found, q.get("source", "auto"))]
+    if datetime.fromtimestamp(t0, tz).utcoffset() != datetime.fromtimestamp(t1 - 1, tz).utcoffset():
+        items = [{**it, "s": clock(t0 + it["s"] * 60, t0, tz), "e": clock(t0 + it["e"] * 60, t0, tz)} for it in items]
+    return {"repeats": repeat_suggestions(_repeats[key][1], items, datetime.strptime(date, "%Y-%m-%d").weekday())}
+
+
 def api_search(q: dict) -> dict:
     text = (q.get("q") or "").strip()
     return {"tasks": productive.search_tasks(text, current_settings()) if len(text) >= 2 else []}
@@ -540,7 +657,7 @@ class Handler(BaseHTTPRequestHandler):
             if url.path == "/api/tasks/search":
                 return self.send_json(api_search(q))
             routes = {"/api/activity": api_activity, "/api/entries": api_entries, "/api/proposal": api_proposal,
-                      "/api/tasks/suggest": api_suggest, "/api/services": api_services}
+                      "/api/tasks/suggest": api_suggest, "/api/services": api_services, "/api/repeats": api_repeats}
             if url.path not in routes:
                 return self.send(404, b"not found", "text/plain")
             if not DATE.match(q.get("date", "")):

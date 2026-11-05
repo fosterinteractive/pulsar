@@ -115,6 +115,10 @@ input[type=date] {
 .logged .d { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .logged .n { font-size: 11.5px; margin-top: 1px; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; }
 .logged .ok { color: var(--muted); font-size: 11px; }
+/* a repeat not logged yet: the entry it would be, drawn as an outline */
+.repeat { border: 1.5px dashed color-mix(in srgb, var(--c) 70%, var(--line)); background: transparent; }
+.repeat .t { font-weight: 600; font-size: 12px; }
+.repeat .d { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gaprail { position: absolute; left: -1px; width: 3px; background: var(--gap); border-radius: 2px; opacity: .85; pointer-events: none; }
 .state { position: absolute; left: 12px; right: 12px; top: 16px; color: var(--faint); font-size: 12px; }
 .state.err { color: var(--gap); }
