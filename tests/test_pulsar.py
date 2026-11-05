@@ -111,6 +111,26 @@ class ConfigTest(unittest.TestCase):
 
 
 class TrackersTest(unittest.TestCase):
+    def test_activitywatch_with_a_watcher_missing_says_which(self):
+        cases = ((["aw-watcher-afk_mac"], "window watcher"), (["aw-watcher-window_mac"], "AFK watcher"))
+        for buckets, words in cases:
+            trackers.PROBLEMS.clear()
+            with mock.patch.object(trackers, "http_json", lambda url, timeout=0: {b: {} for b in buckets}):
+                self.assertEqual(trackers.activity_aw("http://localhost:5600", 0, 3600, trackers.classifier([])), [])
+            self.assertIn(words, trackers.PROBLEMS.get("aw", ""))
+
+    def test_activitywatch_that_never_saw_you_at_the_keys_says_so(self):
+        trackers.PROBLEMS.clear()
+        def answer(url, timeout=0):
+            if url.endswith("/buckets/"):
+                return {"aw-watcher-window_mac": {}, "aw-watcher-afk_mac": {}}
+            if "window" in url:
+                return [{"timestamp": "1970-01-01T00:10:00Z", "duration": 600, "data": {"app": "Cursor", "title": "x"}}]
+            return [{"timestamp": "1970-01-01T00:00:00Z", "duration": 3600, "data": {"status": "afk"}}]
+        with mock.patch.object(trackers, "http_json", answer):
+            self.assertEqual(trackers.activity_aw("http://localhost:5600", 0, 3600, trackers.classifier([])), [])
+        self.assertIn("never saw you", trackers.PROBLEMS.get("aw", ""))
+
     def test_personal_words_match_app_title_or_site_in_any_case(self):
         classify = trackers.classifier(["telegram", "YouTube"])
         self.assertEqual(classify("Telegram", "Chat", ""), "personal")
@@ -276,12 +296,19 @@ class ReadRetryTest(unittest.TestCase):
                 pass
         return Conn, calls
 
-    def test_a_read_that_the_server_hangs_up_on_is_tried_once_more(self):
+    def test_a_read_that_the_server_hangs_up_on_is_tried_again_twice_at_most(self):
         import http.client
-        Conn, calls = self.conn_class([http.client.RemoteDisconnected("closed"), None])
-        with mock.patch.object(productive.http.client, "HTTPSConnection", Conn):
-            self.assertEqual(productive.https("GET", "https://example.invalid/x"), (200, b"ok"))
-        self.assertEqual(len(calls), 2)
+        hang = http.client.RemoteDisconnected("closed")
+        with mock.patch.object(productive.time, "sleep", lambda s: None):
+            Conn, calls = self.conn_class([hang, hang, None])
+            with mock.patch.object(productive.http.client, "HTTPSConnection", Conn):
+                self.assertEqual(productive.https("GET", "https://example.invalid/x"), (200, b"ok"))
+            self.assertEqual(len(calls), 3)
+            Conn, calls = self.conn_class([hang, hang, hang, None])
+            with mock.patch.object(productive.http.client, "HTTPSConnection", Conn):
+                with self.assertRaises(http.client.RemoteDisconnected):
+                    productive.https("GET", "https://example.invalid/x")
+            self.assertEqual(len(calls), 3)
 
     def test_a_write_and_a_timeout_are_never_tried_twice(self):
         import http.client, socket
@@ -305,6 +332,29 @@ class ReadRetryTest(unittest.TestCase):
         self.assertEqual(seen, [])
 
 
+class ReasonTest(unittest.TestCase):
+    def test_a_request_without_an_answer_says_why(self):
+        import socket
+        for exc, words in ((socket.gaierror(8, "nodename"), "looked up"), (socket.timeout("slow"), "too long"),
+                           (ConnectionResetError(), "closed the connection")):
+            with mock.patch.object(productive, "https", mock.Mock(side_effect=exc)):
+                status, why = productive.rest_get("/time_entries", {}, "t", "1")
+            self.assertEqual(status, 0)
+            self.assertIn(words, productive.why(status, why))
+        self.assertIn("limiting", productive.why(429, None))
+
+    def test_a_refused_token_at_first_setup_says_so_not_org_id(self):
+        with self.assertRaises(productive.ProductiveError) as caught:
+            productive.rest_detect("t", get=lambda *a: (401, None))
+        self.assertIn("refused the token", str(caught.exception))
+
+    def test_a_working_day_with_minutes_keeps_them(self):
+        for day, hours in (("7 h 30 min", 7.5), ("8 h", 8.0), ("", None)):
+            answer = ('```json\n{"id": "1", "firstName": "A"}\n```\n```json\n{"id": "2", "person_day": "%s"}\n```' % day)
+            with mock.patch.object(productive, "mcp_text", lambda *a: answer):
+                self.assertEqual(productive.mcp_detect("t")["person_day_hours"], hours, day)
+
+
 class ClaudeCodeTokenTest(unittest.TestCase):
     """An expired Claude Code token is renewed by Claude Code itself (claude mcp get), then read again."""
 
@@ -319,7 +369,7 @@ class ClaudeCodeTokenTest(unittest.TestCase):
         calls = []
         def fake_run(args, **kw):
             calls.append(args)
-            if args[0] == "security":
+            if args[0] == "/usr/bin/security":
                 return keychains.pop(0) if len(keychains) > 1 else keychains[0]
             return mock.Mock(stdout=f"productive:\n  Status: {claude_status}\n", returncode=0)
         productive._cc_cache[:] = [0.0, None]
@@ -343,7 +393,7 @@ class ClaudeCodeTokenTest(unittest.TestCase):
     def test_a_valid_token_never_runs_claude(self):
         got, calls = self.token_with([self.keychain(30)])
         self.assertEqual(got[0], "tok30")
-        self.assertEqual([c[0] for c in calls], ["security"])
+        self.assertEqual([c[0] for c in calls], ["/usr/bin/security"])
 
     def test_renewal_is_tried_at_most_once_in_five_minutes(self):
         self.token_with([self.keychain(-5)], claude_status="✘ Failed")
@@ -487,7 +537,7 @@ class UpdaterTest(unittest.TestCase):
         def fetch(url, limit, timeout=30):
             return raw if url == u.manifest_url else sig if url == u.manifest_url + ".sig" else zip_bytes
         self.patches = [mock.patch.object(updater, "fetch", fetch), mock.patch.object(updater, "installed", lambda root=None: True),
-                        mock.patch.object(updater, "public_key", lambda: self.pub_pem),
+                        mock.patch.object(updater, "public_keys", lambda: (self.pub_pem,)),
                         mock.patch.object(updater, "self_test", lambda copy: passes),
                         mock.patch.object(updater, "__version__", "1.0.0")]
         for p in self.patches:
@@ -525,7 +575,8 @@ class UpdaterTest(unittest.TestCase):
             u.apply()
         self.assertEqual(os.readlink(os.path.join(self.root, "current")), "versions/1.1.0")
         self.assertEqual(os.readlink(os.path.join(self.root, "previous")), "versions/1.0.0")
-        self.assertTrue(execv.call_args[0][1][2].endswith("versions/1.1.0/pulsar.py"))
+        self.assertEqual(execv.call_args[0][1][1:3], ["-I", "-B"])  # isolated: no PYTHONPATH, no user packages
+        self.assertTrue(execv.call_args[0][1][3].endswith("versions/1.1.0/pulsar.py"))
 
     def test_closing_the_window_makes_a_ready_update_current_without_restarting(self):
         manifest, data = self.release()
@@ -543,6 +594,15 @@ class UpdaterTest(unittest.TestCase):
         u.auto = lambda: False
         u.switch_on_quit()
         self.assertEqual(os.readlink(os.path.join(self.root, "current")), "versions/1.0.0")
+
+    def test_a_release_signed_with_the_reserve_key_is_accepted(self):
+        reserve_key, reserve_pub = openssl_key(self.root, "reserve")
+        manifest, data = self.release()
+        u = self.make(manifest, data, signed_by=reserve_key)
+        with open(reserve_pub, encoding="utf-8") as fh:
+            keys = (self.pub_pem, fh.read())
+        with mock.patch.object(updater, "public_keys", lambda: keys):
+            self.assertEqual(u.check()["status"], "ready")
 
     def test_a_release_without_a_valid_signature_is_never_installed(self):
         other_key, _ = openssl_key(self.root, "someone-else")
@@ -589,7 +649,7 @@ class UpdaterTest(unittest.TestCase):
         with mock.patch.object(updater, "installed", lambda root=None: True), \
              mock.patch.dict(os.environ, {"PULSAR_UPDATE_URL": "http://evil.example/latest.json", "PULSAR_UPDATE_PUBKEY": self.pub}):
             self.assertEqual(updater.Updater(lambda: True, root=self.root).manifest_url, updater.DEFAULT_MANIFEST)
-            self.assertEqual(updater.public_key(), updater.PUBLIC_KEY)
+            self.assertEqual(updater.public_keys(), updater.PUBLIC_KEYS)
 
     def test_a_ready_update_stays_ready_on_the_next_check_and_odd_manifests_fail_cleanly(self):
         manifest, data = self.release()
@@ -602,7 +662,7 @@ class UpdaterTest(unittest.TestCase):
             raw = json_bytes(bad)
             sig = sign(self.key, raw)
             with mock.patch.object(updater, "fetch", lambda url, limit, timeout=30, raw=raw, sig=sig: sig if url.endswith(".sig") else raw), \
-                 mock.patch.object(updater, "public_key", lambda: self.pub_pem):
+                 mock.patch.object(updater, "public_keys", lambda: (self.pub_pem,)):
                 self.assertEqual(updater.Updater(lambda: True, root=self.root).check()["status"], "failed", bad)
 
     def test_a_self_test_that_hangs_counts_as_failed(self):

@@ -435,11 +435,10 @@ $('#date').onchange = e => {
 };
 $('#date').addEventListener('blur', e => { if (e.target.value !== state.date) e.target.value = state.date; });
 $('#refresh').onclick = async () => {
-  warp();  // while everything reloads
-  if (state.view === 'report') return loadReport(true);
+  if (state.view === 'report') return warpUntil(loadReport(true));  // the warp holds until the report is back
   const btn = $('#refresh'), before = state.logged, d = state.date;
   btn.classList.add('busy');
-  const [, logged] = await load({fresh: true, keepScroll: true});
+  const [, logged] = await warpUntil(load({fresh: true, keepScroll: true}));
   btn.classList.remove('busy');
   if (d !== state.date) return;
   const c = loggedChange(before, logged);

@@ -186,6 +186,15 @@ def activitywatch_raw(base: str, t0: float, t1: float) -> dict | None:
         return None
     a = datetime.fromtimestamp(t0, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     b = datetime.fromtimestamp(t1, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # ActivityWatch can run with a watcher missing; then say which, instead of an empty day without a reason
+    if not any(x.startswith("aw-watcher-window_") for x in buckets):
+        PROBLEMS["aw"] = ("ActivityWatch runs but records no windows: turn on its window watcher (aw-watcher-window) "
+                          "and give ActivityWatch Accessibility access in System Settings > Privacy & Security.")
+        return None
+    if not any(x.startswith("aw-watcher-afk_") for x in buckets):
+        PROBLEMS["aw"] = ("ActivityWatch records windows but not whether you are at the computer: turn on its "
+                          "AFK watcher (aw-watcher-afk), without which Pulsar cannot tell work time.")
+        return None
     out: dict = {"window": [], "afk": []}
     for key, prefix in (("window", "aw-watcher-window_"), ("afk", "aw-watcher-afk_")):
         for bucket in (x for x in buckets if x.startswith(prefix)):
@@ -203,6 +212,10 @@ def activity_aw(base: str, t0: float, t1: float, classify: Classifier) -> list:
         return []
     present = merge([[parse_ts(ev["timestamp"]), parse_ts(ev["timestamp"]) + ev["duration"]]
                      for ev in raw["afk"] if (ev.get("data") or {}).get("status") == "not-afk"])
+    if not present:  # windows, but never at the keys: the AFK watcher stopped, or ActivityWatch lacks access
+        PROBLEMS["aw"] = ("ActivityWatch saw windows but never saw you at the computer in this time. Check that its "
+                          "AFK watcher runs and that ActivityWatch has Accessibility access.")
+        return []
     return compact(clip_to_present(raw["window"], present, t0, t1, classify))
 
 

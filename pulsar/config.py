@@ -234,8 +234,13 @@ def get_token() -> str | None:
 
 def _read_token() -> str | None:
     if _keychain():
-        run = subprocess.run(["security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT, "-w"],
-                             capture_output=True, text=True, timeout=15)
+        run = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT,
+                              "-w"], capture_output=True, text=True, timeout=15)
+        if run.returncode not in (0, 44):  # 44: no such item; anything else is a keychain that said no (locked, denied)
+            from . import logbook
+            logbook.record("keychain", f"The keychain did not give Pulsar its Productive token (security exit "
+                                       f"{run.returncode}: {run.stderr.strip()[:200]}). Unlock the login keychain, or "
+                                       "allow Pulsar when macOS asks.", kind="warning", once_per=3600)
         token = run.stdout.strip()
         return token or None
     try:
@@ -253,7 +258,7 @@ def set_token(token: str) -> None:
     if _keychain():
         # Through `security -i` on stdin, so the token never shows in the process list.
         cmd = f'add-generic-password -U -s {KEYCHAIN_SERVICE} -a {KEYCHAIN_ACCOUNT} -w "{token}"\n'
-        run = subprocess.run(["security", "-i"], input=cmd, capture_output=True, text=True, timeout=15)
+        run = subprocess.run(["/usr/bin/security", "-i"], input=cmd, capture_output=True, text=True, timeout=15)
         if run.returncode != 0 or _read_token() != token:
             raise RuntimeError("Could not save the token in the keychain: " + (run.stderr or run.stdout).strip()[:200])
         return
@@ -267,7 +272,7 @@ def set_token(token: str) -> None:
 def delete_token() -> None:
     _token_cache[2] = False
     if _keychain():
-        subprocess.run(["security", "delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT],
+        subprocess.run(["/usr/bin/security", "delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", KEYCHAIN_ACCOUNT],
                        capture_output=True, text=True, timeout=15)
         return
     try:

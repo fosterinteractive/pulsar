@@ -107,7 +107,8 @@ def https(method: str, url: str, body: Optional[bytes] = None, headers: Optional
     if write and os.environ.get("PULSAR_READ_ONLY"):  # every write goes through here, whatever asked for it
         raise ProductiveError("Pulsar runs read-only (PULSAR_READ_ONLY): nothing was written.")
     path = (u.path or "/") + (f"?{u.query}" if u.query else "")
-    for attempt in (0, 1):
+    tries = 1 if write else 3
+    for attempt in range(tries):
         conn = None
         if not write:
             with _pool_lock:
@@ -125,8 +126,10 @@ def https(method: str, url: str, body: Optional[bytes] = None, headers: Optional
         except (http.client.HTTPException, OSError) as exc:
             conn.close()
             hung_up = isinstance(exc, (http.client.RemoteDisconnected, ConnectionResetError, BrokenPipeError))
-            if write or attempt or (fresh and not hung_up):  # a timeout is not retried: it would only wait twice
+            if write or attempt == tries - 1 or (fresh and not hung_up):  # a timeout is not retried: it would only wait again
                 raise
+            if fresh:  # Productive hung up on a new connection: it is busy, so wait a moment before asking again
+                time.sleep(0.4 * (attempt + 1))
             continue
         if write or resp.will_close:
             conn.close()
@@ -145,9 +148,37 @@ def rest_get(path: str, query: dict, token: str, org: Optional[str]) -> Tuple[in
         headers["X-Organization-Id"] = str(org)
     try:
         status, raw = https("GET", url, headers=headers, timeout=30)
-        return status, (json.loads(raw) if raw and status == 200 else None)
-    except (OSError, ValueError, http.client.HTTPException, ProductiveError):
-        return 0, None
+    except (OSError, http.client.HTTPException, ProductiveError) as exc:
+        return 0, network_reason(exc)  # status 0: no answer; the second item says why, in words
+    if status != 200:
+        return status, None
+    try:
+        return status, json.loads(raw) if raw else None
+    except ValueError:
+        return 0, "the answer was not JSON"
+
+
+def network_reason(exc: BaseException) -> str:
+    """Why a request got no answer, in words a person can act on."""
+    import socket
+    if isinstance(exc, socket.gaierror):
+        return "Productive's address could not be looked up (offline, or a DNS problem)"
+    if isinstance(exc, (socket.timeout, TimeoutError)):
+        return "Productive took too long to answer"
+    if isinstance(exc, ssl.SSLError):
+        return f"the secure connection failed ({exc.__class__.__name__}: {exc})"
+    if isinstance(exc, (ConnectionRefusedError, ConnectionResetError, http.client.RemoteDisconnected)):
+        return "Productive closed the connection"
+    return f"{exc.__class__.__name__}: {exc}"
+
+
+def why(status: int, doc) -> str:
+    """'HTTP 503', '429 …' or the reason there was no answer, for messages."""
+    if status == 0:
+        return doc if isinstance(doc, str) and doc else "no answer"
+    if status == 429:
+        return "HTTP 429: Productive is limiting requests; try again in a minute"
+    return f"HTTP {status}"
 
 
 def _index(doc: dict) -> dict:
@@ -169,8 +200,10 @@ def rest_detect(token: str, org_hint: str = "", get: Get = rest_get) -> dict:
     found = {"org_id": org_hint or "", "org_name": "", "person_id": "", "person_name": ""}
     for org in ([org_hint] if org_hint else []) + [None]:
         status, doc = get("/organization_memberships", {"include": "organization,person"}, token, org)
-        if status in (401, 403) and org_hint:
-            raise ProductiveError("Productive refused the token (HTTP %d). Check the token and the organization ID." % status)
+        if status in (401, 403) and (org_hint or org is None):
+            raise ProductiveError(f"Productive refused the token (HTTP {status}). Check that the whole token was pasted"
+                                  + (" and that the organization ID is right." if org_hint else
+                                     "; if it is right, type your organization ID in Settings."))
         if status == 200 and isinstance(doc, dict) and len(doc.get("data") or []) > 1:
             break  # several people (an admin token?): never guess; Settings asks for the person ID
         if status == 200 and isinstance(doc, dict) and doc.get("data"):
@@ -202,7 +235,7 @@ def rest_entries(d0: str, d1: str, token: str, org: str, person: str, names: Nam
         if status in (401, 403):
             raise ProductiveError("Productive refused the token (HTTP %d). Check it in Settings." % status)
         if status != 200 or not isinstance(doc, dict):
-            raise ProductiveError("Productive did not answer (HTTP %s)." % (status or "none"))
+            raise ProductiveError(f"Productive did not give the time entries ({why(status, doc)}).")
         rows += [d for d in doc.get("data") or [] if isinstance(d, dict)]
         inc.update(_index(doc))
         pages = (doc.get("meta") or {}).get("total_pages")
@@ -290,7 +323,7 @@ def _claude_code_token() -> tuple:
     all, so its problem (an expired token) is worth showing even when Pulsar was not asked to use it."""
     if sys.platform != "darwin":
         return None, "Claude Code's Productive connection is read from the macOS keychain; use a token instead.", False, False, ""
-    run = subprocess.run(["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
+    run = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
                          capture_output=True, text=True, timeout=15)
     try:
         servers = json.loads(run.stdout).get("mcpOAuth", {})
@@ -359,12 +392,16 @@ def _renew_claude_code(name: str) -> bool:
 WRITE_TOOLS = {"create_resource", "update_resource", "delete_resource", "perform_action"}
 
 
+_mcp_slots = threading.BoundedSemaphore(4)  # Productive's MCP endpoint hangs up when asked too much at once
+
+
 def mcp_text(tool: str, args: dict, token: str) -> str:
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                        "params": {"name": tool, "arguments": args}}).encode()
-    status, raw = https("POST", MCP_URL, body, {"Authorization": "Bearer " + token, "Content-Type": "application/json",
-                                                "Accept": "application/json, text/event-stream"},
-                        timeout=60, write=tool in WRITE_TOOLS)
+    with _mcp_slots:
+        status, raw = https("POST", MCP_URL, body, {"Authorization": "Bearer " + token, "Content-Type": "application/json",
+                                                    "Accept": "application/json, text/event-stream"},
+                            timeout=60, write=tool in WRITE_TOOLS)
     if status == 401:
         _cc_cache[0] = 0.0  # read the keychain again next time: Claude Code may have renewed it meanwhile
         raise ProductiveError("Productive refused Claude Code's token (HTTP 401); it may have just expired.")
@@ -422,10 +459,10 @@ def mcp_detect(token: str) -> dict:
     text = mcp_text("get_current_person_and_organization", {}, token)
     blocks = [json.loads(b) for b in re.findall(r"```json\s*(\{.*?\})\s*```", text, re.S)]
     person, org = (blocks + [{}, {}])[:2]
-    day = re.match(r"([\d.]+)\s*h", str(org.get("person_day") or ""))
+    day = re.match(r"([\d.]+)\s*h(?:\s*(\d+)\s*min)?", str(org.get("person_day") or ""))  # "8 h", "7 h 30 min"
     return {"person_id": str(person.get("id") or ""), "org_id": str(org.get("id") or ""),
             "person_name": " ".join(x for x in (person.get("firstName"), person.get("lastName")) if x),
-            "org_name": org.get("name") or "", "person_day_hours": float(day.group(1)) if day else None}
+            "org_name": org.get("name") or "", "person_day_hours": float(day.group(1)) + int(day.group(2) or 0) / 60 if day else None}
 
 
 def _mcp_rows(conditions: list, person: str, token: str) -> Tuple[list, dict]:
@@ -681,7 +718,7 @@ def _task_rows(conditions: list, settings: dict, limit: int = 200) -> list:
             query[f"filter[{key}]" + ("[contains]" if c["operator"] == "contains" else "")] = value
         status, doc = rest_get("/tasks", query, conn["token"], settings.get("org_id"))
         if status != 200 or not isinstance(doc, dict):
-            raise ProductiveError(f"Productive did not list tasks (HTTP {status or 'none'}).")
+            raise ProductiveError(f"Productive did not list tasks ({why(status, doc)}).")
         inc = _index(doc)
         return [{"taskId": str(d.get("id")), "title": _attr(d, "title") or "",
                  "project": _attr(inc.get(("projects", _rel(d, "project") or "")), "name") or "",
@@ -721,7 +758,7 @@ def bookable_services(task_id: str, date: str, settings: dict, names: Optional[N
         status, doc = rest_get("/services", {"filter[project_id]": task["projectId"], "filter[bookable_date]": date,
                                              "include": "deal", "page[size]": 200}, conn["token"], settings.get("org_id"))
         if status != 200 or not isinstance(doc, dict):
-            raise ProductiveError(f"Productive did not list the services (HTTP {status or 'none'}).")
+            raise ProductiveError(f"Productive did not list the services ({why(status, doc)}).")
         inc = _index(doc)
         services = [{"id": str(d.get("id")), "name": _attr(d, "name") or "",
                      "budget": _attr(inc.get(("deals", _rel(d, "deal") or "")), "name") or "",

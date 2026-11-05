@@ -174,11 +174,37 @@ function tween(ms, step) {
     requestAnimationFrame(frame);
   });
 }
-function warpIn() {
-  if (calmMotion()) return Promise.resolve();
-  return tween(520, t => { const e = t * t * t; lensFrame(e, 1 - .035 * e, Math.min(1, e * 1.4)); });
+/* The lens follows the work it stands for: warpTo(level) pulls it in (slowly at first, as gravity does) and holds it
+   there, breathing a little, for as long as the work takes; warpRelease() lets go, with the spring and the flash. */
+const lensState = {level: 0, from: 0, to: 0, t0: 0, dur: 1, raf: 0, ramped: null, rampDone: null};
+function lensTick(now) {
+  const L = lensState, t = Math.min(1, (now - L.t0) / L.dur);
+  L.level = L.from + (L.to - L.from) * t * t * t;
+  if (t >= 1 && L.rampDone) { L.rampDone(); L.rampDone = null; }
+  const s = Math.max(0, L.level * (1 + (t >= 1 ? .06 * Math.sin(now / 240) : 0)));  // breathing while held
+  lensFrame(s, 1 - .035 * s, Math.min(1, s * 1.4));
+  L.raf = requestAnimationFrame(lensTick);
 }
-function warpOut() {
+function warpTo(level, instant = false) {
+  const L = lensState;
+  if (calmMotion()) return Promise.resolve();
+  L.from = instant ? level : L.level; L.to = level; L.t0 = performance.now();
+  L.dur = Math.max(1, 520 * Math.abs(level - L.from));
+  L.ramped = new Promise(done => { L.rampDone = done; });
+  if (instant) { L.level = level; }
+  if (!L.raf) L.raf = requestAnimationFrame(lensTick);
+  return L.ramped;
+}
+function warpRelease() {
+  const L = lensState;
+  if (!L.raf) return Promise.resolve();
+  cancelAnimationFrame(L.raf); L.raf = 0;
+  if (L.rampDone) { L.rampDone(); L.rampDone = null; }
+  const from = L.level; L.level = L.to = 0;
+  return warpOut(from);
+}
+function warpIn() { return warpTo(1); }  // before a reload into a new version: in, and held until the page goes
+function warpOut(from = 1) {
   if (calmMotion()) { lensEnd(); return Promise.resolve(); }
   const flash = document.createElement('div');
   flash.className = 'warp-flash';
@@ -186,20 +212,30 @@ function warpOut() {
   flash.animate([{opacity: 0, transform: 'scale(.25)'}, {opacity: 1, offset: .18}, {opacity: 0, transform: 'scale(2.6)'}],
     {duration: 700, easing: 'cubic-bezier(.15, .7, .3, 1)'}).finished.catch(() => {}).then(() => flash.remove());
   document.documentElement.classList.remove('warp-held');
+  const s0 = 1 - .035 * from;
   return tween(520, t => {
     const out = 1 - Math.pow(1 - Math.min(1, t / .55), 3);  // the lens and the core are gone a little after half way
-    const spring = t < .45 ? .965 + .047 * (t / .45) : 1.012 - .012 * ((t - .45) / .55);  // to just past full size, back
-    lensFrame(1 - out, spring, 1 - out);
+    const spring = t < .45 ? s0 + (1.012 - s0) * (t / .45) : 1.012 - .012 * ((t - .45) / .55);  // just past full size, back
+    lensFrame(from * (1 - out), spring, Math.min(1, from * 1.4) * (1 - out));
   }).then(lensEnd);
 }
-/* the whole jump in place, for the refresh button and an Option-click on the version; one at a time */
+/* the warp for as long as `work` takes (at most maxMs): in, held, out when it is done */
 let warping = null;
-function warp() {
-  if (!warping) warping = warpIn().then(warpOut).finally(() => { warping = null; });
-  return warping;
+function warpUntil(work, maxMs = 6000) {
+  if (calmMotion() || warping) return work;
+  const done = Promise.race([Promise.resolve(work).catch(() => {}), new Promise(r => setTimeout(r, maxMs))]);
+  warping = Promise.all([warpTo(1), done]).then(warpRelease).finally(() => { warping = null; });
+  return work;
 }
-/* a page that has just restarted into a new version warps out at once, before anything else draws */
-try { if (sessionStorage.getItem('pulsar-updated')) warpOut(); } catch (e) {}
+function warp() { return warpUntil(null, 0); }  // the whole jump in place (an Option-click on the version)
+/* a page that has just restarted into a new version opens inside the lens; main.js lets go once its data is drawn.
+   Whatever happens, it lets go after eight seconds. */
+try {
+  if (sessionStorage.getItem('pulsar-updated') && !calmMotion()) {
+    warpTo(1, true);
+    setTimeout(() => { if (lensState.raf) warpRelease(); }, 8000);
+  }
+} catch (e) {}
 
 /* In the Pulsar window (Pulsar.app) the page can ask the app for things a browser does itself: printing, and a new
    sign-in (the app gets a fresh one-time code from its launcher). */

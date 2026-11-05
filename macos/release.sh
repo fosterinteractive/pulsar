@@ -109,10 +109,17 @@ PY
 KEY="${PULSAR_SIGNING_KEY:-$HOME/.config/pulsar-release/update-signing-key.pem}"
 [ -f "$KEY" ] || die "the release signing key is missing: $KEY (see macos/README.md, 'The release key')"
 PUB_FROM_KEY="$(/usr/bin/openssl ec -in "$KEY" -pubout 2>/dev/null)"
-PUB_IN_APP="$(python3 -c 'import re,sys; s=open(sys.argv[1]).read(); print(re.search(r"PUBLIC_KEY = \"\"\"(.*?)\"\"\"", s, re.S).group(1).strip())' "$ROOT/pulsar/updater.py")"
-[ "$PUB_FROM_KEY" = "$PUB_IN_APP" ] || die "this key is not the one pulsar/updater.py trusts; installed copies would refuse the release"
+# The keys installed copies trust: PUBLIC_KEYS in pulsar/updater.py (the main one, then any reserve). The signing
+# key's public half must be one of them, whole.
+echo "$PUB_FROM_KEY" | python3 -c 'import re, sys
+pem = lambda t: re.findall(r"-----BEGIN PUBLIC KEY-----.*?-----END PUBLIC KEY-----", t, re.S)
+flat = lambda k: "".join(k.split())
+block = re.search(r"PUBLIC_KEYS = \((.*?)\n\)", open(sys.argv[1]).read(), re.S).group(1)
+mine = pem(sys.stdin.read())
+sys.exit(0 if mine and flat(mine[0]) in {flat(k) for k in pem(block)} else 1)' "$ROOT/pulsar/updater.py" \
+  || die "this key is not one pulsar/updater.py trusts (PUBLIC_KEYS); installed copies would refuse the release"
 /usr/bin/openssl dgst -sha256 -sign "$KEY" -out "$OUT/latest.json.sig" "$OUT/latest.json"
-/usr/bin/openssl dgst -sha256 -verify <(echo "$PUB_IN_APP") -signature "$OUT/latest.json.sig" "$OUT/latest.json" >/dev/null \
+/usr/bin/openssl dgst -sha256 -verify <(echo "$PUB_FROM_KEY") -signature "$OUT/latest.json.sig" "$OUT/latest.json" >/dev/null \
   || die "the new signature does not verify"
 
 "$ROOT/macos/build_app.sh" >/dev/null

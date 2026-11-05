@@ -16,18 +16,25 @@ It writes to Productive only when you log time yourself: you pick the task and p
 
 Pulsar runs on macOS 12 Monterey or newer, Apple Silicon or Intel.
 
-1. Download **Pulsar.zip** from the link you were sent and open it. It unpacks into **Pulsar**, next to the zip.
-2. Drag **Pulsar** into your **Applications** folder.
-3. Open it the first time like this, because the app is not signed by Apple and macOS asks you to confirm it
+1. Install **ActivityWatch**, the free tracker Pulsar reads (skip this if you use MemTime): download it from
+   [activitywatch.net](https://activitywatch.net/downloads/), drag it into Applications and open it. When macOS
+   asks, allow it in **System Settings → Privacy & Security → Accessibility**; without that it sees no windows.
+   Add it to your **Login Items** too, so it records every day. By default it counts you as away after 3 minutes
+   without typing or moving the mouse; reading and calls then look like time away. To count 30 minutes instead, open
+   `~/Library/Application Support/activitywatch/aw-watcher-afk/aw-watcher-afk.toml` (in Finder: **Go → Go to
+   Folder…**), set `timeout = 1800` under `[aw-watcher-afk]`, and quit and reopen ActivityWatch.
+2. Download **Pulsar.zip** from the link you were sent and open it. It unpacks into **Pulsar**, next to the zip.
+3. Drag **Pulsar** into your **Applications** folder.
+4. Open it the first time like this, because the app is not signed by Apple and macOS asks you to confirm it
    once: right-click **Pulsar** in Applications, choose **Open**, then **Open** again.
    On macOS 15 Sequoia or newer that message only offers **Done**. Click it, open **System Settings → Privacy &
    Security**, scroll down to the line about Pulsar, click **Open Anyway** and confirm.
    A company-managed Mac may block Pulsar completely, because it is not signed with a Developer ID. Then IT has
    to allow it, or Pulsar has to be signed and notarized by Apple first: tell the person who shared it.
-4. If Pulsar says it needs Apple's developer tools, click **Install**. macOS asks for an administrator password
+5. If Pulsar says it needs Apple's developer tools, click **Install**. macOS asks for an administrator password
    the first time. Wait until the installation has finished (about 5 minutes, only once), then open Pulsar
    again.
-5. Pulsar opens in its own window. Click **⚙ Settings → API token** and paste a token
+6. Pulsar opens in its own window. Click **⚙ Settings → API token** and paste a token
    from Productive: **Settings → API integrations → Generate new token**, with **Read/Write** access (read-only lets Pulsar show your time but not log it). Click **Save**.
 
 After that, open Pulsar like any other app. If it is already running, its window comes to the front. Downloads

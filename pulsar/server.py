@@ -271,6 +271,11 @@ def api_report(q: dict) -> dict:
         rows, problem, source, from_copy = rows_job.result()
     data = report.build(dates, bounds, sources, rows, today(tz), tz=tz)
     data["warning"], data["fromCopy"], data["needsSetup"] = problem, from_copy, bool(problem) and source is None
+    # no activity at all in the range: say why, if a tracker said (otherwise every day just reads "Active 0")
+    if not any(sources.values()):
+        data["trackerWarning"] = " ".join(trackers.PROBLEMS.values()) or (
+            "No activity was recorded in this range. Pulsar reads ActivityWatch or MemTime: is one of them installed "
+            "and running?")
     data["targetMinutes"] = config.target_minutes(s)
     return data
 

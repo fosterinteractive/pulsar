@@ -121,7 +121,8 @@ function waitForVersion() {
       }
     } catch (e) { /* still restarting */ }
     if (Date.now() - t0 > 60 * 1000) {
-      clearInterval(waitingForVersion);
+      clearInterval(waitingForVersion); warpRelease();
+      toast('Pulsar did not come back. Close it and open it again.', true);
       const st = $('#update-status'); st.textContent = 'Pulsar did not come back. Close and open it again.'; st.classList.add('warn');
     }
   }, 1500);
@@ -133,14 +134,21 @@ $('#update-check').onclick = async () => {
   if (r.error) { $('#update-status').textContent = r.error; return; }
   CONFIG.update = r.update; paintUpdate(r.update);
 };
+/* The warp follows the update: half way in while the new version downloads and tests itself, all the way in while
+   Pulsar restarts, out once the new version has drawn its data (main.js). The dialog closes: it would not bend. */
 $('#update-now').onclick = async () => {
   const btn = $('#update-now'), u = CONFIG.update; btn.disabled = true;
   $('#update-status').textContent = u.status === 'ready' ? 'Restarting…' : `Downloading and checking Pulsar ${u.latest}…`;
+  dlg.close();
+  warpTo(u.status === 'ready' ? 1 : .45);
   const r = await postJSON(u.status === 'ready' ? '/api/update/apply' : '/api/update/install', {});
   btn.disabled = false;
-  if (r.error) { $('#update-status').textContent = r.error; return; }
   if (r.update) { CONFIG.update = r.update; paintUpdate(r.update); }
-  if (r.ok || r.update?.status === 'ready') { $('#update-status').textContent = 'Restarting into the new version…'; waitForVersion(); }
+  if (!r.error && (r.ok || r.update?.status === 'ready')) {
+    $('#update-status').textContent = 'Restarting into the new version…'; warpTo(1); waitForVersion(); return;
+  }
+  warpRelease();
+  toast(r.error || r.update?.message || 'Pulsar was not updated.', true);
 };
 $('#auto-update').addEventListener('change', async ev => {
   const on = ev.target.checked;

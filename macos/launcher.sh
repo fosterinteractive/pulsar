@@ -177,7 +177,7 @@ start_server() {
   /usr/bin/nohup "$PY" -c 'import os, sys
 if os.getpid() != os.getpgrp():
     os.setsid()
-os.execv("/usr/bin/python3", ["/usr/bin/python3", "-B"] + sys.argv[1:])' \
+os.execv("/usr/bin/python3", ["/usr/bin/python3", "-I", "-B"] + sys.argv[1:])' \
     "$real/pulsar.py" --no-open --port "$PORT" >>"$LOG" 2>&1 </dev/null &
   server=$!
   for _ in $(seq 1 60); do

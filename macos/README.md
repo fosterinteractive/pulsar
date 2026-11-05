@@ -49,14 +49,31 @@ the app again. A copy run from a git checkout only says that a newer version exi
 private repository every download answers 404: Settings then says no release is published, and an installed
 copy writes a warning to its error log once a day.
 
-**The release key.** Installed copies trust only releases signed with one ECDSA P-256 key. Its public half is
-`PUBLIC_KEY` in `pulsar/updater.py`; its private half is `~/.config/pulsar-release/update-signing-key.pem` on the
-maintainer's Mac (owner-only, never in the repo). `release.sh` signs with it, and refuses to run if the key does
-not match the one in `updater.py`. Anyone with write access to the repository can publish a release, but without
-the key installed copies ignore it. Keep a copy of the private key somewhere safe (a password manager): if it is
-lost, installed copies cannot be updated again until every colleague installs a new Pulsar.zip that trusts a new
-key. If it leaks, publish a version with a new `PUBLIC_KEY` at once and ask everyone to reinstall from
-Pulsar.zip. For the first release of a version (for example 1.0.0 before any tag exists) `release.sh` accepts the
+**The release keys.** Installed copies trust only releases signed with one of the ECDSA P-256 keys listed in
+`PUBLIC_KEYS` in `pulsar/updater.py`: the main key, then a reserve key.
+
+- **Main key**: `~/.config/pulsar-release/update-signing-key.pem` on the Mac of whoever publishes (owner-only, never in
+  the repo; `PULSAR_SIGNING_KEY` points elsewhere). `release.sh` signs with it and refuses a key that is not listed.
+  Keep a copy in the team's 1Password vault, so another maintainer can publish and a lost Mac loses nothing.
+  Encrypted (`openssl ec -aes256 -in key.pem -out key.enc.pem`), `release.sh` asks for its passphrase, so publishing
+  then needs a person at a terminal.
+- **Reserve key**: kept only in 1Password, never on a laptop. If the main key is lost or leaks, sign one release with
+  the reserve (`PULSAR_SIGNING_KEY=<reserve file> macos/release.sh …`) whose `PUBLIC_KEYS` drops the old main key and
+  adds a new one; every installed copy accepts it and from then on trusts the new list, with no reinstall.
+  Create it on the Mac of whoever keeps it, so the private half is never seen anywhere else:
+
+  ```bash
+  /usr/bin/openssl ecparam -name prime256v1 -genkey -noout | /usr/bin/openssl ec -aes256 -out ~/Desktop/pulsar-reserve-key.pem
+  /usr/bin/openssl ec -in ~/Desktop/pulsar-reserve-key.pem -pubout     # the public half: add it to PUBLIC_KEYS
+  ```
+
+  Put the file and its passphrase in 1Password, delete the file from the Desktop, and publish a release that lists
+  the public half. A key can only be added by a release signed with a key already listed, so the reserve has to be
+  in place before people install.
+
+Anyone with write access to the repository can publish a release, but without a listed key installed copies ignore
+it, and releases are immutable once published (repository setting), so nobody can swap a file of a published
+release. For the first release of a version (for example 1.0.0 before any tag exists) `release.sh` accepts the
 version already in `__init__.py`.
 
 **Where it is installed.** `~/Library/Application Support/Pulsar/`:

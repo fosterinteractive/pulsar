@@ -41,11 +41,17 @@ MAX_ZIP = 30 * 1024 * 1024
 RELEASES = "https://github.com/fosterinteractive/pulsar/releases/download/"
 VERSION_RE = re.compile(r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}")  # always used with fullmatch
 MAX_UNPACKED = 60 * 1024 * 1024
-PUBLIC_KEY = """-----BEGIN PUBLIC KEY-----
+# The keys a release may be signed with (ECDSA P-256). The first is the one releases are signed with; any further one
+# is a reserve kept offline (in the team's password manager): if the first is lost or leaks, a release signed with a
+# reserve brings a new list, and installed copies follow it without anyone reinstalling. Adding a key later takes a
+# release signed with a key already listed here, so the reserve must be in place before people install.
+PUBLIC_KEYS = (
+    """-----BEGIN PUBLIC KEY-----
 MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEmCWdtNVrg3SiHdiOL1WDTXva/S7e
 XbA0dD0U0N++R+VVLutC7Y66FFlNYSLKjKo+JAuRLrGtGKTXsjgo00mzLQ==
 -----END PUBLIC KEY-----
-"""
+""",
+)
 
 
 def overrides_allowed() -> bool:
@@ -54,12 +60,12 @@ def overrides_allowed() -> bool:
     return not installed()
 
 
-def public_key() -> str:
+def public_keys() -> tuple:
     path = os.environ.get("PULSAR_UPDATE_PUBKEY") if overrides_allowed() else None  # tests sign their own releases
     if path:
         with open(path, encoding="utf-8") as fh:
-            return fh.read()
-    return PUBLIC_KEY
+            return (fh.read(),)
+    return PUBLIC_KEYS
 
 
 def openssl() -> Optional[str]:
@@ -183,11 +189,17 @@ def _bytes_io(data: bytes):
 
 
 def self_test(copy: str) -> bool:
+    """Runs the new copy's own test; when it fails, its output goes to the error log."""
+    from . import logbook
     try:
-        run = subprocess.run([sys.executable, "-B", os.path.join(copy, "pulsar.py"), "--self-test"],
+        run = subprocess.run([sys.executable, "-I", "-B", os.path.join(copy, "pulsar.py"), "--self-test"],
                              capture_output=True, text=True, timeout=60)
-    except (subprocess.TimeoutExpired, OSError):
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        logbook.record("updater", f"The new version's self-test did not run: {exc}")
         return False
+    if run.returncode != 0:
+        logbook.record("updater", f"The new version failed its self-test (exit {run.returncode}).",
+                       detail=(run.stdout + run.stderr)[-3000:])
     return run.returncode == 0
 
 
@@ -240,9 +252,9 @@ class Updater:
             # Nothing from the manifest is believed, not even for what the page shows, until its signature checks out.
             try:
                 signature = fetch(self.manifest_url + ".sig", 4096, timeout=15)
-            except Exception:
-                signature = b""
-            if not verify(raw, signature, public_key()):
+            except Exception as exc:  # not the same as a release without a valid signature: say what happened
+                return self._set("failed", f"The release's signature could not be downloaded ({exc}); nothing was changed.")
+            if not any(verify(raw, signature, key) for key in public_keys()):
                 return self._set("failed", "The latest release is not signed with the release key, so it was ignored.")
             try:
                 manifest = json.loads(raw)
@@ -298,7 +310,7 @@ class Updater:
         with self.lock:
             self._switch()
             target = os.path.join(self.ready, "pulsar.py")
-            os.execv(sys.executable, [sys.executable, "-B", target] + sys.argv[1:])
+            os.execv(sys.executable, [sys.executable, "-I", "-B", target] + sys.argv[1:])
 
     def switch_on_quit(self) -> None:
         """The window was closed (the server is stopping): with automatic updates on, a ready version becomes current

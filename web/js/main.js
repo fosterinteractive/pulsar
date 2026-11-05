@@ -17,8 +17,9 @@ function setView(v) {
   document.querySelectorAll('#view button').forEach(b => b.classList.toggle('on', b.dataset.v === state.view));
   pop.classList.remove('on'); tipEl.classList.remove('on');
   syncURL();
-  if (state.view === 'report' && !R.data) loadReport();
-  if (state.view === 'day' && !dayLoaded) { dayLoaded = true; load(); }
+  if (state.view === 'report' && !R.data) return loadReport();
+  if (state.view === 'day' && !dayLoaded) { dayLoaded = true; return load(); }
+  return null;  // what it loads, if anything: the warp after an update waits for it
 }
 
 /* after a settings change: everything shown may have moved (time zone, target, connection) */
@@ -75,11 +76,15 @@ async function signInFromAddress() {
   const c = await getJSON('/api/config');
   if (c.error) toast(c.error, true); else applyConfig(c);
   if (!validDate(params.get('date'))) state.date = todayLocal();  // today in the configured time zone
-  setView(params.get('view'));
+  const first = setView(params.get('view'));
   if (CONFIG && !CONFIG.productive.active) toast('Productive is not connected yet: open Settings, top right, to add your token.', true);
   try {
     const was = sessionStorage.getItem('pulsar-updated');
-    if (was) { sessionStorage.removeItem('pulsar-updated'); toast(`Pulsar updated to ${was}.`); }  // core.js warped out already
+    if (was) {  // core.js opened the page inside the lens: let go once this version has drawn its data
+      sessionStorage.removeItem('pulsar-updated');
+      Promise.race([Promise.resolve(first).catch(() => {}), new Promise(r => setTimeout(r, 6000))])
+        .then(warpRelease).then(() => toast(`Pulsar updated to ${was}.`));
+    }
   } catch (e) {}
   if (CONFIG) paintUpdate(CONFIG.update);
 })();

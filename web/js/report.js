@@ -110,7 +110,8 @@ function renderReport() {
   assignHues(plist.map(p => p.name));
   const rowsOf = p => [...p.rows.values()].sort((a, b) => b.minutes - a.minutes);
 
-  let html = x.warning ? `<div class="banner">${esc(x.warning)}${x.fromCopy ? '' : ' Logged time is missing from this report.'}`
+  let html = x.trackerWarning ? `<div class="banner">${esc(x.trackerWarning)}</div>` : '';
+  html += x.warning ? `<div class="banner">${esc(x.warning)}${x.fromCopy ? '' : ' Logged time is missing from this report.'}`
     + `${x.needsSetup ? ' <button class="btn bordered" data-open-settings>Open Settings</button>' : ''}</div>` : '';
   html += `<div class="tiles">
     ${tile('Logged', dur(logged), target ? `${pct(logged, target)}% of the ${dur(target)} target` : 'no workdays in this range')}
