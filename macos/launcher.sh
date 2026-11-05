@@ -45,6 +45,9 @@ log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >>"$LOG"
 }
 
+# What a command says when it fails goes to the log too, which the failure dialog points to.
+/bin/mkdir -p "$(dirname "$LOG")" && exec 2>>"$LOG"
+
 # Shows a dialog; the last button is the default. Prints the button clicked (nothing if cancelled).
 dialog() {
   /usr/bin/osascript \

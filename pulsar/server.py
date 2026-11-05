@@ -562,6 +562,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True})
             return self.send(404, b"not found", "text/plain")
         except (ValueError, RuntimeError, productive.ProductiveError) as exc:
+            if not isinstance(exc, ValueError):  # Productive refused or did not answer: worth a line in Logs
+                logbook.record(f"POST {urlparse(self.path).path}", str(exc), kind="warning")
             return self.send_json({"error": str(exc)}, 400)
         except (BrokenPipeError, ConnectionResetError):
             return

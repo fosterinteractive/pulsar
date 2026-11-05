@@ -104,6 +104,8 @@ def https(method: str, url: str, body: Optional[bytes] = None, headers: Optional
     u = urllib.parse.urlsplit(url)
     if u.scheme != "https" or not u.hostname:
         raise ProductiveError("Refusing a non-HTTPS address.")
+    if write and os.environ.get("PULSAR_READ_ONLY"):  # every write goes through here, whatever asked for it
+        raise ProductiveError("Pulsar runs read-only (PULSAR_READ_ONLY): nothing was written.")
     path = (u.path or "/") + (f"?{u.query}" if u.query else "")
     for attempt in (0, 1):
         conn = None
@@ -744,6 +746,9 @@ def create_entry(entry: dict, settings: dict) -> dict:
     if os.environ.get("PULSAR_READ_ONLY"):  # tests and demos: nothing may reach Productive
         raise ProductiveError("Pulsar runs read-only (PULSAR_READ_ONLY): nothing was written.")
     conn = _need(settings)
+    if not str(settings.get("person_id") or "").isdigit():
+        raise ProductiveError("Pulsar does not know your Productive person ID yet, so nothing was written. Open "
+                              "Settings: it fills in by itself once Productive answers, or type it there.")
     if conn["kind"] == "token":
         body = {"data": {"type": "time_entries",
                          "attributes": {"date": entry["date"], "time": int(entry["minutes"]), "started_at": entry["started_at"],

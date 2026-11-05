@@ -37,6 +37,15 @@ function fillSettings(c) {
 function openSettings() {
   if (!CONFIG) return;
   fillSettings(CONFIG);
+  /* the connection may have changed since the page loaded (a token renewed or expired): ask again, and refresh only
+     what the person does not type into */
+  getJSON('/api/config').then(c => {
+    if (c.error || !dlg.open) return;
+    applyConfig(c);
+    const st = $('#pd-status');
+    st.textContent = connectionText(c.productive); st.classList.toggle('warn', !c.productive.active);
+    paintUpdate(c.update);
+  });
   const msg = $('#settings-msg'); msg.textContent = ''; msg.className = 'msg';
   const zones = $('#zones');
   if (!zones.childElementCount && Intl.supportedValuesOf) {

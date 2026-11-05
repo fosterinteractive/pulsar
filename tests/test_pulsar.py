@@ -363,6 +363,20 @@ class CreateEntryTest(unittest.TestCase):
                                            "task_id": "1", "service_id": "2"}, {"person_id": "3"})
         self.assertEqual(got, {"id": "12345678"})
 
+    def test_read_only_stops_every_write_not_only_logging(self):
+        with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}), \
+             mock.patch.object(productive.http.client, "HTTPSConnection", lambda *a, **k: self.fail("connected")):
+            with self.assertRaises(productive.ProductiveError):
+                productive.mcp_text("delete_resource", {}, "t")
+
+    def test_no_person_id_means_nothing_is_written(self):
+        with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": ""}), \
+             mock.patch.object(productive, "connection", lambda s: {"kind": "claude-code", "token": "t"}), \
+             mock.patch.object(productive, "mcp_text", lambda *a: self.fail("wrote")):
+            with self.assertRaises(productive.ProductiveError):
+                productive.create_entry({"date": "2026-11-04", "minutes": 10, "started_at": "2026-11-04T14:00:00+00:00",
+                                         "task_id": "1", "service_id": "2"}, {"person_id": ""})
+
     def test_an_error_that_mentions_an_id_is_not_a_new_entry(self):
         with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": ""}), \
              mock.patch.object(productive, "connection", lambda s: {"kind": "claude-code", "token": "t"}), \

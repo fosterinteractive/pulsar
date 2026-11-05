@@ -315,7 +315,11 @@ for (const el of [$('#rfrom'), $('#rto')]) {
 
 /* ---------- download: CSV for spreadsheets, print for PDF ---------- */
 function toCSV(rows) {  // the BOM makes Excel read the file as UTF-8
-  const cell = v => { const t = v == null ? '' : String(v); return /[",\r\n;]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+  const cell = v => {
+    let t = v == null ? '' : String(v);
+    if (typeof v === 'string' && /^[=+\-@\t\r]/.test(t)) t = "'" + t;  // a task named =HYPERLINK(...) stays text in Excel
+    return /[",\r\n;]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+  };
   return '\ufeff' + rows.map(r => r.map(cell).join(',')).join('\r\n') + '\r\n';
 }
 function saveFile(name, text, type = 'text/csv;charset=utf-8') {
