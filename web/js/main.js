@@ -40,7 +40,7 @@ $('#home').onclick = ev => {  // home: today, at the current hour
   if (state.date !== todayLocal()) go(todayLocal());  // opens at the current hour once the day has loaded
   else requestAnimationFrame(() => scrollToNow());
 };
-/* the favicon is the header's black hole */
+/* the favicon is the header's pulsar (still: the page's styles do not reach it) */
 $('#favicon').href = 'data:image/svg+xml,' + encodeURIComponent($('#logo').outerHTML);
 
 /* a restart into a new version (by itself, or from Settings): reload the page into it and say so */

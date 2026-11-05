@@ -417,3 +417,11 @@ html.warp-held body { transform: scale(.965); }
   background: radial-gradient(circle at 50% 45%, rgba(255,255,255,.95) 0, rgba(255,255,255,.55) 4%,
     rgba(120,220,255,.32) 12%, rgba(160,110,255,.16) 24%, rgba(255,90,200,.06) 34%, transparent 46%); }
 @media (prefers-reduced-motion: reduce) { html.warp-held body { transform: none; } .warp-flash, .warp-core { display: none; } }
+
+/* the logo pulses like a pulsar: core and beams flash together once a turn and fade; faster while Pulsar is loading */
+#logo .p-glow, #logo .p-beam { transform-box: view-box; transform-origin: 16px 16px; animation: p-pulse 2.2s cubic-bezier(.2, .7, .3, 1) infinite; }
+#logo .p-beam { animation-name: p-beam; }
+@keyframes p-pulse { 0% { opacity: .7; transform: scale(.92); } 7% { opacity: 1; transform: scale(1.14); } 45%, 100% { opacity: .7; transform: scale(.92); } }
+@keyframes p-beam { 0% { opacity: .75; } 7% { opacity: 1; } 45%, 100% { opacity: .75; } }
+body:has(#refresh.busy) #logo .p-glow, body:has(#refresh.busy) #logo .p-beam { animation-duration: .9s; }
+@media (prefers-reduced-motion: reduce) { #logo .p-glow, #logo .p-beam { animation: none; } }
