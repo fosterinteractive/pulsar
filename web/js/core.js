@@ -121,88 +121,81 @@ $('#signin').addEventListener('close', () => { if (signedOut) $('#signin').showM
 const WARP_KEY = 'pulsar-warp';
 function warpOff() { try { return localStorage.getItem(WARP_KEY) === 'off'; } catch (e) { return false; } }
 const calmMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches || warpOff();
-let lens = null;  // {core: <div>}
+/* Everything moves through the Web Animations API on transform and opacity only, so the browser hands the motion
+   to the graphics card's compositor: it stays smooth while the page is busy (a refresh redrawing the day) and on
+   modest computers. JavaScript only starts and stops animations; it never draws a frame. The core and the flash
+   are squares around the centre, not full-screen layers. */
+const W8 = {core: null, anims: [], from: 0, to: 0, t0: 0, dur: 1, afterUpdate: false};
+const WARP_IN_EASE = 'cubic-bezier(.55, 0, .9, .45)';  // slow at first, as gravity pulls
+const pageScale = level => `scale(${1 - .06 * level})`;
+const corePose = level => ({opacity: Math.min(1, 1.4 * level), transform: `scale(${.5 + .5 * Math.min(1, level)})`});
 
-function lensSetup() {
-  if (lens?.core) return lens;
-  const W = innerWidth, H = innerHeight, cx = W / 2, cy = H * .45, R = Math.min(W, H) * .15;
+function warpParts() {
+  if (W8.core) return W8;
+  const W = innerWidth, H = innerHeight, cx = W / 2, cy = H * .45, R = Math.min(W, H) * .15, S = Math.round(R * 2.6);
   const core = document.createElement('div');
   core.className = 'warp-core';
+  Object.assign(core.style, {left: `${cx - S / 2}px`, top: `${cy - S / 2}px`, width: `${S}px`, height: `${S}px`, opacity: '0'});
   // the core takes the theme's colour (a dark hole on the dark theme, a bright one on the light theme), then the ring
-  core.style.background = `radial-gradient(circle at ${cx}px ${cy}px, rgba(var(--warp-core), .94) 0, `
-    + `rgba(var(--warp-core), .94) ${R * .42}px, rgba(var(--warp-core), .5) ${R * .62}px, rgba(var(--warp-core), 0) ${R * .8}px, `
-    + `rgba(190, 170, 255, 0) ${R * .9}px, rgba(190, 170, 255, .38) ${R}px, rgba(120, 220, 255, .16) ${R * 1.08}px, `
-    + `rgba(120, 220, 255, 0) ${R * 1.25}px)`;
-  core.style.transformOrigin = `${cx}px ${cy}px`;
+  core.style.background = `radial-gradient(circle closest-side, rgba(var(--warp-core), .94) 0, rgba(var(--warp-core), .94) 32%, `
+    + `rgba(var(--warp-core), .5) 48%, rgba(var(--warp-core), 0) 62%, rgba(190, 170, 255, 0) 69%, rgba(190, 170, 255, .38) 77%, `
+    + `rgba(120, 220, 255, .16) 83%, rgba(120, 220, 255, 0) 96%)`;
   document.documentElement.append(core);
-  document.body.style.transformOrigin = `50% ${cy}px`;
-  document.body.style.willChange = 'transform';
-  return (lens = {core});
+  Object.assign(document.body.style, {transformOrigin: `50% ${cy}px`, willChange: 'transform'});
+  W8.core = core; W8.cy = cy; W8.box = Math.round(Math.min(W, H) * .9);
+  return W8;
 }
-/* one frame of the warp: how far it has pulled (0..1), the page's scale, the core's opacity */
-function lensFrame(strength, scale, core) {
-  const l = lensSetup();
-  document.body.style.transform = Math.abs(scale - 1) > .0005 ? `scale(${scale})` : '';
-  l.core.style.opacity = String(core);
-  l.core.style.transform = `scale(${.5 + .5 * Math.min(1, strength)})`;
+/* how far in the warp is right now (the ramp's ease-in, worked out from the clock: nothing is read from the page) */
+function warpLevel() {
+  const t = Math.min(1, Math.max(0, (performance.now() - W8.t0) / W8.dur));
+  return W8.from + (W8.to - W8.from) * t * t * t;
 }
+function warpStop() { W8.anims.forEach(a => a.cancel()); W8.anims = []; }
 function lensEnd() {
-  document.body.style.transform = ''; document.body.style.willChange = ''; document.body.style.transformOrigin = '';
-  lens?.core?.remove(); lens = null;
+  warpStop();
+  Object.assign(document.body.style, {transform: '', willChange: '', transformOrigin: ''});
+  W8.core?.remove(); W8.core = null; W8.afterUpdate = false;
   document.documentElement.classList.remove('warp-held');
 }
-function tween(ms, step) {
-  return new Promise(done => {
-    const t0 = performance.now();
-    const frame = now => { const t = Math.min(1, (now - t0) / ms); step(t); t < 1 ? requestAnimationFrame(frame) : done(); };
-    requestAnimationFrame(frame);
-  });
-}
-/* The lens follows the work it stands for: warpTo(level) pulls it in (slowly at first, as gravity does) and holds it
-   there, breathing a little, for as long as the work takes; warpRelease() lets go, with the spring and the flash. */
-const lensState = {level: 0, from: 0, to: 0, t0: 0, dur: 1, raf: 0, ramped: null, rampDone: null};
-function lensTick(now) {
-  const L = lensState, t = Math.min(1, (now - L.t0) / L.dur);
-  L.level = L.from + (L.to - L.from) * t * t * t;
-  if (t >= 1 && L.rampDone) { L.rampDone(); L.rampDone = null; }
-  const s = Math.max(0, L.level * (1 + (t >= 1 ? .06 * Math.sin(now / 240) : 0)));  // breathing while held
-  lensFrame(s, 1 - .06 * s, Math.min(1, s * 1.4));
-  L.raf = requestAnimationFrame(lensTick);
-}
+/* pull in to `level` (0..1) and hold it there, the core breathing a little, until warpRelease() */
 function warpTo(level, instant = false) {
-  const L = lensState;
   if (calmMotion()) return Promise.resolve();
-  if (L.rampDone) { L.rampDone(); L.rampDone = null; }  // an earlier ramp still waited on: settle it, or its caller hangs
-  L.from = instant ? level : L.level; L.to = level; L.t0 = performance.now();
-  L.dur = Math.max(1, 520 * Math.abs(level - L.from));
-  L.ramped = new Promise(done => { L.rampDone = done; });
-  if (instant) { L.level = level; }
-  if (!L.raf) L.raf = requestAnimationFrame(lensTick);
-  return L.ramped;
-}
-function warpRelease() {
-  const L = lensState;
-  if (!L.raf) return Promise.resolve();
-  cancelAnimationFrame(L.raf); L.raf = 0; L.afterUpdate = false;
-  if (L.rampDone) { L.rampDone(); L.rampDone = null; }
-  const from = L.level; L.level = L.to = 0;
-  return warpOut(from);
+  const w = warpParts(), from = instant ? level : warpLevel(), dur = instant ? 0 : Math.max(1, 520 * Math.abs(level - from));
+  warpStop();
+  Object.assign(W8, {from, to: level, t0: performance.now(), dur: Math.max(1, dur)});
+  const opts = {duration: dur, easing: WARP_IN_EASE, fill: 'forwards'};
+  const page = document.body.animate([{transform: pageScale(from)}, {transform: pageScale(level)}], opts);
+  const core = w.core.animate([corePose(from), corePose(level)], opts);
+  W8.anims = [page, core];
+  document.documentElement.classList.remove('warp-held');  // the animation holds the page from here
+  return page.finished.then(() => {
+    if (W8.anims[0] !== page || level <= 0) return;  // something newer took over
+    W8.anims.push(w.core.animate([{transform: corePose(level).transform}, {transform: `scale(${(.5 + .5 * level) * 1.05})`}],
+      {duration: 480, direction: 'alternate', iterations: Infinity, easing: 'ease-in-out'}));
+  }).catch(() => {});  // cancelled by a newer warp: settled all the same, so no caller waits for ever
 }
 function warpIn() { return warpTo(1); }  // before a reload into a new version: in, and held until the page goes
+function warpRelease() {
+  if (!W8.core) return Promise.resolve();
+  return warpOut(warpLevel());
+}
+/* let go: the page springs just past its size and back, the core goes, a flash in the logo's colours */
 function warpOut(from = 1) {
   if (calmMotion()) { lensEnd(); return Promise.resolve(); }
+  const w = warpParts();
+  warpStop();
   const flash = document.createElement('div');
   flash.className = 'warp-flash';
+  Object.assign(flash.style, {left: `${innerWidth / 2 - w.box / 2}px`, top: `${w.cy - w.box / 2}px`, width: `${w.box}px`, height: `${w.box}px`});
   document.documentElement.append(flash);
   flash.animate([{opacity: 0, transform: 'scale(.25)'}, {opacity: 1, offset: .18}, {opacity: 0, transform: 'scale(2.6)'}],
     {duration: 700, easing: 'cubic-bezier(.15, .7, .3, 1)'}).finished.catch(() => {}).then(() => flash.remove());
-  document.documentElement.classList.remove('warp-held');
-  const s0 = 1 - .06 * from;
-  return tween(520, t => {
-    const out = 1 - Math.pow(1 - Math.min(1, t / .55), 3);  // the lens and the core are gone a little after half way
-    const spring = t < .45 ? s0 + (1.012 - s0) * (t / .45) : 1.012 - .012 * ((t - .45) / .55);  // just past full size, back
-    lensFrame(from * (1 - out), spring, Math.min(1, from * 1.4) * (1 - out));
-  }).then(lensEnd);
+  const opts = {duration: 520, easing: 'cubic-bezier(.2, .9, .3, 1)', fill: 'forwards'};
+  const page = document.body.animate([{transform: pageScale(from)}, {transform: 'scale(1.012)', offset: .45}, {transform: 'none'}], opts);
+  const core = w.core.animate([corePose(from), {...corePose(0), offset: .55}, corePose(0)], opts);
+  W8.anims = [page, core];
+  Object.assign(W8, {from: 0, to: 0, dur: 1});
+  return page.finished.then(() => { if (W8.anims[0] === page) lensEnd(); }).catch(() => {});
 }
 /* the warp for as long as `work` takes (at most maxMs): in, held, out when it is done */
 let warping = null;
@@ -217,8 +210,8 @@ function warp() { return warpUntil(null, 0); }  // the whole jump in place (an O
    Whatever happens, it lets go after eight seconds. */
 try {
   if (sessionStorage.getItem('pulsar-updated') && !calmMotion()) {
-    warpTo(1, true); lensState.afterUpdate = true;
-    setTimeout(() => { if (lensState.raf && lensState.afterUpdate) warpRelease(); }, 8000);
+    warpTo(1, true); W8.afterUpdate = true;
+    setTimeout(() => { if (W8.core && W8.afterUpdate) warpRelease(); }, 8000);
   }
 } catch (e) {}
 
