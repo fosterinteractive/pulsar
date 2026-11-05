@@ -29,7 +29,13 @@ const state = {
   act: null, likely: null, logged: null, scrolledFor: null,
 };
 
-function todayLocal() { return new Intl.DateTimeFormat('en-CA', {timeZone: TZ}).format(new Date()); }
+/* today as YYYY-MM-DD in the chosen zone, built from its parts: what a locale's date looks like changes between macOS
+   versions (en-CA gives 2026-11-05 on some and 11/5/2026 on others), the parts do not */
+function todayLocal() {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit'})
+    .formatToParts(new Date()).map(x => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}`;
+}
 function nowMin() {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23'})
     .formatToParts(new Date()).map(x => [x.type, x.value]));
