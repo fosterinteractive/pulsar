@@ -163,9 +163,9 @@ async function startUpdate() {
   toast(r.error || r.update?.message || 'Pulsar was not updated.', true);
 }
 
-/* The reminder: when this copy is five or more releases behind, ask once every two days, until it is updated or that
+/* The reminder: when this copy is two or more releases behind, ask once every two days, until it is updated or that
    release is skipped (a newer one asks again). Pulsar never updates without a click. */
-const REMIND_BEHIND = 5, REMIND_EVERY = 2 * 24 * 3600;
+const REMIND_BEHIND = 2, REMIND_EVERY = 2 * 24 * 3600;
 const remindDlg = $('#updprompt');
 function maybeRemind(u = CONFIG?.update) {
   if (!u || !u.installed || u.status !== 'available' || (u.behind || 0) < REMIND_BEHIND) return;

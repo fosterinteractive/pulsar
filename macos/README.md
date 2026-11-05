@@ -43,7 +43,7 @@ version next to its own; it installs it only when the person clicks **Update** (
 by themselves, so they all reach 1.0.7 that way). On the click, `latest.json` must carry a valid signature from a
 release key, the download must match its SHA-256 and pass its self-test (`pulsar.py --self-test`, which starts a
 server and asks it for its version); then Pulsar restarts into it. `latest.json` also lists every version released
-so far (from the git tags): a copy five or more releases behind reminds its person once every two days, until they
+so far (from the git tags): a copy two or more releases behind reminds its person once every two days, until they
 update or skip that release. A copy run from a git checkout only says that a newer version exists.
 
 Click-only updates also limit the damage of a stolen release key: a forged release reaches only the people who

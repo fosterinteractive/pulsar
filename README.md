@@ -121,7 +121,7 @@ Settings are saved in `~/.config/pulsar/settings.json`; names and copies of fetc
   `python3 pulsar.py --signin-url`) and open the address it prints within two minutes; it works once.
 - **Updates.** Pulsar asks GitHub every 6 hours whether a newer version exists (it sends nothing about you) and
   shows it next to the version at the top and in Settings. It installs a new version only when you click **Update**:
-  then it downloads it, checks its signature and runs its self-test before restarting into it. If you are five or more
+  then it downloads it, checks its signature and runs its self-test before restarting into it. If you are two or more
   releases behind, it reminds you once every two days; **Skip this release** stops the reminder until a newer one is
   out. Only releases signed with the maintainer's release key are accepted. The repository must stay public: Pulsar downloads without signing in to GitHub, so from a private
   repository it gets nothing (and the Pulsar.zip link stops working too).
