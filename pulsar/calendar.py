@@ -133,10 +133,19 @@ def _google_reason(status: int, doc: dict) -> str:
 # ---- the client and the connection ------------------------------------------------------------------
 
 def client() -> Optional[dict]:
-    """{"id", "secret"} from google_client.json (as Google Cloud Console downloads it, {"installed": {...}}), or None
-    while it holds placeholders or is missing."""
+    """{"id", "secret"} of the Google Cloud client, as Google Cloud Console downloads it ({"installed": {...}}): from
+    ~/.config/pulsar/google_client.json (where the person who releases Pulsar keeps it, out of git), else from the
+    copy next to this file (the one a release ships). None while both are missing or hold placeholders."""
+    for path in (os.path.join(config.CONFIG_DIR, "google_client.json"), CLIENT_FILE):
+        found = _client_in(path)
+        if found:
+            return found
+    return None
+
+
+def _client_in(path: str) -> Optional[dict]:
     try:
-        with open(CLIENT_FILE, encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             doc = json.load(fh)
     except (OSError, ValueError):
         return None
