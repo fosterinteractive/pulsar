@@ -125,7 +125,18 @@ const calmMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches 
    to the graphics card's compositor: it stays smooth while the page is busy (a refresh redrawing the day) and on
    modest computers. JavaScript only starts and stops animations; it never draws a frame. The core and the flash
    are squares around the centre, not full-screen layers. */
-const W8 = {core: null, anims: [], from: 0, to: 0, t0: 0, dur: 1, afterUpdate: false};
+const W8 = {core: null, anims: [], from: 0, to: 0, t0: 0, dur: 1, afterUpdate: false, native: false};
+/* In the Pulsar window the window itself draws the warp (PulsarWindow.swift: a picture of the page bent by Core Image
+   on the graphics card, which holds through a reload); the page only says how far in to go. */
+const NATIVE_WARP = !!(window.PULSAR_NATIVE_WARP && window.webkit?.messageHandlers?.pulsar);
+const warpDark = () => getComputedStyle(document.documentElement).getPropertyValue('--warp-core').trim().startsWith('0');
+function nativeWarp(level, instant = false) {
+  const from = instant ? level : warpLevel(), dur = instant ? 0 : Math.max(1, 520 * Math.abs(level - from));
+  Object.assign(W8, {from, to: level, t0: performance.now(), dur: Math.max(1, dur), native: level > 0});
+  document.documentElement.classList.remove('warp-held');  // the window's picture covers the page from here
+  window.webkit.messageHandlers.pulsar.postMessage({action: 'warp', to: level, instant, dark: warpDark()});
+  return new Promise(done => setTimeout(done, level > 0 ? dur : 600));
+}
 const WARP_IN_EASE = 'cubic-bezier(.55, 0, .9, .45)';  // slow at first, as gravity pulls
 const pageScale = level => `scale(${1 - .06 * level})`;
 const corePose = level => ({opacity: Math.min(1, 1.4 * level), transform: `scale(${.5 + .5 * Math.min(1, level)})`});
@@ -160,6 +171,7 @@ function lensEnd() {
 /* pull in to `level` (0..1) and hold it there, the core breathing a little, until warpRelease() */
 function warpTo(level, instant = false) {
   if (calmMotion()) return Promise.resolve();
+  if (NATIVE_WARP) return nativeWarp(level, instant);
   const w = warpParts(), from = instant ? level : warpLevel(), dur = instant ? 0 : Math.max(1, 520 * Math.abs(level - from));
   warpStop();
   Object.assign(W8, {from, to: level, t0: performance.now(), dur: Math.max(1, dur)});
@@ -176,6 +188,7 @@ function warpTo(level, instant = false) {
 }
 function warpIn() { return warpTo(1); }  // before a reload into a new version: in, and held until the page goes
 function warpRelease() {
+  if (NATIVE_WARP) return W8.native ? nativeWarp(0) : Promise.resolve();
   if (!W8.core) return Promise.resolve();
   return warpOut(warpLevel());
 }
@@ -211,7 +224,7 @@ function warp() { return warpUntil(null, 0); }  // the whole jump in place (an O
 try {
   if (sessionStorage.getItem('pulsar-updated') && !calmMotion()) {
     warpTo(1, true); W8.afterUpdate = true;
-    setTimeout(() => { if (W8.core && W8.afterUpdate) warpRelease(); }, 8000);
+    setTimeout(() => { if ((W8.core || W8.native) && W8.afterUpdate) warpRelease(); }, 8000);
   }
 } catch (e) {}
 

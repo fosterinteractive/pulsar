@@ -26,6 +26,7 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
     private var keepServer = false     // true when the page was handed to the browser: it still needs the server
     private var stopped = false
     private let launcher = Bundle.main.url(forResource: "launcher", withExtension: "sh")
+    private var warp: NativeWarp?
 
     // MARK: start
 
@@ -112,6 +113,8 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()   // keeps the session token and the page's choices between launches
         config.userContentController.add(self, name: "pulsar")
+        config.userContentController.addUserScript(WKUserScript(source: "window.PULSAR_NATIVE_WARP = 1;",
+                                                                injectionTime: .atDocumentStart, forMainFrameOnly: true))
         web = WKWebView(frame: .zero, configuration: config)
         web.navigationDelegate = self
         web.uiDelegate = self
@@ -128,7 +131,13 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
         window.delegate = self
-        window.contentView = web
+        let root = NSView()
+        root.wantsLayer = true
+        web.autoresizingMask = [.width, .height]
+        root.addSubview(web)
+        window.contentView = root
+        web.frame = root.bounds
+        warp = NativeWarp(web: web, host: root)
         window.center()
         window.setFrameAutosaveName("Pulsar")   // the next launch opens where this one was left
         window.makeKeyAndOrderFront(nil)
@@ -308,6 +317,9 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
               let action = body["action"] as? String else { return }
         switch action {
         case "print": printPage()
+        case "warp":   // {to: 0..1, instant, dark}: the page's warp, drawn here on the graphics card
+            warp?.to(CGFloat((body["to"] as? NSNumber)?.doubleValue ?? 0), instant: body["instant"] as? Bool ?? false,
+                     dark: body["dark"] as? Bool ?? true)
         case "signin", "start": start()   // a new one-time code, from the launcher, as at launch
         default: break
         }
@@ -394,6 +406,7 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
         guard let dir = ProcessInfo.processInfo.environment["PULSAR_TEST_DIR"], isPulsar(web.url), !tested else { return }
         tested = true
         let at = URL(fileURLWithPath: dir)
+        if ProcessInfo.processInfo.environment["PULSAR_TEST_WARP"] != nil { testWarp(at); return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
             let probe = """
                 JSON.stringify({signedIn: !!localStorage.getItem('pulsar-session'), address: location.href,
@@ -425,10 +438,199 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
         }
     }
 
+    /// The native warp, photographed from the window itself (an app may capture its own window without permission):
+    /// held at full strength, letting go, and after; warp.json says whether the overlay went away.
+    private func testWarp(_ at: URL) {
+        let shoot = { (name: String) in
+            if let img = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(self.window.windowNumber),
+                                                 [.boundsIgnoreFraming, .bestResolution]),
+               let png = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) {
+                try? png.write(to: at.appendingPathComponent(name))
+            }
+        }
+        let after = { (s: Double, f: @escaping () -> Void) in DispatchQueue.main.asyncAfter(deadline: .now() + s, execute: f) }
+        after(4) {
+            self.web.evaluateJavaScript("NATIVE_WARP") { native, _ in
+                self.web.evaluateJavaScript("warpTo(1)")
+                after(1.0) { shoot("warp-held.png")
+                    self.web.evaluateJavaScript("warpRelease()")
+                    after(0.12) { shoot("warp-out.png")
+                        after(1.2) { shoot("warp-after.png")
+                            let layers = self.window.contentView?.subviews.count ?? -1
+                            let json = "{\"native\": \(native as? Bool ?? false), \"viewsAfter\": \(layers)}"
+                            try? json.write(to: at.appendingPathComponent("warp.json"), atomically: true, encoding: .utf8)
+                            NSApp.terminate(nil)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     @objc private func printed(_ op: NSPrintOperation, success: Bool, contextInfo: UnsafeMutableRawPointer?) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) { NSApp.terminate(nil) }
     }
     #endif
+}
+
+/// The warp in the window. A picture of the page is bent by Core Image's hole distortion (light pushed round a point,
+/// as round a black hole), with the core, a ring of light and the flash drawn as Core Animation layers. All of it is
+/// animated by Core Animation on the graphics card: no frame is computed on the main thread, so it stays smooth on
+/// any Mac that runs Pulsar while the page underneath keeps loading. It sits over the page, so it holds through the
+/// reload into a new version, and lets go only when the new page asks (or after ten seconds, whatever happens).
+final class NativeWarp {
+    private weak var web: WKWebView?
+    private weak var host: NSView?
+    private var overlay: NSView?
+    private var picture: CALayer?
+    private var core: CAGradientLayer?
+    private var level: CGFloat = 0
+    private var snapping = false
+    private var queued: (CGFloat, Bool, Bool)?
+    private var safety: DispatchWorkItem?
+    private let inEase = CAMediaTimingFunction(controlPoints: 0.55, 0, 0.9, 0.45)  // slow at first, as gravity pulls
+    private let outEase = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
+
+    init(web: WKWebView, host: NSView) { self.web = web; self.host = host }
+
+    func to(_ target: CGFloat, instant: Bool, dark: Bool) {
+        if target <= 0 { release(); return }
+        guard overlay == nil else { pull(to: target, instant: instant); return }
+        if snapping { queued = (target, instant, dark); return }
+        snapping = true
+        let shot = WKSnapshotConfiguration()
+        shot.afterScreenUpdates = false
+        web?.takeSnapshot(with: shot) { [weak self] image, _ in
+            guard let self = self else { return }
+            self.snapping = false
+            guard let image = image, let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return }
+            self.build(cg, dark: dark)
+            let (t, i, _) = self.queued ?? (target, instant, dark)
+            self.queued = nil
+            self.pull(to: t, instant: i)
+        }
+    }
+
+    private var size: CGSize { host?.bounds.size ?? .zero }
+    private var centre: CGPoint { CGPoint(x: size.width / 2, y: size.height * 0.55) }  // 45% from the top
+    private var radius: CGFloat { min(size.width, size.height) * 0.15 }
+
+    private func build(_ image: CGImage, dark: Bool) {
+        guard let host = host else { return }
+        let view = NSView(frame: host.bounds)
+        view.wantsLayer = true
+        view.layerUsesCoreImageFilters = true
+        view.autoresizingMask = [.width, .height]
+        let root = view.layer!
+        let scale = host.window?.backingScaleFactor ?? 2
+
+        let pic = CALayer()
+        pic.frame = view.bounds
+        pic.contents = image
+        pic.contentsGravity = .resize
+        pic.contentsScale = scale
+        pic.anchorPoint = CGPoint(x: 0.5, y: 0.55)
+        pic.position = centre
+        let hole = CIFilter(name: "CIHoleDistortion")!
+        hole.name = "hole"
+        hole.setValue(CIVector(x: centre.x * scale, y: centre.y * scale), forKey: kCIInputCenterKey)
+        hole.setValue(0.01, forKey: kCIInputRadiusKey)
+        pic.filters = [hole]
+        root.addSublayer(pic)
+
+        let side = radius * 2.6
+        let ring = CAGradientLayer()
+        ring.type = .radial
+        ring.frame = CGRect(x: centre.x - side / 2, y: centre.y - side / 2, width: side, height: side)
+        ring.startPoint = CGPoint(x: 0.5, y: 0.5)
+        ring.endPoint = CGPoint(x: 1, y: 1)
+        let c: CGFloat = dark ? 0 : 1  // a dark hole on the dark theme, a bright one on the light theme
+        ring.colors = [NSColor(white: c, alpha: 0.94), NSColor(white: c, alpha: 0.94), NSColor(white: c, alpha: 0.5),
+                       NSColor(white: c, alpha: 0), NSColor(red: 0.75, green: 0.67, blue: 1, alpha: 0),
+                       NSColor(red: 0.75, green: 0.67, blue: 1, alpha: 0.38), NSColor(red: 0.47, green: 0.86, blue: 1, alpha: 0.16),
+                       NSColor(red: 0.47, green: 0.86, blue: 1, alpha: 0)].map { $0.cgColor }
+        ring.locations = [0, 0.32, 0.48, 0.62, 0.69, 0.77, 0.83, 0.96]
+        ring.opacity = 0
+        root.addSublayer(ring)
+
+        host.addSubview(view)
+        overlay = view; picture = pic; core = ring; level = 0
+    }
+
+    /// pull in to `target` and hold there, the core breathing a little
+    private func pull(to target: CGFloat, instant: Bool) {
+        guard let pic = picture, let ring = core else { return }
+        let from = level, duration = instant ? 0 : max(0.01, 0.52 * Double(abs(target - from)))
+        level = target
+        animate(pic, "filters.hole.inputRadius", from: holeRadius(from), to: holeRadius(target), duration, inEase)
+        animate(pic, "transform.scale", from: 1 - 0.06 * from, to: 1 - 0.06 * target, duration, inEase)
+        animate(ring, "opacity", from: min(1, 1.4 * from), to: min(1, 1.4 * target), duration, inEase)
+        animate(ring, "transform.scale", from: 0.5 + 0.5 * from, to: 0.5 + 0.5 * target, duration, inEase)
+        let breathe = CABasicAnimation(keyPath: "transform.scale")
+        breathe.fromValue = 0.5 + 0.5 * target; breathe.toValue = (0.5 + 0.5 * target) * 1.05
+        breathe.duration = 0.48; breathe.autoreverses = true; breathe.repeatCount = .infinity
+        breathe.beginTime = CACurrentMediaTime() + duration
+        breathe.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        ring.add(breathe, forKey: "breathe")
+        safety?.cancel()
+        let item = DispatchWorkItem { [weak self] in self?.release() }  // never left over the page
+        safety = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: item)
+    }
+
+    /// let go: the lens closes, the picture springs just past its size and back and fades into the live page
+    func release() {
+        safety?.cancel()
+        guard let view = overlay, let pic = picture, let ring = core else { queued = nil; return }
+        let from = level, root = view.layer!
+        level = 0
+        ring.removeAnimation(forKey: "breathe")
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in
+            view.removeFromSuperview()
+            if self?.overlay === view { self?.overlay = nil; self?.picture = nil; self?.core = nil }
+        }
+        animate(pic, "filters.hole.inputRadius", from: holeRadius(from), to: holeRadius(0), 0.29, outEase)
+        let spring = CAKeyframeAnimation(keyPath: "transform.scale")
+        spring.values = [1 - 0.06 * from, 1.012, 1]; spring.keyTimes = [0, 0.45, 1]
+        spring.duration = 0.52; spring.timingFunctions = [outEase, outEase]
+        pic.add(spring, forKey: "spring"); pic.setValue(1, forKeyPath: "transform.scale")
+        animate(ring, "opacity", from: min(1, 1.4 * from), to: 0, 0.29, outEase)
+        let fade = CAKeyframeAnimation(keyPath: "opacity")  // into the live page, which may have changed meanwhile
+        fade.values = [1, 1, 0]; fade.keyTimes = [0, 0.5, 1]; fade.duration = 0.6
+        root.add(fade, forKey: "fade"); root.opacity = 0
+        flash(in: root)
+        CATransaction.commit()
+    }
+
+    private func holeRadius(_ level: CGFloat) -> CGFloat { max(0.01, radius * 0.62 * level) }
+
+    private func flash(in root: CALayer) {
+        let side = min(size.width, size.height) * 0.9
+        let f = CAGradientLayer()
+        f.type = .radial
+        f.frame = CGRect(x: centre.x - side / 2, y: centre.y - side / 2, width: side, height: side)
+        f.startPoint = CGPoint(x: 0.5, y: 0.5); f.endPoint = CGPoint(x: 1, y: 1)
+        f.colors = [NSColor(white: 1, alpha: 0.95), NSColor(white: 1, alpha: 0.55), NSColor(red: 0.47, green: 0.86, blue: 1, alpha: 0.32),
+                    NSColor(red: 0.63, green: 0.43, blue: 1, alpha: 0.16), NSColor(red: 1, green: 0.35, blue: 0.78, alpha: 0.06),
+                    NSColor(white: 1, alpha: 0)].map { $0.cgColor }
+        f.locations = [0, 0.08, 0.24, 0.48, 0.68, 0.92]
+        f.opacity = 0
+        root.addSublayer(f)
+        let o = CAKeyframeAnimation(keyPath: "opacity")
+        o.values = [0, 1, 0]; o.keyTimes = [0, 0.18, 1]; o.duration = 0.7
+        let g = CABasicAnimation(keyPath: "transform.scale")
+        g.fromValue = 0.25; g.toValue = 2.6; g.duration = 0.7; g.timingFunction = outEase
+        f.add(o, forKey: "o"); f.add(g, forKey: "g")
+    }
+
+    private func animate(_ layer: CALayer, _ path: String, from: CGFloat, to: CGFloat, _ duration: Double,
+                         _ ease: CAMediaTimingFunction) {
+        let a = CABasicAnimation(keyPath: path)
+        a.fromValue = from; a.toValue = to; a.duration = max(duration, 0.0001); a.timingFunction = ease
+        layer.add(a, forKey: path)
+        layer.setValue(to, forKeyPath: path)  // the end state stays when the animation is done
+    }
 }
 
 let app = NSApplication.shared

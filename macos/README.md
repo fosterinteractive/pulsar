@@ -141,6 +141,12 @@ code>` instead of opening a browser; the window loads it and the page signs in. 
   the launcher again for a fresh code. Cmd+, opens Settings; Cmd+=, Cmd+- and Cmd+0 zoom.
 - Closing the window quits the app, and quitting runs `launcher.sh --stop`: the server stops if this app started
   it and it holds this user's key. A server started from a checkout keeps running.
+- The warp (an update, the refresh button): the window tells the page it can draw it (`window.PULSAR_NATIVE_WARP`),
+  and the page then only posts `{action: "warp", to: 0..1, instant, dark}`. The window takes a picture of the page,
+  bends it with Core Image's `CIHoleDistortion` and draws the core, the ring and the flash as Core Animation layers,
+  all animated on the graphics card (`NativeWarp`). The picture sits over the page, so the warp holds through the
+  reload into a new version; it lets go when the page asks, or after ten seconds. The test build checks it with
+  `PULSAR_TEST_WARP=1`: it photographs its own window held and letting go, and says whether the overlay went away.
 - Before loading, it asks WebKit for `color-mix()` and container queries (Safari 16.2). Without them it says so
   and opens the address in the default browser, and leaves the server running.
 
