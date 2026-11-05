@@ -55,7 +55,7 @@ function openMeeting(i, ev) {
     .filter(Boolean).join('');
   openPop(`<div class="ph"><div><h3>${esc(x.title || '(no title)')}</h3>
       <div class="sub">${hm(x.s)}–${hm(x.e)} · ${dur(x.e - x.s)}${x.declined ? ' · you declined it' : ''}${x.recurring ? ' · repeats' : ''}</div></div>
-    <button class="btn bordered sm" data-log-a="${x.s}" data-log-b="${x.e}">Log this time</button></div>
+    <button class="btn bordered sm" data-log-a="${x.s}" data-log-b="${x.e}" data-meet="${i}">Log this time</button></div>
     ${links ? `<p class="links">${links}</p>` : ''}`, ev);
 }
 

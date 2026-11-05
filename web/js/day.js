@@ -391,9 +391,12 @@ document.addEventListener('click', ev => {
   if (logBtn) {
     const a = +(logBtn.dataset.logA ?? logBtn.dataset.a), b = +(logBtn.dataset.logB ?? logBtn.dataset.b);
     const linked = logBtn.dataset.likely != null ? likelyTasks(likelyCache[+logBtn.dataset.likely]) : [];
+    const meet = logBtn.dataset.meet != null ? meetCache[+logBtn.dataset.meet] : null;
     pop.classList.remove('on');
-    openLog({start: a, minutes: b - a, hint: rulesInRange(a, b),
-             lead: linked.length ? {label: 'Linked in the Claude session', ids: linked} : null});
+    openLog({start: a, minutes: b - a, hint: rulesInRange(a, b), note: meet?.title || '',
+             lead: meet ? {label: 'For this meeting', url: `/api/meeting-tasks?date=${state.date}&uid=${
+                             encodeURIComponent(meet.uid || '')}&title=${encodeURIComponent(meet.title || '')}`}
+                 : linked.length ? {label: 'Linked in the Claude session', ids: linked} : null});
     return;
   }
   const ruleBtn = ev.target.closest('[data-rule-text]');

@@ -486,10 +486,8 @@ def api_repeats(q: dict) -> dict:
     date, tz = q["date"], config.tz(s)
     key = (date, s.get("person_id"))
     if key not in _repeats or time.time() - _repeats[key][0] > 3600:
-        d0 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=REPEAT_DAYS)).strftime("%Y-%m-%d")
-        d1 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
-        rows, problem, _, from_copy = productive_rows(d0, d1, s)
-        if problem and not from_copy:
+        rows, problem = history_rows(date, s)
+        if problem:
             return {"repeats": [], "error": problem}
         _repeats[key] = (time.time(), repeating(rows, tz, date))
     t0, t1 = day_bounds(date, tz)
@@ -498,6 +496,99 @@ def api_repeats(q: dict) -> dict:
     if datetime.fromtimestamp(t0, tz).utcoffset() != datetime.fromtimestamp(t1 - 1, tz).utcoffset():
         items = [{**it, "s": clock(t0 + it["s"] * 60, t0, tz), "e": clock(t0 + it["e"] * 60, t0, tz)} for it in items]
     return {"repeats": repeat_suggestions(_repeats[key][1], items, datetime.strptime(date, "%Y-%m-%d").weekday())}
+
+
+_rows_before: dict = {}
+
+
+def history_rows(date: str, s: dict) -> tuple:
+    """(your entries of the REPEAT_DAYS days before `date`, problem), kept an hour: the history the repeats and the
+    meetings learn from."""
+    key = (date, s.get("person_id"))
+    kept = _rows_before.get(key)
+    if kept and time.time() - kept[0] < 3600:
+        return kept[1], None
+    d0 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=REPEAT_DAYS)).strftime("%Y-%m-%d")
+    d1 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+    rows, problem, _, from_copy = productive_rows(d0, d1, s)
+    if problem and not from_copy:
+        return [], problem
+    _rows_before[key] = (time.time(), rows)
+    for old in sorted(_rows_before, key=lambda k: _rows_before[k][0])[:-10]:
+        del _rows_before[old]
+    return rows, None
+
+
+# ---- a meeting's task --------------------------------------------------------------------------------
+
+WORD = re.compile(r"#?[^\W_]{3,}|#\d+")
+GENERIC_WORDS = {"meeting", "meetings", "sync", "call", "calls", "weekly", "daily", "monthly", "check", "catch", "chat",
+                 "with", "and", "the", "for", "review", "update", "updates", "team", "internal", "zoom", "google", "meet",
+                 "standup", "stand", "about", "from", "into", "project", "projects", "session", "discussion", "kick",
+                 "kickoff", "follow", "quick", "time", "foster", "interactive", "ongoing", "support"}
+
+
+def words_of(text: str, skip: set) -> set:
+    return {w for w in WORD.findall((text or "").lower()) if w not in GENERIC_WORDS and w not in skip}
+
+
+def meeting_tasks(meeting: dict, past: list, rows: list, offered: list, skip: set = frozenset()) -> list:
+    """Tasks for a meeting, most likely first. First the tasks you logged during the earlier meetings of the same
+    series (or the same title), then your tasks that share a word with its title (people's names you go by, and words
+    every meeting has, do not count). Each with why, in words."""
+    title = (meeting.get("title") or "").strip()
+    norm = re.sub(r"\s+", " ", title.lower())
+    same = [p for p in past if not p.get("declined")
+            and ((meeting.get("uid") and p.get("uid") == meeting["uid"]) or re.sub(r"\s+", " ", p.get("title", "").lower()) == norm)]
+    counts: dict = {}
+    seen: dict = {}
+    for p in same:  # each earlier meeting votes for the task that took most of it (not the call before it, running over)
+        cover: dict = {}
+        for r in rows:
+            if r.get("start") is None or not r.get("taskId"):
+                continue
+            overlap = min(r["start"] + r["minutes"] * 60, p["e"]) - max(r["start"], p["s"])
+            if overlap > 0:
+                cover[r["taskId"]] = cover.get(r["taskId"], 0) + overlap
+                seen[r["taskId"]] = r
+        best = max(cover, key=cover.get) if cover else None
+        if best and cover[best] >= min(600, (p["e"] - p["s"]) / 3):  # ten minutes of it, or a third of a short one
+            counts[best] = counts.get(best, 0) + 1
+    out = [{"taskId": t, "title": seen[t].get("task") or "", "project": seen[t].get("project") or "",
+            "why": f"logged during {n} of the last {len(same)} like it"}
+           for t, n in sorted(counts.items(), key=lambda kv: -kv[1])]
+    words = words_of(title, skip)
+    if words:
+        scored = []
+        for t in offered:
+            shared = words & words_of(f"{t.get('title', '')} {t.get('project', '')}", skip)
+            if shared:
+                meetingish = "meeting" in (t.get("title") or "").lower()
+                scored.append((len(shared) + (0.5 if meetingish else 0), t, shared))
+        have = {o["taskId"] for o in out}
+        for _, t, shared in sorted(scored, key=lambda x: -x[0]):
+            if t["taskId"] not in have and len(out) < 5:
+                have.add(t["taskId"])
+                out.append({"taskId": t["taskId"], "title": t.get("title") or "", "project": t.get("project") or "",
+                            "why": "the title says " + ", ".join(f"“{w}”" for w in sorted(shared))})
+    return out[:5]
+
+
+def api_meeting_tasks(q: dict) -> dict:
+    """The tasks to offer first when logging a meeting. A hint: what cannot be read is left out, never an error."""
+    s = current_settings()
+    date = q["date"]
+    meeting = {"uid": (q.get("uid") or "")[:300], "title": (q.get("title") or "")[:300]}
+    first = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=REPEAT_DAYS)).strftime("%Y-%m-%d")
+    past = calendar.history(first, REPEAT_DAYS, s)
+    rows, _ = history_rows(date, s)
+    try:
+        offered = api_suggest({"date": date})
+        offered = (offered.get("recent") or []) + (offered.get("assigned") or [])
+    except Exception:
+        offered = []
+    skip = set(WORD.findall(str(s.get("person_name") or "").lower()))  # your own name is in many task titles
+    return {"tasks": meeting_tasks(meeting, past, rows, offered, skip)}
 
 
 def api_search(q: dict) -> dict:
@@ -675,7 +766,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(calendar.status(config.load()))
             routes = {"/api/activity": api_activity, "/api/entries": api_entries, "/api/proposal": api_proposal,
                       "/api/tasks/suggest": api_suggest, "/api/services": api_services, "/api/repeats": api_repeats,
-                      "/api/calendar": api_calendar}
+                      "/api/calendar": api_calendar, "/api/meeting-tasks": api_meeting_tasks}
             if url.path not in routes:
                 return self.send(404, b"not found", "text/plain")
             if not DATE.match(q.get("date", "")):

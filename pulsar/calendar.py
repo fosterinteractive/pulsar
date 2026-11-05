@@ -321,9 +321,10 @@ def _bounds(day: str, tz) -> tuple:
     return midnight, midnight.replace(tzinfo=tz), (midnight + timedelta(days=1)).replace(tzinfo=tz)
 
 
-def _list(day: str, tz, token: str) -> dict:
-    """{"summary", "items"}: the day's events on the primary calendar, each repeat as its own event."""
-    _, t0, t1 = _bounds(day, tz)
+def _list(day: str, tz, token: str, days: int = 1) -> dict:
+    """{"summary", "items"}: the events of `days` days from `day` on the primary calendar, each repeat as its own."""
+    _, t0, _ = _bounds(day, tz)
+    t1 = (datetime.strptime(day, "%Y-%m-%d") + timedelta(days=days)).replace(tzinfo=tz)
     query = {"timeMin": t0.isoformat(), "timeMax": t1.isoformat(), "singleEvents": "true", "orderBy": "startTime",
              "maxResults": "250", "maxAttendees": "1", "fields": FIELDS}  # maxAttendees=1: only "me" among the guests
     out: dict = {"summary": "", "items": []}
@@ -422,6 +423,42 @@ def events_on(items: list, day: str, tz) -> list:
     return out
 
 
+_history: dict = {}  # (first day, days, zone) -> (when, [meetings])
+
+
+def history(first: str, days: int, settings: dict) -> list:
+    """The meetings of `days` days from `first`, as moments: [{s, e (epoch seconds), uid, title, declined}], to match
+    them with the time logged then. Kept an hour. [] when not connected or Google cannot be read: it is a hint."""
+    if not status(settings)["connected"]:
+        return []
+    tz, key = config.tz(settings), (first, days, config.timezone_name(settings))
+    with _cache_lock:
+        kept = _history.get(key)
+    if kept and time.time() - kept[0] < 3600:
+        return kept[1]
+    try:
+        try:
+            doc = _list(first, tz, _access_token(), days)
+        except _Expired:
+            doc = _list(first, tz, _access_token(renew=True), days)
+    except (CalendarError, _Expired):
+        return []
+    out = []
+    for x in doc["items"]:
+        a, b = _moment((x.get("start") or {}).get("dateTime")), _moment((x.get("end") or {}).get("dateTime"))
+        if x.get("status") == "cancelled" or x.get("eventType") in NOT_MEETINGS or not a or not b:
+            continue  # all-day entries have dates, not times
+        out.append({"s": a.timestamp(), "e": b.timestamp(), "uid": str(x.get("recurringEventId") or x.get("id") or ""),
+                    "title": str(x.get("summary") or "")[:300],
+                    "declined": any(isinstance(g, dict) and g.get("self") and g.get("responseStatus") == "declined"
+                                    for g in x.get("attendees") or [])})
+    with _cache_lock:
+        _history[key] = (time.time(), out)
+        for old in sorted(_history, key=lambda k: _history[k][0])[:-10]:
+            del _history[old]
+    return out
+
+
 _cache: dict = {}  # (day, zone) -> (when, {"events", "fetched"})
 _cache_lock = threading.Lock()
 
@@ -430,6 +467,7 @@ def forget() -> None:
     """Drop every day kept: the connection changed."""
     with _cache_lock:
         _cache.clear()
+        _history.clear()
 
 
 def day(day_iso: str, settings: dict, fresh: bool = False) -> dict:

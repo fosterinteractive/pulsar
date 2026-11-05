@@ -570,6 +570,35 @@ class RepeatsTest(unittest.TestCase):
         self.assertEqual([server.is_call(x) for x in no], [False] * 4)
 
 
+class MeetingTasksTest(unittest.TestCase):
+    """Logging a meeting: the task logged during its earlier ones first, then tasks sharing a word with its title."""
+
+    def at(self, day, hm):
+        h, m = map(int, hm.split(":"))
+        return datetime(2026, 11, day, h, m, tzinfo=timezone.utc).timestamp()
+
+    def test_the_series_history_comes_first_then_words_of_the_title(self):
+        past = [{"s": self.at(d, "16:25"), "e": self.at(d, "17:25"), "uid": "scrum", "title": "Daily Scrum", "declined": False}
+                for d in (2, 3, 4)]
+        past.append({"s": self.at(5, "16:25"), "e": self.at(5, "17:25"), "uid": "scrum", "title": "Daily Scrum", "declined": True})
+        rows = [{"start": self.at(d, "16:25"), "minutes": 55, "taskId": "7", "task": "[FIP-72] Scrum - Nick", "project": "FI-PM"}
+                for d in (2, 3)]
+        rows.append({"start": self.at(4, "16:00"), "minutes": 15, "taskId": "9", "task": "Dev", "project": "X"})  # 0 min in
+        offered = [{"taskId": "7", "title": "[FIP-72] Scrum - Nick", "project": "FI-PM"},
+                   {"taskId": "8", "title": "Scrum notes - Nick", "project": "FI-PM"}]
+        got = server.meeting_tasks({"uid": "scrum", "title": "Daily Scrum"}, past, rows, offered, skip={"nick"})
+        self.assertEqual([(t["taskId"], t["why"]) for t in got],
+                         [("7", "logged during 2 of the last 3 like it"), ("8", "the title says “scrum”")])
+
+    def test_names_and_words_every_meeting_has_do_not_match(self):
+        offered = [{"taskId": "1", "title": "Estimations - Nick", "project": "FI-PR"},
+                   {"taskId": "2", "title": "Inovia Internal Meetings", "project": "Inovia - Ongoing Support"},
+                   {"taskId": "3", "title": "Team and Company page revisions", "project": "Inovia - Ongoing Support"}]
+        got = server.meeting_tasks({"uid": "x", "title": "Nick <> Inovia weekly sync"}, [], [], offered, skip={"nick"})
+        self.assertEqual([t["taskId"] for t in got], ["2", "3"])   # the one about meetings first
+        self.assertEqual(server.meeting_tasks({"uid": "y", "title": "Weekly team sync"}, [], [], offered, skip={"nick"}), [])
+
+
 class ReviewFixesTest(unittest.TestCase):
     def test_memtime_is_copied_once_a_minute_not_for_every_query(self):
         import sqlite3
