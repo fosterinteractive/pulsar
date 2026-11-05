@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+.DS_Store
+dist/
+# local tooling and anything personal that must never be committed
+node_modules/
+package-lock.json
+*.iconset/
+.claude/
+.env
+*.log
+.venv/
+.pytest_cache/
+.idea/
+.vscode/

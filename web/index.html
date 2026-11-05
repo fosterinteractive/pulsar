@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pulsar</title>
+<script src="/static/js/theme-early.js"></script>
+<link rel="icon" id="favicon">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <span class="brand"><a class="home" id="home" href="/" title="Go to the Day view"><svg id="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
+      <defs>
+        <radialGradient id="pGlow" cx="16" cy="16" r="9" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffffff"/><stop offset=".3" stop-color="#f0abfc"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0"/></radialGradient>
+        <linearGradient id="pUp" x1="16" y1="16" x2="16" y2="0" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#06b6d4"/><stop offset=".6" stop-color="#22d3ee" stop-opacity=".7"/><stop offset="1" stop-color="#22d3ee" stop-opacity="0"/></linearGradient>
+        <linearGradient id="pDown" x1="16" y1="16" x2="16" y2="32" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ec4899"/><stop offset=".6" stop-color="#f472b6" stop-opacity=".7"/><stop offset="1" stop-color="#f472b6" stop-opacity="0"/></linearGradient>
+      </defs>
+      <g transform="rotate(28 16 16)">
+        <path d="M16 16 L11.8 0.5 L20.2 0.5 Z" fill="url(#pUp)"/>
+        <path d="M16 16 L11.8 31.5 L20.2 31.5 Z" fill="url(#pDown)"/>
+        <ellipse cx="16" cy="16" rx="11.5" ry="3.6" fill="none" stroke="#8b5cf6" stroke-opacity=".9" stroke-width="1.3"/>
+      </g>
+      <circle cx="16" cy="16" r="9" fill="url(#pGlow)"/>
+      <circle cx="16" cy="16" r="2.8" fill="#ffffff" stroke="#7c3aed" stroke-width="1"/>
+    </svg><h1>Pulsar</h1></a><button type="button" class="ver" id="ver-chip" title="Version and updates"></button></span>
+  <span class="seg" id="view"><button data-v="day">Day</button><button data-v="report">Report</button></span>
+  <span class="sub dayonly" id="dayname"></span>
+  <span class="spacer"></span>
+  <span class="seg dayonly">
+    <button class="btn icon" id="prev" title="Previous day (←)">‹</button>
+    <button class="btn" id="today" title="Today (T)">Today</button>
+    <button class="btn icon" id="next" title="Next day (→)">›</button>
+  </span>
+  <input type="date" id="date" class="dayonly">
+  <span class="seg dayonly" id="zoom" title="Zoom">
+    <button data-v="1" title="1 minute rows">1m</button><button data-v="5" title="5 minute rows">5m</button><button data-v="15" title="15 minute rows">15m</button><button data-v="30" title="30 minute rows">30m</button><button data-v="60" title="1 hour rows">1h</button>
+  </span>
+  <button class="btn icon bordered" id="theme-btn" aria-label="Theme"></button>
+  <button class="btn icon" id="refresh" title="Refresh everything" aria-label="Refresh everything">↻</button>
+  <button class="btn bordered logs-btn" id="open-logs" title="Error log">Logs</button>
+  <button class="btn bordered settings-btn" id="open-settings" title="Settings: Productive token, time zone, rules" aria-label="Settings">
+    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+    <span>Settings</span></button>
+</header>
+
+<main id="dayview">
+  <section class="board">
+    <div class="cols">
+      <div class="colhead"></div>
+      <div class="colhead"><b>Activity</b><span id="h-act">…</span>
+        <select id="source-select" class="mini-select" aria-label="Activity source" title="Which tracker to show">
+          <option value="auto">Auto</option><option value="aw">ActivityWatch</option><option value="memtime">MemTime</option></select></div>
+      <div class="colhead likelycol"><b>Likely</b><span id="h-likely">…</span></div>
+      <div class="colhead"><b>Logged</b><span id="h-logged">…</span>
+        <button class="btn mini2 bordered" id="log-new" title="Log time in Productive (or drag in this column)">+ Log</button>
+        <button class="btn icon mini" id="refresh-logged" title="Refresh logged time from Productive" aria-label="Refresh logged time">↻</button></div>
+    </div>
+    <div class="scroll" id="scroll">
+      <div class="grid" id="grid">
+        <div class="axis" id="axis"></div>
+        <div class="lane" id="lane-act"></div>
+        <div class="lane" id="lane-likely"></div>
+        <div class="lane" id="lane-logged"></div>
+      </div>
+    </div>
+  </section>
+  <aside>
+    <div class="box" id="worktime"><h2>Work time</h2></div>
+    <div class="box" id="projects"><h2>Total project time</h2></div>
+    <div class="box" id="tasksbox" hidden></div>
+    <div class="box" id="likelybox"><h2>Likely, from Claude sessions</h2></div>
+  </aside>
+</main>
+<main id="report">
+  <div class="rfilters">
+    <span class="seg" id="range">
+      <button data-v="this-week">This week</button><button data-v="last-week">Last week</button><button data-v="this-month">This month</button><button data-v="last-month">Last month</button><button data-v="30d">Last 30 days</button>
+    </span>
+    <input type="date" id="rfrom" aria-label="From"> <span class="sub">to</span> <input type="date" id="rto" aria-label="To">
+    <span class="sub" id="rlabel"></span><span class="rmsg" id="rmsg" role="status" aria-live="polite"></span>
+    <details class="dl" id="report-dl"><summary class="btn bordered">Download</summary>
+      <div class="menu"><button type="button" data-dl="days">Days, CSV</button><button type="button" data-dl="entries">Time entries, CSV</button>
+        <button type="button" data-dl="print">Print or save as PDF</button></div></details>
+  </div>
+  <h1 class="print-title" id="print-title"></h1>
+  <div class="body" id="rbody"><div class="chart"><div class="take">Loading the report…</div></div></div>
+</main>
+<div class="tip" id="tip" role="tooltip"></div>
+<dialog id="settings" aria-labelledby="settings-title">
+  <form id="settings-form" novalidate>
+    <div class="dh"><h2 id="settings-title">Settings</h2><button type="button" class="btn icon" id="settings-x" aria-label="Close">✕</button></div>
+    <div class="scrollarea">
+      <section>
+        <h3>Productive</h3>
+        <p class="status" id="pd-status"></p>
+        <label class="field"><span>Connect with</span>
+          <select name="productive_source">
+            <option value="auto">Automatic: my API token, else Claude Code's connection</option>
+            <option value="token">My API token</option>
+            <option value="claude-code">Claude Code's connection</option>
+          </select></label>
+        <label class="field"><span>API token</span><input type="password" name="token" autocomplete="off" spellcheck="false"></label>
+        <p class="hint">In Productive: Settings, then API integrations, then Generate new token, with Read/Write access (read-only shows your time but cannot log it). The token stays on this computer (in the keychain on a Mac) and is never shown again.</p>
+        <div class="row2">
+          <label class="field"><span>Organization ID</span><input name="org_id" inputmode="numeric" placeholder="found automatically"></label>
+          <label class="field"><span>Your person ID</span><input name="person_id" inputmode="numeric" placeholder="found automatically"></label>
+        </div>
+        <p class="hint">Only if Pulsar asks for them. The organization ID is the number at the start of your Productive address (app.productive.io/<b>12345</b>-company/…); your person ID is the number in the address of your own profile.</p>
+        <button type="button" class="btn bordered" id="remove-token">Remove the saved token</button>
+      </section>
+      <section>
+        <h3>Time</h3>
+        <label class="field"><span>Time zone</span><input name="timezone" list="zones" autocomplete="off"></label>
+        <datalist id="zones"></datalist>
+        <p class="hint">Leave it empty to use this computer's time zone.</p>
+        <label class="field"><span>Daily target, hours</span><input name="target_hours" type="number" min="0.5" max="24" step="0.25"></label>
+      </section>
+      <section>
+        <h3>Activity</h3>
+        <label class="field"><span>Personal windows</span><textarea name="personal_patterns" rows="5"></textarea></label>
+        <p class="hint">One word per line. A window whose app, title or site contains one of them counts as personal time, not work.</p>
+        <label class="field"><span>ActivityWatch address</span><input name="activitywatch_url" placeholder="http://localhost:5600"></label>
+        <label class="field"><span>“Likely” column</span>
+          <select name="likely"><option value="auto">Show it when Claude Code sessions are found</option><option value="off">Hide it</option></select></label>
+        <p class="hint" id="likely-hint"></p>
+      </section>
+      <section id="updates">
+        <h3>Version and updates</h3>
+        <div class="kv"><span>Version</span><span id="upd-version" class="num"></span></div>
+        <div class="kv"><span>Installed</span><span id="upd-since"></span></div>
+        <div class="kv"><span>Last check</span><span id="upd-checked"></span></div>
+        <p class="status" id="update-status"></p>
+        <div class="btnrow"><button type="button" class="btn bordered" id="update-check">Check for updates</button>
+          <button type="button" class="btn primary" id="update-now" hidden>Update</button></div>
+        <label class="check"><input type="checkbox" id="auto-update"> Install updates automatically</label>
+        <p class="hint">When this is off, Pulsar still checks every few hours and shows the Update button.</p>
+      </section>
+      <section>
+        <h3>Rules</h3>
+        <p class="hint">A window, page or site that contains these words belongs to that task: it is coloured by project and offered first when you log.</p>
+        <div id="rules-list"></div>
+        <button type="button" class="btn bordered" id="rule-add">Add a rule</button>
+      </section>
+    </div>
+    <p class="msg" id="settings-msg" role="status"></p>
+    <div class="df"><button type="button" class="btn bordered" id="settings-cancel">Close</button><button type="submit" class="btn primary" id="settings-save">Save</button></div>
+  </form>
+</dialog>
+<dialog id="logdlg" aria-labelledby="log-title">
+  <form id="log-form" novalidate>
+    <div class="dh"><h2 id="log-title">Log time in Productive</h2><button type="button" class="btn icon" data-close aria-label="Close">✕</button></div>
+    <div class="scrollarea">
+      <div class="row3">
+        <label class="field"><span>Date</span><input name="date" type="date" required></label>
+        <label class="field"><span>Start</span><input name="start" type="time" required></label>
+        <label class="field"><span>Minutes</span><input name="minutes" type="number" min="1" max="1440" required></label>
+      </div>
+      <div class="field"><span>Task</span>
+        <input name="q" type="search" placeholder="Search every task in Productive" autocomplete="off" aria-label="Search tasks">
+        <div class="picker" id="log-tasks" role="listbox" aria-label="Tasks"></div>
+      </div>
+      <label class="field"><span>Service</span><select name="service"></select></label>
+      <label class="field"><span>Note</span><textarea name="note" rows="3" placeholder="What was done: the outcome, in a sentence"></textarea></label>
+    </div>
+    <p class="msg" id="log-msg" role="status"></p>
+    <div class="df"><button type="button" class="btn bordered" data-close>Cancel</button><button type="submit" class="btn primary" id="log-save">Log in Productive</button></div>
+  </form>
+</dialog>
+<dialog id="ruledlg" aria-labelledby="rule-title">
+  <form id="rule-form" novalidate>
+    <div class="dh"><h2 id="rule-title">New rule</h2><button type="button" class="btn icon" data-close aria-label="Close">✕</button></div>
+    <div class="scrollarea">
+      <label class="field"><span>When a window, page or site contains</span><input name="match" autocomplete="off" placeholder="github.com/your-team/your-repo"></label>
+      <p class="hint" id="rule-preview"></p>
+      <div class="field"><span>it belongs to the task</span>
+        <input name="q" type="search" placeholder="Search every task in Productive" autocomplete="off" aria-label="Search tasks">
+        <div class="picker" id="rule-tasks" role="listbox" aria-label="Tasks"></div>
+      </div>
+    </div>
+    <p class="msg" id="rule-msg" role="status"></p>
+    <div class="df"><button type="button" class="btn bordered" data-close>Cancel</button><button type="submit" class="btn primary">Save the rule</button></div>
+  </form>
+</dialog>
+<dialog id="logsdlg" aria-labelledby="logs-title">
+  <div class="dh"><h2 id="logs-title">Logs</h2>
+    <span class="seg" id="logs-range"><button type="button" data-v="1">Last 24 hours</button><button type="button" data-v="7">7 days</button><button type="button" data-v="30">30 days</button></span>
+    <button type="button" class="btn icon" data-close aria-label="Close">✕</button></div>
+  <div class="scrollarea"><div id="logs-list"></div></div>
+  <div class="df"><span class="hint grow">Kept for 31 days. Tokens and keys are removed before anything is written.</span>
+    <button type="button" class="btn bordered" id="logs-download" data-days="1">Download</button>
+    <button type="button" class="btn primary" data-close>Close</button></div>
+</dialog>
+<dialog id="signin" aria-labelledby="signin-title" aria-describedby="signin-text">
+  <h2 id="signin-title">Not signed in</h2>
+  <p id="signin-text">This browser is not signed in to Pulsar. Open Pulsar from its app icon and it will sign this browser in. For another browser, run <code>/usr/bin/python3 ~/Library/Application\ Support/Pulsar/current/pulsar.py --signin-url</code> in Terminal and open the address it prints.</p>
+  <div class="df"><button type="button" class="btn bordered" id="signin-reload">Reload the page</button></div>
+</dialog>
+<div class="pop" id="pop" role="dialog" aria-label="Details" tabindex="-1"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="/static/js/core.js"></script>
+<script src="/static/js/day.js"></script>
+<script src="/static/js/report.js"></script>
+<script src="/static/js/settings.js"></script>
+<script src="/static/js/log.js"></script>
+<script src="/static/js/logs.js"></script>
+<script src="/static/js/main.js"></script>
+</body>
+</html>
