@@ -621,6 +621,7 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `GET /api/dayplan/journal?date=` | Log the day: what each run of that day sent, and what Undo would delete. |
 | `POST /api/entry/update`, `/api/entry/delete` | Change or delete one of your entries. Delete with `run`: only what that Log the day run created. |
 | `POST /api/likely/ask` | Ask Claude (only when switched on). |
+| `POST /api/likely/note` | `{date, s, e, project}`: the log dialog's note for a Likely block, from its session and commits (Haiku; only with the Claude Code switch on, 5.7). |
 | `POST /api/calendar/connect`, `/disconnect` | Google Calendar. |
 | `POST /api/update/check`, `/install`, `/apply` | Updates. |
 | `POST /api/productive/test`, `/api/client-error`, `/api/quit` | Test the connection; log a page error; stop (launcher). |
