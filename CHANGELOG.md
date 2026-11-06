@@ -13,6 +13,12 @@ What each Pulsar release changed, newest first.
 - Log dialog: time that runs into an entry already logged can be logged around it, as one or more entries.
 - Logging from the yellow rail, a drag, + Log or Log and next drafts the note too, from the Likely work in that time.
 - A dragged or picked stretch leads with Log the day's task and note for its main work, and offers a split when it mixes work.
+- Pulsar.app installs the code it carries only when Pulsar's release key signed it, and says so when not.
+- An update's description expires 60 days after its release, so an old one served again is ignored.
+- After an update the window signs in again through its launcher, which checks the server; a sign-in ends with its server.
+- A port held for a moment while Pulsar starts no longer marks a good version bad.
+- The error log also removes bare keys and tokens, UUIDs, and fields named as keys or secrets.
+- The install line downloads into a private temporary folder and calls curl and ditto by their full paths.
 
 ## 1.4.0 (2026-11-06)
 - Log the day: Earlier days, to catch up on several days one after another.

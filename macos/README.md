@@ -33,9 +33,11 @@ tests. Then it sets the version, builds into `dist/`, shows what it will do and 
 1. commits the version change as "Pulsar 1.1.0" and pushes the branch;
 2. creates the public release `v1.1.0` on `fosterinteractive/pulsar` at that commit, with four files:
    - `pulsar-1.1.0.zip`: the code git tracks, in one folder `pulsar-1.1.0/` (what installed copies download);
-   - `latest.json`: version, download address, SHA-256 of the zip, the notes and the date (what they read);
+   - `latest.json`: version, download address, SHA-256 of the zip, the notes, the date and an expiry date 60 days
+     ahead (what they read; past that date they ignore it, so release at least every 60 days);
    - `latest.json.sig`: the release key's signature of `latest.json` (see below);
-   - `Pulsar.zip`: the whole app, for new installs. Share
+   - `Pulsar.zip`: the whole app, for new installs, with the code it carries signed by the same key
+     (`Contents/Resources/app.manifest.json.sig`): its launcher installs that code only as signed. Share
      `https://github.com/fosterinteractive/pulsar/releases/latest/download/Pulsar.zip` with new colleagues.
 
 Without `--publish` it only builds and prints the commands to publish by hand. It needs the GitHub CLI
@@ -59,13 +61,14 @@ private repository every download answers 404: Settings then says no release is 
 copy writes a warning to its error log once a day.
 
 **The release keys.** Installed copies trust only releases signed with one of the ECDSA P-256 keys listed in
-`PUBLIC_KEYS` in `pulsar/updater.py`: the main key, then a reserve key.
+`PUBLIC_KEYS` in `pulsar/release_sig.py`: the main key, then a reserve key. The same keys sign the code inside
+Pulsar.app, and the app's launcher checks it with its own copy of that file before it installs anything.
 
 - **Main key**: `~/.config/pulsar-release/update-signing-key.pem` on the Mac of whoever publishes (owner-only, never in
   the repo; `PULSAR_SIGNING_KEY` points elsewhere). `release.sh` signs with it and refuses a key that is not listed.
   Keep a copy in the team's 1Password vault, so another maintainer can publish and a lost Mac loses nothing.
-  Encrypted (`openssl ec -aes256 -in key.pem -out key.enc.pem`), `release.sh` asks for its passphrase, so publishing
-  then needs a person at a terminal.
+  Encrypted (`openssl ec -aes256 -in key.pem -out key.enc.pem`), `release.sh` asks for its passphrase (twice: for
+  `latest.json` and for the app), so publishing then needs a person at a terminal.
 - **Reserve key**: kept only in 1Password, never on a laptop. If the main key is lost or leaks, sign one release with
   the reserve (`PULSAR_SIGNING_KEY=<reserve file> macos/release.sh …`) whose `PUBLIC_KEYS` drops the old main key and
   adds a new one; every installed copy accepts it and from then on trusts the new list, with no reinstall.
@@ -82,7 +85,10 @@ copy writes a warning to its error log once a day.
 
 Anyone with write access to the repository can publish a release, but without a listed key installed copies ignore
 it, and releases are immutable once published (repository setting), so nobody can swap a file of a published
-release. For the first release of a version (for example 1.0.0 before any tag exists) `release.sh` accepts the
+release. A Pulsar.zip in such a release still reaches whoever downloads it: its code would not install through
+Pulsar's own launcher, but a whole app built from scratch carries a launcher of its own. Hence the steps in
+`docs/HOW-IT-WORKS.md`, section 9, "What the maintainer must do": protect `main`, limit who can release, the reserve
+key, the key encrypted. For the first release of a version (for example 1.0.0 before any tag exists) `release.sh` accepts the
 version already in `__init__.py`.
 
 **Where it is installed.** `~/Library/Application Support/Pulsar/`:
@@ -99,7 +105,8 @@ copies. Settings, the token and caches live elsewhere (`~/.config/pulsar`, the k
 and survive every update.
 
 **Rollback.** Automatic: when the app is opened and `current` does not answer within 15 seconds, the launcher
-writes that version into `bad-versions`, points `current` back at `previous` and starts it. A bad version is
+writes that version into `bad-versions`, points `current` back at `previous` and starts it. A port that something
+else holds is never the version's fault: the launcher tries again and marks nothing. A bad version is
 never installed again, from the app or the updater, so the fix is a new release with a higher number. By
 hand: point `current` at an older folder (`ln -sfh versions/1.0.0 current` in the install root), quit
 Pulsar (Activity Monitor) and open it again.
@@ -115,6 +122,10 @@ It runs from any directory and takes about a second. It writes:
 - `dist/Pulsar.app`, version from `__version__` in `pulsar/__init__.py`;
 - `dist/Pulsar.zip`, the whole app (about 1 MB).
 
+Without `PULSAR_BUNDLE_SIGNING_KEY=<private key>` (which `release.sh` sets) the code inside is not signed, and such an
+app installs nothing: it says so and opens the version already installed. That is on purpose: only a release may
+put code in `versions/`. With a key that is not in `PUBLIC_KEYS`, the build stops.
+
 `dist/` is build output and ignored by git.
 
 Inside the app:
@@ -124,6 +135,8 @@ Pulsar.app/Contents/
   Info.plist           com.fosterinteractive.pulsar, macOS 12+, local networking allowed (127.0.0.1)
   MacOS/Pulsar         the window (PulsarWindow.swift), one binary for Apple Silicon and Intel
   Resources/launcher.sh
+  Resources/release_sig.py       the launcher's copy of the release check and keys, outside the code it checks
+  Resources/app.manifest.json    the code's version and each file's SHA-256; .sig: the release key's signature
   Resources/AppIcon.icns
   Resources/app/       pulsar.py, pulsar/ (no __pycache__), web/, README.md: the copy the app installs
 ```
@@ -142,8 +155,10 @@ code>` instead of opening a browser; the window loads it and the page signs in. 
   browser; anything else (another site, a frame, a new window) is refused.
 - Downloads (the page's `<a download>` with a blob) go through `WKDownload` and a save panel. **Print or save as
   PDF** asks the window to print (the page posts `{action: "print"}`; a WebView ignores `window.print()`).
-- **Sign in** on the "not signed in" notice, **View > Reload** when the server is gone, and **Start Pulsar** run
-  the launcher again for a fresh code. Cmd+, opens Settings; Cmd+=, Cmd+- and Cmd+0 zoom.
+- **Sign in** on the "not signed in" notice, **View > Reload**, **Start Pulsar** and the page's move into a new
+  version (`{action: "reload"}`) all run the launcher again for a fresh code; the window never reloads the page by
+  itself, since a session lives only as long as its server and the launcher first checks the server on the port is
+  this user's (`docs/HOW-IT-WORKS.md`, section 3). Cmd+, opens Settings; Cmd+=, Cmd+- and Cmd+0 zoom.
 - Closing the window quits the app, and quitting runs `launcher.sh --stop`: the server stops if this app started
   it and it holds this user's key. A server started from a checkout keeps running.
 - The warp (an update, the refresh button): the window tells the page it can draw it (`window.PULSAR_NATIVE_WARP`),
@@ -162,9 +177,12 @@ code>` instead of opening a browser; the window loads it and the page signs in. 
    `xcode-select --install` (macOS asks for an administrator password), then exits. The person opens Pulsar
    again afterwards. With the tools but a Python older than 3.9, it points to Software Update.
 2. **Install.** It compares the version the app carries (B, `Resources/app`) with the installed one (C,
-   `current`). With nothing installed, or B newer than C and not in `bad-versions`, it copies B to
-   `versions/B`, points `previous` at the old `current` and `current` at `versions/B`. When C is newer (the
-   app has updated itself since this bundle was built), C stays. Versions compare numerically (1.10.0 > 1.9.0).
+   `current`). With nothing installed, or B newer than C and not in `bad-versions`, it copies B to a temporary
+   folder, checks the copy against the signed `app.manifest.json` (`release_sig.py check-bundle`), moves it to
+   `versions/B`, points `previous` at the old `current` and `current` at `versions/B`. Code that is not signed, or
+   not as signed, is not installed: a dialog says why, and C opens (or, with nothing installed, Pulsar stops). When C
+   is newer (the app has updated itself since this bundle was built), C stays. Versions compare numerically (1.10.0
+   > 1.9.0).
 3. **Already running?** If `/api/config` answers with C's version, or the server was not started by the app
    (for example `python3 pulsar.py` from a checkout, which is never stopped), it opens the page and exits. A
    server the app started with another version is asked to quit (`POST /api/quit`) and C starts instead. If
@@ -174,12 +192,18 @@ code>` instead of opening a browser; the window loads it and the page signs in. 
    `~/Library/Logs/Pulsar.log`, together with what the launcher decided.
 5. **Check and roll back.** It waits up to 15 seconds for `/api/config`, then opens the page. If the server
    exits or never answers and `previous` is another version, C goes into `bad-versions`, `current` goes back
-   to `previous`, and that starts. Only if that fails too does a dialog point to the log.
+   to `previous`, and that starts. Only if that fails too does a dialog point to the log. A server that exits 98
+   (`pulsar.py`: the port is taken) is started again, five times a second apart; if the port stays taken, a dialog
+   says so, nothing is marked and `previous` is not tried.
 
-For tests, a throwaway `HOME` so the real install root is not touched. The launcher alone:
+For tests, a throwaway `HOME` so the real install root is not touched, and `PULSAR_TEST_DIALOGS=<file>` so its
+dialogs go to that file (each answered with its default button) instead of the screen. A build without the release
+key installs nothing, so the launcher's install is tested by `tests/test_release.py`, which signs test apps with a
+throwaway key and lists only that key in each test app's `Resources/release_sig.py`. The launcher alone (on an empty
+`HOME`, a build without the key writes "This copy of Pulsar is not a signed release" to `dialogs.txt` and stops):
 
 ```bash
-HOME=$(mktemp -d) PULSAR_PORT=5699 PULSAR_NO_BROWSER=1 dist/Pulsar.app/Contents/Resources/launcher.sh
+T=$(mktemp -d); HOME=$T PULSAR_PORT=5699 PULSAR_NO_BROWSER=1 PULSAR_TEST_DIALOGS=$T/dialogs.txt dist/Pulsar.app/Contents/Resources/launcher.sh
 ```
 
 The window, with a test build that loads the page, saves `page.json` (signed in or not), `window.png`, the error

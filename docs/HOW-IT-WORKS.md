@@ -62,20 +62,34 @@ sequenceDiagram
    `versions/<X.Y.Z>/` with two symlinks, `current` and `previous`, switched atomically. When the app's own version
    is newer than `current` (a new Pulsar.zip was installed), it is copied in and becomes `current`. When `current` is
    newer (Pulsar updated itself since the app was built), `current` stays.
-2. **Python.** Always `/usr/bin/python3` (Apple's Command Line Tools; the app offers to install them), with
+2. **Only signed code is installed.** Next to the code, the app carries `app.manifest.json`: its version and the
+   SHA-256 of each of its files, signed with the release key (`.sig`, made by `release.sh`). The launcher copies the
+   code to a temporary folder, checks that copy against the manifest with `release_sig.py` (the updater's own check
+   and keys, copied next to the launcher, outside the code it checks): a signature by one of `PUBLIC_KEYS`, the same
+   version, every file the same, none missing, none added, no symbolic link. Only then does the copy move into
+   `versions/`. Otherwise it installs nothing and says so in a dialog ("This copy of Pulsar is not a signed
+   release: …"): with a version already installed, that one opens; without one, Pulsar stops there. So an app built
+   without the key, or one whose code was changed after the release was built, cannot put a version higher than
+   every release in place, which no real update would ever replace.
+3. **Python.** Always `/usr/bin/python3` (Apple's Command Line Tools; the app offers to install them), with
    `-E -s -B`: no `PYTHON*` variables, no user site-packages, no `.pyc` files. Never `-I`: versions up to 1.0.3 need
    the script's folder on `sys.path`. `pulsar.py` puts its own folder there itself.
-3. **Rollback.** If the new `current` does not answer, the launcher writes it into `bad-versions` (never used again)
-   and starts `previous`.
-4. **Is it ours?** Before it opens anything, the launcher asks `/api/whoami?nonce=` and checks the HMAC of the nonce
+4. **Rollback.** If the new `current` does not answer, the launcher writes it into `bad-versions` (never used again)
+   and starts `previous`. A port that is taken is never the version's fault: `pulsar.py` then exits with its own
+   status, 98, the launcher tries again (five times, a second apart), and if the port stays taken it says so, marks
+   nothing and does not try `previous`. Before, a program that held the port for a moment at the right time could
+   get a good version marked bad for ever.
+5. **Is it ours?** Before it opens anything, the launcher asks `/api/whoami?nonce=` and checks the HMAC of the nonce
    made with this user's key (`~/.config/pulsar/secret`). A server another account or a container started on the same
    port fails this check.
-5. **Signing the window in.** The launcher writes a one-time code to `~/.config/pulsar/signin-code` and prints the
+6. **Signing the window in.** The launcher writes a one-time code to `~/.config/pulsar/signin-code` and prints the
    address with it. The page trades the code for a session token (`POST /api/session`). The code works once and only
-   for two minutes, and a wrong guess does not spoil it.
-6. **Stopping.** Closing the window quits the app, and the app runs `launcher.sh --stop`, which stops only a server
+   for two minutes, and a wrong guess does not spoil it. A session lives as long as the server that issued it (section
+   3), so every load of the page in the window goes through the launcher: at start, **View > Reload**, **Sign in**,
+   and the page's own move into a new version.
+7. **Stopping.** Closing the window quits the app, and the app runs `launcher.sh --stop`, which stops only a server
    the app itself started. A server started from a git checkout keeps running.
-7. **Self-test.** `pulsar.py --self-test` imports every module, reads from `index.html` every script and style the
+8. **Self-test.** `pulsar.py --self-test` imports every module, reads from `index.html` every script and style the
    page loads and checks each is there, starts a server on a free port, fetches the page and each of those files,
    and asks it for its version. The updater runs it on every new version before trusting it.
 
@@ -93,10 +107,18 @@ yours.
   WebSocket handshake, which has no `Sec-Fetch` headers, is caught by `Origin` and `Upgrade`. A link from elsewhere
   may open the page (a navigation to `/`), and nothing more.
 - **Signed in.** Everything with data needs a session token in the `X-Pulsar-Session` header. The page keeps it in
-  localStorage, which no other site or port can read. The server keeps only its SHA-256, in
-  `~/.config/pulsar/sessions.json`, valid 90 days from last use. The launcher and Pulsar in Claude Code (5.6) prove
-  themselves with `X-Pulsar-Key` (the key itself). Public without a session: `/`, `/index.html`, `/static/…`,
-  `/api/version` and `/api/whoami`.
+  localStorage, which no other site or port can read. The server keeps only its SHA-256, in memory: a token is good
+  for the server that issued it, until it stops or restarts (and 90 days unused at most). The launcher and Pulsar in
+  Claude Code (5.6) prove themselves with `X-Pulsar-Key` (the key itself). Public without a session: `/`,
+  `/index.html`, `/static/…`, `/api/version` and `/api/whoami`.
+- **A restart leaves the port free for a moment.** While Pulsar restarts into an update, nothing holds its port for
+  about half a second, and any program, another account's too, may take it. The page's requests then go to that
+  program, token and all, and a plain reload would load that program's page in Pulsar's own origin, where it can read
+  localStorage. So: a token dies with the server that issued it, and a later Pulsar never accepts it; and the page
+  never reloads itself into a new version. It drops its token and, in the app, asks the window, which runs the
+  launcher: the launcher checks the server holds this user's key (`/api/whoami`) and only then signs the page in again
+  with a fresh code (**View > Reload** goes the same way). An impostor fails that check, the launcher says so, and the
+  window loads nothing. A browser cannot make that check, so there the page says to open Pulsar from its app icon.
 - **What the key alone opens** (`server.key_refusal`). The key is a file any program of the person's can read, a
   Claude Code session too (in bypass mode it needs no prompt to `cat` it). So on its own it opens only what its two
   holders need: every GET (reading), `POST /api/quit` (the launcher), and `POST /api/log` as `pulsar_log` sends it:
@@ -119,7 +141,9 @@ yours.
   (`script-src 'self'`), no inline scripts, nothing loaded from the internet.
 - **Secrets** go to the macOS login keychain, service `pulsar`: account `productive` (your API token) and account
   `google-calendar` (the Google refresh token). Elsewhere they go in files only their owner can read. They never go
-  in `settings.json`, never reach the page, and are cut out of the error log (`logbook.scrub`).
+  in `settings.json`, never reach the page, and are cut out of the error log (`logbook.scrub`: tokens, keys and codes
+  by their labels and shapes, fields named as keys or secrets, bare lowercase hex of 32 characters or more except a
+  40-character git commit id, UUIDs standing alone, long opaque strings; paths and file names stay).
 - **The Google sign-in callback** (`/oauth/google`) is the one exception to the rules above, because Google sends the
   browser back with no Pulsar session. It must still come to 127.0.0.1, as a plain page load. It does nothing without
   a pending `state` that a signed-in Settings click created (random, used once, ten minutes), and it can only finish
@@ -135,7 +159,12 @@ yours.
   `-c log.showSignature=false`, `-c core.fsmonitor=false`, `-c core.hooksPath=/dev/null` and `--no-pager`, no
   inherited `GIT_*` variables, and `GIT_ALLOW_PROTOCOL=` empty, so a signature check's program, a hook or a fetch of
   a missing object (through the repository's own remote and `core.sshCommand`) never runs.
-- **Updates** are signed. See section 9.
+- **Updates** are signed, and so is the code the app carries. See section 9 and step 2 of section 2.
+- **What the release key does not cover.** The window and the launcher of a Pulsar.zip are Apple ad-hoc signed only,
+  which says nothing about who built them (section 13). A first install is protected by the launcher's check of the
+  code it carries, and that check belongs to the app being installed: it stops a Pulsar.zip whose code was swapped
+  or built without the key, not an app whose launcher was replaced too. So Pulsar.zip comes only from the release
+  page, and who may publish a release on the repository matters (section 9, "What the maintainer must do").
 
 ## 4. Where the day comes from
 
@@ -849,7 +878,7 @@ estimate, and a table of every day. A day's bar and its row in the tables open t
 |---|---|
 | `~/.config/pulsar/settings.json` | Settings and rules. Each field is checked when read; a damaged file is kept aside as `settings.broken-<hash>.json` and replaced by defaults. |
 | `~/.config/pulsar/secret` | This user's key: proves the launcher, signs `/api/whoami`. |
-| `~/.config/pulsar/sessions.json` | SHA-256 of each signed-in browser's token, 90 days from last use. |
+| (memory only) | SHA-256 of each signed-in browser's token, for as long as that server runs. Older versions kept them in `~/.config/pulsar/sessions.json`, which start-up now removes. |
 | `~/.config/pulsar/signin-code` | The one-time code (two minutes). |
 | `~/.config/pulsar/google_client.json` | Only on the releaser's Mac: the real Google client. |
 | Keychain, service `pulsar` | `productive` (API token), `google-calendar` (refresh token). |
@@ -859,8 +888,8 @@ estimate, and a table of every day. A day's bar and its row in the tables open t
 | `~/.cache/pulsar/likely-full/` | Past days' Likely columns as the page shows them (rows with session titles and first messages), so a day opened again, or after a restart, shows at once; 31 days; ↻ works a day out again. |
 | `~/.cache/pulsar/claude-picks/` | Ask Claude's last answer per day (task ids, reasons, drafted notes), shown again when the day is opened, never asked again by itself; 60 days. |
 | `~/.cache/pulsar/logday-journal.json` | Log the day: each row a run sent, before it was sent, and what came of it (31 days). |
-| `~/.cache/pulsar/logs/` | The error log, one JSON line per event, 31 days; tokens, keys, OAuth codes, signed addresses and long opaque strings removed. |
-| `~/Library/Application Support/Pulsar/` | The installed code: `versions/`, `current`, `previous`, `bad-versions`. |
+| `~/.cache/pulsar/logs/` | The error log, one JSON line per event, 31 days; tokens, keys, OAuth codes, signed addresses, fields named as keys or secrets, bare hex secrets, UUIDs and long opaque strings removed. |
+| `~/Library/Application Support/Pulsar/` | The installed code: `versions/`, `current`, `previous`, `bad-versions`. Only code a release signed gets here (section 2). |
 | `~/Library/Logs/Pulsar.log` | What the launcher and the server printed. |
 
 Every file Pulsar writes is readable by its owner only. Settings and caches are written atomically (a temporary file, then a rename), so a reader never sees half a file; the error log is appended to.
@@ -872,7 +901,7 @@ sequenceDiagram
   participant S as Server (installed copy)
   participant GH as GitHub releases
   S->>GH: latest.json and latest.json.sig (every 6 hours)
-  S->>S: verify the signature against PUBLIC_KEYS
+  S->>S: verify the signature against PUBLIC_KEYS, and that it has not expired
   S->>S: versions list → how many releases behind
   Note over S: the page shows the version in blue, at 2 or more behind, a reminder every 2 days
   S->>GH: on Update: pulsar-X.Y.Z.zip (at most 30 MB)
@@ -881,10 +910,15 @@ sequenceDiagram
   S->>S: current → X.Y.Z, previous → the running one, restart in place
 ```
 
-- **Only signed releases.** `latest.json` (`{version, url, sha256, notes, published, versions}`) is signed with an
-  ECDSA P-256 key that only the maintainer holds, and checked with the Mac's own `/usr/bin/openssl` against
-  `PUBLIC_KEYS` in `pulsar/updater.py`. A manifest that does not verify is ignored, so even someone with write access
-  to the repository cannot ship code to installed copies. The list has room for a reserve key.
+- **Only signed releases.** `latest.json` (`{version, url, sha256, notes, published, expires, versions}`) is signed
+  with an ECDSA P-256 key that only the maintainer holds, and checked with the Mac's own `/usr/bin/openssl` against
+  `PUBLIC_KEYS` in `pulsar/release_sig.py`. A manifest that does not verify is ignored, so even someone with write
+  access to the repository cannot ship code to installed copies. The list has room for a reserve key.
+- **Only fresh ones.** `expires` is 60 days after the release (`MANIFEST_DAYS`), signed with the rest. A
+  `latest.json` past it, or without one, is ignored, and Settings says so ("The latest release's description
+  expired on …"; a warning in the error log once a day). Without it, an old signed `latest.json` served again in
+  place of a newer one would hide every later release for good. The cost: with no release for 60 days, installed
+  copies stop offering updates until the next one, so release at least every 60 days.
 - **Never automatic.** A check only looks; installing needs the **Update** button. A stolen release key alone cannot
   reach everyone's Mac the same hour.
 - **Downloads** come only from `github.com/fosterinteractive/pulsar/releases/download/` (the repository must stay
@@ -892,9 +926,12 @@ sequenceDiagram
 - **A version that fails** its self-test twice in a row is marked bad and never tried again; the running copy stays.
   A self-test that could not finish (a timeout on a busy or sleeping Mac, its own or one of its requests to the
   page, exit status 75) marks nothing: the next Update tries again.
-- **The restart** keeps the same arguments and port. The page polls `/api/version`, notices the new version, reloads,
-  and lets the warp go once the new data is in.
-- **The window shell** (Pulsar.app itself) does not update this way: a new shell needs a new Pulsar.zip.
+- **The restart** keeps the same arguments and port. The page polls `/api/version` and notices the new version. It
+  does not reload itself (section 3): it drops its token, and in the app the window runs the launcher, which checks
+  the new server holds this user's key and signs the page in again. The warp holds over the page meanwhile and lets
+  go once the new data is in. In a browser the page asks to be opened again from the app icon.
+- **The window shell** (Pulsar.app itself) does not update this way: a new shell needs a new Pulsar.zip, whose code
+  installs only as signed (section 2).
 - **Test switches** (`PULSAR_UPDATE_URL`, `PULSAR_UPDATE_PUBKEY`) are ignored by an installed copy.
 
 ### Releasing (`macos/release.sh`)
@@ -903,11 +940,33 @@ sequenceDiagram
    failing tests.
 2. It sets `__version__`, zips the tracked files (`pulsar.py`, `README.md`, `CHANGELOG.md`, `pulsar/`, `web/`), with
    the real Google client in place of the placeholder.
-3. It writes `latest.json` with every released version (from the git tags), signs it, and checks the signature the
-   way installed copies will.
-4. It builds Pulsar.app and Pulsar.zip (`build_app.sh`: the Swift window for Apple Silicon and Intel, ad-hoc signed).
+3. It writes `latest.json` with every released version (from the git tags) and `expires` 60 days ahead, signs it,
+   and checks the signature and the date the way installed copies will.
+4. It builds Pulsar.app and Pulsar.zip (`build_app.sh`: the Swift window for Apple Silicon and Intel, ad-hoc signed),
+   with `PULSAR_BUNDLE_SIGNING_KEY` set to the same key: the app's `app.manifest.json` (the code's version and each
+   file's SHA-256) is signed and checked with the launcher's own copy of `release_sig.py` before the app is sealed. An
+   app built without the key installs nothing (section 2). With an encrypted key, openssl asks for the passphrase
+   twice: once for `latest.json`, once for the app.
 5. The release is published as `vX.Y.Z` with four files: the code zip, `latest.json`, its signature and Pulsar.zip.
    Releases are immutable once published. The title carries the minor version's pulsar name (`pulsar/names.py`).
+
+### What the maintainer must do (by hand, not in code)
+
+The signatures above hold only as long as the key and the repository do. These steps are for Nick, or whoever
+publishes; none of them is done yet unless noted in section 13.
+
+1. **Protect `main`** on GitHub: a branch protection rule (or ruleset) that requires a pull request and a review, and
+   blocks force pushes and deletion. Releases are built from `main`, so a change pushed there straight would ship.
+2. **Limit who can release.** Give write access to the repository only to people who publish; others get read or
+   triage. Restrict tag creation for `v*` (a tag ruleset) to maintainers, and keep "immutable releases" switched on.
+   Anyone with write access can otherwise publish a release with a Pulsar.zip of their own: installed copies ignore
+   it, but a new colleague following the README would install it.
+3. **Create the reserve key** (`macos/README.md`, "The release keys"), add its public half to `PUBLIC_KEYS` in
+   `pulsar/release_sig.py`, and ship a release with it, before more people install. A key can only be added by a
+   release signed with a key already listed.
+4. **Encrypt the release key** at rest (`openssl ec -aes256 -in update-signing-key.pem -out
+   update-signing-key.enc.pem`, then use the encrypted file), and keep a copy only in the team's 1Password vault.
+5. **Release at least every 60 days**, or installed copies stop seeing updates until the next release (`expires`).
 
 ## 10. The API
 
@@ -990,7 +1049,9 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   fake Productive, so they pass the same under `PULSAR_READ_ONLY=1`. `test_isolation.py` also fails when a test
   module does anything before importing `isolation`, so each one is guarded when run alone too. The writes are
   checked by the whole request that reaches Productive's fake wire, REST and MCP, from `POST /api/log`, Undo and
-  `pulsar_log` down (`tests/test_payloads.py`).
+  `pulsar_log` down (`tests/test_payloads.py`). `tests/test_release.py` signs test apps with a throwaway key and runs
+  the real `launcher.sh` against them, with a home of its own and dialogs written to a file (`PULSAR_TEST_DIALOGS`):
+  signed, tampered, unsigned, foreign and higher-than-released code, and a port taken at start.
 - `tools/replay/` (Log the day replayed on real days) refuses to run without `PULSAR_REPLAY_DIR`, a private folder
   outside any git checkout: it keeps real entries, window titles, meetings and typed text there. `.gitignore`
   covers `tools/replay/data/` and its results too.
@@ -1017,7 +1078,16 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   flag counts the project's first 100 tasks as Productive lists them, not the most recently active.
 - No ticket flag for a budget nearly used up: Productive does not show budgets to a Staff role (5.3).
 - The app is ad-hoc signed, not with an Apple Developer ID: macOS asks for confirmation on first open (Open Anyway).
-- The reserve release key has not been created yet.
+- The reserve release key has not been created yet, `main` is not protected, and the release key is not encrypted
+  at rest (section 9, "What the maintainer must do").
+- The app around the code, its window and launcher, is not covered by the release key: Apple's ad-hoc signature does
+  not say who built it, and the launcher's check of the code belongs to the very app it checks. A Pulsar.zip built
+  from scratch by someone who can publish on the repository installs whatever it likes. Only a Developer ID signature
+  and notarization would change that (`macos/README.md`, "Removing the first-open warning").
+- A copy installed before the launcher checked signatures stays as it is: a version higher than every release put in
+  place that way still has to be removed by hand (`~/Library/Application Support/Pulsar/`).
+- In a browser (not the window) the page cannot check who answers on the port: after a restart it asks to be opened
+  from the app icon, but a page loaded there by hand loads whatever holds the port. Its token is worth nothing there.
 - ActivityWatch's AFK timeout decides what counts as a break: with 30 minutes, shorter breaks are not seen.
 - The night the clocks go back, the repeated hour (01:00 to 02:00 in Toronto, 03:00 to 04:00 in Kyiv) is one hour on
   the clock: Log the day folds the two hours together, and an entry there is sent as the first of them. The overlap
