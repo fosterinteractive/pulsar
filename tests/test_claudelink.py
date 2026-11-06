@@ -65,20 +65,27 @@ class Link(unittest.TestCase):
             return json.load(fh)
 
     def test_on_adds_pulsar_and_rules_off_takes_back_only_those(self):
-        self.write({"permissions": {"allow": ["Bash(ls:*)"], "ask": ["mcp__productive__delete_resource"]}, "env": {"A": "1"}})
+        mine = claudelink.deny_rules()[0]  # one the person had already: never Pulsar's to take back
+        self.write({"permissions": {"allow": ["Bash(ls:*)"], "ask": ["mcp__productive__delete_resource"],
+                                    "deny": [mine]}, "env": {"A": "1"}})
         got = claudelink.connect(5610, {})
         self.assertTrue(got["ok"])
-        self.assertEqual(sorted(got["rulesAdded"]), sorted(r for r in claudelink.rules() if "delete" not in r))
+        self.assertEqual(sorted(got["rulesAdded"]), sorted(claudelink.LOG_RULES))  # never Productive's by default
+        self.assertEqual(sorted(got["deniesAdded"]), sorted(r for r in claudelink.deny_rules() if r != mine))
         doc = self.read()
         self.assertEqual(doc["env"], {"A": "1"})
-        self.assertTrue(all(r in doc["permissions"]["ask"] for r in claudelink.rules()))
-        st = claudelink.status(5610)
+        self.assertEqual(sorted(doc["permissions"]["ask"]),
+                         sorted(["mcp__productive__delete_resource", *claudelink.LOG_RULES]))
+        self.assertEqual(sorted(doc["permissions"]["deny"]), sorted(claudelink.deny_rules()))
+        st = claudelink.status(5610, {})
         self.assertTrue(st["registered"] and st["current"] and st["rules"])
+        self.assertFalse(st["askProductive"])
         self.assertIn("--mcp", claudelink.registered()["args"])
         self.assertTrue(os.path.exists(self.settings + ".pulsar-backup"))
-        off = claudelink.disconnect({"claude_rules_added": got["rulesAdded"]})
+        off = claudelink.disconnect({"claude_rules_added": got["rulesAdded"], "claude_denies_added": got["deniesAdded"]})
         self.assertTrue(off["ok"])
-        self.assertEqual(self.read()["permissions"], {"allow": ["Bash(ls:*)"], "ask": ["mcp__productive__delete_resource"]})
+        self.assertEqual(self.read()["permissions"], {"allow": ["Bash(ls:*)"], "ask": ["mcp__productive__delete_resource"],
+                                                      "deny": [mine]})
         self.assertIsNone(claudelink.registered())
 
     def test_a_broken_settings_file_is_left_alone(self):
@@ -93,7 +100,9 @@ class Link(unittest.TestCase):
     def test_no_settings_file_yet(self):
         got = claudelink.connect(5620, {})
         self.assertEqual(sorted(self.read()["permissions"]["ask"]), sorted(claudelink.rules()))
-        self.assertEqual(claudelink.disconnect({"claude_rules_added": got["rulesAdded"]})["rulesAdded"], [])
+        self.assertEqual(sorted(self.read()["permissions"]["deny"]), sorted(claudelink.deny_rules()))
+        off = claudelink.disconnect({"claude_rules_added": got["rulesAdded"], "claude_denies_added": got["deniesAdded"]})
+        self.assertEqual((off["rulesAdded"], off["deniesAdded"]), ([], []))
         self.assertEqual(self.read(), {})
 
     def test_a_moved_copy_is_not_current(self):
@@ -120,17 +129,18 @@ class Link(unittest.TestCase):
         mine = claudelink.connect(5610, {})  # then Pulsar: the rules are already there, so it adds none
         self.assertEqual(mine["rulesAdded"], [])
         with mock.patch.dict(os.environ, {"PULSAR_PREVIEW": "1"}):  # Preview off while Pulsar is still in Claude Code
-            off = claudelink.disconnect({"claude_rules_added": first["rulesAdded"]})
+            off = claudelink.disconnect({"claude_rules_added": first["rulesAdded"], "claude_denies_added": first["deniesAdded"]})
         self.assertTrue(off["ok"])
         self.assertIn("Pulsar still uses them", off["message"])
         self.assertEqual(off["rulesAdded"], first["rulesAdded"])  # still its own to take back later
+        self.assertEqual(off["deniesAdded"], first["deniesAdded"])
         self.assertTrue(claudelink.status(5610)["rules"])
         self.assertIsNone(claudelink.registered("pulsar-preview"))
         claudelink.disconnect({"claude_rules_added": []})  # Pulsar off: Preview's rules are not Pulsar's to remove
         self.assertTrue(claudelink.status(5610)["rules"])
         with mock.patch.dict(os.environ, {"PULSAR_PREVIEW": "1"}):  # Preview on and off again, alone now
-            again = claudelink.connect(5620, {"claude_rules_added": off["rulesAdded"]})
-            claudelink.disconnect({"claude_rules_added": again["rulesAdded"]})
+            again = claudelink.connect(5620, {"claude_rules_added": off["rulesAdded"], "claude_denies_added": off["deniesAdded"]})
+            claudelink.disconnect({"claude_rules_added": again["rulesAdded"], "claude_denies_added": again["deniesAdded"]})
         self.assertEqual(self.read(), {})
 
     def test_a_preview_launchers_read_only_value_still_links(self):
@@ -144,6 +154,123 @@ class Link(unittest.TestCase):
         got = claudelink.connect(5610, {})
         self.assertTrue({"mcp__pulsar__pulsar_log", "mcp__pulsar-preview__pulsar_log"} <= set(got["rulesAdded"]))
         self.assertTrue({"mcp__pulsar__pulsar_log", "mcp__pulsar-preview__pulsar_log"} <= set(self.read()["permissions"]["ask"]))
+
+    def test_productive_ask_rules_only_when_chosen_and_taken_back_otherwise(self):
+        """Ask rules for Productive's own write tools make every Claude Code session ask before each change: only
+        "Ask before any Claude Code session changes Productive" adds them. Those Pulsar 1.2 added with the switch go
+        (tidy, on start and on Save), and a later Save does not put them back; a rule the person had stays."""
+        theirs = "mcp__productive__delete_resource"
+        self.write({"permissions": {"ask": [theirs]}})
+        chosen = claudelink.connect(5610, {"claude_ask_productive": True})
+        self.assertEqual(sorted(chosen["rulesAdded"]),
+                         sorted([*claudelink.LOG_RULES, *(r for r in claudelink.productive_rules() if r != theirs)]))
+        s = {"ask_claude": True, "claude_ask_productive": True, "claude_rules_added": chosen["rulesAdded"]}
+        self.assertTrue(claudelink.status(5610, s)["rules"] and claudelink.status(5610, s)["askProductive"])
+        self.assertIsNone(claudelink.tidy(s))  # chosen: they stay
+        s["claude_ask_productive"] = False  # unchosen (or Pulsar 1.2's switch): tidy takes back Pulsar's own
+        got = claudelink.tidy(s)
+        self.assertEqual(sorted(got["rulesAdded"]), sorted(claudelink.LOG_RULES))
+        self.assertEqual(sorted(self.read()["permissions"]["ask"]), sorted([theirs, *claudelink.LOG_RULES]))
+        s["claude_rules_added"] = got["rulesAdded"]
+        self.assertIsNone(claudelink.tidy(s))  # once only
+        again = claudelink.connect(5610, s)  # a later Save with the switch on: not put back
+        self.assertEqual(sorted(self.read()["permissions"]["ask"]), sorted([theirs, *claudelink.LOG_RULES]))
+        self.assertEqual(sorted(again["rulesAdded"]), sorted(claudelink.LOG_RULES))
+        self.assertTrue(claudelink.status(5610, s)["rules"])
+
+    def test_settings_save_adds_productive_rules_only_when_chosen_and_never_puts_them_back(self):
+        from pulsar import config, server
+        saved = {**config.DEFAULTS, "ask_claude": True, "person_id": "42",
+                 "claude_rules_added": [*claudelink.LOG_RULES, "mcp__productive__update_resource"]}
+        self.write({"permissions": {"ask": [*claudelink.LOG_RULES, "mcp__productive__update_resource"]}})
+
+        def save(body):
+            with mock.patch.object(server.config, "load", lambda: dict(saved)), \
+                    mock.patch.object(server.config, "update", lambda ch: saved.update(ch) or dict(saved)), \
+                    mock.patch.object(server, "current_settings", lambda: dict(saved)), \
+                    mock.patch.object(server, "public_config", lambda s: {}):
+                return server.api_settings(body)
+        save({"likely": "auto"})  # a Save of something else: Pulsar 1.2's Productive rule goes
+        self.assertEqual(sorted(self.read()["permissions"]["ask"]), sorted(claudelink.LOG_RULES))
+        self.assertEqual(sorted(saved["claude_rules_added"]), sorted(claudelink.LOG_RULES))
+        save({"claude_ask_productive": True})  # chosen: all four, kept on the list to take back
+        self.assertTrue(set(claudelink.productive_rules()) <= set(self.read()["permissions"]["ask"]))
+        self.assertTrue(set(claudelink.productive_rules()) <= set(saved["claude_rules_added"]))
+        self.assertTrue(set(claudelink.deny_rules()) <= set(self.read()["permissions"]["deny"]))
+        save({"claude_ask_productive": False})
+        save({"relink": True})  # and a later Save with the switch on does not put them back
+        self.assertEqual(sorted(self.read()["permissions"]["ask"]), sorted(claudelink.LOG_RULES))
+        with self.assertRaises(ValueError):
+            save({"claude_ask_productive": "yes"})
+
+    def test_tidy_when_pulsar_starts_updates_its_own_list(self):
+        from pulsar import config
+        old = ["mcp__productive__create_resource", "mcp__productive__perform_action", *claudelink.LOG_RULES]
+        self.write({"permissions": {"ask": old + ["Bash(rm *)"]}})
+        config.update({"ask_claude": True, "claude_rules_added": old})
+        try:
+            claudelink.tidy_saved()
+            self.assertEqual(sorted(config.load()["claude_rules_added"]), sorted(claudelink.LOG_RULES))
+            self.assertEqual(sorted(self.read()["permissions"]["ask"]), sorted([*claudelink.LOG_RULES, "Bash(rm *)"]))
+            with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):  # a read-only run changes nothing
+                self.write({"permissions": {"ask": old}})
+                config.update({"claude_rules_added": old})
+                claudelink.tidy_saved()
+                self.assertEqual(self.read()["permissions"]["ask"], old)
+        finally:
+            config.update({"ask_claude": False, "claude_rules_added": []})
+
+    def test_deny_rules_cover_pulsars_folders_and_the_release_key_only_where_it_is(self):
+        home = os.path.expanduser("~")
+        release = os.path.join(self.dir, "pulsar-release")
+        with mock.patch.object(claudelink.config, "MAIN_CONFIG_DIR", os.path.join(home, ".config", "pulsar")), \
+                mock.patch.object(claudelink, "RELEASE_DIR", release):
+            self.assertEqual(claudelink.deny_rules(), ["Read(~/.config/pulsar/**)", "Edit(~/.config/pulsar/**)",
+                                                       "Read(~/.config/pulsar-preview/**)",
+                                                       "Edit(~/.config/pulsar-preview/**)"])
+            os.makedirs(release)
+            self.assertEqual(claudelink.deny_rules()[-2:], [f"Read(/{release}/**)", f"Edit(/{release}/**)"])
+
+    def test_claude_config_dir_moves_the_files_pulsar_reads_and_writes(self):
+        import importlib
+        moved = os.path.join(self.dir, "claude-work")
+        for p in reversed(self.patches[:2]):
+            p.stop()
+        try:
+            with mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": moved}):
+                importlib.reload(claudelink)
+                self.assertEqual((claudelink.SETTINGS, claudelink.CLAUDE_JSON, claudelink.status(5610)["configDir"]),
+                                 (os.path.join(moved, "settings.json"), os.path.join(moved, ".claude.json"), moved))
+        finally:
+            importlib.reload(claudelink)
+            for p in self.patches[:2]:
+                p.start()
+        self.assertEqual(claudelink.SETTINGS, self.settings)
+
+    def test_status_says_what_keeps_the_rules_from_applying_and_which_account(self):
+        managed = os.path.join(self.dir, "managed")
+        os.makedirs(os.path.join(managed, "managed-settings.d"))
+        with open(os.path.join(managed, "managed-settings.d", "10-policy.json"), "w") as fh:
+            json.dump({"allowManagedPermissionRulesOnly": True}, fh)
+        plist = os.path.join(self.dir, "claudecode.plist")
+        with open(plist, "wb") as fh:
+            import plistlib
+            plistlib.dump({"allowManagedMcpServersOnly": True}, fh)
+        with open(self.claude_json, "w") as fh:
+            json.dump({"oauthAccount": {"emailAddress": "me@example.com", "organizationType": "claude_max"}}, fh)
+        with mock.patch.object(claudelink, "MANAGED_DIR", managed), mock.patch.object(claudelink, "MANAGED_PLISTS", (plist,)):
+            st = claudelink.status(5610, {})
+        self.assertEqual((st["managed"]["permissionRulesOnly"], st["managed"]["mcpServersOnly"]), (True, True))
+        self.assertEqual(st["account"], {"email": "me@example.com", "plan": "Max", "consumer": True})
+        self.assertTrue(st["dataUsage"].startswith("https://code.claude.com/"))
+        with open(self.claude_json, "w") as fh:
+            json.dump({"oauthAccount": {"emailAddress": "me@corp.example", "organizationType": "claude_team"}}, fh)
+        with mock.patch.object(claudelink, "MANAGED_DIR", os.path.join(self.dir, "none")), \
+                mock.patch.object(claudelink, "MANAGED_PLISTS", ()):
+            st = claudelink.status(5610, {})
+        self.assertEqual((st["managed"]["permissionRulesOnly"], st["account"]["consumer"]), (False, False))
+        with mock.patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-x"}):
+            self.assertEqual(claudelink.account()["plan"], "an API key")
 
     def test_a_pulsar_entry_the_person_made_is_left_alone(self):
         theirs = {"type": "stdio", "command": "python3", "args": ["/src/pulsar.py", "--mcp"], "env": {"PULSAR_READ_ONLY": "1"}}
@@ -224,6 +351,8 @@ class SessionNote(unittest.TestCase):
         self.assertEqual(seen["cmd"][seen["cmd"].index("--model") + 1], "haiku")
         self.assertEqual(seen["cmd"][seen["cmd"].index("--setting-sources") + 1], "")  # no CLAUDE.md
         self.assertEqual(seen["env"].get("CLAUDE_CODE_DISABLE_AUTO_MEMORY"), "1")  # and no MEMORY.md
+        self.assertEqual(seen["cmd"][seen["cmd"].index("--disallowedTools") + 1], "mcp__*")  # no MCP tool at all
+        self.assertEqual(seen["env"].get("ENABLE_CLAUDEAI_MCP_SERVERS"), "false")  # nor a claude.ai connector
         self.assertIn("Quiz saves", seen["input"])
 
         def leaky(cmd, **kw):
@@ -234,6 +363,25 @@ class SessionNote(unittest.TestCase):
             got = askclaude.note("2026-11-04", row2, T0, [], run=leaky)
         self.assertEqual(got["note"], "")
         self.assertIn("file path", got["why"])
+
+    def test_a_session_note_naming_another_client_is_blanked(self):
+        """The log dialog's note has no task yet: the projects of the block's likely tasks, and those named like its
+        repository, are its own; any other project of the person's history is another client's."""
+        history = [{"taskId": "7", "task": "Events", "project": "EV-OS Eventsite Ongoing Support", "date": "2026-11-02"},
+                   {"taskId": "8", "task": "Sitemap", "project": "FG-OS Fengate Ongoing Support", "date": "2026-11-01"}]
+        drafts = iter(["Eventsite pages show the right time zone again.", "Same fix as on Fengate."])
+
+        def run(cmd, **kw):
+            return mock.Mock(stdout=json.dumps({"structured_output": {"note": next(drafts)}}), stderr="")
+        got = []
+        for s in (581, 583):  # starts no other test uses: the drafts are kept by their block
+            row = {"s": s, "e": 730, "project": "eventsite", "titles": ["Fix the event time zone"], "commits": ["Quiz"]}
+            with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/x/claude"), \
+                    mock.patch.object(askclaude.config, "load", lambda: {}), \
+                    mock.patch.object(askclaude, "steps", lambda *a, **k: [{"typed": "fix", "reply": "Done."}]):
+                got.append(askclaude.note("2026-11-04", row, T0, history, run=run))
+        self.assertEqual(got[0]["note"], "Eventsite pages show the right time zone again.")  # its own project
+        self.assertEqual((got[1]["note"], got[1]["why"]), ("", "the draft had a name from another project, so it was left out"))
 
     def test_nothing_to_go_on_asks_nobody(self):
         row = {"s": 1000, "e": 1010, "project": "eventsite", "titles": ["Fix the event time zone"]}

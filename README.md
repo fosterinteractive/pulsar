@@ -174,9 +174,13 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
     log today?" or "log the time of this session". The session reads your day from Pulsar and shows the entries;
     Claude Code asks you before each write, showing Pulsar's own summary of it. One write may hold up to 40
     entries, so one yes can log a whole day: read the summary. Pulsar must be open.
-  - **Claude Code asks first:** before any session changes Productive by itself through the Productive server named
-    `productive`, and before Pulsar's log tool (ask rules in `~/.claude/settings.json`; a backup of that file is
-    kept beside it). A Productive connection under another name, such as a claude.ai connector, is not covered.
+  - **Claude Code asks first** before Pulsar's log tool, and its file tools are kept out of Pulsar's folders (an ask
+    rule and deny rules in `~/.claude/settings.json`; a backup of that file is kept beside it). The deny rules stop
+    Claude Code's file tools and the file commands it recognizes in a shell; a script is stopped only with Claude
+    Code's sandbox on.
+  - **Ask before any Claude Code session changes Productive** (a separate box, off by default): ask rules for the
+    Productive server named `productive`, which then apply to every Claude Code session on the Mac. A Productive
+    connection under another name, such as a claude.ai connector, is not covered.
 
   **What goes to Anthropic.** These run your own Claude Code, so what they send goes to Anthropic under your Claude
   plan or account and its terms:
@@ -283,9 +287,10 @@ Code** above).
 ## Remove Pulsar
 
 1. If **Use Claude Code with Pulsar** is on (**Settings → Claude**), switch it off and Save, in Pulsar and in Pulsar
-   Preview: that takes each out of Claude Code, and the ask rules go with the last one. If Pulsar is already gone,
+   Preview: that takes each out of Claude Code, and its rules go with the last one. If Pulsar is already gone,
    run `claude mcp remove pulsar --scope user` (and `pulsar-preview` for Pulsar Preview) and remove the
-   `mcp__productive__…` and `…pulsar_log` ask rules from `~/.claude/settings.json` yourself. Pulsar's copy of that
+   `mcp__productive__…` and `…pulsar_log` ask rules and the `Read(~/.config/pulsar…)` and `Edit(~/.config/pulsar…)`
+   deny rules from `~/.claude/settings.json` yourself. Pulsar's copy of that
    file from before its first change, `~/.claude/settings.json.pulsar-backup`, stays until you delete it.
 2. Quit Pulsar (Cmd+Q), and Pulsar Preview if you have it.
 3. Drag **Pulsar** (and **Pulsar Preview**) from Applications to the Trash. If you added it to **Login Items**,
@@ -327,7 +332,7 @@ pulsar/
   sessions.py          Claude Code sessions -> which project each minute of work went to; task links typed in them
   learn.py             tasks for Likely rows, learned from what you logged in the same session or repository
   askclaude.py         Ask Claude and notes from a session (claude -p, Productive read only)
-  claudelink.py        the one Claude Code switch: Pulsar in Claude Code, ask rules
+  claudelink.py        the one Claude Code switch: Pulsar in Claude Code, its ask and deny rules
   calendar.py          Google Calendar: sign-in (OAuth, PKCE), a day's meetings, their history
   google_client.json   the Google sign-in client: placeholders in git, the real one only in releases
   changelog.py         CHANGELOG.md for Settings and release.sh

@@ -704,6 +704,9 @@ class Run:
                 self.fail("plan: an unsure entry starts ticked", (where, e["confidence"], e["flags"]))
             if e["kind"] in ("agent", "unattended") and e["checked"]:
                 self.fail("plan: agent-only time or a meeting with no call starts ticked", where)
+            if e["checked"] and (e["noteFrom"] == "claude" or (e["source"] == "claude" and e["taskId"] not in
+                                                                {str(t) for t in ctx.get("recent") or ()})):
+                self.fail("plan: Claude's note, or its pick of a task not logged to in 30 days, starts ticked", where)
             if bool(e["note"]) != bool(e["noteFrom"]) or (e["noteFrom"] and e["noteFrom"] not in
                                                           ("meeting", "repeat", "claude", "commits")):
                 self.fail("plan: a note from nowhere", (where, e["note"], e["noteFrom"]))

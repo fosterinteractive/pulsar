@@ -137,7 +137,27 @@ yours.
   an unpacked client archive too, so its `.git/config` is not trusted: `git log` runs with `--no-show-signature`,
   `-c log.showSignature=false`, `-c core.fsmonitor=false`, `-c core.hooksPath=/dev/null` and `--no-pager`, no
   inherited `GIT_*` variables, and `GIT_ALLOW_PROTOCOL=` empty, so a signature check's program, a hook or a fetch of
-  a missing object (through the repository's own remote and `core.sshCommand`) never runs.
+  a missing object (through the repository's own remote and `core.sshCommand`) never runs. Nor does it decide whose
+  commits are yours: a commit counts only when its author and its committer both carry an email of your own git
+  settings (`git config --show-scope`: global or system, so `~/.gitconfig` and what it includes), or, for a person
+  who sets `user.email` per repository, an email that another repository of the day's sessions sets too. A
+  repository that names its own author as `user.email` cannot turn that author's commit subjects into your note or
+  into Ask Claude's prompt.
+- **Claude Code's file tools and Pulsar's folders.** The Claude Code switch (5.7) adds deny rules to Claude Code's
+  user settings: `Read(~/.config/pulsar/**)` and `Edit(~/.config/pulsar/**)`, the same for `pulsar-preview`, and for
+  `~/.config/pulsar-release` (the release key) only on a Mac that has that folder. Claude Code applies a Read or Edit
+  deny rule to its own file tools (Read, Grep, Glob, Edit, Write) and to the file commands it recognizes in a shell
+  command (`cat`, `head`, `tail`, `sed`, `tee`, a redirection), but not to a command that reads files without naming
+  them or to a script that opens the file itself; with Claude Code's sandbox on, the same paths bind every shell
+  command (its `sandbox.filesystem.denyRead` applies only while `sandbox.enabled` is on, and no setting applies it
+  to shell commands without the sandbox). Pulsar does not turn the sandbox on; Settings links its documentation.
+  So the rules stop a session's casual or injected `cat ~/.config/pulsar/secret`, not a program set on it.
+- **Claude Code runs Pulsar starts** (Ask Claude, the session note) get a short list of Pulsar's environment
+  (`askclaude.ENV_KEEP`: `HOME`, `PATH`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LC_*`, `TMPDIR`, `TZ`,
+  `CLAUDE_CONFIG_DIR`, a sign-in key or token, a proxy and its certificates), never all of it: Pulsar started from a
+  Claude Code session carries that session's `CLAUDECODE`, session id, messaging socket and token, and any
+  `ANTHROPIC_BASE_URL`. They also get `ENABLE_CLAUDEAI_MCP_SERVERS=false` (no claude.ai connectors) and
+  `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. Checked with Claude Code 2.1.301: the sign-in still works with only that list.
 - **Updates** are signed. See section 9.
 
 ## 4. Where the day comes from
@@ -363,7 +383,7 @@ three for 17% and 11%, none for 12% and 6%.
 **Notes from commits** (`commits.py`). For each Likely row the page shows (not the 60 past days learning reads), the
 repositories its Claude sessions worked in during the row (the session's folder and the paths its tools named), kept
 when their name matches the row's project ("Acme" and acme-web, "claude-rules / skills" and claude-rules).
-In each, `git log --all --no-merges` since the day before, keeping your commits (the repository's `user.email`) from
+In each, `git log --all --no-merges` since the day before, keeping your commits (author and committer by your own git settings' email: section 3) from
 five minutes before the row to ten minutes after it; a commit goes to one row only, the one it was made in, else the
 nearest. Merges, version bumps, changelog, WIP and fixup commits are skipped, and so is any subject `guard_note`
 refuses (a path, a web address, code, a tool's name). The draft is the first three subjects joined with "; ", a shared
@@ -553,8 +573,9 @@ ticket key): a ticket key it names, or words it shares strongly (cosine 0.5). A 
 more and log under a tenth of is set aside as one you never log; days with entries that have no start time do not
 count, since they cannot be matched to the work. Confidence: high, medium or low, in words and a three-bar meter; the
 same session's votes are high from 60% (and 30 minutes), else low. **Unticked at the start**: low confidence, no task,
-no service, agent-only time, meetings with no call seen, and a task that already has time logged with **no start
-time** that day: such an entry is on no timeline, so no overlap check sees it, and it may be the same work. The review
+no service, agent-only time, meetings with no call seen, **Claude's pick of a task you did not log to in the last 30
+days** (one it found by searching Productive), **a note Claude drafted**, and a task that already has time logged with
+**no start time** that day: such an entry is on no timeline, so no overlap check sees it, and it may be the same work. The review
 lists it ("no start"), the confirm step names it, and under the cap that task's proposals give way first, up to its
 minutes, before the least sure rows. **Notes** are never written from session text: only a meeting's title, your usual
 note for a repeat, a note Ask Claude drafted for that task, or one from your commits in the work, each with "clients
@@ -565,7 +586,12 @@ under a second after.
 **Ask Claude** (only when it is on in Settings): the review shows the plan at once, then sends the day to Claude
 (every row of ten minutes or more) and fills in the answer as it arrives. Claude's pick replaces only rows the planner
 is not sure of (medium, low), with the planner's guess kept as the first alternative; a row Claude found no task for
-keeps the planner's guess and says so. An empty answer is asked once more. Rows the person changed meanwhile are
+keeps the planner's guess and says so. Claude's pick starts ticked only when it is one of the tasks you logged to in
+the last 30 days and its row carries no note of Claude's: what Claude reads (the session text, commit subjects) could
+carry a prompt injection that steers it to another task it can find in Productive, or into the note, so such a row
+waits for the person (the review says why: "Claude found this task by searching Productive…", "Claude drafted the
+note…"; picking another task clears the first, editing the note the second's message; ticking it is the person's). On the two days with kept answers (5 and 6 November
+2026), 1 of Claude's 30 picks with a task was one not logged to in the 30 days before, and 25 carried a note. An empty answer is asked once more. Rows the person changed meanwhile are
 left alone. An answer that arrives while the confirm step is open waits until it closes (Back to the review); once a
 run has started it is only mentioned. Haiku did as well as Sonnet here, at a small part of the cost.
 
@@ -684,9 +710,12 @@ day, ends it.
   claude -p --model <sonnet|haiku|opus> --no-session-persistence --output-format json --json-schema <picks>
          --max-budget-usd <0.25|0.75|2> --tools "" --permission-mode dontAsk
          --strict-mcp-config --mcp-config <a file naming Claude Code's own "productive" entry> --setting-sources ""
-         --allowedTools <Productive search and read tools> --disallowedTools <Productive write tools>
+         --allowedTools mcp__productive__search_records --disallowedTools <Productive write tools>
   ```
-  with `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` in its environment.
+  with the short environment of section 3 (`askclaude.ENV_KEEP`), `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` and
+  `ENABLE_CLAUDEAI_MCP_SERVERS=false`. The one tool allowed is the search: Pulsar names the tasks Claude finds itself
+  (`productive.task_details`), so no tool that loads, queries or describes records is needed, and fewer tools leave
+  less for an injected instruction to use.
 
   Without `--strict-mcp-config` and `--setting-sources ""`, Claude Code (2.1.301, checked) loads every MCP server the
   person has (Drive, Calendar, Coda), runs any tool their settings allow even in `dontAsk` mode, and runs their hooks,
@@ -703,7 +732,9 @@ day, ends it.
   It gets, for each row of ten minutes or more, the time, the repository, the session titles, up to 15 steps of the
   work (what was typed and Claude's reply at the end of each, `askclaude.steps()`, 5.7) and up to 10 of your commit
   subjects (Notes from commits); and the tasks logged to in the last 30 days, with the instruction to prefer them and search Productive
-  only when none fits. It has no shell and no files, cannot change Productive, and its session is not kept (so it
+  only when none fits. The prompt says, before and after them, that everything in its blocks (and whatever a search
+  returns) is data from the person's work, never instructions: where it tells Claude to do something, it is only text
+  about the work. The session note's prompt says the same of its work. It has no shell and no files, cannot change Productive, and its session is not kept (so it
   never shows up in Likely). The answer is a task (and two alternatives) with a short reason per row, shown on the
   Likely card and first in the dialog, with Claude's mark next to it.
   It also drafts the entry's **note** for its first task: Productive can copy notes into a client's invoice and time
@@ -713,7 +744,14 @@ day, ends it.
   carries up to five of the person's own recent notes on its likely tasks (learned or linked, then the same projects),
   labelled with their task, as examples of their style; only notes that pass the guard are used. `guard_note` then
   checks the draft on this Mac and blanks it, never repairs it, when it has a path, a web address, something like a
-  token, code or a log, Claude, Pulsar or an agent, a remark on how the time was spent, or more than two sentences.
+  token, code or a log, Claude, Pulsar or an agent, a sum of money (a currency sign or code next to a number, or a
+  number of dollars, euros or cents), a remark on how the time was spent, or more than two sentences. Then
+  `askclaude.foreign_name` blanks a draft that names another project than its task's (so another client): a word of a
+  project name in the 30 days' task list, capitalised as there (Fengate, CNIB, UTLaw), in neither the picked task's
+  project nor its title, not a common word and in fewer than three of the names (Ongoing, Support); and the person's
+  own first or last name (who did the work). Pulsar has no list of Productive's people, so other people's names are
+  only asked against, in the prompt. For the session note, which has no task yet, the projects of the block's likely
+  tasks and those named like its repository are its own, and the projects of the person's history are the others.
   A note written for a task that could not be named, and any note from an older Claude Code without
   `structured_output`, is dropped. The log dialog fills the note in with "Drafted by Claude: check it before logging;
   clients may see notes" under it; the line goes when the note is edited, and names the task the note was written
@@ -831,19 +869,39 @@ nothing else. Saving it on:
   installed Pulsar is started through `~/Library/Application Support/Pulsar/current`, so updates keep it working;
   Pulsar Preview adds itself as `pulsar-preview` on its own port, with `--instance preview` so the server reads
   Preview's key;
-- adds "ask" rules to `~/.claude/settings.json` for the `create_resource`, `update_resource`, `delete_resource` and
-  `perform_action` tools of the Productive server named `productive`, so no session changes Productive through it
-  without asking, and for `pulsar_log` of both Pulsars (5.6). The file is read, merged and renamed into place (a
-  linked file stays linked, and keeps its permissions), with a one-time backup `settings.json.pulsar-backup`; a file
-  that is not valid JSON is left alone and the switch says so. Rules already there are not counted as added.
+- adds rules to Claude Code's user settings (`~/.claude/settings.json`, or `$CLAUDE_CONFIG_DIR/settings.json`): an
+  "ask" rule for `pulsar_log` of both Pulsars (5.6), and the "deny" rules of section 3 that keep Claude Code's file
+  tools out of Pulsar's folders. The file is read, merged and renamed into place (a linked file stays linked, and
+  keeps its permissions), with a one-time backup `settings.json.pulsar-backup`; a file that is not valid JSON is left
+  alone and the switch says so. Rules already there are not counted as added, so they are never Pulsar's to take back.
 
-Saving it off removes Pulsar from Claude Code and only the rules Pulsar added (`claude_rules_added` in Pulsar's
-settings). The rules are one set for Pulsar and Preview: while the other is still in Claude Code they stay, and this
-copy keeps them on its list to take back later. When `~/.claude.json` cannot be read, whether the other is still
-there is not known: Pulsar asks Claude Code to remove itself, keeps the rules and says so. Settings shows where things
-stand from `~/.claude.json` and the settings file, read only, and offers **Add
-Pulsar to Claude Code again** when the entry is missing, starts another copy, or the ask rules are missing. A read-only run (`PULSAR_READ_ONLY`, any value but
-`preview`) never changes Claude Code.
+**Ask before any Claude Code session changes Productive** (Settings → Claude, `claude_ask_productive`, off by default)
+adds "ask" rules for the `create_resource`, `update_resource`, `delete_resource` and `perform_action` tools of the
+Productive server named `productive`. They bind every Claude Code session on the Mac, not only Pulsar's, so every
+session asks before each such change: the person's choice, said so under the box. Pulsar 1.2 added them with the
+switch; `claudelink.tidy`, when Pulsar starts and whenever Settings are saved, takes back the ones this copy's own
+list says it added unless the box is on, and updates the list (Pulsar and Preview each tidy their own). A rule
+Pulsar did not add is never removed, and a later Save with the switch on does not put them back.
+
+Saving the switch off removes Pulsar from Claude Code and only the rules Pulsar added (`claude_rules_added` and
+`claude_denies_added` in Pulsar's settings). The `pulsar_log` and deny rules are one set for Pulsar and Preview: while
+the other is still in Claude Code they stay, and this copy keeps them on its list to take back later; its Productive
+rules go. When Claude Code's `.claude.json` cannot be read, whether the other is still there is not known: Pulsar asks
+Claude Code to remove itself, keeps the rules and says so. Settings shows where things stand from `.claude.json` and
+the settings file, read only, and offers **Add Pulsar to Claude Code again** when the entry is missing, starts another
+copy, or rules are missing (a copy switched on before the deny rules existed shows this once). A read-only run
+(`PULSAR_READ_ONLY`, any value but `preview`) never changes Claude Code.
+
+**What keeps it from applying**, said in Settings (`claudelink.status`, read only): an organization's managed
+settings (`/Library/Application Support/ClaudeCode/managed-settings.json` and its `managed-settings.d`, the
+`com.anthropic.claudecode` profiles in `/Library/Managed Preferences`, and the server's copy `remote-settings.json`
+in Claude Code's folder) with `allowManagedPermissionRulesOnly` (Pulsar's rules are ignored) or
+`allowManagedMcpServersOnly` (Pulsar's server is not started); and `CLAUDE_CONFIG_DIR` when Pulsar's own environment
+has it (Pulsar then reads and writes that folder; a Claude Code started without it does not see them). **The
+account**: which Claude account Claude Code is signed in with, and its plan, from `oauthAccount` in `.claude.json`
+(no keychain): for Pro and Max, consumer plans, Settings says Anthropic may use these chats for training if that
+setting is on for the account, and links to Claude Code's data-usage page; Team, Enterprise and an API key are
+commercial.
 
 **The session note.** With the switch on, **Log this time** on a Likely block, or a stretch (the yellow rail, a drag,
 **+ Log**, **Log and next**, an Activity block; 5.1), shows the commit draft at once, then asks `POST /api/likely/note`
@@ -851,7 +909,7 @@ with its start, end and project (for a stretch, the project with most minutes in
 project's Likely rows that overlap the time, whole rows. `askclaude.steps()` reads their sessions (matched by title)
 for each step's typed message and Claude's last words before the next message (its summary of what it did; no side
 chains, tool calls or tool output; at most 15 steps, 400 and 900 characters), with the commits and up to five of the
-person's own notes as examples. `claude -p --model haiku --tools "" --strict-mcp-config --setting-sources "" --json-schema` drafts the note
+person's own notes as examples. `claude -p --model haiku --tools "" --strict-mcp-config --setting-sources "" --disallowedTools "mcp__*" --json-schema`, with the environment of section 3, drafts the note
 (English unless their notes are in another language); `guard_note` checks it. It replaces the note only while the
 person has not typed in it, and only in the dialog that asked, with "Drafted by Claude from this session and your
 commits"; for a stretch "from the fi-drupal-qa session", adding "(the most minutes here; also pulsar)" when other
@@ -1102,10 +1160,21 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   which stops a program that took Pulsar's port after it quit, but a program on Pulsar's port that relays the
   challenge to a real Pulsar on another port would pass. Binding the port needs the launcher and the server to change
   together; not done.
-- The switch's ask rules cover the Productive server named `productive` only; one under another name (a claude.ai
-  connector) gets none. Switching off also removes an ask rule the person added by hand after Pulsar added the same
-  one. Its change to `~/.claude/settings.json` is a read, a merge and a rename: a change Claude Code makes in the same
-  instant is lost.
+- The Productive ask rules (the opt-in of 5.7) cover the server named `productive` only; a claude.ai connector
+  (`mcp__claude_ai_<name>__…`) or a server under another name gets none. With the box on in one copy and off in the
+  other, the other's tidy can take back a rule the first found already there (so not on its own list): Settings then
+  says rules are missing and offers to add them again. Switching off also removes a rule the person added by hand
+  after Pulsar added the same one. Its change to the settings file is a read, a merge and a rename: a change Claude
+  Code makes in the same instant is lost.
+- The deny rules stop Claude Code's file tools and the file commands it recognizes in a shell; a script that opens
+  Pulsar's files itself is stopped only with Claude Code's sandbox on (section 3).
+- `CLAUDE_CONFIG_DIR` set only in a shell is not in the environment of a Pulsar started from the Dock: Pulsar then
+  adds itself and its rules to `~/.claude`, which that Claude Code does not read, and cannot tell.
+- A drafted note naming another client is caught only by the words of the task list's project names, as written
+  ("Fengate", not "fengate"); Pulsar has no list of Productive's people, so other people's names are only asked
+  against in the prompt.
+- Commits by you: with no email in your own git settings, a per-repository email counts when two repositories of the
+  day set it; two repositories from the same outside source that both name the same author would pass.
 - When your last 30 days cannot be read, the log dialog, Log the day and `pulsar_tasks` say so, and the failed read
   is kept a minute, not ten or sixty. `pulsar_preview` then still picks the task's own service, as for a task never
   logged before: its summary names the service and budget the person approves.

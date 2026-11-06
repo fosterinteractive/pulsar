@@ -14,6 +14,14 @@ What each Pulsar release changed, newest first.
 - Log dialog: time that runs into an entry already logged can be logged around it, as one or more entries.
 - Logging from the yellow rail, a drag, + Log or Log and next drafts the note too, from the Likely work in that time.
 - A dragged or picked stretch leads with Log the day's task and note for its main work, and offers a split when it mixes work.
+- Log the day: a row whose note Claude drafted, or whose task Claude found by searching Productive, starts unticked.
+- Ask Claude: the work it reads is data, never instructions; it may only search Productive's tasks.
+- Drafted notes: dropped when they hold a sum of money, another client's project name or your own name.
+- Notes from commits: only commits whose author and committer are you, by your own git settings.
+- Claude Code runs for Ask Claude get a short list of Pulsar's environment, and no claude.ai connectors.
+- The Claude Code switch keeps Claude Code's file tools out of Pulsar's folders (deny rules).
+- Asking before every Claude Code session changes Productive is now a separate setting, off by default; Pulsar takes back the rules it added for it.
+- Settings > Claude: says when managed settings block Pulsar's rules or server, and which Claude account and plan Ask Claude uses.
 
 ## 1.4.0 (2026-11-06)
 - Log the day: Earlier days, to catch up on several days one after another.

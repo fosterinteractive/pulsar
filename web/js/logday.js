@@ -162,7 +162,8 @@ function ldTotals() {
           billable: live.filter(r => r.billable).reduce((s, r) => s + r.minutes, 0), logged,
           notCovered: t.notCovered || 0, over: t.over || 0, cap: t.cap || 0};
 }
-const ldCheck = r => ldPending(r) && (r.confidence === 'low' || !r.taskId || !r.serviceId || r.claudeNone);
+const ldCheck = r => ldPending(r) && (r.confidence === 'low' || !r.taskId || !r.serviceId || r.claudeNone
+  || r.flags.includes('claudefound') || (r.flags.includes('claudenote') && r.noteFrom === 'claude' && !r.noteEdited));
 
 /* ---------- the review panel ---------- */
 function dayTitle(d) {
@@ -243,6 +244,8 @@ function rowHTML(r, overlaps) {
   if (r.flags.includes('agent')) quiet.push("Claude's agent ran while you did something else: unticked.");
   if (r.flags.includes('unattended')) quiet.push('No call was seen: unticked.');
   if (r.claudeNone) quiet.push("Claude found no task for this work: Pulsar's guess stays. Check it.");
+  if (r.flags.includes('claudefound')) quiet.push('Claude found this task by searching Productive; you have not logged to it in 30 days: unticked. Check it.');
+  if (r.flags.includes('claudenote') && r.noteFrom === 'claude' && !r.noteEdited) quiet.push('Claude drafted the note: unticked until you read it.');
   if (r.flags.includes('untimed')) quiet.push(`${dur(r.untimed)} of this task ${r.untimed === 1 ? 'is' : 'are'} logged with no start time: unticked, in case it is this work.`);
   const open = LD.open === r.id;
   return `<li class="er${open ? ' on' : ''}" data-row="${r.id}">
@@ -349,8 +352,8 @@ async function ldSetTask(r, t) {
   Object.assign(r, {taskId: String(t.taskId), title: t.title || '', project: t.project || '', serviceId: null, service: '',
                     services: [], billable: null, edited: true, opened: true, source: 'you', why: 'picked by you', confidence: 'high',
                     ticket: []});  // the new task's flags come with its services
-  r.flags = r.flags.filter(f => !['notask', 'low', 'noservice'].includes(f));
-  if (r.noteFrom === 'claude' && !r.noteEdited) { r.note = ''; r.noteFrom = ''; }  // Claude wrote it for another task
+  r.flags = r.flags.filter(f => !['notask', 'low', 'noservice', 'claudefound'].includes(f));
+  if (r.noteFrom === 'claude' && !r.noteEdited) { r.note = ''; r.noteFrom = ''; r.flags = r.flags.filter(f => f !== 'claudenote'); }  // Claude wrote it for another task
   renderReview(); render();
   const [list, sug] = await Promise.all([getJSON(`/api/services?task=${r.taskId}&date=${LD.date}&flags=1`), suggestions(LD.date)]);
   if (r.taskId !== String(t.taskId)) return;

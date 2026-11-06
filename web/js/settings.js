@@ -33,6 +33,8 @@ function fillSettings(c) {
   f.ask_claude.disabled = !c.likely.available || !c.likely.claudeFound;
   f.ask_claude_model.value = c.likely.askClaudeModel || 'sonnet';
   f.ask_claude_model.disabled = f.ask_claude.disabled;
+  f.claude_ask_productive.checked = !!c.likely.askProductive;
+  f.claude_ask_productive.disabled = f.ask_claude.disabled;
   paintLink(c.likely);
   $('#remove-token').hidden = !p.tokenSaved;
   paintUpdate(c.update);
@@ -149,20 +151,44 @@ function openSettings(tab) {
 /* the one Claude Code switch: where Pulsar stands in Claude Code (claudelink.py) */
 function paintLink(l) {
   const k = l.link || {}, el = $('#claude-link'), again = $('#claude-relink');
-  const on = !!l.askClaude;
+  const on = !!l.askClaude, m = k.managed || {};
   el.classList.remove('warn');
   if (!l.claudeFound) el.textContent = 'Claude Code was not found on this Mac.';
   else if (!on) el.textContent = 'Off. Switch it on and Save: Pulsar adds itself to Claude Code, and takes it all back when switched off.';
   else if (k.registered && k.current) {
     el.textContent = `On. Pulsar is in Claude Code as “${k.name}”` + (k.rules
-      ? ', and Claude Code asks before a session changes Productive or logs through Pulsar.'
-      : ', but Claude Code’s settings lack its ask rules (before a session changes Productive or logs through Pulsar).') +
+      ? ', Claude Code asks before a session logs through Pulsar, and its file tools are kept out of Pulsar’s folders.'
+      : ', but Claude Code’s settings lack some of its rules (ask before logging through Pulsar, keep out of Pulsar’s folders'
+        + (l.askProductive ? ', ask before changing Productive' : '') + ').') +
       ' New sessions see it; a session already open sees it after /mcp.';
     if (!k.rules) el.classList.add('warn');
   }
   else { el.textContent = k.registered ? 'On, but Claude Code starts an older copy of Pulsar.' : 'On, but Pulsar is not in Claude Code.';
          el.classList.add('warn'); }
+  // what keeps Pulsar's rules or server from applying: an organization's managed settings, Claude Code's own folder
+  const notes = [];
+  if (on && m.permissionRulesOnly) notes.push('Your organization’s managed settings let only their own permission rules apply, so Claude Code ignores Pulsar’s ask and deny rules.');
+  if (on && m.mcpServersOnly) notes.push('Your organization’s managed settings start only their own MCP servers, so Claude Code does not start Pulsar.');
+  if (on && k.configDir) notes.push(`Claude Code’s folder is ${k.configDir} (CLAUDE_CONFIG_DIR): Pulsar uses it. A Claude Code started without that variable does not see Pulsar or its rules.`);
+  if (notes.length) { el.textContent += ' ' + notes.join(' '); el.classList.add('warn'); }
+  paintAccount(k, on);
   again.hidden = !(on && l.claudeFound && !(k.registered && k.current && k.rules));
+}
+
+/* which Claude account Ask Claude and the notes use (Claude Code's own sign-in, read from its .claude.json) */
+function paintAccount(k, on) {
+  const el = $('#claude-account'), a = k.account;
+  el.classList.remove('warn'); el.replaceChildren();
+  if (!on || !a) { el.hidden = true; return; }
+  el.hidden = false;
+  el.append(`Ask Claude and the notes use Claude Code's sign-in: ${a.email ? a.email + ', ' : ''}${a.plan}.`);
+  if (a.consumer) {
+    el.classList.add('warn');
+    el.append(' This is a consumer plan: Anthropic may use these chats, with your session text, to train its models if that setting is on for the account. ');
+    const link = document.createElement('a');
+    link.href = k.dataUsage; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = 'How Claude Code uses data';
+    el.append(link, '.');
+  }
 }
 
 async function saveSettings(extra = {}) {
@@ -178,7 +204,8 @@ async function saveSettings(extra = {}) {
     timezone: f.timezone.value.trim(), target_hours: f.target_hours.value.trim(), round_to: +f.round_to.value,
     personal_patterns: f.personal_patterns.value,
     activitywatch_url: f.activitywatch_url.value.trim(), likely: f.likely.value, ask_claude: f.ask_claude.checked,
-    ask_claude_model: f.ask_claude_model.value, ...(CONFIG?.preview ? {preview_writes: f.preview_writes.checked} : {}), ...extra,
+    ask_claude_model: f.ask_claude_model.value, claude_ask_productive: f.claude_ask_productive.checked,
+    ...(CONFIG?.preview ? {preview_writes: f.preview_writes.checked} : {}), ...extra,
   };
   if (f.token.value.trim()) body.token = f.token.value.trim();
   btn.disabled = true; msg.className = 'msg'; msg.textContent = 'Saving…';

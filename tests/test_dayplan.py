@@ -172,6 +172,33 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual((e["taskId"], e["source"], e["alts"][0]["taskId"]), ("55", "claude", "44"))
         self.assertTrue(e["alts"][0]["why"].startswith("Pulsar's guess"))
 
+    def test_claudes_pick_of_a_task_found_by_search_or_with_its_note_starts_unticked(self):
+        """A prompt injection in the work could steer Claude to any task it can find in Productive, and into the
+        note: such a row never goes through on one click. A pick among the tasks of the last 30 days, with no note
+        of Claude's, is ticked as before."""
+        rows = [row(700, 740, project="other", titles=["New thing"])]
+        ctx = {**self.ctx, "repo": {"other": {"44": 30.0}}, "names": {**self.ctx["names"], "44": {"task": "Guess", "project": "G"}}}
+        self.assertIn("22", ctx["recent"])
+        searched = {"tasks": [{"taskId": "55", "title": "From Claude", "project": "Q"}], "why": "the messages"}
+        known = {"tasks": [{"taskId": "22", "title": "Task 22", "project": "P"}], "why": "the messages"}
+        got = {}
+        for name, pick in (("searched", searched), ("known", known), ("noted", {**known, "note": "Hero video fixed."})):
+            [got[name]] = dayplan.plan(day(items=[work(700, 740)], rows=rows, picks={"700|other": pick}), ctx)["entries"]
+        self.assertEqual((got["searched"]["taskId"], got["searched"]["checked"]), ("55", False))
+        self.assertIn("claudefound", got["searched"]["flags"])
+        self.assertEqual((got["known"]["taskId"], got["known"]["confidence"], got["known"]["checked"], got["known"]["flags"]),
+                         ("22", "medium", True, []))
+        self.assertEqual((got["noted"]["noteFrom"], got["noted"]["checked"], got["noted"]["flags"]),
+                         ("claude", False, ["claudenote"]))
+        # with the history unreadable no task is known: every pick of Claude's starts unticked
+        [e] = dayplan.plan(day(items=[work(700, 740)], rows=rows, picks={"700|other": known}),
+                           {**ctx, "recent": []})["entries"]
+        self.assertEqual((e["checked"], e["flags"]), (False, ["claudefound"]))
+        # work outside Claude next to such a row takes its task, and its mark
+        items = [work(700, 740), work(740, 770, app="Safari", title="docs")]
+        p = dayplan.plan(day(items=items, rows=rows, picks={"700|other": searched}), ctx)
+        self.assertTrue(all(not e["checked"] for e in p["entries"] if e["taskId"] == "55"), p["entries"])
+
     def test_a_repository_never_logged_is_skipped_not_proposed(self):
         ctx = {**self.ctx, "never_logged": {"bot"}}
         p = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, project="bot", titles=["Coins"])]), ctx)
