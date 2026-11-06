@@ -104,6 +104,7 @@ Code and reconnect Productive. A token of your own never expires, so it is the s
 |---|---|
 | Time zone | this computer's |
 | Daily target | your organization's working day in Productive, else 8 h (Pulsar reads it through Claude Code's connection; with an API token it is 8 h unless you set it) |
+| Round entries to | 5 minutes (or 10 or 15): Log the day's entries start and end on this step, and a block you log is rounded to it |
 | Personal windows | Telegram, WhatsApp, YouTube, Netflix, Instagram, Facebook, TikTok, Reddit (one word per line; a window whose app, title or site contains one counts as personal) |
 | ActivityWatch address | `http://localhost:5600` |
 | Likely column | shown when Claude Code sessions are on this computer (`~/.claude/projects`) |
@@ -212,6 +213,11 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   go to Productive one at a time, stopping at the first one that is refused, and **Undo this run** deletes only what
   that run wrote. Notes come only from a meeting's title, your usual note for a repeat, your commits, or Ask
   Claude's draft.
+- **Catching up.** **Earlier days…** in Log the day lists your last workdays with the active time no entry covers.
+  Tick the days, and each one opens in turn as Log the day; each is written only when you confirm it.
+- **Ticket flags.** The log dialog and Log the day say when a task is closed, when no budget takes time on that
+  date, or when it has no estimate while the project's other tasks have one, with a link to fix it in Productive.
+  Pulsar only reads these; it never changes the task.
 - **Report downloads.** In the Report, **Download** gives the days or the time entries as CSV (for Excel or
   Numbers), or a print view that saves as PDF.
 

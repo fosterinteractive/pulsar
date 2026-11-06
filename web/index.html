@@ -143,12 +143,17 @@
         </section>
       </div>
       <div role="tabpanel" id="p-day" aria-labelledby="t-day" hidden>
-        <section data-k="time zone timezone daily target hours working day">
+        <section data-k="time zone timezone daily target hours working day round rounding minutes grid step">
           <h3>Time</h3>
           <label class="field"><span>Time zone</span><input name="timezone" list="zones" autocomplete="off"></label>
           <datalist id="zones"></datalist>
           <p class="hint">Leave it empty to use this computer's time zone.</p>
           <label class="field"><span>Daily target, hours</span><input name="target_hours" type="number" min="0.5" max="24" step="0.25"></label>
+          <label class="field"><span>Round entries to</span>
+            <select name="round_to"><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option></select></label>
+          <p class="hint">Log the day starts and ends each entry on this step, and joins a piece of work shorter than it (or
+            than 10 minutes) to the work next to it. When you log a block of time, its minutes are rounded to it too. Minutes
+            you type yourself stay as you typed them.</p>
         </section>
         <section data-k="personal windows activitywatch memtime tracker afk away">
           <h3>Activity</h3>
@@ -235,6 +240,7 @@
         <input name="q" type="search" placeholder="Search every task in Productive" autocomplete="off" aria-label="Search tasks">
         <div class="picker" id="log-tasks" role="listbox" aria-label="Tasks"></div>
       </div>
+      <p class="hint warnish tflags" id="log-flags" aria-live="polite" hidden></p>
       <label class="field"><span>Service</span><select name="service"></select></label>
       <label class="field"><span>Note</span><textarea name="note" rows="3" placeholder="What was done: the outcome, in a sentence"
         aria-describedby="log-note-hint"></textarea></label>
@@ -300,6 +306,7 @@
 <script src="/static/js/log.js"></script>
 <script src="/static/js/flow.js"></script>
 <script src="/static/js/logday.js"></script>
+<script src="/static/js/catchup.js"></script>
 <script src="/static/js/ask.js"></script>
 <script src="/static/js/logs.js"></script>
 <script src="/static/js/main.js"></script>

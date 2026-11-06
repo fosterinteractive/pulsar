@@ -6,6 +6,11 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- Ticket flags: a closed task, no budget on that date, or no estimate, in the log dialog and Log the day.
+- Settings: round entries to 5, 10 or 15 minutes.
+- Log the day: Earlier days, to catch up on several days one after another.
+
 ## 1.3.0 (2026-11-06)
 - Log the day: the whole day proposed for review, written one entry at a time, with Undo.
 - Edit, delete and resize logged entries.

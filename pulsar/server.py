@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, askclaude, calendar, claudelink, config, dayplan, learn, likely, logbook, productive, report, sessions, trackers, updater, names
+from . import __version__, askclaude, calendar, claudelink, config, dayplan, flags, learn, likely, logbook, productive, report, sessions, trackers, updater, names
 
 UPDATER = updater.Updater()
 
@@ -185,6 +185,7 @@ def public_config(s: dict) -> dict:
         "timezone": config.timezone_name(s), "timezoneSystem": config.system_timezone(), "timezoneSetting": s["timezone"],
         "targetMinutes": config.target_minutes(s), "targetHours": s["target_hours"], "personDayHours": s["person_day_hours"],
         "personalPatterns": s["personal_patterns"], "activitywatchUrl": s["activitywatch_url"], "rules": s["rules"],
+        "roundTo": s["round_to"],
         "update": {**UPDATER.public(), "skip": s["update_skip"], "asked": s["update_asked"]},
         "errors24h": sum(1 for e in logbook.read(1) if e["kind"] == "error"),
         "likely": {"setting": s["likely"], "available": likely.available(), "enabled": likely.enabled(s),
@@ -250,6 +251,13 @@ def validate(body: dict) -> dict:
         if body["ask_claude_model"] not in askclaude.MODELS:
             raise ValueError("The model is sonnet, haiku or opus.")
         out["ask_claude_model"] = body["ask_claude_model"]
+    if "round_to" in body:
+        v = body["round_to"]
+        if isinstance(v, str) and v.strip().isdigit():
+            v = int(v)
+        if isinstance(v, bool) or v not in config.ROUNDING:
+            raise ValueError("Entries round to 5, 10 or 15 minutes.")
+        out["round_to"] = v
     if "productive_source" in body:
         if body["productive_source"] not in ("auto", "token", "claude-code"):
             raise ValueError("The Productive source is auto, token or claude-code")
@@ -900,9 +908,14 @@ def api_search(q: dict) -> dict:
 
 
 def api_services(q: dict) -> dict:
+    """The services that take time on that date; with flags=1 (the page), the task's ticket flags too (flags.py)."""
     if not is_id(q.get("task") or ""):
         raise ValueError("task=<id>&date=YYYY-MM-DD")
-    return productive.bookable_services(q["task"], q["date"], current_settings())
+    s = current_settings()
+    got = productive.bookable_services(q["task"], q["date"], s)
+    if q.get("flags") == "1":
+        got["flags"] = flags.for_task(got.get("task"), got.get("services"), q["date"], s)
+    return got
 
 
 def api_log(body: dict) -> dict:

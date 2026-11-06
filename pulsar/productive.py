@@ -55,6 +55,7 @@ class TokenRefused(ProductiveError):
 
 NAME_AGE = 7 * 86400  # a name or billing type is read again after a week: projects and budgets get renamed
 HIDDEN_AGE = 86400    # a billing type this role could not see ("0") is asked again after a day
+ESTIMATES_AGE = 86400  # how many of a project's recent tasks have an estimate (flags.py): read again after a day
 
 
 class Names:
@@ -81,6 +82,8 @@ class Names:
             self._write()
 
     def max_age(self, key: str) -> int:
+        if key.startswith("estimates:"):
+            return ESTIMATES_AGE
         return HIDDEN_AGE if key.startswith("billing:") and self.data.get(key) == "0" else NAME_AGE
 
     def get(self, key: str):
@@ -794,10 +797,12 @@ def _task_from_mcp(item: dict, included: list) -> dict:
             "serviceId": str(service.get("id") or "") if isinstance(service, dict) else "",
             "estimate": None if f.get("initial_estimate") is None else minutes_of(f.get("initial_estimate")),
             "worked": minutes_of(f.get("worked_time")) if f.get("worked_time") is not None else None,
-            "remaining": None if f.get("remaining_time") is None else minutes_of(f.get("remaining_time"))}
+            "remaining": None if f.get("remaining_time") is None else minutes_of(f.get("remaining_time")),
+            "closed": bool(f.get("closed_at") or f.get("is_closed"))}
 
 
-TASK_FIELDS = ["title", "task_number", "initial_estimate", "worked_time", "remaining_time", "project.name", "service"]
+TASK_FIELDS = ["title", "task_number", "initial_estimate", "worked_time", "remaining_time", "project.name", "service",
+               "closed_at"]
 
 
 _task_cache = config.Newest(300)  # task id -> (time, details)
@@ -836,7 +841,7 @@ def task_details(ids: list, settings: dict, reasons: Optional[dict] = None, tran
                              "project": _attr(proj, "name") or "", "projectId": _rel(d, "project") or "",
                              "serviceId": _rel(d, "service") or "",
                              "estimate": _attr(d, "initial_estimate"), "worked": _attr(d, "worked_time"),
-                             "remaining": _attr(d, "remaining_time")}, "", False
+                             "remaining": _attr(d, "remaining_time"), "closed": bool(_attr(d, "closed_at"))}, "", False
             d = parse_mcp(mcp_text("load_resource", {"resource_type": "tasks", "id": tid, "include_fields": TASK_FIELDS}, conn["token"]))
             item = d.get("item") or {}
             if not item.get("id"):
@@ -1043,6 +1048,33 @@ def bookable_services(task_id: str, date: str, settings: dict, names: Optional[N
         services = [{"id": str(r["id"]), "name": r.get("name") or "", "budget": deals.get(r.get("deal") or "") or "",
                      **billable_of(names.get(f"billing:services:{r['id']}"))} for r in rows]
     return {"task": task, "services": services}
+
+
+ESTIMATE_SAMPLE = 100  # a project's most recently active tasks, read to tell whether it uses estimates
+
+
+def project_estimates(project_id: str, settings: dict) -> dict:
+    """{"n": tasks read, "with": ids of those with an estimate}: the project's most recently active tasks (its first
+    ones through the token, which has no such order), for the flag "no estimate, while others in the project have
+    one" (flags.py). Read only; raises ProductiveError when it cannot be read."""
+    if not str(project_id or "").isdigit():
+        raise ProductiveError("no project")
+    conn = _need(settings)
+    if conn["kind"] == "token":
+        status, doc = rest_get("/tasks", {"filter[project_id]": project_id, "page[size]": ESTIMATE_SAMPLE},
+                               conn["token"], settings.get("org_id"))
+        if status != 200 or not isinstance(doc, dict):
+            raise ProductiveError(f"Productive did not list the project's tasks ({why(status, doc)}).")
+        rows = [(str(d.get("id")), _attr(d, "initial_estimate")) for d in doc.get("data") or [] if isinstance(d, dict)]
+    else:
+        d = parse_mcp(mcp_text("query_resources", {
+            "resource_type": "tasks", "limit": ESTIMATE_SAMPLE, "sort": ["-last_activity_at"],
+            "include_fields": ["initial_estimate"],
+            "filters": {"op": "and", "conditions": [{"field": "project", "operator": "eq", "value": str(project_id)}]}},
+            conn["token"]))
+        cols = d["items"]["columns"]
+        rows = [(str(r.get("id")), r.get("initial_estimate")) for r in (dict(zip(cols, x)) for x in d["items"]["rows"])]
+    return {"n": len(rows), "with": [i for i, est in rows if est not in (None, "") and minutes_of(est) > 0]}
 
 
 def _write_conn(settings: dict) -> dict:
