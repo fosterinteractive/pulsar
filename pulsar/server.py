@@ -872,6 +872,7 @@ def api_log(body: dict) -> dict:
         raise ValueError("Pick a date and a start time (HH:MM).")
     tz = config.tz(s)
     begin = datetime.strptime(f"{date} {start}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)  # raises on 2026-02-30
+    _real_time(begin, tz)
     a, b = begin.timestamp(), begin.timestamp() + minutes * 60
     if b > day_bounds(date, tz)[1]:
         raise ValueError("An entry cannot run past midnight; log the part after it on the next day.")
@@ -882,13 +883,9 @@ def api_log(body: dict) -> dict:
         journal = {"run": str(body.get("run") or ""), "row": str(body.get("row") or ""),
                    "entry": {"start": start, "minutes": minutes, "taskId": task_id, "serviceId": service_id}}
     if body.get("dry"):
-        if journal:
-            dayplan.check(journal["run"], journal["row"], date, start, minutes, task_id, service_id)
-        return _log_checked(body, s, date, begin, minutes, task_id, service_id, tz, a, b)
+        return _log_checked(body, s, date, begin, minutes, task_id, service_id, tz, a, b, journal)
     key = (date, start, minutes, task_id, service_id)
     with _log_lock:  # one write at a time: two tabs, or two quick clicks, cannot both pass the overlap check
-        if journal:
-            dayplan.check(journal["run"], journal["row"], date, start, minutes, task_id, service_id)
         if time.time() - _just_logged.get(key, 0) < 60:
             raise ValueError("This entry was logged a moment ago. Check the Logged column before logging it again.")
         result = _log_checked(body, s, date, begin, minutes, task_id, service_id, tz, a, b, journal)
@@ -898,6 +895,22 @@ def api_log(body: dict) -> dict:
 
 
 SEEN = {"start": "start", "minutes": "length", "taskId": "task", "serviceId": "service", "note": "note"}
+
+
+class EntryGone(ValueError):
+    """The entry is not in Productive on that day any more."""
+
+
+def _seen_whole(seen) -> bool:
+    """`seen` is the entry as the page showed it, every field: one left out would never be compared."""
+    return isinstance(seen, dict) and set(SEEN) <= set(seen)
+
+
+def _real_time(when: datetime, tz) -> None:
+    """Refuses a start the clocks skip that day (02:30 the night they go forward): it would be stored an hour later."""
+    if datetime.fromtimestamp(when.timestamp(), tz).strftime("%H:%M") != when.strftime("%H:%M"):
+        raise ValueError(f"{when.strftime('%H:%M')} does not exist on {when.strftime('%Y-%m-%d')}: the clocks go "
+                         "forward then. Pick a start after the change.")
 
 
 def _hhmm(epoch, tz) -> str | None:
@@ -923,19 +936,19 @@ def _own_entry(body: dict, s: dict) -> tuple:
         raise RuntimeError(problem)
     mine = next((x for x in existing if str(x.get("id")) == entry_id), None)
     if not mine:
-        raise ValueError("That entry is not in Productive on that day any more. The Logged column has been refreshed.")
+        raise EntryGone("That entry is not in Productive on that day any more. The Logged column has been refreshed.")
     if str(mine.get("personId") or "") != person:
         raise ValueError("Productive did not show that entry as yours, so Pulsar leaves it alone.")
     seen = body.get("seen")
     if seen is not None:
-        if not isinstance(seen, dict):
-            raise ValueError("seen is the entry as the page showed it.")
+        if not _seen_whole(seen):
+            raise ValueError("seen is the entry as the page showed it: start, minutes, taskId, serviceId and note.")
         now = {"start": _hhmm(mine.get("start"), config.tz(s)), "minutes": int(mine["minutes"]),
                "taskId": str(mine.get("taskId") or ""), "serviceId": str(mine.get("serviceId") or ""),
                "note": str(mine.get("note") or "").strip()}
         was = {"start": seen.get("start") or None, "minutes": seen.get("minutes"), "taskId": str(seen.get("taskId") or ""),
                "serviceId": str(seen.get("serviceId") or ""), "note": str(seen.get("note") or "").strip()}
-        changed = [SEEN[k] for k in SEEN if k in seen and was[k] != now[k]]
+        changed = [SEEN[k] for k in SEEN if was[k] != now[k]]
         if changed:
             raise ValueError(f"That entry changed in Productive since you looked at it (its {', '.join(changed)}), so "
                              "nothing was written. The Logged column has been refreshed: look at it again.")
@@ -957,14 +970,17 @@ def api_entry_update(body: dict) -> dict:
     for k in ("taskId", "serviceId"):
         if body.get(k) and not is_id(str(body[k])):
             raise ValueError(f"{k} is a Productive id.")
-    if not isinstance(body.get("seen"), dict):
+    if not _seen_whole(body.get("seen")):
         raise ValueError("The entry as you saw it (seen) is needed, so a change never lands on one that changed meanwhile.")
     with _log_lock:
         mine, existing = _own_entry(body, s)
         change: dict = {}
         if start is not None and start != _hhmm(mine.get("start"), tz):
-            change["started_at"] = datetime.strptime(f"{mine['date']} {start}", "%Y-%m-%d %H:%M").replace(
-                tzinfo=tz).isoformat(timespec="seconds")
+            # in the hour the clocks repeat, the same one of the two the entry is in now
+            fold = datetime.fromtimestamp(mine["start"], tz).fold if mine.get("start") is not None else 0
+            when = datetime.strptime(f"{mine['date']} {start}", "%Y-%m-%d %H:%M").replace(tzinfo=tz, fold=fold)
+            _real_time(when, tz)
+            change["started_at"] = when.isoformat(timespec="seconds")
         if minutes is not None and minutes != int(mine["minutes"]):
             change["minutes"] = minutes
         if note is not None and str(note).strip() != str(mine.get("note") or "").strip():
@@ -1002,21 +1018,30 @@ def api_entry_delete(body: dict) -> dict:
     keeps it in its Recycle Bin. With `run` (Undo in Log the day), only an entry that run created, and only as it wrote it."""
     s = current_settings()
     run = body.get("run")
-    if run is None and not isinstance(body.get("seen"), dict):
+    if run is None and not _seen_whole(body.get("seen")):
         raise ValueError("The entry as you saw it (seen) is needed, so a delete never lands on another entry.")
     with _log_lock:
-        mine, _ = _own_entry(body, s)
-        if run is not None:
+        if run is None:
+            mine, _ = _own_entry(body, s)
+        else:  # Undo: an entry deleted or changed by hand is left, said, and no longer offered (the rest carry on)
             made = {x["id"]: x for x in dayplan.undo_ids(dayplan.journal(), str(run))}
-            x = made.get(str(mine["id"]))
+            x = made.get(str(body.get("id") or ""))
             if not x:
                 raise ValueError("That entry was not created by this Log the day run, so Undo leaves it alone.")
+            try:
+                mine, _ = _own_entry(body, s)
+            except EntryGone:
+                if not body.get("dry"):
+                    dayplan.mark_undone(str(run), x["id"], "gone")
+                return {"left": x["id"], "why": "it is not in Productive on that day any more (deleted or moved by hand)"}
             tz = config.tz(s)
             now = (datetime.fromtimestamp(mine["start"], tz).strftime("%H:%M") if mine.get("start") is not None else None,
                    int(mine["minutes"]), str(mine.get("taskId") or ""))
             if now != (x["start"], int(x["minutes"]), str(x["taskId"] or "")):
-                raise ValueError("That entry was changed after this run logged it, so Undo leaves it alone. Delete it "
-                                 "from its card if you mean to.")
+                if not body.get("dry"):
+                    dayplan.mark_undone(str(run), x["id"], "changed")
+                return {"left": x["id"], "why": "it was changed after this run logged it; delete it from its card if "
+                                                "you mean to"}
         if body.get("dry"):
             return {"dry": True, "wouldDelete": mine["id"]}
         productive.delete_entry(mine["id"], s)
@@ -1050,12 +1075,15 @@ _just_logged: dict = {}  # (date, start, minutes, task, service) -> when it was 
 def _log_checked(body: dict, s: dict, date: str, begin, minutes: int, task_id: str, service_id: str, tz, a: float,
                  b: float, journal: dict | None = None) -> dict:
     def note(status, **fields):  # a Log the day row: its state in the journal, on disk before the next step
-        if journal:
+        if journal and not body.get("dry"):
             dayplan.mark(journal["run"], date, journal["row"], journal["entry"], status, **fields)
 
     if not body.get("dry") and config.writes_blocked():  # refused before the journal or the log hears of it
         raise ValueError(config.writes_blocked())
     existing, problem, _ = productive.entries(date, date, s)
+    if journal:  # a row already sent is refused; one logged counts only while its entry is still in the day just read
+        dayplan.check(journal["run"], journal["row"], date, journal["entry"]["start"], journal["entry"]["minutes"],
+                      task_id, service_id, None if problem else {str(x.get("id")) for x in existing})
     if problem:
         note("refused", reason=f"Not sent: {problem}")
         raise RuntimeError(problem)
@@ -1084,8 +1112,14 @@ def _log_checked(body: dict, s: dict, date: str, begin, minutes: int, task_id: s
     except BaseException as exc:  # anything else after sending: it may have happened
         note("unknown", reason=f"{type(exc).__name__}: {exc}")
         raise
-    note("logged", id=str(created.get("id") or ""))
     _recent.clear()
+    try:
+        note("logged", id=str(created.get("id") or ""))
+    except Exception as exc:  # written all the same: the row stays "sending", never sent again, but Undo cannot offer it
+        logbook.record("log the day", f"Entry {created.get('id')} was logged, but the journal did not take it: "
+                       f"{type(exc).__name__}: {exc}", kind="error")
+        return {"created": created, "warning": "Logged, but Pulsar's journal could not record it, so Undo will not "
+                                               "offer this entry."}
     return {"created": created}
 
 
@@ -1312,12 +1346,14 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, RuntimeError, productive.ProductiveError, calendar.CalendarError) as exc:
             if not isinstance(exc, ValueError):  # Productive refused or did not answer: worth a line in Logs
                 logbook.record(f"POST {urlparse(self.path).path}", str(exc), kind="warning")
-            return self.send_json({"error": str(exc)}, 400)
+            # unclear: it may have been written (a timeout, a 5xx after sending); never to be read as "not logged"
+            return self.send_json({"error": str(exc), **({"unclear": True} if isinstance(exc, productive.ProductiveUnclear)
+                                                         else {})}, 400)
         except (BrokenPipeError, ConnectionResetError):
             return
         except Exception as exc:  # never drop the connection: say what went wrong
             logbook.record(f"POST {urlparse(self.path).path}", f"{type(exc).__name__}: {exc}", detail=traceback.format_exc())
-            return self.send_json({"error": f"{type(exc).__name__}: {exc}"}, 500)
+            return self.send_json({"error": f"{type(exc).__name__}: {exc}", "unclear": True}, 500)
 
     def google_callback(self, url):
         """Google sends the browser back here after the person allows Pulsar (or does not). The request arrives as a

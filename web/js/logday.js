@@ -42,7 +42,7 @@ async function openLogDay() {
   if (!CONFIG?.productive.active) { toast('Connect Productive in Settings first.', true); openSettings('t-conn'); return; }
   const d = state.date;
   Object.assign(LD, {on: true, date: d, plan: null, rows: [], open: null, run: null, writing: false, stop: false,
-                     loading: true, undoAsk: false, note: ''});
+                     loading: true, undoAsk: false, note: '', lastRun: null, undo: [], confirmed: null, claudeLate: null});
   closePop();
   document.body.classList.add('rv-on');
   $('#review').hidden = false;
@@ -72,6 +72,15 @@ async function askClaudeForDay(d) {
   if (LD.writing) { LD.askNote = "Claude answered while writing; Start over to see its picks."; renderReview(); return; }
   const r = await getJSON(`/api/dayplan?date=${d}&source=${state.source}${LD_IGNORE ? '&ignore_logged=1' : ''}`);
   if (!ldActive() || LD.date !== d || r.error) return;
+  ldClaudePlan(d, r, ans);
+}
+/* Claude's plan goes in only while nothing is being confirmed or written: what the person confirmed is what is sent.
+   It waits for the confirm dialog to close, and after a run has started it is only mentioned. */
+function ldClaudePlan(d, r, ans) {
+  if (!ldActive() || LD.date !== d) return;
+  if (ldDlg.open) { LD.claudeLate = [d, r, ans]; return; }
+  LD.claudeLate = null;
+  if (LD.writing) { LD.askNote = "Claude answered while writing; Start over to see its picks."; renderReview(); return; }
   const fresh = (r.entries || []).map((e, i) => ({...e, id: 'c' + i, opened: false, edited: false, status: null, reason: ''}));
   let changed = 0;
   if (!LD.rows.some(x => x.edited || x.status)) {  // nothing touched yet: the new plan as a whole
@@ -187,7 +196,7 @@ function renderReview() {
   const results = ldResultsBox();
   // the list: logged entries (quiet), time not covered, and the proposals, in time order
   const items = [];
-  if (!p.ignoreLogged) for (const x of state.logged?.entries || []) if (x.s != null) items.push({at: x.s, html: loggedLine(x)});
+  if (!p.ignoreLogged) for (const x of state.logged?.entries || []) items.push({at: x.s ?? -1, html: loggedLine(x)});
   for (const u of p.uncovered || []) items.push({at: u.s, html: `<li class="gr"><span class="e-time num">${hm(u.s)}</span><span class="gt"><b>${dur(u.minutes)}</b> active, not covered</span><span></span></li>`});
   for (const r of LD.rows) items.push({at: r.s, html: rowHTML(r, ov.get(r.id))});
   items.sort((a, b) => a.at - b.at);
@@ -210,9 +219,9 @@ function renderReview() {
   if (LD.open) el.querySelector(`[data-row="${LD.open}"] .ed`) && wireEditor(ldRow(LD.open));
 }
 function loggedLine(x) {
-  return `<li class="er done"><div class="eb"><span class="e-time num">${hm(x.s)}</span>
+  return `<li class="er done"><div class="eb"><span class="e-time num">${x.s == null ? 'no start' : hm(x.s)}</span>
     <span class="e-task"><i class="dot full" style="--c:${color(x.project)}"></i><span>${esc(x.task || x.project)}</span></span>
-    <span class="e-st">in Productive · ${dur(x.minutes)}</span></div></li>`;
+    <span class="e-st">in Productive${x.s == null ? ', no start time' : ''} · ${dur(x.minutes)}</span></div></li>`;
 }
 function rowHTML(r, overlaps) {
   if (r.status === 'logged') {
@@ -229,6 +238,7 @@ function rowHTML(r, overlaps) {
   if (r.flags.includes('agent')) quiet.push("Claude's agent ran while you did something else: unticked.");
   if (r.flags.includes('unattended')) quiet.push('No call was seen: unticked.');
   if (r.claudeNone) quiet.push("Claude found no task for this work: Pulsar's guess stays. Check it.");
+  if (r.flags.includes('untimed')) quiet.push(`${dur(r.untimed)} of this task ${r.untimed === 1 ? 'is' : 'are'} logged with no start time: unticked, in case it is this work.`);
   const open = LD.open === r.id;
   return `<li class="er${open ? ' on' : ''}" data-row="${r.id}">
     <label class="ck"><input type="checkbox" data-ld-tick="${r.id}"${r.checked ? ' checked' : ''}${r.taskId && r.serviceId && !LD.writing ? '' : ' disabled'}
@@ -307,7 +317,7 @@ function wireEditor(r) {
 function ldChanged(r) { r.edited = true; if (r.status === 'refused') { r.status = null; r.reason = ''; } renderReview(); render(); }
 
 function ldOpen(id, scroll = false) {
-  const r = ldRow(id); if (!r) return;
+  const r = ldRow(id); if (!r || LD.writing) return;
   LD.open = LD.open === id && !scroll ? null : id; r.opened = true;
   renderReview(); render();
   if (scroll) {
@@ -319,6 +329,7 @@ function ldOpen(id, scroll = false) {
 
 /* a new task: its services on that date, and the one used last on it */
 async function ldSetTask(r, t) {
+  if (LD.writing) return;
   Object.assign(r, {taskId: String(t.taskId), title: t.title || '', project: t.project || '', serviceId: null, service: '',
                     services: [], billable: null, edited: true, opened: true, source: 'you', why: 'picked by you', confidence: 'high'});
   r.flags = r.flags.filter(f => !['notask', 'low', 'noservice'].includes(f));
@@ -366,6 +377,7 @@ $('#ld-pk').addEventListener('keydown', ev => { if (ev.key === 'Escape') { ev.st
 $('#review').addEventListener('click', ev => {
   const t = ev.target.closest('button, input'); if (!t) return;
   if (t.id === 'ld-close') return closeLogDay();
+  if (LD.writing && t.id !== 'ld-stop') { ev.preventDefault(); return; }  // a run (or Undo) is writing: rows stay as confirmed
   if (t.id === 'ld-redo') return openLogDay();
   if (t.id === 'ld-go') return openConfirm();
   if (t.id === 'ld-stop') { LD.stop = true; renderReview(); return; }
@@ -386,10 +398,14 @@ const ldDlg = $('#lddlg');
 function openConfirm(dry = null) {
   const live = LD.rows.filter(r => r.checked && ldPending(r)).sort((a, b) => a.s - b.s);
   if (!live.length) return;
+  LD.run = LD.run || newRun();
+  LD.confirmed = live.map(r => ({id: r.id, body: rowBody(r)}));  // what this dialog shows is what Log sends
   const T = ldTotals(), ov = ldOverlaps();
   const unopened = live.filter(r => r.confidence === 'low' && !r.opened);
   const warns = [];
   if (ov.size) warns.push(`${[...ov.entries()].filter(([id]) => live.some(r => r.id === id)).map(([id, os]) => `${hm(ldRow(id).s)} ${ldRow(id).title} overlaps ${os.map(o => o.with).join(', ')}`).join('; ')}. Pulsar checks the day before each one and stops at an overlap.`);
+  const untimed = LD.plan?.ignoreLogged ? [] : (state.logged?.entries || []).filter(x => x.s == null && live.some(r => r.taskId === String(x.taskId)));
+  if (untimed.length) warns.push(`Already logged with no start time, on a task below: ${untimed.map(x => `${x.task || x.project} ${dur(x.minutes)}`).join(', ')}. Check it is not the same work.`);
   if (unopened.length) warns.push(`${unopened.length} ${unopened.length === 1 ? 'entry' : 'entries'} marked “check” ${unopened.length === 1 ? 'was' : 'were'} not opened: ${unopened.map(r => `${hm(r.s)} ${r.title}`).join(', ')}.`);
   const quiet = T.notCovered ? [`${dur(T.notCovered)} of active time stays unlogged.`] : [];
   const lines = live.map(r => `<li class="cl-r"><span class="num">${hm(r.s)}</span><span><b>${esc(r.title)}</b>
@@ -414,8 +430,9 @@ ldDlg.addEventListener('click', ev => {
   const t = ev.target.closest('button'); if (!t) return;
   if (t.hasAttribute('data-ld-x')) ldDlg.close();
   if (t.hasAttribute('data-ld-dry')) dryRun(t);
-  if (t.hasAttribute('data-ld-write')) { ldDlg.close(); writeRun(); }
+  if (t.hasAttribute('data-ld-write')) { writeRun(); ldDlg.close(); }
 });
+ldDlg.addEventListener('close', () => { if (LD.claudeLate) ldClaudePlan(...LD.claudeLate); });
 
 const rowBody = r => ({date: LD.date, start: hm(r.s), minutes: r.minutes, taskId: r.taskId, serviceId: r.serviceId,
                        note: (r.note || '').trim(), run: LD.run, row: r.id});
@@ -440,24 +457,26 @@ async function dryRun(btn) {
 
 /* ---------- writing: one at a time, stop at the first answer that is not "logged" ---------- */
 async function writeRun() {
-  const rows = LD.rows.filter(r => r.checked && ldPending(r)).sort((a, b) => a.s - b.s);
-  if (!rows.length) return;
-  LD.run = LD.run || newRun();
-  Object.assign(LD, {writing: true, stop: false, writeCount: rows.length, undoAsk: false});
-  LD.open = null;
+  const todo = LD.confirmed || []; LD.confirmed = null;  // exactly what the confirm step showed, frozen there
+  if (!todo.length || LD.writing) return;
+  Object.assign(LD, {writing: true, stop: false, writeCount: todo.length, undoAsk: false});
+  LD.open = null; $('#ld-pk').hidden = true;
   let stopped = null;
-  for (const r of rows) {
+  for (const {id, body} of todo) {
     if (LD.stop || LD.date !== state.date) { stopped = 'you stopped'; break; }
+    const r = ldRow(id) || {id};  // the row on screen: nothing in the panel can change or remove it while writing
     r.status = 'writing'; renderReview(); render();
-    const res = await postJSON('/api/log', rowBody(r));
-    if (res.created) { Object.assign(r, {status: 'logged', entryId: res.created.id, thisRun: true, reason: ''}); continue; }
-    r.status = 'refused';
+    const res = await postJSON('/api/log', body);
+    if (res.created) { Object.assign(r, {status: 'logged', entryId: res.created.id, thisRun: true, reason: res.warning || ''}); continue; }
+    r.status = res.unclear ? 'unknown' : 'refused';  // unclear: it may be in Productive, and is never sent again
     r.reason = res.overlap ? `It would overlap ${res.overlap.map(o => `${o.start} ${o.project}`).join(', ')}.` : res.error || 'No answer.';
     stopped = r; break;
   }
-  await syncJournal();  // what the server recorded is what counts (an answer lost on the way says "unknown")
+  // what the server recorded is what counts (an answer lost on the way says "unknown"; "sending" for one the page saw
+  // created means the journal could not take its "logged", and it stays logged here)
+  await syncJournal();
   LD.writing = false; LD.stop = false;
-  LD.lastRun = {stopped, total: rows.length};
+  LD.lastRun = {stopped, total: todo.length};
   renderReview(); render();
   refreshLogged().then(() => { renderReview(); });
   suggestCache = null;
@@ -468,9 +487,10 @@ async function syncJournal() {
   for (const x of run?.rows || []) {
     const r = ldRow(x.row); if (!r) continue;
     if (x.status === 'logged') Object.assign(r, {status: 'logged', entryId: x.id, thisRun: true, reason: ''});
-    else if (x.status === 'unknown' || x.status === 'sending') Object.assign(r, {status: 'unknown', reason: x.reason || 'No answer came. Check the Logged column; Pulsar will not send it again.'});
+    else if (x.status === 'unknown' || (x.status === 'sending' && !(r.thisRun && r.status === 'logged'))) Object.assign(r, {status: 'unknown', reason: x.reason || 'No answer came. Check the Logged column; Pulsar will not send it again.'});
     else if (x.status === 'refused') Object.assign(r, {status: 'refused', reason: x.reason || r.reason});
     else if (x.status === 'undone') Object.assign(r, {status: null, thisRun: false, checked: false, reason: 'Undone: deleted from Productive.'});
+    else if (x.status === 'gone') Object.assign(r, {status: null, thisRun: false, checked: false, entryId: null, reason: 'Not in Productive any more: deleted or moved by hand.'});
   }
   LD.undo = run?.undo || [];
 }
@@ -491,17 +511,19 @@ function ldResultsBox() {
 }
 async function undoRun() {
   LD.undoAsk = false; LD.writing = true; LD.writeCount = LD.undo.length; renderReview();
-  let problem = null;
+  let deleted = 0;
+  const left = [];  // each one is tried: one deleted or changed by hand, or refused, never holds up the rest
   for (const x of LD.undo) {
     const res = await postJSON('/api/entry/delete', {id: x.id, date: LD.date, run: LD.run});
-    if (res.error) { problem = res.error; break; }
+    if (!res.deleted) { left.push(`${x.start || ''} ${res.why || res.error || 'no answer'}`.trim()); continue; }
+    deleted++;
     const r = LD.rows.find(r => r.entryId === x.id);  // back to a proposal, unticked
     if (r) Object.assign(r, {status: null, thisRun: false, checked: false, entryId: null, reason: 'Undone: deleted from Productive.'});
   }
-  await syncJournal();
-  LD.undo = (LD.undo || []).filter(x => LD.rows.some(r => r.entryId === x.id && r.status === 'logged'));
+  await syncJournal();  // the journal says what Undo still offers
   LD.writing = false;
   renderReview(); render();
   refreshLogged().then(() => renderReview());
-  toast(problem ? `Undo stopped: ${problem}` : 'Undone: the entries this run logged were deleted.', !!problem);
+  toast(left.length ? `Undo deleted ${deleted} and left ${left.length}: ${left.join('; ')}.`
+                    : `Undone: the ${deleted} ${deleted === 1 ? 'entry' : 'entries'} this run logged ${deleted === 1 ? 'was' : 'were'} deleted.`, !!left.length);
 }

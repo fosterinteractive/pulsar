@@ -28,6 +28,11 @@ What each Pulsar release changed, newest first.
 - Ask Claude leaves out Claude Code's auto memory; Claude Code asks before Pulsar logs, by an ask rule too.
 - Pulsar in Claude Code returns no past notes and no note drafted for another repository.
 - Pulsar Preview starts with Claude Code off, and its Disconnect leaves Pulsar's Google Calendar connected.
+- Fixed: Log the day writes exactly what you confirmed, even when Claude's answer arrives late.
+- Fixed: an entry with no start time is shown in Log the day, and its task is not proposed again ticked.
+- Fixed: Undo goes on past an entry deleted or changed by hand; a deleted entry can be logged again.
+- Fixed: a damaged Log the day journal stops writes instead of being emptied.
+- Fixed: in Claude Code, a write with no clear answer says "not known", never "not logged".
 
 ## 1.2.1 (2026-11-06)
 - Settings: categories with icons, and a search.

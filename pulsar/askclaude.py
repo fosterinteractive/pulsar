@@ -24,6 +24,7 @@ import re
 import subprocess
 import tempfile
 import threading
+import unicodedata
 import urllib.parse
 from datetime import datetime, timedelta
 
@@ -104,12 +105,15 @@ _SENTENCE_END = re.compile(r"[.!?]+(?=\s+[A-Z0-9\u00c0-\u024f]|\s*$)")
 def guard_note(note) -> tuple:
     """(the note, None) when a drafted note may be offered, else ("", why). Productive can copy a note into a client's
     invoice, so a draft with a path, a web address, something like a token, code, a tool's name, a remark on how the
-    time was spent, or more than two sentences is dropped whole."""
+    time was spent, more than two sentences, or a character nobody sees (a control or format character: an escape,
+    a direction override, a zero-width space, which could hide or reorder words) is dropped whole."""
     text = re.sub(r"\s+", " ", str(note or "")).strip().strip('"\u201c\u201d').strip()
     if not text:
         return "", None
     if len(text) > NOTE_MAX + 20:
         return "", "too long"
+    if any(unicodedata.category(c) in ("Cc", "Cf") for c in text):
+        return "", "a character nobody sees"
     for why, rx in _NOTE_CHECKS:
         if rx.search(text):
             return "", why

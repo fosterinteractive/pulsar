@@ -410,6 +410,12 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
         busy.append((r["s"], end))
     busy.sort()
     done_tasks = {str(r.get("taskId")) for r in logged if r.get("taskId")}
+    # minutes logged with no start, by task: they may be this very work, so their task's proposals give way first
+    # under the cap and start unticked (an entry with no start is on no timeline, so no overlap check sees it)
+    untimed: dict = defaultdict(int)
+    for r in logged:
+        if r.get("s") is None and r.get("taskId"):
+            untimed[str(r["taskId"])] += int(r["minutes"])
 
     # 2. meetings the person was in: repeats (a call was seen at the usual time), calendar meetings with a call seen,
     # calls with no calendar entry. A repeat and a calendar meeting on the same call are one entry.
@@ -681,19 +687,35 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
     logged_total = sum(int(r["minutes"]) for r in logged)
     allowed = max(0, cap - logged_total)
     over = sum(e["minutes"] for e in out) - allowed
+
+    def cut_from(e, want: int, why: str) -> int:
+        cut = min(e["minutes"], int(math.ceil(want / g) * g))
+        if e["minutes"] - cut < o["min_entry"] and not (e["kind"] == "meeting" and e["minutes"] - cut >= 5):
+            cut = e["minutes"]  # too short to stand alone once cut: all of it listed, none placed
+        e["minutes"] -= cut
+        e["e"] = e["s"] + e["minutes"]
+        unplaced.append({"minutes": cut, "task": e["taskId"], "project": e["project"], "why": why})
+        return cut
+
     if over > 0:
+        left = dict(untimed)  # first the task of an entry with no start, up to its minutes: it may be that work
+        for e in sorted(out, key=lambda e: (RANK[e["confidence"]], -e["s"])):
+            if over > 0 and left.get(str(e["taskId"]), 0) > 0:
+                cut = cut_from(e, min(over, left[str(e["taskId"])]),
+                               "more than your active time and meetings; its task has time logged with no start")
+                left[str(e["taskId"])] -= cut
+                over -= cut
         for e in sorted(out, key=lambda e: (RANK[e["confidence"]], -e["s"])):
             if over <= 0:
                 break
-            cut = min(e["minutes"], int(math.ceil(over / g) * g))
-            if e["minutes"] - cut < o["min_entry"] and not (e["kind"] == "meeting" and e["minutes"] - cut >= 5):
-                cut = e["minutes"]  # too short to stand alone once cut: all of it listed, none placed
-            e["minutes"] -= cut
-            e["e"] = e["s"] + e["minutes"]
-            over -= cut
-            unplaced.append({"minutes": cut, "task": e["taskId"], "project": e["project"],
-                             "why": "more than your active time and meetings"})
+            if e["minutes"]:
+                over -= cut_from(e, over, "more than your active time and meetings")
         out = [e for e in out if e["minutes"] >= g]
+    for e in out:
+        if untimed.get(str(e["taskId"])):
+            e["flags"].append("untimed")
+            e["checked"] = False
+            e["untimed"] = untimed[str(e["taskId"])]
     # active time no entry covers, logged or proposed
     covered = bytearray(N)
     for a, b in busy + [(e["s"], e["e"]) for e in out]:
@@ -804,6 +826,10 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False) -> dict
     t0, t1 = server.day_bounds(date, tz)
     if not s.get("person_id"):
         return {"error": "Connect Productive in Settings first.", "entries": []}
+    try:
+        day_runs = runs_for(date)  # first: with a journal that cannot be read, nothing is proposed
+    except JournalBroken as exc:
+        return {"error": str(exc), "entries": []}
     first28 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=server.REPEAT_DAYS)).strftime("%Y-%m-%d")
 
     def proposal():
@@ -816,8 +842,8 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False) -> dict
         rows = []
         for e in got.get("entries") or []:  # a copy: the cached proposal stays as it is
             r = {**e, "pick_s": e["s"]}  # Ask Claude names a row by its minute before any clock change
-            if shift:  # the clocks change today: rows by the clock, like the activity
-                r["s"], r["e"] = round(server.clock(t0 + e["s"] * 60, t0, tz), 2), round(server.clock(t0 + e["e"] * 60, t0, tz), 2)
+            if shift:  # the clocks change today: each row's start by the clock, its real length (as the page draws it)
+                r["s"], r["e"] = server.page_span(e, t0, tz)
             rows.append(r)
         return {**got, "entries": rows}
 
@@ -915,9 +941,11 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False) -> dict
             if not a["title"] and a["taskId"] in found and found[a["taskId"]][0]:
                 t = found[a["taskId"]][0].get("task") or {}
                 a["title"], a["project"] = t.get("title") or "", t.get("project") or ""
-    # rows a run of this day already sent: shown as such, and the writer refuses them again
+    # rows a run of this day already sent: shown as such, and the writer refuses them again (one it logged only while
+    # its entry is still there: deleted by hand, or moved to another day, it may be logged again)
+    present = None if problem else {str(x.get("id")) for x in rows}
     sent = {sig(date, e2["start"], e2["minutes"], e2["taskId"], e2["serviceId"]): e2
-            for run in runs_for(date) for e2 in run["rows"] if e2.get("status") in ("sending", "unknown", "logged")}
+            for run in day_runs for e2 in run["rows"] if still_sent(e2, present)}
     for e in result["entries"]:
         x = sent.get(sig(date, _hm(e["s"]), e["minutes"], e["taskId"], e["serviceId"]))
         if x:
@@ -948,15 +976,30 @@ def journal_path() -> str:
     return os.path.join(config.CACHE_DIR, "logday-journal.json")
 
 
+class JournalBroken(ValueError):
+    """The journal is there but cannot be read."""
+
+
 def journal() -> dict:
+    """The runs. No file is no runs; a file that cannot be read is never taken for none: a row whose answer never came
+    would be sent again, and the next write would drop every run's Undo. Then nothing is written from Log the day or
+    Claude Code until someone looks at it (the file stays as it is)."""
+    path = journal_path()
     try:
-        with open(journal_path(), encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             doc = json.load(fh)
         if isinstance(doc, dict) and isinstance(doc.get("runs"), list):
             return doc
-    except (OSError, ValueError):
-        pass
-    return {"runs": []}
+        why = "it is not a journal"
+    except FileNotFoundError:
+        return {"runs": []}
+    except (OSError, ValueError) as exc:
+        why = type(exc).__name__
+    from . import logbook
+    msg = (f"Log the day's journal cannot be read ({why}), so Pulsar cannot tell what was already sent and writes "
+           f"nothing from Log the day or Claude Code. Check the Logged column, then move {path} away to start a new one.")
+    logbook.record("log the day", msg, kind="error", once_per=600)
+    raise JournalBroken(msg)
 
 
 def sig(date, start, minutes, task, service) -> str:
@@ -967,22 +1010,34 @@ def runs_for(date: str) -> list:
     return [r for r in journal()["runs"] if r.get("date") == date]
 
 
-def check(run: str, row: str, date: str, start: str, minutes: int, task: str, service: str) -> None:
-    """Refuses a row this run already sent, or the same entry any run of that day sent and that is logged or whose
-    answer never came: a restart, a second tab or a retry never writes it twice."""
+def still_sent(x: dict, present: set | None = None) -> bool:
+    """Whether a run's row stands as sent: "sending" and "unknown" always (no answer came); "logged" (and "changed",
+    which Undo left alone) only while its entry is among the day's entries just read (`present`, their ids; None when
+    not read), so one deleted by hand or moved to another day can be logged again. "gone", "refused", "undone": no."""
+    status = x.get("status")
+    if status in ("sending", "unknown"):
+        return True
+    if status in ("logged", "changed"):
+        return present is None or not x.get("id") or str(x["id"]) in present
+    return False
+
+
+def check(run: str, row: str, date: str, start: str, minutes: int, task: str, service: str,
+          present: set | None = None) -> None:
+    """Refuses a row this run already sent, or the same entry any run of that day sent and that still stands as sent
+    (still_sent): a restart, a second tab or a retry never writes it twice."""
     if not RUN.match(run or "") or not ROW.match(row or "") or run[3:13] != date:
         raise ValueError("A Log the day run needs its run and row names.")
     mine = sig(date, start, minutes, task, service)
     for r in journal()["runs"]:
         for x in r.get("rows") or []:
-            if r.get("run") == run and x.get("row") == row and x.get("status") in ("sending", "unknown", "logged"):
-                raise ValueError(_sent_reason(x))
-            if r.get("date") == date and x.get("sig") == mine and x.get("status") in ("sending", "unknown", "logged"):
+            if ((r.get("run") == run and x.get("row") == row) or (r.get("date") == date and x.get("sig") == mine)) \
+                    and still_sent(x, present):
                 raise ValueError(_sent_reason(x))
 
 
 def _sent_reason(x: dict) -> str:
-    if x.get("status") == "logged":
+    if x.get("status") in ("logged", "changed"):
         return f"This entry was logged at {x.get('at', '')[11:16]} (entry {x.get('id')}). It is not sent twice."
     return (f"This entry was sent at {x.get('at', '')[11:16]} and Pulsar never heard back. Check the Logged column; "
             "Pulsar will not send it again, so log it by hand if it is missing.")
@@ -992,7 +1047,9 @@ def mark(run: str, date: str, row: str, entry: dict, status: str, **fields) -> N
     """Records one row's state, written to disk at once (owner-only, atomic): "sending" goes in before the write."""
     with _journal_lock:
         doc = journal()
-        cutoff = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%d")
+        # runs started in the last KEEP_DAYS days: counted from today, never from the entry's date (one far ahead
+        # would drop today's runs, their Undo and their guard)
+        cutoff = (datetime.now() - timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%d")
         runs = [r for r in doc["runs"] if str(r.get("started") or "")[:10] >= cutoff or r.get("run") == run][-200:]
         rec = next((r for r in runs if r.get("run") == run), None)
         if rec is None:
@@ -1017,12 +1074,14 @@ def undo_ids(doc: dict, run: str) -> list:
             for x in (rec or {}).get("rows") or [] if x.get("status") == "logged" and x.get("id")]
 
 
-def mark_undone(run: str, entry_id: str) -> None:
+def mark_undone(run: str, entry_id: str, status: str = "undone") -> None:
+    """A logged row Undo dealt with: "undone" (deleted), "gone" (not in Productive any more) or "changed" (changed
+    by hand since): Undo stops offering it either way."""
     with _journal_lock:
         doc = journal()
         for r in doc["runs"]:
             if r.get("run") == run:
                 for x in r.get("rows") or []:
                     if str(x.get("id")) == str(entry_id) and x.get("status") == "logged":
-                        x["status"], x["undoneAt"] = "undone", datetime.now().isoformat(timespec="seconds")
+                        x["status"], x[status + "At"] = status, datetime.now().isoformat(timespec="seconds")
         config.write_atomic(journal_path(), json.dumps(doc, ensure_ascii=False))
