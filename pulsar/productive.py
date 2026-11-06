@@ -516,7 +516,7 @@ def mcp_text(tool: str, args: dict, token: str, session: Optional[str] = None) -
         raise ProductiveError(msg["error"].get("message", "MCP error"))
     content = "".join(c.get("text", "") for c in msg.get("result", {}).get("content", []))
     if msg.get("result", {}).get("isError"):  # the tool ran and failed: its text is the reason, never a result
-        raise ProductiveError("Productive refused: " + content[:300])
+        raise ProductiveError(plain_refusal(content, "it"))
     return content
 
 
@@ -1083,6 +1083,24 @@ def _write_conn(settings: dict) -> dict:
     return _need(settings)
 
 
+# Productive's refusals that people meet, said in plain words (the code stays at the end, for Logs and support)
+REFUSALS = {
+    "budget_limit_overrun": "the budget behind this service is full: Productive takes no more time on it. Pick another "
+                            "service, or ask whoever runs the budget to raise its limit",
+    "service_not_accessible": "this service does not take your time (it is closed, or you are not on it): pick another "
+                              "service",
+}
+
+
+def plain_refusal(text: str, what: str = "the entry") -> str:
+    """Productive's refusal as a sentence the person can act on, when its code is a known one; else its own words."""
+    raw = str(text or "")
+    for code, said in REFUSALS.items():
+        if code in raw:
+            return f"Productive refused {what}: {said} ({code})."
+    return f"Productive refused {what}: {raw[:300]}"
+
+
 def _rest_headers(conn: dict, settings: dict) -> dict:
     return {"X-Auth-Token": conn["token"], "X-Organization-Id": str(settings.get("org_id")),
             "Content-Type": "application/vnd.api+json", "Accept": "application/vnd.api+json"}
@@ -1110,7 +1128,9 @@ def _rest_write(method: str, entry_id: str, body: Optional[dict], conn: dict, se
     if status >= 500:  # a server error after the change was sent: it may have happened
         raise ProductiveUnclear(UNCLEAR.format(f"HTTP {status}"))
     if status not in ok:
-        raise ProductiveError(f"Productive refused {what} ({why(status, None)}): {raw[:300].decode('utf-8', 'replace')}")
+        text = raw[:600].decode("utf-8", "replace")
+        raise ProductiveError(plain_refusal(text, what) if any(c in text for c in REFUSALS) else
+                              f"Productive refused {what} ({why(status, None)}): {text[:300]}")
 
 
 def update_entry(entry_id: str, change: dict, settings: dict) -> None:
@@ -1200,7 +1220,9 @@ def create_entry(entry: dict, settings: dict) -> dict:
             raise ProductiveUnclear(f"Productive answered HTTP {status}, so the entry may or may not exist. Check the "
                                     "Logged column (it has been refreshed) before logging again.")
         if status not in (200, 201):
-            raise ProductiveError(f"Productive refused the entry (HTTP {status}): {raw[:300].decode('utf-8', 'replace')}")
+            text = raw[:600].decode("utf-8", "replace")
+            raise ProductiveError(plain_refusal(text) if any(c in text for c in REFUSALS) else
+                                  f"Productive refused the entry (HTTP {status}): {text[:300]}")
         doc = json.loads(raw or b"{}")
         return {"id": str((doc.get("data") or {}).get("id") or "")}
     item = {"date": entry["date"], "time": f"{int(entry['minutes'])} min", "started_at": entry["started_at"],

@@ -2968,3 +2968,14 @@ class KeptDaysTest(unittest.TestCase):
             self.assertEqual(list(server.api_likely_picks({"date": "2026-11-04"})["picks"]), ["600|acme-web"])
         with mock.patch.object(server, "current_settings", lambda: {**config.DEFAULTS, "ask_claude": False}):
             self.assertEqual(server.api_likely_picks({"date": "2026-11-04"}), {"picks": {}})
+
+
+class PlainRefusalTest(unittest.TestCase):
+    def test_a_full_budget_is_said_in_plain_words(self):
+        raw = ('Failed to update time entry. API request failed because of error: ```{ "message": "Unprocessable Content", '
+               '"status": 422, "code": "budget_limit_overrun", "apiResponseErrors": []}```')
+        got = productive.plain_refusal(raw, "the change")
+        self.assertIn("budget behind this service is full", got)
+        self.assertTrue(got.startswith("Productive refused the change:"))
+        self.assertIn("(budget_limit_overrun)", got)
+        self.assertEqual(productive.plain_refusal("something else", "it"), "Productive refused it: something else")

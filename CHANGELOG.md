@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- A full budget and a closed service are said in plain words when Productive refuses an entry.
 - Pulsar in Claude Code: reasons are fixed phrases only, names are cleaned, and no model-written note is returned.
 
 ## 1.4.0 (2026-11-06)
