@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, askclaude, calendar, config, dayplan, learn, likely, logbook, productive, report, sessions, trackers, updater, names
+from . import __version__, askclaude, calendar, claudelink, config, dayplan, learn, likely, logbook, productive, report, sessions, trackers, updater, names
 
 UPDATER = updater.Updater()
 
@@ -135,7 +135,8 @@ def public_config(s: dict) -> dict:
         "update": {**UPDATER.public(), "skip": s["update_skip"], "asked": s["update_asked"]},
         "errors24h": sum(1 for e in logbook.read(1) if e["kind"] == "error"),
         "likely": {"setting": s["likely"], "available": likely.available(), "enabled": likely.enabled(s),
-                   "askClaude": s["ask_claude"], "askClaudeModel": s["ask_claude_model"], "claudeFound": askclaude.available()},
+                   "askClaude": s["ask_claude"], "askClaudeModel": s["ask_claude_model"], "claudeFound": askclaude.available(),
+                   "link": claudelink.status(PORT[0])},
         "productive": {"source": s["productive_source"], "active": conn["kind"], "problem": conn.get("problem"),
                        "keychainStuck": config.keychain_stuck(),
                        "tokenSaved": bool(config.get_token()), "orgId": s["org_id"], "orgName": s["org_name"],
@@ -387,6 +388,40 @@ def api_ask_claude(body: dict) -> dict:
         return {"error": str(exc), "picks": {}}
 
 
+def api_likely_note(body: dict) -> dict:
+    """The log dialog's note for a Likely block, from its session and commits (askclaude.note, Haiku). Only when the
+    Claude Code switch is on; a POST, because it runs Claude."""
+    s = current_settings()
+    date, project = str(body.get("date") or ""), str(body.get("project") or "")
+    if not DATE.match(date):
+        raise ValueError("date=YYYY-MM-DD")
+    try:
+        a, b = float(body.get("s")), float(body.get("e"))
+    except (TypeError, ValueError):
+        raise ValueError("s and e are minutes of the day") from None
+    if not s["ask_claude"]:
+        raise ValueError("Claude Code is off. Switch it on in Settings first.")
+    tz = config.tz(s)
+    proposal = likely.proposal(date, config.timezone_name(s), today(tz), False, s)
+    rows = [dict(r) for r in proposal.get("entries") or [] if r.get("project") == project
+            and min(r["e"], b) - max(r["s"], a) > 0]
+    if not rows:
+        return {"note": "", "why": "no Likely work at that time"}
+    before, problem = history_rows(date, s, days=learn.LEARN_DAYS)
+    if not problem:
+        learn.annotate({**proposal, "entries": rows}, date, s, before, [], tz)
+    lead = max(rows, key=lambda r: r["e"] - r["s"])
+    row = {"s": min(r["s"] for r in rows), "e": max(r["e"] for r in rows), "project": project,
+           "titles": sorted({t for r in rows for t in r.get("titles") or []}),
+           "commits": [c for r in sorted(rows, key=lambda r: r["s"]) for c in r.get("commits") or []],
+           "learned": lead.get("learned") or [], "tasks": lead.get("tasks") or []}
+    try:
+        return askclaude.note(date, row, day_bounds(date, tz)[0], [] if problem else before)
+    except askclaude.AskError as exc:
+        logbook.record("ask claude", str(exc), kind="warning")
+        return {"note": "", "error": str(exc)}
+
+
 def api_report(q: dict) -> dict:
     s = current_settings()
     d0, d1 = q.get("from", ""), q.get("to", "")
@@ -436,9 +471,17 @@ def api_settings(body: dict) -> dict:
         changes.update({"person_id": "", "org_id": "", "person_name": "", "org_name": "", "person_day_hours": None, **typed})
     _identify_failed[0] = 0.0
     s = config.update(changes)
+    # the Claude Code switch (claudelink.py): Pulsar adds itself to Claude Code, or takes back what it added; on
+    # "relink", it adds itself again (moved, or removed by hand)
+    link = None
+    if ("ask_claude" in changes and changes["ask_claude"] != before["ask_claude"]) or (body.get("relink") and s["ask_claude"]):
+        link = claudelink.connect(PORT[0], s) if s["ask_claude"] else claudelink.disconnect(s)
+        config.update({"claude_rules_added": link["rulesAdded"]})
+        if not link["ok"]:
+            logbook.record("claude code", link["message"], kind="warning")
     s = current_settings()
     # Productive is asked again only when the connection changed: saving a rule or a time zone needs no test
-    return {"config": public_config(s), "test": test_productive(s) if connection else None}
+    return {"config": public_config(s), "test": test_productive(s) if connection else None, "link": link}
 
 
 # ---- tasks, services, logging ----------------------------------------------------------------------------
@@ -1119,6 +1162,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(api_entry_delete(body))
             if urlparse(self.path).path == "/api/likely/ask":
                 return self.send_json(api_ask_claude(body))
+            if urlparse(self.path).path == "/api/likely/note":
+                return self.send_json(api_likely_note(body))
             if urlparse(self.path).path == "/api/calendar/connect":
                 url = calendar.start(self.server.server_address[1])
                 try:
@@ -1184,7 +1229,11 @@ class Handler(BaseHTTPRequestHandler):
         return self.send(200, data, TYPES.get(os.path.splitext(path)[1], "application/octet-stream"))
 
 
+PORT = [5610]  # the port this server listens on: Claude Code starts Pulsar's MCP server with it (claudelink.py)
+
+
 def serve(port: int) -> ThreadingHTTPServer:
+    PORT[0] = port
     config.ensure_dirs()
     config.session_secret()  # created before anyone needs it (the launcher reads it)
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)

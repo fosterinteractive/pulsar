@@ -157,20 +157,28 @@
         </section>
       </div>
       <div role="tabpanel" id="p-claude" aria-labelledby="t-claude" hidden>
-        <section data-k="likely column ask claude sessions sonnet model ai suggestions">
+        <section data-k="likely column ask claude sessions sonnet model ai suggestions mcp connect notes log from a session">
           <h3>Claude Code</h3>
-          <p class="hint">Pulsar reads your Claude Code sessions on this Mac to show which project each stretch of work went to (the Likely column), and learns from what you log which tasks belong to them. Nothing leaves this Mac unless you use Ask Claude.</p>
+          <p class="hint">Pulsar reads your Claude Code sessions on this Mac to show which project each stretch of work went to (the Likely column), and learns from what you log which tasks belong to them. Nothing leaves this Mac unless you switch on Claude Code below.</p>
           <label class="field"><span>“Likely” column</span>
             <select name="likely"><option value="auto">Show it when Claude Code sessions are found</option><option value="off">Hide it</option></select></label>
           <p class="hint" id="likely-hint"></p>
-          <label class="check"><input type="checkbox" name="ask_claude"> “Ask Claude” button in the Likely column</label>
-          <label class="field"><span>Model</span>
+          <label class="check"><input type="checkbox" name="ask_claude"> Use Claude Code with Pulsar</label>
+          <ul class="hint" id="claude-does">
+            <li><b>Ask Claude</b> in the Likely column: the task for each block of work, with its note.</li>
+            <li><b>Notes</b> drafted for you in the log dialog, from that session and your commits.</li>
+            <li><b>Log from a session</b>: say “log the time of this session” in Claude Code. It reads your day from Pulsar and asks you before each entry.</li>
+            <li><b>Claude Code asks you</b> before any session changes Productive by itself.</li>
+          </ul>
+          <p class="hint" id="claude-link"></p>
+          <button type="button" class="btn sm bordered" id="claude-relink" hidden>Add Pulsar to Claude Code again</button>
+          <label class="field"><span>Model for Ask Claude</span>
             <select name="ask_claude_model">
               <option value="sonnet">Sonnet: the default, a good balance</option>
               <option value="haiku">Haiku: faster and cheaper, a little less careful</option>
               <option value="opus">Opus: the most careful, slower and costs more</option>
             </select></label>
-          <p class="hint" id="ask-claude-hint">It sends what you typed in that day's Claude Code sessions, and the names of the tasks you logged to in the last 30 days, to Claude through your own Claude Code, which may search Productive (read only). 15 to 60 seconds and a little of your Claude usage per day. Each name is the latest model of that kind in your Claude Code. Log the day asks it too, for the rows Pulsar is unsure of: Haiku did as well as Sonnet there, at a small part of the cost.</p>
+          <p class="hint" id="ask-claude-hint">Ask Claude sends what you typed in that day's Claude Code sessions, Claude's replies at the end of each step, your commit subjects, and the names of the tasks you logged to in the last 30 days, to Claude through your own Claude Code, which may search Productive (read only). 15 to 60 seconds and a little of your Claude usage per day. A note in the log dialog uses Haiku: a few seconds and about a fifth of a cent. Each name is the latest model of that kind in your Claude Code. Log the day asks it too, for the rows Pulsar is unsure of: Haiku did as well as Sonnet there, at a small part of the cost.</p>
         </section>
       </div>
       <div role="tabpanel" id="p-rules" aria-labelledby="t-rules" hidden>

@@ -105,7 +105,7 @@ Code and reconnect Productive. A token of your own never expires, so it is the s
 | Personal windows | Telegram, WhatsApp, YouTube, Netflix, Instagram, Facebook, TikTok, Reddit (one word per line; a window whose app, title or site contains one counts as personal) |
 | ActivityWatch address | `http://localhost:5600` |
 | Likely column | shown when Claude Code sessions are on this computer (`~/.claude/projects`) |
-| “Ask Claude” button | off; needs Claude Code on this Mac |
+| Claude Code | off; one switch turns on Ask Claude, notes from sessions and logging from a session (needs Claude Code on this Mac) |
 | Google Calendar | not connected; **Connect** signs in with Google (fosterinteractive.com accounts only) |
 
 Settings are saved in `~/.config/pulsar/settings.json`; names, copies of fetched days and what Likely learned are
@@ -147,12 +147,21 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   pasted into that session in the three hours before; the tasks you logged while in the same Claude session, then in
   the same repository, over the last 60 days (worked out once in the background; only times, repository names and a
   hash of each session title are kept, in `~/.cache/pulsar/likely-days/`).
-- **Ask Claude (optional, off by default).** Switch it on in **Settings → Activity**, and the Likely column gets an
-  **Ask Claude** button: it gives your own Claude Code what you typed in that day's sessions and the tasks you logged
-  to in the last 30 days, lets it search Productive (read only; tools that change anything are refused), and shows its
-  task on each block and first when you log one. Choose the model there too: Sonnet (default), Haiku (faster,
-  cheaper) or Opus (most careful). About 15 to 60 seconds and a little of your Claude usage per day; nothing is
-  written anywhere.
+- **Claude Code (one switch, off by default).** Switch on **Use Claude Code with Pulsar** in **Settings → Claude**
+  and Save. That is all; it turns on:
+  - **Ask Claude** in the Likely column: your own Claude Code reads what you typed in that day's sessions, Claude's
+    replies at the end of each step, your commit subjects and the tasks you logged to in the last 30 days, may search
+    Productive (read only; tools that change anything are refused), and shows its task and a note on each block. Pick
+    the model there: Sonnet (default), Haiku or Opus. About 15 to 60 seconds and a little of your Claude usage a day.
+  - **Notes from the session** in the log dialog: Haiku drafts the note of a Likely block from that session and your
+    commits in a few seconds, for about a fifth of a cent; it never replaces what you typed.
+  - **Logging from a session:** Pulsar adds itself to Claude Code, so in any new session you can ask "what did I not
+    log today?" or "log the time of this session". The session reads your day from Pulsar and shows the entries;
+    Claude Code asks you before each one is written. Pulsar must be open.
+  - **Claude Code asks first:** before any session changes Productive by itself (ask rules in
+    `~/.claude/settings.json`; a backup of that file is kept beside it).
+
+  Switching it off takes back everything it added, and nothing else.
 - **The daily meeting, ready to log.** An entry you log at the same time on most days (a daily scrum) is noticed from
   your last four weeks in Productive. When the tracker sees a call near that time (Zoom, Meet, Teams, a Slack huddle),
   the Logged column shows it as a dashed card with the task, the usual note and the call's length. One click opens it
@@ -171,7 +180,8 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   each entry with its task, service, how sure Pulsar is and why. Unsure entries start unticked; you can change the
   task, service, start, length and note, or remove an entry. Nothing is written until you confirm; then the entries
   go to Productive one at a time, stopping at the first one that is refused, and **Undo this run** deletes only what
-  that run wrote. Notes come only from a meeting's title, your usual note for a repeat, or Ask Claude's draft.
+  that run wrote. Notes come only from a meeting's title, your usual note for a repeat, your commits, or Ask
+  Claude's draft.
 - **Report downloads.** In the Report, **Download** gives the days or the time entries as CSV (for Excel or
   Numbers), or a print view that saves as PDF.
 
@@ -251,7 +261,8 @@ pulsar/
   likely.py            the Likely column: sessions.py, or the fi-time-from-activity skill where it is installed
   sessions.py          Claude Code sessions -> which project each minute of work went to; task links typed in them
   learn.py             tasks for Likely rows, learned from what you logged in the same session or repository
-  askclaude.py         the optional Ask Claude button (claude -p, Productive read only)
+  askclaude.py         Ask Claude and notes from a session (claude -p, Productive read only)
+  claudelink.py        the one Claude Code switch: Pulsar in Claude Code, ask rules
   calendar.py          Google Calendar: sign-in (OAuth, PKCE), a day's meetings, their history
   google_client.json   the Google sign-in client: placeholders in git, the real one only in releases
   changelog.py         CHANGELOG.md for Settings and release.sh
