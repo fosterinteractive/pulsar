@@ -64,6 +64,8 @@ input[type=date] {
 @container (max-width: 230px) {
   .colhead .mini-select, .colhead .btn.mini, .colhead .btn.mini2 { position: static; margin: 5px 4px 0 0; vertical-align: middle; }
   .colhead .mini-select { max-width: 100%; }
+  /* a phone-width window: a button wider than its column wraps inside it, instead of running into the next one */
+  .colhead .btn.mini2 { max-width: 100%; white-space: normal; text-align: left; }
 }
 .colhead .mini { position: absolute; top: 9px; right: 8px; color: var(--muted); padding: 1px 6px; }
 .btn.busy { animation: spin .8s linear infinite; pointer-events: none; }
@@ -78,7 +80,7 @@ input[type=date] {
 .toast.warn .ic { color: var(--gap-text); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .colhead + .colhead { border-left: 1px solid var(--line); }
-.colhead b { display: block; font-size: 13px; font-weight: 600; }
+.colhead b { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }  /* never into the next column */
 .colhead span { display: block; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .colhead span.warn { color: var(--gap-text); white-space: normal; }
 .scroll { flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; }
@@ -136,6 +138,9 @@ input[type=date] {
 .gaprail { position: absolute; left: -1px; width: 3px; background: var(--gap); border-radius: 2px; opacity: .85; pointer-events: none; }
 .state { position: absolute; left: 12px; right: 12px; top: 16px; color: var(--faint); font-size: 12px; }
 .state.err { color: var(--gap-text); }
+/* in a lane, the message (an error, "loading…", nothing on this day) stays at the top of what is in view: the day
+   opens scrolled to its work or to now, far below the lane's top */
+.lane > .state { position: sticky; top: 16px; left: auto; right: auto; margin: 16px 12px 0; z-index: 1; }
 
 /* aside */
 aside { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-height: 0; }
@@ -145,6 +150,7 @@ aside { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-
 .kv span:first-child { color: var(--muted); }
 .kv.big span:last-child { font-size: 15px; font-weight: 600; }
 .kv.gap span:last-child { color: var(--gap-text); }
+.kv > .num { white-space: nowrap; }  /* a long name beside it wraps; "1 min" never breaks in two */
 .bar { height: 4px; border-radius: 2px; background: var(--seg); margin: 10px 0 2px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--text); opacity: .7; border-radius: 2px; }
 /* project totals, the MemTime way: a coloured bar per project, its budgets under it, folding */
@@ -283,7 +289,8 @@ dialog#settings::backdrop { background: rgba(0,0,0,.35); }
 #settings .ic-claude { background: linear-gradient(#e48a63, #c96442); }
 #settings .ic-rules { background: linear-gradient(#4cd168, #26a843); }
 #settings .ic-upd { background: linear-gradient(#a3a9b3, #737985); }
-#settings #settings-nomatch { padding: 24px 0; }
+/* a block in the empty pane: .state is the lanes' class, absolute, which drew it over the search field */
+#settings #settings-nomatch { position: static; padding: 24px 0; }
 @media (max-width: 640px) {  /* a phone-width window: the categories become a row above the settings */
   #settings .sbody { flex-direction: column; }
   #settings .side { width: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 8px; }
@@ -321,6 +328,26 @@ a.btn { display: inline-block; text-decoration: none; }
 .mini-select { position: absolute; top: 9px; right: 10px; font: inherit; font-size: 11.5px; color: var(--muted);
   background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px; }
 header { flex-wrap: wrap; row-gap: 8px; }
+/* From 1025 px up (1101 px in Pulsar Preview) the header stays in one row: the day's name and the week give way and
+   end in "…", the Settings label goes below 1240 px (1480 px beside Preview's chip, which shortens below 1300 px). It
+   used to wrap Logs and Settings onto a row of their own (1025 to 1220 px, and up to 1560 px in Preview). */
+@media (min-width: 1025px) {
+  header { flex-wrap: nowrap; }
+  .daytitle #dayname, .daytitle .weekline { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+@media (min-width: 1025px) and (max-width: 1240px) {
+  header { column-gap: 12px; }
+  .settings-btn span { display: none; }
+}
+@media (min-width: 1025px) and (max-width: 1480px) {
+  header:has(#preview-chip:not([hidden])) { column-gap: 12px; }
+  header:has(#preview-chip:not([hidden])) .settings-btn span { display: none; }
+  header:has(#preview-chip:not([hidden])) .weekline .wl-long { display: none; }
+  header:has(#preview-chip:not([hidden])) .weekline .wl-short { display: inline; }
+}
+@media (min-width: 1025px) and (max-width: 1300px) { header .preview-chip { max-width: 120px; } }
+/* Preview's chip leaves no room below 1101 px: there the header wraps, as it did before */
+@media (min-width: 1025px) and (max-width: 1100px) { header:has(#preview-chip:not([hidden])) { flex-wrap: wrap; } }
 .settings-btn svg { flex: none; }
 .settings-btn.has-update { position: relative; }
 .settings-btn.has-update::after { content: ""; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
@@ -372,6 +399,7 @@ header { flex-wrap: wrap; row-gap: 8px; }
 .pk:hover { background: var(--hover); }
 .pk.on { background: color-mix(in srgb, var(--accent) 16%, transparent); }
 .pk-t { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pk .pk-t { color: var(--text); }  /* inside a .field (the log and rule dialogs) `.field span` made every title muted */
 .pk-p { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .btn.sm { font-size: 11.5px; padding: 2px 7px; }
 .btn.mini2 { position: absolute; top: 9px; right: 38px; font-size: 11.5px; padding: 1px 8px; color: var(--muted); }
@@ -461,7 +489,6 @@ dialog#signin::backdrop { background: rgba(0,0,0,.45); }
   .tiles { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .two { grid-template-columns: 1fr; }
   .board { min-height: 70vh; }
-  header { flex-wrap: wrap; }
 }
 /* a phone's width: the header in as few rows as it takes; the date field already says which day it is */
 @media (max-width: 640px) {

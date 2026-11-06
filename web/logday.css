@@ -34,7 +34,7 @@ section.rv[hidden] { display: none; }
 .rv-sum b { color: var(--text); font-weight: 600; }
 .rv-bar { display: flex; height: 5px; border-radius: 3px; background: var(--seg); margin: 10px 0 4px; overflow: hidden; gap: 1px; }
 .rv-bar i { display: block; height: 100%; }
-.rv-bar .lg { background: var(--text); opacity: .75; }
+.rv-bar .lg { background: var(--text); opacity: .75; padding: 0; border: 0; }  /* .lg is also a Logs dialog line (style.css) */
 .rv-bar .pp { background: color-mix(in srgb, var(--text) 32%, transparent); }
 .rv-bl { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--muted); }
 .rv-iss { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
