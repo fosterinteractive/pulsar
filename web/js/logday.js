@@ -94,7 +94,7 @@ function ldClaudePlan(d, r, ans) {
       Object.assign(o, {taskId: n.taskId, title: n.title, project: n.project, serviceId: n.serviceId, service: n.service,
                         services: n.services, billable: n.billable, budget: n.budget, why: n.why, source: n.source,
                         confidence: n.confidence, confidenceWords: n.confidenceWords, alts: n.alts, checked: n.checked,
-                        flags: n.flags, claudeNone: n.claudeNone, note: n.note, noteFrom: n.noteFrom});
+                        flags: n.flags, claudeNone: n.claudeNone, note: n.note, noteFrom: n.noteFrom, ticket: n.ticket});
     }
   }
   const none = LD.rows.filter(x => x.claudeNone).length;
@@ -104,6 +104,7 @@ function ldClaudePlan(d, r, ans) {
 }
 function closeLogDay() {
   if (LD.writing) { LD.stop = true; return; }
+  cuClosed();  // catchup.js: a catch-up ends here, unless it is moving on to its next day
   LD.on = false; LD.open = null;
   document.body.classList.remove('rv-on', 'rv-ignore');
   $('#review').hidden = true; $('#ld-pk').hidden = true;
@@ -170,7 +171,8 @@ function dayTitle(d) {
 function renderReview() {
   const el = $('#review');
   if (!LD.on) { el.hidden = true; return; }
-  const head = `<div class="rv-t"><h2>Log the day <span class="sub">· ${esc(dayTitle(LD.date))}</span></h2>
+  if (cuRender(el)) return;  // catchup.js: the list of earlier days, while it is open
+  const head = `<div class="rv-t"><h2>Log the day <span class="sub">· ${esc(dayTitle(LD.date))}</span></h2>${cuButton()}
     <button type="button" class="btn icon" id="ld-close" aria-label="Close Log the day">✕</button></div>`;
   if (LD.loading) { el.innerHTML = `<div class="rv-h">${head}<div class="rv-sum">Reading the day: activity, Claude sessions, meetings and what is logged…</div></div>`; return; }
   const p = LD.plan;
@@ -180,12 +182,14 @@ function renderReview() {
     return;
   }
   const T = ldTotals(), ov = ldOverlaps(), toCheck = LD.rows.filter(ldCheck);
+  const flagged = LD.rows.filter(r => ldPending(r) && r.ticket?.length), nFlags = flagged.reduce((s, r) => s + r.ticket.length, 0);
   const ovMin = [...ov.values()].flat().reduce((s, o) => s + o.minutes, 0) / 2;
   const target = TARGET, withThese = T.logged + T.minutes;
   const pct = x => Math.min(100, x / Math.max(target, withThese) * 100);
   const chips = [
     toCheck.length ? `<button type="button" class="iss" data-ld-goto="${toCheck[0].id}"><span class="g" aria-hidden="true">!</span>${toCheck.length} to check</button>` : '',
     ov.size ? `<button type="button" class="iss" data-ld-goto="${[...ov.keys()][0]}"><span class="g" aria-hidden="true">!</span>${Math.ceil(ov.size / 2)} ${ov.size > 2 ? 'overlaps' : 'overlap'}, ${dur(Math.round(ovMin))}</button>` : '',
+    nFlags ? `<button type="button" class="iss" data-ld-goto="${flagged[0].id}" title="Things to fix in Productive: a closed task, no budget on this date, no estimate"><span class="g" aria-hidden="true">!</span>${nFlags} ticket ${nFlags === 1 ? 'flag' : 'flags'}</button>` : '',
     T.notCovered ? `<span class="iss ok" title="Active time no entry covers, logged or proposed">${dur(T.notCovered)} not covered</span>` : '',
     T.over ? `<span class="iss ok" title="More than your active time and meetings: shown, never placed">${dur(T.over)} over the day</span>` : '',
   ].join('');
@@ -209,7 +213,7 @@ function renderReview() {
       <div class="rv-sum"><b>${dur(T.minutes)}</b> ticked in ${n} ${n === 1 ? 'entry' : 'entries'} · ${dur(T.billable)} billable · ${dur(T.logged)} logged</div>
       <div class="rv-bar" role="img" aria-label="${esc(`${dur(withThese)} with these, against a target of ${dur(target)}`)}"><i class="lg" style="width:${pct(T.logged)}%"></i><i class="pp" style="width:${pct(T.minutes)}%"></i></div>
       <div class="rv-bl"><span>${dur(withThese)} with these</span><span>target ${dur(target)}</span></div>
-      <div class="rv-iss">${chips}</div>${askLine}${testNote}${historyNote}</div>
+      <div class="rv-iss">${chips}</div>${askLine}${testNote}${historyNote}${cuStrip()}</div>
     ${results}
     ${empty || `<ul class="rv-list" aria-label="Proposed entries">${items.map(x => x.html).join('')}${skipped}</ul>`}
     <div class="rv-f">${LD.writing
@@ -235,7 +239,7 @@ function rowHTML(r, overlaps) {
   for (const o of overlaps || []) warn.push(`Overlaps ${esc(o.with)} for ${dur(o.minutes)}`);
   const quiet = [];
   if (!r.taskId) quiet.push('No task: pick one to log it.');
-  else if (!r.serviceId) quiet.push(r.serviceProblem ? `No service: ${r.serviceProblem}` : 'No service that takes time on this date: pick one.');
+  else if (!r.serviceId && !r.ticket?.some(f => f.kind === 'nobudget')) quiet.push(r.serviceProblem ? `No service: ${r.serviceProblem}` : 'No service that takes time on this date: pick one.');
   if (r.flags.includes('agent')) quiet.push("Claude's agent ran while you did something else: unticked.");
   if (r.flags.includes('unattended')) quiet.push('No call was seen: unticked.');
   if (r.claudeNone) quiet.push("Claude found no task for this work: Pulsar's guess stays. Check it.");
@@ -253,7 +257,16 @@ function rowHTML(r, overlaps) {
       ${warn.map(w => `<span class="e-warn">! ${w}</span>`).join('')}
       ${quiet.map(w => `<span class="e-warn neutral">${esc(w)}</span>`).join('')}
     </button>
+    ${ticketLine(r)}
     ${open ? editorHTML(r) : ''}</li>`;
+}
+
+/* the row's ticket flags (pulsar/flags.py), read only: what to fix in Productive, and the link to the task there.
+   Outside the row's button, since a link cannot sit inside one. */
+function ticketLine(r) {
+  if (!r.ticket?.length) return '';
+  const url = productiveTaskURL(r.taskId);
+  return `<p class="e-flags">! ${r.ticket.map(f => esc(f.text)).join(' · ')}${url ? ` · <a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open in Productive</a>` : ''}</p>`;
 }
 
 /* ---------- the editor of the open row ---------- */
@@ -278,7 +291,7 @@ function editorHTML(r) {
       ${svcs.map(x => `<option value="${esc(x.id)}"${x.id === r.serviceId ? ' selected' : ''}>${esc(x.name)}${x.budget ? ' · ' + esc(x.budget) : ''}${x.billable ? ' · billable' : x.billable === false ? ' · not billable' : ''}</option>`).join('')}
     </select></label>
     <div class="tl"><label class="field"><span>Start</span><input type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="5" placeholder="HH:MM" title="24-hour time, HH:MM" data-ld-start value="${hm(r.s)}"></label>
-      <label class="field"><span>Minutes</span><input type="number" min="5" max="720" step="5" data-ld-min value="${r.minutes}"></label>
+      <label class="field"><span>Minutes</span><input type="number" min="${CONFIG?.roundTo || 5}" max="720" step="${CONFIG?.roundTo || 5}" data-ld-min value="${r.minutes}"></label>
       <span class="endt">until ${hm(r.s + r.minutes)}</span></div>
     <label class="field"><span>Note</span><textarea rows="2" data-ld-note placeholder="What was done: the outcome, in a sentence">${esc(r.note || '')}</textarea></label>
     <p class="hint">${noteHint(r)}</p>
@@ -334,13 +347,15 @@ function ldOpen(id, scroll = false) {
 async function ldSetTask(r, t) {
   if (LD.writing) return;
   Object.assign(r, {taskId: String(t.taskId), title: t.title || '', project: t.project || '', serviceId: null, service: '',
-                    services: [], billable: null, edited: true, opened: true, source: 'you', why: 'picked by you', confidence: 'high'});
+                    services: [], billable: null, edited: true, opened: true, source: 'you', why: 'picked by you', confidence: 'high',
+                    ticket: []});  // the new task's flags come with its services
   r.flags = r.flags.filter(f => !['notask', 'low', 'noservice'].includes(f));
   if (r.noteFrom === 'claude' && !r.noteEdited) { r.note = ''; r.noteFrom = ''; }  // Claude wrote it for another task
   renderReview(); render();
-  const [list, sug] = await Promise.all([getJSON(`/api/services?task=${r.taskId}&date=${LD.date}`), suggestions(LD.date)]);
+  const [list, sug] = await Promise.all([getJSON(`/api/services?task=${r.taskId}&date=${LD.date}&flags=1`), suggestions(LD.date)]);
   if (r.taskId !== String(t.taskId)) return;
   if (list.error) { r.serviceProblem = list.error; renderReview(); return; }
+  r.ticket = list.flags || [];
   r.services = (list.services || []).map(x => ({id: x.id, name: (x.name || '').trim(), budget: x.budget || '', billable: x.billable}));
   const recent = (sug.recent || []).find(x => x.taskId === r.taskId);
   const pick = r.services.find(x => x.id === recent?.serviceId)

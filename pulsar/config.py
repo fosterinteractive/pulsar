@@ -51,7 +51,10 @@ DEFAULTS = {
     "calendar_account": "",      # the Google account whose calendar is connected (its email), shown in Settings
     "preview_writes": False,     # Pulsar Preview only: may it write to Productive (off by default)
     "claude_rules_added": [],    # the "ask" rules Pulsar added to Claude Code's settings (claudelink.py), to take back
+    "round_to": 5,               # 5 | 10 | 15 minutes: Log the day's grid and shortest entry, the log dialog's minutes
 }
+
+ROUNDING = (5, 10, 15)
 
 
 def is_preview() -> bool:
@@ -141,6 +144,8 @@ def _fits(key: str, value) -> bool:
         return value in ("sonnet", "haiku", "opus")
     if key == "productive_source":
         return value in ("auto", "token", "claude-code")
+    if key == "round_to":
+        return not isinstance(value, bool) and value in ROUNDING
     if key in ("personal_patterns", "claude_rules_added"):
         return isinstance(value, list) and all(isinstance(p, str) for p in value)
     return type(value) is type(DEFAULTS[key])

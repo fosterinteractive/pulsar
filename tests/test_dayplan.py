@@ -384,8 +384,8 @@ class GatherClockChangeTest(unittest.TestCase):
         rows = [{"s": 60, "e": 180, "minutes": 120, "project": "night", "kind": "focused", "titles": ["n"], "tasks": []},
                 {"s": 480, "e": 600, "minutes": 120, "project": "day", "kind": "focused", "titles": ["d"], "tasks": []}]
 
-        def plan(d, ctx):
-            got["rows"] = d["rows"]
+        def plan(d, ctx, opts=None):
+            got["rows"], got["opts"] = d["rows"], opts
             return {"entries": [], "unplaced": [], "skipped": [], "uncovered": [], "totals": {}}
         with mock.patch.object(server, "current_settings", lambda: s), \
                 mock.patch.object(dayplan.config, "tz", lambda s: tz), \
@@ -404,6 +404,7 @@ class GatherClockChangeTest(unittest.TestCase):
             dayplan.gather("2026-03-08")
         self.assertEqual([(r["s"], r["e"]) for r in got["rows"]], [(60, 180), (540, 660)])  # by the clock, real length
         self.assertEqual([r["pick_s"] for r in got["rows"]], [60, 480])  # Ask Claude's names stay as they were
+        self.assertEqual(got["opts"], {"grid": 5, "min_entry": 10})  # no "Round entries to" saved: today's grid
 
 
 class JournalTest(unittest.TestCase):

@@ -18,6 +18,7 @@ function fillSettings(c) {
   f.timezone.placeholder = `This computer's: ${c.timezoneSystem || 'its UTC offset'}`;
   f.target_hours.value = c.targetHours ?? '';
   f.target_hours.placeholder = c.personDayHours ? `${c.personDayHours}, from Productive` : '8';
+  f.round_to.value = String(c.roundTo || 5);
   f.personal_patterns.value = (c.personalPatterns || []).join('\n');
   f.activitywatch_url.value = c.activitywatchUrl || '';
   f.likely.value = c.likely.setting === 'off' ? 'off' : 'auto';
@@ -174,7 +175,8 @@ async function saveSettings(extra = {}) {
   }
   const body = {
     productive_source: f.productive_source.value, org_id: f.org_id.value.trim(), person_id: f.person_id.value.trim(),
-    timezone: f.timezone.value.trim(), target_hours: f.target_hours.value.trim(), personal_patterns: f.personal_patterns.value,
+    timezone: f.timezone.value.trim(), target_hours: f.target_hours.value.trim(), round_to: +f.round_to.value,
+    personal_patterns: f.personal_patterns.value,
     activitywatch_url: f.activitywatch_url.value.trim(), likely: f.likely.value, ask_claude: f.ask_claude.checked,
     ask_claude_model: f.ask_claude_model.value, ...(CONFIG?.preview ? {preview_writes: f.preview_writes.checked} : {}), ...extra,
   };

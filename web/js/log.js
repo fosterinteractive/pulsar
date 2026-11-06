@@ -124,7 +124,7 @@ function makePicker(listEl, searchEl, onPick) {
 const logDlg = $('#logdlg'), logForm = $('#log-form');
 let logForce = false;
 const setLogMsg = (text, warn = false) => { const m = $('#log-msg'); m.textContent = text; m.className = 'msg' + (warn ? ' warn' : ''); };
-const logPicker = makePicker($('#log-tasks'), logForm.elements.q, t => { resetForce(); loadServices(t); showDraft(); showTaskLink(t); });
+const logPicker = makePicker($('#log-tasks'), logForm.elements.q, t => { resetForce(); showFlags(null); loadServices(t); showDraft(); showTaskLink(t); });
 /* a drafted note until the person edits it: Claude's (Ask Claude, then Log on a Likely block) {note, taskId, title},
    or one from their commits {note, from: 'commits'} */
 let logDrafted = null;
@@ -197,18 +197,41 @@ async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = 
   // its own length: the dialog never moves it by itself
   start = edit ? Math.max(0, Math.min(1439, Math.floor(start))) : Math.max(0, Math.min(1435, Math.round(start)));
   minutes = Math.max(1, Math.min(1440 - start, Math.round(minutes)));
+  if (!edit) minutes = roundMinutes(date, start, minutes);
   f.date.value = date; f.start.value = hm(start); f.minutes.value = minutes; f.note.value = note || '';
   if (edit) edit.orig = {start: f.start.value, minutes, note: f.note.value};
   logDrafted = drafted?.note && drafted.note === note ? drafted : null;
   logFilled = !edit && !logDrafted && !!f.note.value.trim();
   f.service.innerHTML = '<option value="">Pick a task first</option>'; f.service.disabled = true;
   logForce = false; setLogMsg(''); $('#log-save').textContent = edit ? 'Save changes' : 'Log in Productive';
-  noStartHint(date);
+  noStartHint(date); showFlags(null);
   prepareNext(date, edit); showTaskLink(null);  // flow.js
   logDlg.showModal();
   logPicker.loading();
   showDraft();
   fillSuggestions(date, hint, lead);
+}
+
+/* a block's minutes on the step of Settings' "Round entries to" (5, 10 or 15): the nearest step, at least one. When
+   rounding up would run into an entry already logged that day, down instead; a block shorter than one step that
+   would still run into it keeps its own minutes. Minutes typed in the dialog are never rounded. */
+function roundMinutes(date, start, minutes) {
+  const step = CONFIG?.roundTo || 5;
+  let m = Math.max(step, Math.round(minutes / step) * step);
+  if (m > minutes) {
+    const next = date === state.date ? Math.min(1440, ...(state.logged?.entries || []).filter(x => x.s != null && x.s > start).map(x => x.s)) : 1440;
+    if (start + m > next) m = Math.floor(minutes / step) * step || minutes;
+  }
+  return Math.max(1, Math.min(m, 1440 - start));
+}
+
+/* the picked task's ticket flags (pulsar/flags.py): closed, no budget on the date, no estimate where the project's
+   tasks have one. Read only: one quiet line, and a link to fix it in Productive. */
+function showFlags(task, flags) {
+  const el = $('#log-flags'), url = productiveTaskURL(task?.taskId);
+  el.hidden = !flags?.length;
+  el.innerHTML = flags?.length ? '! ' + flags.map(f => esc(f.text)).join(' · ')
+    + (url ? ` · <a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open in Productive</a>` : '') : '';
 }
 
 /* entries of that day with no start time: the overlap check cannot see them, so say they are there (it is how a
@@ -246,8 +269,9 @@ async function fillSuggestions(date, hint, lead = null) {
 async function loadServices(task) {
   const f = logForm.elements, date = f.date.value;
   f.service.disabled = true; f.service.innerHTML = '<option value="">Loading services…</option>';
-  const r = await getJSON(`/api/services?task=${task.taskId}&date=${date}`);
+  const r = await getJSON(`/api/services?task=${task.taskId}&date=${date}&flags=1`);
   if (logPicker.selected?.taskId !== task.taskId || f.date.value !== date) return;  // a newer choice is loading
+  showFlags(task, r.flags);
   // an entry edited on its own task keeps its service, even one that takes no new time on this date: never another
   // picked for it
   const own = logEdit && task.taskId === logEdit.taskId && logEdit.serviceId
@@ -256,7 +280,11 @@ async function loadServices(task) {
   let list = r.services || [];
   const ownGone = own && !list.some(x => x.id === own.id);
   if (ownGone) list = [{...own, gone: true}, ...list];
-  if (!list.length) { f.service.innerHTML = ''; setLogMsg("No service of this task's project takes time on this date. Ask the project's PM.", true); return; }
+  if (!list.length) {  // the flag line says so (no budget on this date), with the link to Productive
+    f.service.innerHTML = '<option value="">None takes time on this date</option>';
+    if (!r.flags?.some(x => x.kind === 'nobudget')) setLogMsg("No service of this task's project takes time on this date. Ask the project's PM.", true);
+    return;
+  }
   // the service you used last on this task; else one of the same name in a newer budget; else the task's own
   const recent = (await suggestions(date)).recent?.find(t => t.taskId === task.taskId);
   if (logPicker.selected?.taskId !== task.taskId || f.date.value !== date) return;

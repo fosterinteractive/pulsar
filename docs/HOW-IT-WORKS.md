@@ -197,7 +197,8 @@ project, budget, billable, billing}`.
   minutes.
 - **Names** of projects, budgets, services and tasks are cached in `~/.cache/pulsar/names.json`, with when each was
   read. A name or billing type is read again once it is a week old (a billing type the role could not see, after a
-  day); until then the old one is shown. A failed re-read keeps the old one and tries again a day later.
+  day); until then the old one is shown. A failed re-read keeps the old one and tries again a day later. The same
+  file keeps how many of a project's recent tasks have an estimate, for the ticket flags (5.3), read again after a day.
 - **Billable**: Productive hides the billing fields from some roles but still filters on them. So Pulsar lists each
   deal's services once per billing type and remembers which type each service is. Billable means Fixed price, Time
   and materials or Percentage. Unknown stays unknown (grey on the page), never guessed.
@@ -286,7 +287,12 @@ time that is not one is refused before anything is sent). A note Pulsar filled i
 usual note, says "Filled in for you: clients may see notes on invoices; check it" until it is edited. On a Likely
 block with commits of yours, the note is drafted from them (below), with "From your commits: check it before logging;
 clients may see notes"; a note Ask Claude drafted comes first. The picked task has an **Open in Productive** link (see
-5.2b for where its address comes from).
+5.2b for where its address comes from), and under the task list its ticket flags, if it has any (5.3).
+
+The minutes of a block (a stretch of the rail, an Activity, Likely or meeting block, a drag) are rounded to Settings'
+**Round entries to** (5, 10 or 15 minutes): to the nearest step, and at least one step. When rounding up would run into
+an entry already logged that day, they are rounded down instead, and a block shorter than one step that would still
+run into it keeps its own minutes. Minutes typed in the dialog, and an entry being changed, are never rounded.
 
 **Notes from commits** (`commits.py`). For each Likely row the page shows (not the 60 past days learning reads), the
 repositories its Claude sessions worked in during the row (the session's folder and the paths its tools named), kept
@@ -334,6 +340,31 @@ approval, Productive approves every entry at once and its author can still chang
 it, Productive refuses and the page shows why. With
 `PULSAR_READ_ONLY` every change is refused at the lowest level, like any write.
 
+### 5.3 Ticket flags (`pulsar/flags.py`)
+
+The log dialog (for the picked task, under the task list) and Log the day (under each row, and their number among the
+chips of the summary) show one quiet line when Productive says something about a task that someone should fix there:
+
+- **Closed in Productive**: the task is closed (its `closed_at`, read with the task).
+- **No service takes time on 6 Nov: no budget for it**: no service of the task's project takes time on that date
+  (`bookable_services` is empty).
+- **No estimate, while 19 of the project's 55 recent tasks have one**: the task has none (or 0), and a quarter or more,
+  and at least two, of the project's 100 most recently active tasks have one. Estimates are rare in most projects (on
+  one person's 14 projects, 0 to 35% of the recent tasks had one), so flagging every task without one would put a flag
+  on nearly every row.
+
+Each line links to the task in Productive (the address of 5.2b). Pulsar only reads: it never closes, estimates or
+budgets anything, and a flag never unticks a row of Log the day. The closed state comes with the task Pulsar already
+reads (`task_details`); the project's share is one more read per project (`productive.project_estimates`), kept in
+`names.json` as `estimates:projects:<id>` and read again after a day. A failed read keeps the old answer and asks
+again an hour later; with no answer kept, there is no flag. `GET /api/services` adds the flags only with `flags=1`
+(the page): Claude Code's tools never pay for that read. Log the day reads each project once, before its rows.
+
+**No flag for a budget nearly used up.** Productive gives a budget's totals and usage only to roles with "View
+budgets where a user is a member" (`budgets_view_restricted`). For a Staff role, checked in November 2026 through
+Pulsar's own read functions: budgets cannot be loaded at all, the budget and service reports are refused, and a
+service's `budget_total`, `budget_used`, `budgeted_time`, `worked_time` and `quantity` come back empty.
+
 ### 5.4 Log the day (`pulsar/dayplan.py`, `web/js/logday.js`)
 
 **Log the day** in the Logged column proposes the whole day at once and opens a review: the Likely column steps
@@ -360,7 +391,9 @@ Pieces of one task in one sitting join, pieces under 10 minutes join a neighbour
 keeps its own time, so nothing before it joins it), boundaries go on a 5-minute grid, a personal window's minutes are
 never in an entry, nothing overlaps an entry already logged, and **proposed plus logged never exceeds active time plus
 attended meetings**: the rest is listed as not placed, never placed (what the cap leaves under 10 minutes goes with
-it). A row's task comes from, in this order: a rule, a task link pasted in the session, a ticket key in the title, the
+it). The grid and the shortest entry follow Settings' **Round entries to** (`dayplan.opts_for`): 5 minutes keeps the
+5-minute grid and the 10-minute shortest entry, 10 gives 10 and 10, 15 gives quarter hours and 15. Each row shows its
+ticket flags (5.3). A row's task comes from, in this order: a rule, a task link pasted in the session, a ticket key in the title, the
 tasks logged in the same session, then the same repository (votes from the last 60 days, older days counting half
 every 7 days), the same session earlier that day, and task names that share words with the work (your own name and
 common words such as "not" and "the" do not count). A session's task does not carry over to another client's
@@ -417,6 +450,18 @@ for 38% of them (37% of the proposed minutes). By confidence, right at that time
 minutes. Repeats were the surest source (78% at the right time), calendar meetings the weakest (16%), so most start
 unticked. Most of the rest is tasks new that day (14% of the logged minutes), sessions that moved between tasks, and
 time logged when the tracker saw nothing (8%).
+
+### 5.4b Catching up on earlier days (`web/js/catchup.js`)
+
+**Earlier days…** in Log the day's title row lists the last 7 workdays before today (Monday to Friday; **Show 7
+earlier days** gives 14), each with the active time no entry covers, and its logged and active time, from
+`/api/report` (the Report's own numbers). Days with 30 minutes or more left start ticked; a day with under 5 cannot be
+ticked. **Review N days** opens the oldest first: the Day view moves to it and Log the day opens on it exactly as if
+opened there by hand, with its own plan, review, confirm step, journal and Undo. A line under the summary says which
+day of how many it is and how much this catch-up has logged so far (what each day's runs logged, less what Undo took
+back), with **Next day** (**Finish** on the last). The catch-up writes nothing itself: each day is written only from
+its own confirm step, one entry at a time, and moving on writes nothing. Closing Log the day, or going to another
+day, ends it.
 
 ### 5.5 Where the suggestions come from
 
@@ -688,7 +733,7 @@ estimate, and a table of every day. A day's bar and its row in the tables open t
 | `~/.config/pulsar/google_client.json` | Only on the releaser's Mac: the real Google client. |
 | Keychain, service `pulsar` | `productive` (API token), `google-calendar` (refresh token). |
 | `~/.cache/pulsar/days/<person>/` | The last copy of each day's entries (120 days). |
-| `~/.cache/pulsar/names.json` | Names of projects, budgets, services, tasks; billing types; when each was read. |
+| `~/.cache/pulsar/names.json` | Names of projects, budgets, services, tasks; billing types; how many of a project's recent tasks have an estimate (5.3); when each was read. |
 | `~/.cache/pulsar/likely-days/` | Past days' Likely rows for learning: times, repository, title hashes. |
 | `~/.cache/pulsar/logday-journal.json` | Log the day: each row a run sent, before it was sent, and what came of it (31 days). |
 | `~/.cache/pulsar/logs/` | The error log, one JSON line per event, 31 days; tokens, keys, OAuth codes, signed addresses and long opaque strings removed. |
@@ -755,7 +800,7 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `GET /api/repeats?date=&source=` | Repeats seen today. |
 | `GET /api/meeting-tasks?date=&uid=&title=` | A meeting's tasks. |
 | `GET /api/tasks/suggest?date=` | Recent and assigned tasks. `/api/tasks/search?q=`, `/api/tasks/estimates?ids=`. |
-| `GET /api/services?task=&date=` | Services that take time on that date. |
+| `GET /api/services?task=&date=[&flags=1]` | Services that take time on that date; with `flags=1`, the task's ticket flags (5.3). |
 | `GET /api/report?from=&to=` | A range in numbers. |
 | `GET /api/logs?days=`, `/api/logs/download` | The error log. |
 | `GET /api/changelog`, `/api/version`, `/api/whoami?nonce=` | Changelog; version (public); proof of the key (public). |
@@ -785,7 +830,10 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 - **`flow.js`** (and `flow.css`): Log and next, the start as `HH:MM`, links to Productive, the first-run checklist,
   the week in the header, report days that open the Day view, and where a day opens. `day.js` and `log.js` call it
   at a few places marked "flow.js".
-- **`logday.js`** (and `logday.css`): Log the day, its review panel, the confirm step, the run and Undo.
+- **`logday.js`** (and `logday.css`): Log the day, its review panel, the confirm step, the run and Undo, and the
+  ticket flags of each row.
+- **`catchup.js`**: Earlier days in Log the day (5.4b), its list of workdays and the line that moves on to the next
+  day. `logday.js` calls it at four places (`cuRender`, `cuButton`, `cuStrip`, `cuClosed`).
 - **`ask.js`** (and `ask.css`): Ask Claude while it works. The button turns into a small pulsar (beams sweep its
   edge, a glow breathes, Claude's mark flashes), the Likely header says what is going on by the time only, and the
   blocks that got a task are lit once. `day.js` calls `askStart()` and `askEnd()` around the request. CSS on transform
@@ -837,7 +885,9 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 - The REST token path has not been tried against real Productive yet; everyone so far uses Claude Code's connection.
   Its task filters are checked again on what comes back (open tasks only where asked, the words of a search), so a
   filter Productive ignored costs suggestions, not wrong ones. The daily target from the organization is read only
-  through Claude Code's connection; with a token it is 8 h unless set in Settings.
+  through Claude Code's connection; with a token it is 8 h unless set in Settings. Through a token, the "no estimate"
+  flag counts the project's first 100 tasks as Productive lists them, not the most recently active.
+- No ticket flag for a budget nearly used up: Productive does not show budgets to a Staff role (5.3).
 - The app is ad-hoc signed, not with an Apple Developer ID: macOS asks for confirmation on first open (Open Anyway).
 - The reserve release key has not been created yet.
 - ActivityWatch's AFK timeout decides what counts as a break: with 30 minutes, shorter breaks are not seen.

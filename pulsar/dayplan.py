@@ -17,8 +17,9 @@ How each minute of the day is placed (the first claim wins):
 
 Then the pieces of one task in one sitting join, short ones join a neighbour close by in the same sitting (never
 across an entry already logged, and nothing before a meeting someone attended joins it: it keeps its own time),
-boundaries go on a 5-minute grid, nothing overlaps an entry already logged, and the total is capped: proposed plus
-logged never exceeds active time plus attended meetings. What does not fit is shown in `unplaced`, never placed.
+boundaries go on a grid (5 minutes, or Settings' "Round entries to": opts_for), nothing overlaps an entry already
+logged, and the total is capped: proposed plus logged never exceeds active time plus attended meetings. What does not
+fit is shown in `unplaced`, never placed.
 
 Notes are never written from session text: only a meeting's title, a repeat's usual note, a note Claude drafted
 (Ask Claude) for that task, or the subjects of the person's own commits in the work (commits.py), each marked so the
@@ -38,8 +39,8 @@ from datetime import datetime, timedelta
 
 from . import commits as git_commits, config
 
-GRID = 5             # entry boundaries on this grid, in minutes
-MIN_ENTRY = 10       # shorter pieces join a neighbour
+GRID = 5             # entry boundaries on this grid, in minutes (Settings: "Round entries to", opts_for)
+MIN_ENTRY = 10       # shorter pieces join a neighbour (never shorter than the grid)
 MERGE_GAP = 30       # pieces of one task this close, in one sitting, are one entry
 OUT_MIN = 10         # active minutes outside Claude from this long become an entry of their own
 SITTING_GAP = 30     # minutes without activity that end a sitting
@@ -67,6 +68,14 @@ GENERIC = {"the", "and", "for", "with", "drupal", "site", "website", "issues", "
 CONF_WORDS = {"high": "likely right", "medium": "probably right", "low": "check"}
 FIT_SHARE = 0.25     # a project with less of a repository's logged time than this is another client's there
 FIT_MIN = 60         # minutes of a repository's (fading) votes before its projects say anything
+
+
+def opts_for(settings: dict) -> dict:
+    """plan()'s grid and shortest entry from Settings' "Round entries to" (5, 10 or 15 minutes): 5 keeps today's 5 and
+    10; 10 gives 10 and 10; 15 gives 15 and 15."""
+    step = settings.get("round_to")
+    step = step if step in config.ROUNDING and not isinstance(step, bool) else GRID
+    return {"grid": step, "min_entry": max(MIN_ENTRY, step)}
 
 
 def words(text: str, skip: frozenset = frozenset()) -> set:
@@ -820,6 +829,21 @@ def _bookable(task: str, date: str, settings: dict) -> dict:
     return got
 
 
+def ticket_flags(entries: list, found: dict, date: str, settings: dict) -> None:
+    """Each entry's ticket flags (flags.py) in "ticket": the task closed, no budget on the date, no estimate where the
+    project's tasks have them. Read only, and never a reason to untick: the person decides. found: task id ->
+    (bookable_services answer or None, error)."""
+    from concurrent.futures import ThreadPoolExecutor
+    from . import flags
+    projects = sorted({str(((b or {}).get("task") or {}).get("projectId") or "") for b, _ in found.values()
+                       if b and not (b.get("task") or {}).get("estimate")} - {""})
+    with ThreadPoolExecutor(4) as pool:  # read once per project here (kept a day), so each row below finds it
+        list(pool.map(lambda pid: flags.project_share(pid, settings), projects))
+    for e in entries:
+        b = (found.get(e["taskId"]) or (None, None))[0] if e.get("taskId") else None
+        e["ticket"] = flags.for_task(b.get("task"), b.get("services"), date, settings) if b else []
+
+
 def gather(date: str, source: str = "auto", ignore_logged: bool = False) -> dict:
     """The proposal for `date` from Pulsar's live data. ignore_logged (test servers only) plans as if nothing were
     logged that day, to show a whole proposal on a day already logged."""
@@ -904,7 +928,9 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False) -> dict
            "meetings": meetings, "repeats": got["repeats"].get("repeats") or [], "calls": calls,
            "rules": s.get("rules") or [], "assigned": got["assigned"], "picks": (answer or {}).get("picks") or {},
            "gone": server.missing_hour(t0, t1, tz)}
-    result = plan(day, ctx)
+    opts = opts_for(s)
+    result = plan(day, ctx, opts)
+    result["roundTo"] = opts["grid"]
 
     # the service of each task, checked against what takes time on that date
     tasks = sorted({e["taskId"] for e in result["entries"] if e["taskId"]})
@@ -941,6 +967,7 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False) -> dict
             e["serviceId"] = None
             e["checked"] = False
             e["flags"].append("noservice")
+    ticket_flags(result["entries"], found, date, s)
     for e in result["entries"]:
         for a in e["alts"]:
             if not a["title"] and a["taskId"] in found and found[a["taskId"]][0]:
