@@ -118,7 +118,8 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
     try:
         done = run([binary, "-p", "--model", model, "--no-session-persistence", "--output-format", "json",
                     "--json-schema", json.dumps(SCHEMA), "--max-budget-usd", str(BUDGET[model]),
-                    "--tools", "", "--allowedTools", ",".join(READ_TOOLS), "--disallowedTools", ",".join(WRITE_TOOLS)],
+                    "--tools", "", "--permission-mode", "dontAsk",  # nothing outside --allowedTools can run
+                    "--allowedTools", ",".join(READ_TOOLS), "--disallowedTools", ",".join(WRITE_TOOLS)],
                    input=prompt, capture_output=True, text=True, timeout=TIMEOUT, cwd=config.CACHE_DIR)
     except subprocess.TimeoutExpired:
         raise AskError("Claude took too long to answer. Try again later.") from None

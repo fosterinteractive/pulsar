@@ -328,8 +328,11 @@ def _claude_code_token() -> tuple:
     all, so its problem (an expired token) is worth showing even when Pulsar was not asked to use it."""
     if sys.platform != "darwin":
         return None, "Claude Code's Productive connection is read from the macOS keychain; use a token instead.", False, False, ""
-    run = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
-                         capture_output=True, text=True, timeout=15)
+    try:
+        run = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
+                             capture_output=True, text=True, timeout=15)
+    except subprocess.TimeoutExpired:
+        return None, "The keychain did not answer when Pulsar asked for Claude Code's Productive connection.", False, False, ""
     try:
         servers = json.loads(run.stdout).get("mcpOAuth", {})
     except ValueError:
