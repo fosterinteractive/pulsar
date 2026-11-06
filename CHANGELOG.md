@@ -7,9 +7,11 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Pulsar in Claude Code: the tools are answered inside Pulsar; the key alone opens nothing else and writes only previewed entries, marked "from Claude Code".
+- Pulsar in Claude Code: errors are fixed phrases, and a note in the summary cannot pass for another entry.
 - A full budget and a closed service are said in plain words when Productive refuses an entry.
 - Log dialog: an End time, kept in step with Start and Minutes; an entry cannot run past midnight.
-- Pulsar in Claude Code: reasons are fixed phrases only, names are cleaned, and no model-written note is returned.
+- Pulsar in Claude Code: reasons are fixed phrases only, names are cleaned, and Ask Claude's note drafts come back only when safe.
 - Log dialog: time that runs into an entry already logged can be logged around it, as one or more entries.
 - Logging from the yellow rail, a drag, + Log or Log and next drafts the note too, from the Likely work in that time.
 - A dragged or picked stretch leads with Log the day's task and note for its main work, and offers a split when it mixes work.

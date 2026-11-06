@@ -67,9 +67,10 @@ sequenceDiagram
    the script's folder on `sys.path`. `pulsar.py` puts its own folder there itself.
 3. **Rollback.** If the new `current` does not answer, the launcher writes it into `bad-versions` (never used again)
    and starts `previous`.
-4. **Is it ours?** Before it opens anything, the launcher asks `/api/whoami?nonce=` and checks the HMAC of the nonce
-   made with this user's key (`~/.config/pulsar/secret`). A server another account or a container started on the same
-   port fails this check.
+4. **Is it ours?** Before it opens anything, the launcher asks `/api/whoami?nonce=` and checks the HMAC made with this
+   user's key (`~/.config/pulsar/secret`) of the nonce and the port it asked on. A server another account or a
+   container started on the same port fails this check, and so does one that passes the question on to this user's
+   Pulsar on another port (section 3).
 5. **Signing the window in.** The launcher writes a one-time code to `~/.config/pulsar/signin-code` and prints the
    address with it. The page trades the code for a session token (`POST /api/session`). The code works once and only
    for two minutes, and a wrong guess does not spoil it.
@@ -94,25 +95,62 @@ yours.
   may open the page (a navigation to `/`), and nothing more.
 - **Signed in.** Everything with data needs a session token in the `X-Pulsar-Session` header. The page keeps it in
   localStorage, which no other site or port can read. The server keeps only its SHA-256, in
-  `~/.config/pulsar/sessions.json`, valid 90 days from last use. The launcher and Pulsar in Claude Code (5.6) prove
-  themselves with `X-Pulsar-Key` (the key itself). Public without a session: `/`, `/index.html`, `/static/…`,
-  `/api/version` and `/api/whoami`.
-- **What the key alone opens** (`server.key_refusal`). The key is a file any program of the person's can read, a
-  Claude Code session too (in bypass mode it needs no prompt to `cat` it). So on its own it opens only what its two
-  holders need: every GET (reading), `POST /api/quit` (the launcher), and `POST /api/log` as `pulsar_log` sends it:
-  inside a Log the day run (`run` and `row`, so the entry is journalled, never sent twice, listed with Undo) and never
-  with `force` or `pieces` (the dialog's, 5.1), so the overlap check always holds. Everything else is refused with
-  403 and needs the page's session: changing or deleting an entry, settings (the token, `preview_writes`, the Claude
-  Code switch), updates, Ask Claude, the session note, Google Calendar, Productive's test.
+  `~/.config/pulsar/sessions.json`, valid 90 days from last use. The page's session opens everything. Public without
+  a session: `/`, `/index.html`, `/static/…`, `/api/version` and `/api/whoami`. The launcher and Pulsar in Claude Code
+  (5.6) prove themselves with `X-Pulsar-Key` (the key itself), which opens far less (below).
+- **What the key alone opens** (`server.key_refusal`). The key (`~/.config/pulsar/secret`) is a file any program of
+  the person's can read, a Claude Code session too (in bypass mode it needs no prompt to `cat` it). So on its own it
+  opens only what its two holders need, and no read of the day as the page sees it:
+  - `POST /api/quit`, for the launcher;
+  - `POST /api/mcp/<tool>`, for Pulsar in Claude Code (5.6). Each tool's answer is computed in the server
+    (`pulsar/mcptools.py`) exactly as the tool returns it, already cut down: names through `name_out`, reasons as
+    fixed phrases (`reason`), repositories through `Places`, flags from a fixed list, Pulsar's and Productive's errors
+    as fixed phrases (`error_out`). So the key reads what the tools show and nothing more: no window titles, apps,
+    addresses, typed messages, meeting titles, notes of logged entries, rules, Logs or settings. Each tool has a rate
+    limit (60 calls a minute; `pulsar_preview` 20, `pulsar_log` 10), and every date is between 120 days ago and today;
+  - one write, `pulsar_preview` then `pulsar_log`. The preview checks every entry (services, the note through
+    `guard_note`, at most 200 characters, no double quotation mark, no character nobody sees, Pulsar's own dry run)
+    and keeps the entries, the run and Pulsar's summary in the server, under a code of 16 hex characters: the caller
+    holds neither. `pulsar_log` takes that code, exactly, and that summary, word for word, and no other argument. It
+    writes new entries only, as a Log the day run (journalled, never sent twice, never `force`, never the dialog's
+    pieces), and the journal marks each row `via: "claude-code"`: the Logged column says "from Claude Code" on those
+    entries (`server.from_claude_code`).
+
+  Everything else with the key alone is refused with 403: every GET with data (`/api/entries`, `/api/activity`,
+  `/api/config`, `/api/logs`, icons, …), `POST /api/log`, changing or deleting an entry, settings (the token,
+  `preview_writes`, the Claude Code switch), updates, Ask Claude, the session note, Google Calendar, Productive's test.
+- **Is it this user's Pulsar, on this port?** `/api/whoami?nonce=` answers `proof1`, the HMAC of
+  `whoami-v1|<port>|<nonce>` with the key, for the port the server listens on. The launcher (`is_ours`) and Pulsar in
+  Claude Code check it with their own port before they show a sign-in code or the key, so a program on the port that
+  passes the question on to this user's Pulsar on another port gets an answer for the wrong port. The server also
+  answers `proof`, the older HMAC of the nonce alone: the launcher inside a Pulsar.app of 1.4.0 or earlier checks a
+  server that has updated itself since. The launcher accepts that older form only when the answer has no `proof1` (a
+  Pulsar of 1.4.0 or older, during an update) and the listener on the port is a `pulsar.py` process of this user: lsof
+  shows no other account's process, and a program of this user could read the key anyway. Pulsar in Claude Code never
+  accepts it: an older Pulsar has no `/api/mcp/` routes.
 - **What a program of the person's can still do.** This is not a wall between the person's own programs and Pulsar,
-  and nothing on one account can be. Such a program can log new entries with the key as above (a Claude Code session
-  in bypass mode or with a prompt injection can therefore log time without the `pulsar_log` prompt); it can write a
-  sign-in code into `~/.config/pulsar/signin-code` and trade it for a session (`POST /api/session`), or read the
-  window's token from its WebKit storage, and then do anything the page does; and it can read the keychain items,
-  which `/usr/bin/security` created and so trusts. A confirmation click in Pulsar's window for writes made with the
-  key was considered and left out: a program that can do all this can also click it through the API, and every
-  write from Claude Code would ask twice. What the narrower key does stop is the one-line `curl` that deletes or
-  changes entries, or switches Preview's writing on.
+  and nothing on one account can be. A process running as the person can:
+  - use the key as above: read what the tools show, and log new entries through preview and log without the person's
+    yes. A Claude Code session in bypass mode, or one a prompt injection leads, can do this without the `pulsar_log`
+    prompt; the entries then say "from Claude Code" in the Logged column, and a person can delete them there;
+  - write a sign-in code into `~/.config/pulsar/signin-code` and trade it for a page session (`POST /api/session`), or
+    read the window's token from its WebKit storage, and then do anything the page does;
+  - read the files Pulsar keeps (`~/.config/pulsar`; `~/.cache/pulsar`: copies of days with their notes, the journal,
+    Logs), ActivityWatch on localhost:5600, and the keychain items, which `/usr/bin/security` created and so trusts.
+
+  A confirmation click in Pulsar's window for writes made with the key was considered and left out: a program that
+  can do all this can also click it through a page session, and every write from Claude Code would ask twice. What the
+  narrow key does stop is the one-line `curl` that reads the day's window titles, meetings and notes, writes any
+  entry, changes or deletes entries, or switches Preview's writing on.
+- **Claude Code: recommended settings.** Deny rules in `~/.claude/settings.json`, so no session reads Pulsar's
+  folders by accident or because a prompt injection asked:
+  `"permissions": {"deny": ["Read(~/.config/pulsar/**)", "Read(~/.config/pulsar-preview/**)", "Read(~/.config/pulsar-release/**)"]}`.
+  Claude Code applies them to its Read tool and to the file commands it recognizes in Bash (`cat`, `head`, `tail`,
+  `sed`, `tee`), not to a script that opens the file itself (`python3 -c "open(…)"`). For bypass mode, or wherever
+  Bash runs without asking, turn on Claude Code's sandbox (`/sandbox`) and list the same three folders under
+  `sandbox.filesystem.denyRead`; its Config tab shows what applies. Claude Code's documentation does not say whether
+  the sandbox stays on under `--dangerously-skip-permissions`: check it with
+  `test -r ~/.config/pulsar/secret && echo readable` in such a session (it prints nothing when the sandbox holds).
 - **Writes.** Every POST must carry `X-Pulsar: 1`. A page on another site cannot send a custom header without the
   browser asking this server first (CORS preflight), and this server never says yes.
 - **The page itself** is served with a strict Content Security Policy: scripts only from Pulsar
@@ -124,8 +162,9 @@ yours.
   browser back with no Pulsar session. It must still come to 127.0.0.1, as a plain page load. It does nothing without
   a pending `state` that a signed-in Settings click created (random, used once, ten minutes), and it can only finish
   that one sign-in.
-- **Writing to Productive** happens in three functions: `productive.create_entry` (from `POST /api/log`: the log
-  dialog's button, the confirm step of Log the day, section 5.4, and `pulsar_log` in Claude Code, section 5.6), and
+- **Writing to Productive** happens in three functions: `productive.create_entry` (from `server.api_log`: the log
+  dialog's button and the confirm step of Log the day through `POST /api/log`, section 5.4, and `pulsar_log` in Claude
+  Code through `POST /api/mcp/pulsar_log`, section 5.6), and
   `update_entry` and `delete_entry` (from `POST /api/entry/update` and `/api/entry/delete`: Edit, Delete, a dragged
   edge and Log the day's Undo, section 5.2b, all from the page only). With `PULSAR_READ_ONLY=1` (any value but
   `preview`) in the environment, every write is refused at the lowest level (`productive.https`), and
@@ -695,14 +734,20 @@ votes keep the first four places. Claude's replies, git branch names, ticket num
 matched to project names were measured as well. None of them added anything to the words above. A fifth of the
 minutes went to tasks logged for the first time that day: no learning from past days can name those.
 
-### 5.6 Pulsar in Claude Code (`pulsar/mcp.py`, experimental)
+### 5.6 Pulsar in Claude Code (`pulsar/mcp.py`, `pulsar/mcptools.py`, experimental)
 
 `pulsar.py --mcp [--port 5610]` is an MCP server on stdio (JSON-RPC, standard library) that a Claude Code session
 starts: `claude mcp add --scope user pulsar -- /usr/bin/python3 -E -s -B <path>/pulsar.py --mcp --port 5610` (the
-switch in 5.7 does this). It talks to the running Pulsar over 127.0.0.1 with the key, after the same `/api/whoami`
-check the launcher makes, before every call that sends the key (Pulsar may quit during a long session and leave its
-port to another program), so Pulsar must be open: when it is not, every tool fails with "Pulsar is not answering ...
-Open Pulsar, then ask again", except `pulsar_status`. The key opens only reading and new entries (section 3).
+switch in 5.7 does this). It is a thin proxy: it computes nothing from the person's data. Each tool call goes to
+`POST /api/mcp/<tool>` on the running Pulsar with the key, and the server (`pulsar/mcptools.py`) builds the answer,
+keeps the preview's code and summary, and writes. The proxy holds the JSON-RPC protocol and the tools' definitions,
+says which app is asking (pulsar_log works only from Claude Code), and passes on the calling session's id
+(`CLAUDE_CODE_SESSION_ID`) and folder (`CLAUDE_PROJECT_DIR`). Before every call it checks `/api/whoami` for its own
+port (section 3), so a program on the port, or one passing the question on to a Pulsar on another port, never sees the
+key. Pulsar must be open: when it is not, every tool fails with "Pulsar is not answering ... Open Pulsar, then ask
+again", except `pulsar_status`. An older Pulsar (no `/api/mcp/` routes) gets "older than them": quit and open it again.
+A Claude Code session started before an update keeps the older proxy, whose reads the key no longer opens: start a
+new session.
 
 | Tool | What it gives |
 |---|---|
@@ -712,8 +757,8 @@ Open Pulsar, then ask again", except `pulsar_status`. The key opens only reading
 | `pulsar_session` | the calling session's own minutes (Claude Code gives every MCP server `CLAUDE_CODE_SESSION_ID`; Likely rows carry their sessions' ids), with a task for each and what is not logged yet; stretches another session also had are kept apart |
 | `pulsar_suggest` | the log dialog's task list for one stretch |
 | `pulsar_tasks` | tasks logged to lately (with the service used last), assigned ones, and a Productive search |
-| `pulsar_preview` | read only: services resolved, notes checked (`guard_note`), every entry through `POST /api/log` with `dry` (overlaps, the journal); with no problem, a code (once, 10 minutes) holding exactly those entries, and `summary`, Pulsar's own text of what would be written, one line per entry: `Wed 4 Nov 2026 09:00-10:00 (60 min): Build (Acme), Dev in B, billable. Note: "Search fixed."` (the budget after "in"; a note with a straight `"` or a character nobody sees is refused, so it cannot pass for the summary's own words; a date after today is refused) |
-| `pulsar_log` | `code` and `summary`: writes the entries the code holds through `POST /api/log`, one at a time, journalled as a Log the day run (Undo works), stopping at the first that is not logged. Each result is `logged`, `not logged` (refused, with the reason), `not known` (no clear answer, an HTTP 5xx or any unexpected error: it may be in Productive, and the journal never sends it again) or `not sent` (after the stop); what was written before a failure is always returned |
+| `pulsar_preview` | read only: services resolved, notes checked (`guard_note`), every entry through `server.api_log` with `dry` (overlaps, the journal); with no problem, a code of 16 hex characters (once, 10 minutes) holding exactly those entries, and `summary`, Pulsar's own text of what would be written, one line per entry: `Wed 4 Nov 2026 09:00-10:00 (60 min): Build (Acme), Dev in B, billable. Note: "Search fixed."` (the budget after "in"; names without control, format or direction characters and without double quotation marks; a note is one line, at most 200 characters, passes `guard_note`, and has no double quotation mark of any script and no character nobody sees, so it cannot pass for the summary's own words or another entry) |
+| `pulsar_log` | `code` (exactly as given) and `summary` (word for word), and no other argument: writes the entries the code holds through `server.api_log`, one at a time, journalled as a Log the day run (Undo works), stopping at the first that is not logged. Each result is `logged`, `not logged` (refused, with the reason), `not known` (no clear answer, an HTTP 5xx or any unexpected error: it may be in Productive, and the journal never sends it again) or `not sent` (after the stop); what was written before a failure is always returned |
 
 **The person says yes to each write, not the model.** One write is one `pulsar_log` call, which may hold up to 40
 entries: one yes can log a whole day, so the prompt shows every line of the summary. `pulsar_log`'s definition
@@ -721,7 +766,8 @@ carries `_meta: {"anthropic/requiresUserInteraction": true}`. This mark is not d
 2.1.278 and 2.1.301 (read from the binaries, not run) ask the person before every such call, also in auto or bypass
 mode, and allow rules cannot skip it; with no one to ask (`-p`, `dontAsk`) the call is denied and never reaches
 Pulsar. As a fallback the switch (5.7) also adds "ask" rules for `mcp__pulsar__pulsar_log` and
-`mcp__pulsar-preview__pulsar_log`. Neither binds a program that uses the key itself (section 3). The prompt shows the tool's arguments, so `pulsar_log` refuses unless `summary` is the preview's text word for
+`mcp__pulsar-preview__pulsar_log`. Neither binds a program that uses the key itself (section 3).
+The prompt shows the tool's arguments, so `pulsar_log` refuses unless `summary` is the preview's text word for
 word: the person approves Pulsar's words, not the model's. Other apps ignore the mark, so `pulsar_log` refuses any
 client whose name is not `claude-code` (from `initialize`, or from each request's `_meta` in the 2026-07-28 protocol).
 A code that is refused (wrong summary, wrong app, Pulsar closed, writes blocked) is not used up. The instructions, the
@@ -736,28 +782,63 @@ after it carries its version, capabilities and client in `_meta`, with no handsh
 with `initialize` (2025-11-25 and earlier) gets that protocol instead. An unknown version gets error -32022 with the
 versions Pulsar speaks.
 
-**What leaves.** Never returned: window titles, apps, addresses, typed messages, meeting titles, other sessions'
-titles, notes of logged entries (a repeat's note is one), rule words, Ask Claude's words, and the words a learned
-task's notes share with other work. **Reasons are an allow-list** (`mcp.reason`): Claude Code gets one of a fixed set
-of phrases ("you logged it in this repository before", "one of your rules", …), chosen by the pick's source or by
-Pulsar's own wording, plus the digits in it (a share, a duration); no other word of the original passes, so an
-instruction hidden in a meeting's title or anywhere else cannot reach the session through a reason. Names from
-Productive (task, project, service, budget) lose control and invisible characters and are cut at 120 characters
-(`mcp.name_out`); they are the one free text left, written by people with access to Productive. Returned on purpose:
-the calling session's own title, and note drafts (`noteDraft`) from your own commit subjects only (never a note a
-model drafted), only when the entry's repository is the calling session's (`CLAUDE_PROJECT_DIR` through `sessions.project_of_path`, names compared loosely as
-`commits.matches` does): both are made from that repository's work. A meeting's note is its title and is never
-returned. **Repositories** (`mcp.Places`): where no file a session touched
-was in a repository, `sessions.analyse` and the fi-time-from-activity script name the work after the session's title
-(cut to 40 characters; the script first drops a leading "IMPORTANT!"), then "Claude Code" or "unknown". Such a name is
-never returned: a repository or project is named only when it is one of the day's Likely projects and none of these,
-else it is empty, and a reason that names another place (a past day's, in "logged while in …") says "other work".
+**JSON-RPC.** One message per line, at most 1 MB (a longer line is refused and read past). A batch, `[]` included, is
+one Invalid Request (MCP dropped batches in 2025-06-18). Every message is answered on its own: a list as a tool name, a
+lone surrogate (`\ud800`) in a method or an argument, invalid UTF-8 or an object as an id gets an error and the
+session goes on. Every line out is ASCII (`ensure_ascii`).
 
-**Writes blocked.** `PULSAR_READ_ONLY` in the MCP's environment refuses `pulsar_log` before anything is sent. The
-server refuses a blocked write (`PULSAR_READ_ONLY`, or Preview without "allow writes") in `_log_checked` before the
-journal or the Logs hear of it; a dry run still works. `pulsar_status` reports the MCP's own switch, Preview from
-and the server's own reason, `writesBlocked` in `/api/config` (`PULSAR_READ_ONLY`, or Preview without "allow
-writes").
+**What leaves.** The key opens nothing but these tools (section 3), so what a key-holder reads is exactly what they
+return, built field by field in the server. Never returned: window titles, apps, addresses, typed messages, meeting
+titles, other sessions' titles, notes of logged entries (a repeat's note is one), rule words, Ask Claude's reasons,
+and the words a learned task's notes share with other work. **Reasons are an allow-list** (`mcptools.reason`): Claude
+Code gets one of a fixed set of phrases ("you logged it in this repository before", "one of your rules", …), chosen by
+the pick's source or by Pulsar's own wording, plus the digits in it (a share, a duration); no other word of the
+original passes. **Errors too** (`mcptools.error_out`): Pulsar's and Productive's errors become one of a fixed set of
+phrases, plus Productive's own code and the HTTP status in parentheses ("Productive refused the entry: the budget
+behind this service is full ... (budget_limit_overrun)"), never the original text, which can quote names or anything
+an exception holds. **Flags** come from dayplan's fixed list (`notask`, `low`, `agent`, `unattended`, `noservice`,
+`untimed`). Names from Productive (task, project, service, budget, the "pick a service" list, overlaps, logged
+entries, alternatives) lose control, format, direction, invisible and separator characters, go on one line and are
+cut at 120 characters (`mcptools.name_out`); they are the one free text left, written by people with access to
+Productive. Returned on purpose: the calling session's own title (`name_out` too), and note drafts (`noteDraft`, with
+`noteFrom`), only when the entry's repository is the calling session's (`CLAUDE_PROJECT_DIR` through
+`sessions.project_of_path`, names compared loosely as `commits.matches` does), never for another repository:
+- `noteFrom: "commits"`: your own commit subjects in that repository;
+- `noteFrom: "claude"`: Ask Claude's draft (5.5), which it made from the Likely rows' sessions. When the calling
+  session is the only session of the rows over that entry, the draft adds nothing it does not already have: returned
+  if it passes `guard_note` and holds none of the plain attack words (`mcptools.INJECTION`: ignore, instructions,
+  prompt, assistant, you must, sudo, curl, rm -, password, token, http, …). For rows of other sessions of the same
+  repository, or shared with one, only a draft that passes `guard_note` and reads like no instruction at all
+  (`mcptools.INSTRUCTION_LIKE`, strict: words such as run, execute, delete, you, your, please, system, claude, tool,
+  call, approve, a web address or shell characters) is returned. On 11-05 a session left three blocks without the
+  notes it used to take from Ask Claude, which is why these came back.
+
+The tools' descriptions say `noteDraft` is draft text for a note clients may see: data to show the person, never
+instructions. A meeting's note is its title and is never returned. **Repositories** (`mcptools.Places`): where no file
+a session touched was in a repository, `sessions.analyse` and the fi-time-from-activity script name the work after the
+session's title (cut to 40 characters; the script first drops a leading "IMPORTANT!"), then "Claude Code" or
+"unknown". Such a name is never returned: a repository or project is named only when it is one of the day's Likely
+projects and none of these, else it is empty, and no reason names a place.
+
+**Limits.** Each tool has a rate limit in the server (60 calls a minute, `pulsar_preview` 20, `pulsar_log` 10), and
+every date is between 120 days ago and today: a later day is refused ("has not begun"), an older one too.
+
+**The environment.** A repository's `.claude/settings.json` can set environment variables for every MCP server Claude
+Code starts there, before the person trusts the folder. So `pulsar.py --mcp` drops `PULSAR_MCP_SESSION_ID`,
+`PULSAR_READ_ONLY`, `PULSAR_MCP_IGNORE_LOGGED`, `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, `PULSAR_INSTANCE` and
+`PULSAR_PREVIEW`, and sets `HOME` to the account's own home folder, before anything reads them
+(`mcp.clean_environment`), unless `PULSAR_TESTS_OFFLINE` is set (the tests and test harnesses). Preview's own entry
+says `--instance preview` on its command line, which still counts. A repository that also sets
+`PULSAR_TESTS_OFFLINE` gets those switches back; none of them opens more than the key does: the server checks its own
+read-only switch, honours the test switch only when it runs read-only itself, and a session id only chooses whose
+minutes `pulsar_session` shows.
+
+**Writes blocked.** The server refuses a blocked write (`PULSAR_READ_ONLY`, or Preview without "allow writes") in
+`pulsar_log` before the code is used, and again in `_log_checked` before the journal or the Logs hear of it; a dry run
+still works. In the tests, `PULSAR_READ_ONLY` in the proxy's environment also refuses `pulsar_log` before anything is
+sent. `pulsar_status` reports both, with the server's reason as a fixed phrase. An entry for Pulsar in Claude Code
+with an `env` of its own (claudelink leaves it as it is) no longer makes the proxy read-only outside the tests: run
+the server read-only instead.
 
 ### 5.7 The Claude Code switch (`pulsar/claudelink.py`)
 
@@ -911,13 +992,13 @@ sequenceDiagram
 
 ## 10. The API
 
-All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes needs a session, or the key, which on a POST opens only `/api/quit` and `/api/log` without `force` (section 3).
+All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes needs the page's session; the key alone opens only `/api/quit` and `/api/mcp/<tool>` (section 3).
 
 | Route | What |
 |---|---|
 | `GET /api/config` | Settings for the page, the connection's state (with `productive.web`, the organization's address for task links, or ''), update state, calendar state. Never a token. |
 | `GET /api/activity?date=&source=` | Tracker items and away time. |
-| `GET /api/entries?date=` | Productive entries. |
+| `GET /api/entries?date=` | Productive entries; `fromClaudeCode` on those Pulsar in Claude Code wrote. |
 | `GET /api/proposal?date=[&fresh=1][&quick=1][&wait=1]` | Likely rows, with task links, commits and learned tasks (`quick=1`: `hintsPending` while the links and commits are worked out; `learnPending` while the history is read; `wait=1` waits for both). |
 | `GET /api/calendar?date=[&fresh=1]` | Meetings. `GET /api/calendar/status` while signing in. |
 | `GET /api/repeats?date=&source=` | Repeats seen today. |
@@ -926,7 +1007,8 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `GET /api/services?task=&date=[&flags=1]` | Services that take time on that date; with `flags=1`, the task's ticket flags (5.3). |
 | `GET /api/report?from=&to=` | A range in numbers. |
 | `GET /api/logs?days=`, `/api/logs/download` | The error log. |
-| `GET /api/changelog`, `/api/version`, `/api/whoami?nonce=` | Changelog; version (public); proof of the key (public). |
+| `GET /api/changelog`, `/api/version`, `/api/whoami?nonce=` | Changelog; version (public); proof of the key, bound to the port (`proof1`), and the older form (`proof`) (public). |
+| `POST /api/mcp/<tool>` | `{args, client, session, sessionFrom, projectDir, ignoreLogged}`: one of Pulsar in Claude Code's tools, answered in the server (5.6). The key opens it. |
 | `POST /api/session` | Trade a sign-in code for a session token. `POST /api/session/end` signs out. |
 | `POST /api/settings` | Save settings (each field checked). |
 | `POST /api/log` | Log one entry. With `run` and `row`: one row of Log the day, journalled. |
