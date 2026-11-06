@@ -16,6 +16,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _SCRATCH = tempfile.mkdtemp(prefix="pulsar-tests-")
+os.environ["PULSAR_TESTS_OFFLINE"] = "1"  # nothing reaches Productive, Google, Claude Code or the keychain
 os.environ.setdefault("XDG_CONFIG_HOME", os.path.join(_SCRATCH, "config"))
 os.environ.setdefault("XDG_CACHE_HOME", os.path.join(_SCRATCH, "cache"))
 
@@ -392,7 +393,8 @@ class McpTest(unittest.TestCase):
             self.assertRegex(status["date"], r"^\d{4}-\d{2}-\d{2}$")
         self.assertIn(dry["code"], mcp._pending)  # the code waits for Pulsar
         mcp._state["port"] = port
-        done, err = self.call("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})
+        with self._create():  # a fake Productive: a test never writes for real
+            done, err = self.call("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})
         self.assertFalse(err, done)
 
     def test_status(self):
