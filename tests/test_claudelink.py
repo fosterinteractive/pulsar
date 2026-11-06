@@ -1,0 +1,173 @@
+"""The one Claude Code switch (claudelink.py) and notes from a session (askclaude.steps, askclaude.note), on made-up
+files in a temporary folder: Claude Code itself is never run and its real settings are never touched.
+
+    python3 -m unittest discover -s tests
+"""
+
+import json
+import os
+import sys
+import tempfile
+import unittest
+from datetime import datetime, timezone
+from unittest import mock
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+_SCRATCH = tempfile.mkdtemp(prefix="pulsar-tests-")
+os.environ.setdefault("XDG_CONFIG_HOME", os.path.join(_SCRATCH, "config"))
+os.environ.setdefault("XDG_CACHE_HOME", os.path.join(_SCRATCH, "cache"))
+
+from pulsar import askclaude, claudelink  # noqa: E402
+
+T0 = datetime(2026, 11, 4, tzinfo=timezone.utc).timestamp()
+
+
+def iso(minute):
+    return datetime.fromtimestamp(T0 + minute * 60, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+class Link(unittest.TestCase):
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(prefix="pulsar-link-")
+        self.settings = os.path.join(self.dir, "settings.json")
+        self.claude_json = os.path.join(self.dir, "claude.json")
+        self.calls = []
+        servers = {}
+
+        def run(args):
+            self.calls.append(args)
+            if args[:2] == ["mcp", "add"]:
+                cmd = args[args.index("--") + 1:]
+                servers[args[4]] = {"type": "stdio", "command": cmd[0], "args": cmd[1:]}
+            if args[:2] == ["mcp", "remove"]:
+                servers.pop(args[2], None)
+            with open(self.claude_json, "w") as fh:
+                json.dump({"mcpServers": servers}, fh)
+            return True, ""
+        self.patches = [mock.patch.object(claudelink, "SETTINGS", self.settings),
+                        mock.patch.object(claudelink, "CLAUDE_JSON", self.claude_json),
+                        mock.patch.object(claudelink, "_run", run),
+                        mock.patch.object(claudelink, "_claude", lambda: "/usr/local/bin/claude"),
+                        mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": ""})]
+        for p in self.patches:
+            p.start()
+        os.environ.pop("PULSAR_READ_ONLY", None)
+
+    def tearDown(self):
+        for p in reversed(self.patches):
+            p.stop()
+
+    def write(self, doc):
+        with open(self.settings, "w") as fh:
+            json.dump(doc, fh)
+
+    def read(self):
+        with open(self.settings) as fh:
+            return json.load(fh)
+
+    def test_on_adds_pulsar_and_rules_off_takes_back_only_those(self):
+        self.write({"permissions": {"allow": ["Bash(ls:*)"], "ask": ["mcp__productive__delete_resource"]}, "env": {"A": "1"}})
+        got = claudelink.connect(5610, {})
+        self.assertTrue(got["ok"])
+        self.assertEqual(sorted(got["rulesAdded"]), sorted(r for r in claudelink.rules() if "delete" not in r))
+        doc = self.read()
+        self.assertEqual(doc["env"], {"A": "1"})
+        self.assertTrue(all(r in doc["permissions"]["ask"] for r in claudelink.rules()))
+        st = claudelink.status(5610)
+        self.assertTrue(st["registered"] and st["current"] and st["rules"])
+        self.assertIn("--mcp", claudelink.registered()["args"])
+        self.assertTrue(os.path.exists(self.settings + ".pulsar-backup"))
+        off = claudelink.disconnect({"claude_rules_added": got["rulesAdded"]})
+        self.assertTrue(off["ok"])
+        self.assertEqual(self.read()["permissions"], {"allow": ["Bash(ls:*)"], "ask": ["mcp__productive__delete_resource"]})
+        self.assertIsNone(claudelink.registered())
+
+    def test_a_broken_settings_file_is_left_alone(self):
+        with open(self.settings, "w") as fh:
+            fh.write("{not json")
+        got = claudelink.connect(5610, {})
+        self.assertTrue(got["ok"])  # Pulsar is still added to Claude Code
+        self.assertIn("not valid JSON", got["message"])
+        with open(self.settings) as fh:
+            self.assertEqual(fh.read(), "{not json")
+
+    def test_no_settings_file_yet(self):
+        got = claudelink.connect(5620, {})
+        self.assertEqual(sorted(self.read()["permissions"]["ask"]), sorted(claudelink.rules()))
+        self.assertEqual(claudelink.disconnect({"claude_rules_added": got["rulesAdded"]})["rulesAdded"], [])
+        self.assertEqual(self.read(), {})
+
+    def test_a_moved_copy_is_not_current(self):
+        claudelink.connect(5610, {})
+        self.assertFalse(claudelink.status(5620)["current"])  # another port: Settings offers to add it again
+
+    def test_read_only_runs_change_nothing(self):
+        with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):
+            self.assertTrue(claudelink.connect(5610, {})["ok"])
+        self.assertEqual(self.calls, [])
+        self.assertFalse(os.path.exists(self.settings))
+
+    def test_installed_copy_is_started_through_current(self):
+        fake = os.path.join(claudelink.INSTALL, "versions", "9.9.9", "pulsar")
+        with mock.patch.object(claudelink.os.path, "abspath", lambda p: os.path.join(fake, "claudelink.py")), \
+                mock.patch.object(claudelink.os.path, "realpath", lambda p: p):
+            cmd = claudelink.command(5610)
+        self.assertEqual(cmd[4], os.path.join(claudelink.INSTALL, "current", "pulsar.py"))
+        self.assertEqual(cmd[-3:], ["--mcp", "--port", "5610"])
+
+
+class SessionNote(unittest.TestCase):
+    def setUp(self):
+        self.projects = tempfile.mkdtemp(prefix="pulsar-proj-")
+        os.makedirs(os.path.join(self.projects, "p"))
+        lines = [{"type": "ai-title", "aiTitle": "Fix the event time zone"}]
+        for minute, kind, text in [(600, "user", "fix the event pages"), (610, "assistant", "Looking at it."),
+                                   (630, "assistant", "Done: event pages show the right time zone again."),
+                                   (700, "user", "and the quiz"), (720, "assistant", "Quiz results save again."),
+                                   (900, "user", "much later, other work")]:
+            lines.append({"type": kind, "timestamp": iso(minute), "message": {"role": kind, "content": text}})
+        lines.append({"type": "assistant", "isSidechain": True, "timestamp": iso(640),
+                      "message": {"role": "assistant", "content": "an agent's own words"}})
+        with open(os.path.join(self.projects, "p", "s.jsonl"), "w") as fh:
+            fh.write("\n".join(json.dumps(x) for x in lines) + "\n")
+
+    def test_steps_carry_claudes_last_words(self):
+        got = askclaude.steps(T0, ["Fix the event time zone"], 595, 730, projects_dir=self.projects)
+        self.assertEqual(got, [{"typed": "fix the event pages", "reply": "Done: event pages show the right time zone again."},
+                               {"typed": "and the quiz", "reply": "Quiz results save again."}])
+        self.assertEqual(askclaude.steps(T0, ["Another session"], 595, 730, projects_dir=self.projects), [])
+
+    def test_note_runs_haiku_with_nothing_else_and_guards_the_draft(self):
+        seen = {}
+
+        def run(cmd, **kw):
+            seen["cmd"], seen["input"] = cmd, kw["input"]
+            out = {"structured_output": {"note": "Event pages show the right time zone again."}, "total_cost_usd": 0.002}
+            return mock.Mock(stdout=json.dumps(out), stderr="", returncode=0)
+        row = {"s": 595, "e": 730, "project": "trent", "titles": ["Fix the event time zone"], "commits": ["Quiz saves"]}
+        with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/x/claude"), \
+                mock.patch.object(askclaude, "steps", lambda *a, **k: [{"typed": "fix", "reply": "Done."}]):
+            got = askclaude.note("2026-11-04", row, T0, [], run=run)
+        self.assertEqual(got["note"], "Event pages show the right time zone again.")
+        for flag in ("--strict-mcp-config", "--no-session-persistence", "dontAsk"):
+            self.assertIn(flag, seen["cmd"])
+        self.assertEqual(seen["cmd"][seen["cmd"].index("--model") + 1], "haiku")
+        self.assertIn("Quiz saves", seen["input"])
+
+        def leaky(cmd, **kw):
+            return mock.Mock(stdout=json.dumps({"structured_output": {"note": "Fixed web/themes/x/x.theme"}}), stderr="")
+        row2 = {**row, "s": 596}
+        with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/x/claude"), \
+                mock.patch.object(askclaude, "steps", lambda *a, **k: [{"typed": "fix", "reply": "Done."}]):
+            got = askclaude.note("2026-11-04", row2, T0, [], run=leaky)
+        self.assertEqual(got["note"], "")
+        self.assertIn("file path", got["why"])
+
+    def test_nothing_to_go_on_asks_nobody(self):
+        row = {"s": 1000, "e": 1010, "project": "trent", "titles": ["Fix the event time zone"]}
+        got = askclaude.note("2026-11-04", row, T0, [], run=lambda *a, **k: self.fail("Claude was asked"))
+        self.assertEqual(got["note"], "")
+
+
+if __name__ == "__main__":
+    unittest.main()

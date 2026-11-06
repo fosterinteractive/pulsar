@@ -380,8 +380,9 @@ unticked.
          --allowedTools <Productive search and read tools> --disallowedTools <Productive write tools>
   ```
 
-  It gets, for each row of ten minutes or more, the time, the repository, the session titles, up to 15 typed
-  messages and up to 10 of your commit subjects (Notes from commits); and the tasks logged to in the last 30 days, with the instruction to prefer them and search Productive
+  It gets, for each row of ten minutes or more, the time, the repository, the session titles, up to 15 steps of the
+  work (what was typed and Claude's reply at the end of each, `askclaude.steps()`, 5.7) and up to 10 of your commit
+  subjects (Notes from commits); and the tasks logged to in the last 30 days, with the instruction to prefer them and search Productive
   only when none fits. It has no shell and no files, cannot change Productive, and its session is not kept (so it
   never shows up in Likely). The answer is a task (and two alternatives) with a short reason per row, shown on the
   Likely card and first in the dialog, with Claude's mark next to it.
@@ -433,6 +434,36 @@ Never returned: window titles, apps, addresses, typed messages, meeting titles, 
 logged entries, rule words. Returned on purpose: the calling session's own title, and note drafts from the person's
 own commit subjects (as the log dialog offers them). `PULSAR_READ_ONLY` in the MCP's environment refuses a confirmed
 write before anything is sent; the server's own `writes_blocked()` refuses it again.
+
+### 5.7 The Claude Code switch (`pulsar/claudelink.py`)
+
+One setting, **Use Claude Code with Pulsar** (Settings → Claude, stored as `ask_claude`), so a colleague sets up
+nothing else. Saving it on:
+- turns on Ask Claude (5.5) and the session note in the log dialog (below);
+- adds Pulsar to Claude Code: `claude mcp remove` (an older entry), then
+  `claude mcp add --scope user pulsar -- /usr/bin/python3 -E -s -B <dir>/pulsar.py --mcp --port <port>`. An
+  installed Pulsar is started through `~/Library/Application Support/Pulsar/current`, so updates keep it working;
+  Pulsar Preview adds itself as `pulsar-preview` on its own port;
+- adds "ask" rules for the Productive connection's `create_resource`, `update_resource`, `delete_resource` and
+  `perform_action` to `~/.claude/settings.json`, so no session changes Productive without asking. The file is read,
+  merged and renamed into place (a linked file stays linked), with a one-time backup `settings.json.pulsar-backup`;
+  a file that is not valid JSON is left alone and the switch says so. Rules already there are not counted as added.
+
+Saving it off removes Pulsar from Claude Code and only the rules Pulsar added (`claude_rules_added` in Pulsar's
+settings). Settings shows where things stand from `~/.claude.json` and the settings file, read only, and offers **Add
+Pulsar to Claude Code again** when the entry is missing or starts another copy. A read-only run (`PULSAR_READ_ONLY`)
+never changes Claude Code.
+
+**The session note.** With the switch on, **Log this time** on a Likely block shows the commit draft at once, then asks
+`POST /api/likely/note`: `askclaude.steps()` reads the block's sessions (matched by title) for each step's typed
+message and Claude's last words before the next message (its summary of what it did; no side chains, tool calls or
+tool output; at most 15 steps, 400 and 900 characters), with the commits and up to five of the person's own notes as
+examples. `claude -p --model haiku --tools "" --strict-mcp-config --setting-sources "" --json-schema` drafts the note
+(English unless their notes are in another language); `guard_note` checks it. It replaces the note only while the
+person has not typed in it, and only in the dialog that asked, with "Drafted by Claude from this session and your
+commits". Measured: 6 to 11 seconds, $0.001 to $0.004 a note. Asking a copy of the session itself
+(`claude -p --resume <id> --fork-session`) also works but reads the whole session each time ($0.16 to $0.55 a
+question) and cannot tell when inside it the work happened.
 
 ## 6. The rest of the day view
 

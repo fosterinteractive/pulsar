@@ -32,6 +32,7 @@ function fillSettings(c) {
   f.ask_claude.disabled = !c.likely.available || !c.likely.claudeFound;
   f.ask_claude_model.value = c.likely.askClaudeModel || 'sonnet';
   f.ask_claude_model.disabled = f.ask_claude.disabled;
+  paintLink(c.likely);
   $('#remove-token').hidden = !p.tokenSaved;
   paintUpdate(c.update);
   paintCalendar(c);  // meetings.js
@@ -144,6 +145,20 @@ function openSettings(tab) {
   dlg.showModal();
 }
 
+/* the one Claude Code switch: where Pulsar stands in Claude Code (claudelink.py) */
+function paintLink(l) {
+  const k = l.link || {}, el = $('#claude-link'), again = $('#claude-relink');
+  const on = !!l.askClaude;
+  el.classList.remove('warn');
+  if (!l.claudeFound) el.textContent = 'Claude Code was not found on this Mac.';
+  else if (!on) el.textContent = 'Off. Switch it on and Save: Pulsar adds itself to Claude Code, and takes it all back when switched off.';
+  else if (k.registered && k.current) el.textContent = `On. Pulsar is in Claude Code as “${k.name}”` +
+    (k.rules ? ', and Claude Code asks before a session changes Productive.' : '.') + ' New sessions see it; a session already open sees it after /mcp.';
+  else { el.textContent = k.registered ? 'On, but Claude Code starts an older copy of Pulsar.' : 'On, but Pulsar is not in Claude Code.';
+         el.classList.add('warn'); }
+  again.hidden = !(on && l.claudeFound && !(k.registered && k.current));
+}
+
 async function saveSettings(extra = {}) {
   const f = form.elements, msg = $('#settings-msg'), btn = $('#settings-save');
   // a number field holding "1e" reads as "": saving it would quietly drop the target back to the default
@@ -174,12 +189,18 @@ async function saveSettings(extra = {}) {
     showTab('t-conn');
     return;
   }
+  if (r.link && !r.link.ok) {  // the switch is saved; adding Pulsar to Claude Code (or taking it out) did not work
+    msg.className = 'msg warn'; msg.textContent = `Saved, but ${r.link.message}`;
+    showTab('t-claude');
+    return;
+  }
   dlg.close();
-  toast(r.test ? `Settings saved. ${r.test.message}` : 'Settings saved.');
+  toast(r.link ? `Settings saved. ${r.link.message}` : r.test ? `Settings saved. ${r.test.message}` : 'Settings saved.');
 }
 
 form.addEventListener('submit', ev => { ev.preventDefault(); saveSettings(); });
 $('#remove-token').onclick = () => saveSettings({remove_token: true});
+$('#claude-relink').onclick = () => saveSettings({relink: true});
 $('#settings-cancel').onclick = $('#settings-x').onclick = () => dlg.close();
 $('#open-settings').onclick = openSettings;
 

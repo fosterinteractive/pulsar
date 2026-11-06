@@ -37,8 +37,9 @@ READ_TOOLS = ["mcp__productive__search_records", "mcp__productive__query_resourc
 WRITE_TOOLS = ["mcp__productive__create_resource", "mcp__productive__update_resource",
                "mcp__productive__delete_resource", "mcp__productive__perform_action"]
 PROMPT = """You help a person at their company log time in Productive. Below are blocks of their work on {date}, from \
-their Claude Code sessions: the time, the git repository, the session titles, what they typed and the subjects of \
-the commits they made then.
+their Claude Code sessions: the time, the git repository, the session titles, the steps of the work (what they \
+typed, and Claude's reply at the end of each step, which says what was done) and the subjects of the commits they \
+made then.
 For each block, find the Productive task the work belongs to. First look in YOUR TASKS: the tasks this person logged \
 time to in the last 30 days, which are the ones they use now (estimates and scoping go to their estimations task, \
 meetings to their meeting task, and so on). Only when none of them fits, use the Productive tools to search tasks by \
@@ -50,9 +51,10 @@ client's invoice and time reports, so the client may read it.
 - Say what was done or decided, the outcome, in plain words the client understands, as short as it can be: one \
 sentence, two only when one cannot say it, at most {note_max} characters. "Event pages show the right time zone \
 again", not "Looked into the time zone code".
-- "commits" are the surest sign of what was done: when a block has them, the note says what they say, in plainer \
-words; what they typed tells what the commits were for.
-- Write it the way this person writes, in the language of their notes: "their_notes" in each block are their own \
+- "commits" and the replies in "steps" are the surest signs of what was done: the note says what came out of the \
+work, in plainer words; what they typed tells what it was for.
+- Write it the way this person writes, in the language of their notes (English when there are none, whatever \
+language the work was discussed in): "their_notes" in each block are their own \
 recent notes on the likely tasks, with the task each was for. Match their length, tone and form, above all those for \
 the task you pick, but take every fact from the block itself, never from those notes.
 - Never put in a note: file names or paths, web addresses, code, error messages or anything pasted from a log, \
@@ -160,6 +162,76 @@ def available() -> bool:
     return productive._claude_binary() is not None
 
 
+_talk = config.Newest(300)  # (session file, size, time, day) -> its titles, typed messages and Claude's texts
+
+
+def _conversation(path: str, t0: float):
+    """(titles, [(time, typed)], [(time, Claude's text)]) of one session file around a day, kept until it changes.
+    Only the main conversation: no agents' side chains, tool calls or tool output."""
+    st = os.stat(path)
+    k = (path, st.st_size, st.st_mtime, t0)
+    if k in _talk:
+        return _talk[k]
+    titles, typed_, said = set(), [], []
+    lo, hi = t0 - 6 * 3600, t0 + 86400 + 3600
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if '"ai-title"' in line or '"custom-title"' in line:
+                try:
+                    r = json.loads(line)
+                    if r.get("type") in ("ai-title", "custom-title"):
+                        titles.add(sessions.norm_title(r.get("customTitle") or r.get("aiTitle") or ""))
+                        continue
+                except ValueError:
+                    pass
+            if '"timestamp"' not in line:
+                continue
+            try:
+                r = json.loads(line)
+                t = sessions.parse_ts(r["timestamp"])
+            except (ValueError, KeyError, TypeError, AttributeError):
+                continue
+            if not lo <= t < hi or r.get("isSidechain"):
+                continue
+            text = sessions.human_prompt(r)
+            if text is not None:
+                typed_.append((t, text.strip()))
+            elif r.get("type") == "assistant":
+                words = sessions.text_of((r.get("message") or {}).get("content")).strip()
+                if words:
+                    said.append((t, words))
+    _talk[k] = ({x for x in titles if len(x) >= 5}, sorted(typed_), sorted(said))
+    return _talk[k]
+
+
+def steps(t0: float, titles: list, a: float, b: float, projects_dir: str = sessions.PROJECTS_DIR) -> list:
+    """The work between minutes a and b of the day in the sessions with these titles, step by step: what the person
+    typed and Claude's last words before the next message (its summary of what it did), [{"typed", "reply"}].
+    A step that began earlier but ended inside the time counts too. At most 15 steps; 400 and 900 characters."""
+    keys = {k for k in (sessions.norm_title(t) for t in titles) if len(k) >= 5}
+    if not keys:
+        return []
+    lo, hi = t0 + a * 60, t0 + b * 60
+    out = []
+    for path in glob.glob(os.path.join(projects_dir, "*", "*.jsonl")):
+        try:
+            if os.path.getmtime(path) < t0 - 3600:
+                continue
+            names, typed_, said = _conversation(path, t0)
+        except OSError:
+            continue
+        if not any(t.startswith(k) or k.startswith(t) for k in keys for t in names if t):
+            continue
+        for i, (tp, text) in enumerate(typed_):
+            nxt = typed_[i + 1][0] if i + 1 < len(typed_) else float("inf")
+            reply = [w for t, w in said if tp <= t < nxt]
+            ends = [t for t, _ in said if tp <= t < nxt]
+            began, ended = lo - 300 <= tp <= hi, bool(ends) and lo <= ends[-1] <= hi + 300
+            if began or ended:
+                out.append((tp, {"typed": text[:400], "reply": reply[-1][:900] if reply else ""}))
+    return [x for _, x in sorted(out, key=lambda x: x[0])][:15]
+
+
 def typed(t0: float, titles: list, a: float, b: float, projects_dir: str = sessions.PROJECTS_DIR) -> list:
     """What the person typed, between minutes a and b of the day, in the sessions with these titles (at most 15
     messages of 400 characters)."""
@@ -200,7 +272,7 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
     the page when Claude Code is missing or its answer cannot be read."""
     blocks = [{"id": i, "time": "%02d:%02d-%02d:%02d" % (r["s"] // 60, r["s"] % 60, (r["e"] // 60) % 24, r["e"] % 60),
                "repository": r.get("project") or "", "session_titles": (r.get("titles") or [])[:3],
-               "typed": typed(t0, r.get("titles") or [], r["s"], r["e"]), "commits": (r.get("commits") or [])[:10],
+               "steps": steps(t0, r.get("titles") or [], r["s"], r["e"]), "commits": (r.get("commits") or [])[:10],
                "their_notes": their_notes(r, history)}
               for i, r in enumerate(rows) if r["e"] - r["s"] >= 10]
     if not blocks:
@@ -272,6 +344,75 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
         _cache[sig] = answer
         for old in list(_cache)[:-30]:
             del _cache[old]
+    return answer
+
+
+NOTE_SCHEMA = {"type": "object", "required": ["note"],
+               "properties": {"note": {"type": "string", "maxLength": NOTE_MAX}}}
+NOTE_PROMPT = """Write the note for one time entry in Productive: the work below, on {date} from {start} to {end}, in \
+the repository {repo}. "steps" are what the person typed and Claude's reply at the end of each step, which says what \
+was done; "commits" are the subjects of the commits they made then.
+- The company may copy notes into the client's invoice and time reports, so the client may read it. Say what was \
+done or decided, the outcome, in plain words the client understands, as short as it can be: one sentence, two only \
+when one cannot say it, at most {note_max} characters. "Event pages show the right time zone again", not "Looked \
+into the time zone code".
+- Write it the way this person writes, in the language of their notes (English when there are none, whatever \
+language the work was discussed in): "their_notes" are their own recent notes on this kind of work. Match their \
+length, tone and form, but take every fact from the work, never from those notes.
+- Never put in a note: file names or paths, web addresses, code, error messages or anything pasted from a log, \
+passwords, keys or tokens, the tools that helped (no Claude, Pulsar, agents or AI), people's names, anyone's private \
+matters, or the name of another client.
+- Never say how the time was spent or counted: no durations, "in parallel", "overlap", who did the work, or whether \
+the person was there, waiting or reviewing.
+- The note is empty when the work does not show what was done.
+
+WORK:
+{work}"""
+_notes: dict = {}  # (date, start, end, repository, what was seen) -> the answer
+
+
+def note(date: str, row: dict, t0: float, history: list = (), run=subprocess.run) -> dict:
+    """A note for one block of work, from its session (steps with Claude's replies) and commits, by Haiku: a few
+    seconds, about a fifth of a cent. {"note", "why"}: the note is "" when there was nothing to go on or the guard
+    refused the draft (why says which). Raises AskError with a sentence for the page when Claude Code fails."""
+    said = steps(t0, row.get("titles") or [], row["s"], row["e"])
+    made = (row.get("commits") or [])[:10]
+    if not said and not made:
+        return {"note": "", "why": "nothing in the session or the commits says what was done"}
+    hm_ = lambda m: "%02d:%02d" % ((int(m) // 60) % 24, int(m) % 60)  # noqa: E731
+    sig = (date, row["s"], row["e"], row.get("project"), len(said), len(made), said[-1]["reply"][:40] if said else "")
+    with _lock:
+        if sig in _notes:
+            return _notes[sig]
+    work = json.dumps({"steps": said, "commits": made, "their_notes": [n["note"] for n in their_notes(row, history)]},
+                      ensure_ascii=False, indent=1)
+    prompt = NOTE_PROMPT.format(date=date, start=hm_(row["s"]), end=hm_(row["e"]), repo=row.get("project") or "",
+                                note_max=NOTE_MAX, work=work)
+    binary = productive._claude_binary()
+    if not binary:
+        raise AskError("Claude Code was not found on this Mac.")
+    os.makedirs(config.CACHE_DIR, exist_ok=True)
+    try:  # no tools, no MCP servers, no settings' hooks: only the text above goes to Claude
+        done = run([binary, "-p", "--model", "haiku", "--no-session-persistence", "--output-format", "json",
+                    "--json-schema", json.dumps(NOTE_SCHEMA), "--max-budget-usd", "0.1", "--tools", "",
+                    "--permission-mode", "dontAsk", "--strict-mcp-config", "--setting-sources", ""],
+                   input=prompt, capture_output=True, text=True, timeout=90, cwd=config.CACHE_DIR)
+        res = json.loads(done.stdout)
+        drafted = (res.get("structured_output") or {}).get("note")
+    except subprocess.TimeoutExpired:
+        raise AskError("Claude took too long to draft the note.") from None
+    except OSError as exc:
+        raise AskError(f"Claude Code could not be started ({exc}).") from None
+    except (ValueError, AttributeError, TypeError):
+        tail = (done.stderr or done.stdout or "").strip()[-200:]
+        raise AskError("Claude's note could not be read." + (f" {tail}" if tail else "")) from None
+    text, bad = guard_note(drafted)
+    answer = {"note": text, "why": f"the draft had {bad}, so it was left out" if bad else "",
+              "cost": res.get("total_cost_usd")}
+    with _lock:
+        _notes[sig] = answer
+        for old in list(_notes)[:-60]:
+            del _notes[old]
     return answer
 
 

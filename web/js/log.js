@@ -129,15 +129,34 @@ const logPicker = makePicker($('#log-tasks'), logForm.elements.q, t => { resetFo
 let logDrafted = null;
 /* a note Pulsar filled in (a meeting's title, a repeat's usual note): it says so until the person edits it */
 let logFilled = false;
+let logDrafting = 0;  // the dialog's number while Claude drafts a note for it (draftFromSession), else 0
+let logOpened = 0;    // how many times the dialog opened: a note that arrives late is only for the dialog that asked
+
+/* With Claude Code on: Claude drafts the note of a Likely block from its session (what was typed, Claude's replies)
+   and commits. It replaces the note only while the person has not typed in it, and only in the dialog that asked. */
+async function draftFromSession({date, s, e, project}) {
+  const mine = logOpened, f = logForm.elements, was = f.note.value;
+  logDrafting = mine; showDraft();
+  const r = await postJSON('/api/likely/note', {date, s, e, project}).catch(() => ({}));
+  if (logDrafting === mine) logDrafting = 0;
+  if (mine !== logOpened || !logDlg.open) return;
+  if (r.note && f.note.value === was) {
+    f.note.value = r.note;
+    logDrafted = {note: r.note, from: 'session'}; logFilled = false;
+  }
+  showDraft();
+}
 function showDraft() {
   const d = logDrafted, sel = logPicker.selected;
-  $('#log-note-hint').innerHTML = !d ? (logFilled ? esc('Filled in for you: clients may see notes on invoices; check it.') : '')
-    : d.from === 'commits' ? esc('From your commits: check it before logging; clients may see notes.')
+  $('#log-note-hint').innerHTML = !d ? (logFilled ? esc('Filled in for you: clients may see notes on invoices; check it.')
+                                        : logDrafting ? esc('Claude is drafting a note from this session…') : '')
+    : d.from === 'commits' ? esc('From your commits' + (logDrafting ? '; Claude is drafting one from the session…' : ': check it before logging; clients may see notes.'))
+    : d.from === 'session' ? CLAUDE_MARK.split('<span')[0] + esc('Drafted by Claude from this session and your commits: check it before logging; clients may see notes.')
     : CLAUDE_MARK.split('<span')[0] + esc(
     !sel || sel.taskId === d.taskId ? 'Drafted by Claude: check it before logging; clients may see notes.'
       : `Drafted by Claude for “${d.title}”: check it before logging; clients may see notes.`);
 }
-logForm.elements.note.addEventListener('input', () => { if (logDrafted || logFilled) { logDrafted = null; logFilled = false; showDraft(); } });
+logForm.elements.note.addEventListener('input', () => { if (logDrafted || logFilled || logDrafting) { logDrafted = null; logFilled = false; logDrafting = 0; showDraft(); } });
 /* after "Log anyway", any change to what would be logged means a new check for overlaps */
 function resetForce() {
   if (!logForce) return;
@@ -159,7 +178,7 @@ logForm.elements.date.addEventListener('change', () => {
    {label, url} (the server works them out, each with why). drafted: the drafted note (logDrafted), when `note` is it */
 let logEdit = null;  // {id, serviceId, title} while the dialog edits an entry that is already logged
 async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = [], note = '', lead = null, edit = null, drafted = null} = {}) {
-  logEdit = edit;
+  logEdit = edit; logOpened++; logDrafting = 0;
   $('#log-title').textContent = edit ? 'Change a logged entry' : 'Log time in Productive';
   logForm.elements.date.disabled = !!edit;  // an entry changes within its own day
   if (!CONFIG?.productive.active) { toast('Connect Productive in Settings first.', true); openSettings('t-conn'); return; }

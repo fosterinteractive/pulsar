@@ -496,6 +496,9 @@ document.addEventListener('click', ev => {
                    ? {label: 'For this work', ids: linked.ids, idsWhy: 'linked in the Claude session',
                       tasks: [...linked.claude, ...linked.learned]}
                    : logBtn.dataset.likely == null ? leadFor(a, b) : null});  // the rail or an Activity block
+    // with Claude Code on, a note from the block's session and commits, unless Claude's pick already brought one
+    if (!meet && logBtn.dataset.likely != null && CONFIG?.likely?.askClaude && (!linked.draft || linked.draft.from === 'commits'))
+      draftFromSession({date: state.date, s: a, e: b, project: likelyCache[+logBtn.dataset.likely].project});
     return;
   }
   const editBtn = ev.target.closest('[data-edit]');

@@ -35,7 +35,7 @@ DEFAULTS = {
     "personal_patterns": ["Telegram", "WhatsApp", "YouTube", "Netflix", "Instagram", "Facebook", "TikTok", "Reddit"],
     "activitywatch_url": "http://localhost:5600",
     "likely": "auto",            # auto | on | off: the column built from Claude Code sessions
-    "ask_claude": False,         # the "Ask Claude" button in the Likely column (sends what you typed to Claude)
+    "ask_claude": False,         # the one Claude Code switch (claudelink.py): Ask Claude, notes, Pulsar in Claude Code
     "ask_claude_model": "sonnet",  # sonnet | haiku | opus: Claude Code's names for the latest of each
     "productive_source": "auto",  # auto | token | claude-code
     "org_id": "", "org_name": "", "person_id": "", "person_name": "", "person_day_hours": None,
@@ -44,6 +44,7 @@ DEFAULTS = {
     "rules": [],                 # [{match, taskId, title, project}]: activity containing `match` belongs to that task
     "calendar_account": "",      # the Google account whose calendar is connected (its email), shown in Settings
     "preview_writes": False,     # Pulsar Preview only: may it write to Productive (off by default)
+    "claude_rules_added": [],    # the "ask" rules Pulsar added to Claude Code's settings (claudelink.py), to take back
 }
 
 
@@ -127,7 +128,7 @@ def _fits(key: str, value) -> bool:
         return value in ("sonnet", "haiku", "opus")
     if key == "productive_source":
         return value in ("auto", "token", "claude-code")
-    if key == "personal_patterns":
+    if key in ("personal_patterns", "claude_rules_added"):
         return isinstance(value, list) and all(isinstance(p, str) for p in value)
     return type(value) is type(DEFAULTS[key])
 
