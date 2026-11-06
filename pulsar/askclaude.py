@@ -23,6 +23,12 @@ from datetime import datetime, timedelta
 from . import config, productive, sessions
 
 MODELS = ("sonnet", "haiku", "opus")  # Claude Code's aliases: always the latest model of each
+BUDGET = {"haiku": 0.25, "sonnet": 0.75, "opus": 2.0}  # dollars one day's question may cost at most (--max-budget-usd)
+# The answer's shape, checked by Claude Code itself (--json-schema): it comes back in "structured_output"
+SCHEMA = {"type": "object", "required": ["picks"], "properties": {"picks": {"type": "array", "items": {
+    "type": "object", "required": ["id", "tasks", "why"],
+    "properties": {"id": {"type": "integer"}, "tasks": {"type": "array", "items": {"type": "string"}, "maxItems": 3},
+                   "why": {"type": "string"}}}}}}
 TIMEOUT = 240
 READ_TOOLS = ["mcp__productive__search_records", "mcp__productive__query_resources", "mcp__productive__load_resource",
               "mcp__productive__describe_resource"]
@@ -111,6 +117,7 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
     os.makedirs(config.CACHE_DIR, exist_ok=True)
     try:
         done = run([binary, "-p", "--model", model, "--no-session-persistence", "--output-format", "json",
+                    "--json-schema", json.dumps(SCHEMA), "--max-budget-usd", str(BUDGET[model]),
                     "--tools", "", "--allowedTools", ",".join(READ_TOOLS), "--disallowedTools", ",".join(WRITE_TOOLS)],
                    input=prompt, capture_output=True, text=True, timeout=TIMEOUT, cwd=config.CACHE_DIR)
     except subprocess.TimeoutExpired:
@@ -119,8 +126,11 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
         raise AskError(f"Claude Code could not be started ({exc}).") from None
     try:
         res = json.loads(done.stdout)
-        text = str(res.get("result") or "")
-        picks = json.loads(text[text.rindex('{"picks"'):text.rindex("}") + 1])["picks"]
+        if isinstance(res.get("structured_output"), dict):  # checked against SCHEMA by Claude Code
+            picks = res["structured_output"]["picks"]
+        else:  # an older Claude Code: the JSON at the end of its text
+            text = str(res.get("result") or "")
+            picks = json.loads(text[text.rindex('{"picks"'):text.rindex("}") + 1])["picks"]
     except (ValueError, KeyError, TypeError):
         tail = (done.stderr or done.stdout or "").strip()[-200:]
         raise AskError("Claude's answer could not be read." + (f" {tail}" if tail else "")) from None

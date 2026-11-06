@@ -619,6 +619,8 @@ class AskClaudeTest(unittest.TestCase):
         cmd = seen["cmd"]
         self.assertIn("--no-session-persistence", cmd)                   # never shows up in Likely itself
         self.assertEqual(cmd[cmd.index("--model") + 1], "sonnet")          # the default
+        self.assertIn("--json-schema", cmd)
+        self.assertEqual(cmd[cmd.index("--max-budget-usd") + 1], "0.75")   # a cap on one day's cost
         self.assertEqual(cmd[cmd.index("--tools") + 1], "")              # no shell, no files
         self.assertNotIn("create_resource", cmd[cmd.index("--allowedTools") + 1])
         self.assertIn("mcp__productive__create_resource", cmd[cmd.index("--disallowedTools") + 1])
@@ -626,6 +628,17 @@ class AskClaudeTest(unittest.TestCase):
         self.assertEqual(got["picks"], {"600|acme-site": {"tasks": [{"taskId": "7", "title": "Estimations", "project": "Proposals"},
                                                                      {"taskId": "99", "title": "Found", "project": "P"}],
                                                            "why": "estimate work"}})
+
+    def test_the_checked_answer_is_used_when_claude_code_gives_one(self):
+        import json as _json
+        from pulsar import askclaude
+        out = {"result": "done", "structured_output": {"picks": [{"id": 0, "tasks": ["7"], "why": "estimate"}]}}
+        fake = lambda cmd, **kw: mock.Mock(stdout=_json.dumps(out), stderr="", returncode=0)  # noqa: E731
+        rows = [{"s": 540, "e": 600, "project": "acme-site", "titles": [], "minutes": 60}]
+        entries = [{"taskId": "7", "task": "Estimations", "project": "Proposals", "minutes": 30, "date": "2026-11-02"}]
+        with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/bin/claude"):
+            got = askclaude.ask("2026-11-04", rows, 0, entries, run=fake)
+        self.assertEqual(got["picks"]["540|acme-site"]["tasks"][0]["title"], "Estimations")
 
     def test_a_short_day_asks_nothing(self):
         from pulsar import askclaude
