@@ -1,7 +1,7 @@
 :root {
   --bg: #f5f5f3; --panel: #ffffff; --card: #ffffff; --line: rgba(0,0,0,.07); --line2: rgba(0,0,0,.035);
   --text: #1d1d1f; --muted: #6e6e73; --faint: #a1a1a6; --hover: rgba(0,0,0,.04);
-  --gap: #d48a00; --now: #ff3b30; --shadow: 0 12px 40px rgba(0,0,0,.14), 0 1px 3px rgba(0,0,0,.08);
+  --gap: #d48a00; --gap-text: #9a6200; --now: #ff3b30; --shadow: 0 12px 40px rgba(0,0,0,.14), 0 1px 3px rgba(0,0,0,.08);
   --seg: rgba(0,0,0,.05); --seg-on: #ffffff;
   /* charts: billable blue, not billable orange (validated as a pair, light and dark, colour-blind safe); billing
      Productive does not show this person in grey, set apart from the grey of active time behind it */
@@ -12,7 +12,7 @@
   :root:not([data-theme="light"]) {
     --bg: #141416; --panel: #1b1b1e; --card: #232327; --line: rgba(255,255,255,.07); --line2: rgba(255,255,255,.035);
     --text: #f2f2f4; --muted: #9b9ba2; --faint: #5c5c63; --hover: rgba(255,255,255,.05);
-    --gap: #f0a833; --now: #ff453a; --shadow: 0 12px 40px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
+    --gap: #f0a833; --gap-text: #f0a833; --now: #ff453a; --shadow: 0 12px 40px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
     --seg: rgba(255,255,255,.06); --seg-on: #3a3a3f;
     --accent: #3987e5; --accent2: #d95926; --unknown: #9a9993; --warp-core: 0, 0, 0; --deemph: #4a4a46; --seq-lo: #1c2736; --seq-hi: #9ec5f4; --grid: #2c2c2a; --axis: #383835; --weekend: rgba(255,255,255,.025);
     color-scheme: dark;
@@ -22,7 +22,7 @@
 :root[data-theme="dark"] {
   --bg: #141416; --panel: #1b1b1e; --card: #232327; --line: rgba(255,255,255,.07); --line2: rgba(255,255,255,.035);
   --text: #f2f2f4; --muted: #9b9ba2; --faint: #5c5c63; --hover: rgba(255,255,255,.05);
-  --gap: #f0a833; --now: #ff453a; --shadow: 0 12px 40px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
+  --gap: #f0a833; --gap-text: #f0a833; --now: #ff453a; --shadow: 0 12px 40px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
   --seg: rgba(255,255,255,.06); --seg-on: #3a3a3f;
   --accent: #3987e5; --accent2: #d95926; --unknown: #9a9993; --warp-core: 0, 0, 0; --deemph: #4a4a46; --seq-lo: #1c2736; --seq-hi: #9ec5f4; --grid: #2c2c2a; --axis: #383835; --weekend: rgba(255,255,255,.025);
   color-scheme: dark;
@@ -75,12 +75,12 @@ input[type=date] {
 }
 .toast.on { opacity: 1; transform: translate(-50%, 0); }
 .toast .ic { color: var(--muted); font-weight: 600; flex: none; }
-.toast.warn .ic { color: var(--gap); }
+.toast.warn .ic { color: var(--gap-text); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .colhead + .colhead { border-left: 1px solid var(--line); }
 .colhead b { display: block; font-size: 13px; font-weight: 600; }
 .colhead span { display: block; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.colhead span.warn { color: var(--gap); white-space: normal; }
+.colhead span.warn { color: var(--gap-text); white-space: normal; }
 .scroll { flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; }
 .grid { position: relative; }
 .axis { position: relative; }
@@ -135,7 +135,7 @@ input[type=date] {
 .awaylabel { position: absolute; left: 12px; font-size: 11px; color: var(--muted); pointer-events: none; }
 .gaprail { position: absolute; left: -1px; width: 3px; background: var(--gap); border-radius: 2px; opacity: .85; pointer-events: none; }
 .state { position: absolute; left: 12px; right: 12px; top: 16px; color: var(--faint); font-size: 12px; }
-.state.err { color: var(--gap); }
+.state.err { color: var(--gap-text); }
 
 /* aside */
 aside { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-height: 0; }
@@ -144,7 +144,7 @@ aside { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-
 .kv { display: flex; justify-content: space-between; align-items: baseline; padding: 3px 0; gap: 12px; }
 .kv span:first-child { color: var(--muted); }
 .kv.big span:last-child { font-size: 15px; font-weight: 600; }
-.kv.gap span:last-child { color: var(--gap); }
+.kv.gap span:last-child { color: var(--gap-text); }
 .bar { height: 4px; border-radius: 2px; background: var(--seg); margin: 10px 0 2px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--text); opacity: .7; border-radius: 2px; }
 /* project totals, the MemTime way: a coloured bar per project, its budgets under it, folding */
@@ -195,7 +195,7 @@ body[data-view="day"] #report { display: none; }
 #report.loading .body { opacity: .45; pointer-events: none; }
 .rfilters { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 14px; }
 .rfilters .sub { color: var(--muted); }
-.rmsg { color: var(--gap); font-size: 12.5px; }
+.rmsg { color: var(--gap-text); font-size: 12.5px; }
 .rmsg:empty { display: none; }
 #range { flex-wrap: wrap; }
 .banner { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--gap); border-radius: 10px; padding: 9px 14px; margin-bottom: 12px; font-size: 12.5px; }
@@ -303,7 +303,7 @@ dialog#settings::backdrop { background: rgba(0,0,0,.35); }
 .hint { color: var(--muted); font-size: 12px; margin: 2px 0 6px; }
 .hint:empty { display: none; }
 .status { font-size: 12.5px; margin: 0 0 6px; padding: 8px 10px; border-radius: 8px; background: var(--seg); }
-.status.warn, .msg.warn { color: var(--gap); }
+.status.warn, .msg.warn { color: var(--gap-text); }
 .msg { font-size: 12.5px; margin: 0; padding: 10px 18px 0; }
 .msg:empty { display: none; }
 .btn.bordered { border: 1px solid var(--line); }
@@ -383,7 +383,7 @@ header { flex-wrap: wrap; row-gap: 8px; }
 .tk-h b { flex: 1; font-weight: 600; font-size: 12.5px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tk-h .num { color: var(--muted); font-size: 12px; }
 .tk-l { color: var(--muted); font-size: 12px; padding: 2px 0 0 16px; }
-.tk-l.over { color: var(--gap); }
+.tk-l.over { color: var(--gap-text); }
 .tk .bar { margin: 5px 0 0 16px; height: 3px; }
 .rl { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line2); font-size: 12.5px; }
 .rl span { flex: 1; min-width: 0; }
@@ -398,7 +398,7 @@ header { flex-wrap: wrap; row-gap: 8px; }
 .lg { padding: 9px 0; border-bottom: 1px solid var(--line2); font-size: 12.5px; }
 .lg-h { display: flex; gap: 10px; align-items: baseline; color: var(--muted); font-size: 12px; }
 .lg-k { font-weight: 600; color: var(--muted); }
-.lg-k.err { color: var(--gap); }
+.lg-k.err { color: var(--gap-text); }
 .lg-w { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lg-m { margin-top: 3px; overflow-wrap: anywhere; }
 .lg pre { white-space: pre-wrap; font-size: 11px; color: var(--muted); background: var(--seg); padding: 8px; border-radius: 6px; max-height: 240px; overflow: auto; }
@@ -489,7 +489,7 @@ dialog#updprompt::backdrop { background: rgba(0,0,0,.35); }
 #updprompt .df { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
 
 /* the log dialog's task notes: overdue, due today, blocked stand out (the words say it, the colour helps) */
-.pk .pk-warn { color: var(--gap); font-weight: 600; }
+.pk .pk-warn { color: var(--gap-text); font-weight: 600; }
 
 /* the changelog in Settings: closed until asked for, each release folds (settings.js) */
 #changelog { margin: 6px 0 8px; font-size: 12.5px; }

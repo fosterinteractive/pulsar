@@ -91,6 +91,34 @@ function activityBlocks(items, Z, end) {
 const busiest = m => [...m].sort((x, y) => y[1] - x[1])[0]?.[0];
 const topWindow = a => ({...a.it, title: busiest(a.titles) ?? a.it.title, url: busiest(a.urls) || ''});
 
+/* what to offer first for a stretch picked some other way (the yellow rail, a drag, an Activity block): the Likely
+   block that covers most of it, else the meeting that does, as if it had been logged from there */
+function leadFor(a, b) {
+  const cover = (s, e) => Math.max(0, Math.min(b, e) - Math.max(a, s));
+  const Z = state.zoom;
+  const lk = likelyCache.map(k => [k, cover(k.start * Z, k.end * Z)]).sort((p, q) => q[1] - p[1])[0];
+  if (lk && lk[1] >= (b - a) / 2) {
+    const t = likelyTasks(lk[0]);
+    if (t.ids.length || t.learned.length || t.claude.length)
+      return {label: `For this work (${lk[0].project})`, ids: t.ids, idsWhy: 'linked in the Claude session', tasks: [...t.claude, ...t.learned]};
+  }
+  const mt = (typeof meetCache !== 'undefined' ? meetCache : []).filter(x => !x.declined).map(x => [x, cover(x.s, x.e)]).sort((p, q) => q[1] - p[1])[0];
+  if (mt && mt[1] >= (b - a) / 2)
+    return {label: `For “${mt[0].title || 'the meeting'}”`, url: `/api/meeting-tasks?date=${state.date}&uid=${encodeURIComponent(mt[0].uid || '')}&title=${encodeURIComponent(mt[0].title || '')}`};
+  return null;
+}
+
+/* the active minutes inside [a, b): from the first active minute, as long as the activity was (not the slot) */
+function activeSpan(a, b) {
+  let first = null, total = 0;
+  for (const it of state.act?.items || []) {
+    if (it.cat === 'personal') continue;
+    const s = Math.max(a, it.s), e = Math.min(b, it.e);
+    if (e > s) { total += e - s; first = first == null ? s : Math.min(first, s); }
+  }
+  return first == null ? {start: a, minutes: b - a} : {start: Math.floor(first), minutes: Math.max(1, Math.round(total))};
+}
+
 /* Claude's answer for a Likely block (the Ask Claude button): the pick of its longest row that has one */
 function claudePick(b) {
   const picks = state.claude?.date === state.date ? state.claude.picks : null;
@@ -417,7 +445,13 @@ function openPop(html, ev) {
 document.addEventListener('click', ev => {
   const logBtn = ev.target.closest('[data-log-a], .gaprail, .awayband');
   if (logBtn) {
-    const a = +(logBtn.dataset.logA ?? logBtn.dataset.a), b = +(logBtn.dataset.logB ?? logBtn.dataset.b);
+    let a = +(logBtn.dataset.logA ?? logBtn.dataset.a), b = +(logBtn.dataset.logB ?? logBtn.dataset.b);
+    if (logBtn.dataset.likely != null) {  // a Likely block: its own minutes, not the slots it spans at this zoom
+      const rows = (likelyCache[+logBtn.dataset.likely]?.entries || []).filter(e => e.project === likelyCache[+logBtn.dataset.likely].project);
+      if (rows.length) { a = Math.min(...rows.map(e => e.s)); b = a + rows.reduce((s, e) => s + e.minutes, 0); }
+    } else if (logBtn.dataset.act != null) {  // an Activity block: the active minutes in it
+      const sp = activeSpan(a, b); a = sp.start; b = sp.start + sp.minutes;
+    }
     const linked = logBtn.dataset.likely != null ? likelyTasks(likelyCache[+logBtn.dataset.likely]) : {ids: [], learned: [], claude: []};
     const meet = logBtn.dataset.meet != null ? meetCache[+logBtn.dataset.meet] : null;
     pop.classList.remove('on');
@@ -426,7 +460,8 @@ document.addEventListener('click', ev => {
                              encodeURIComponent(meet.uid || '')}&title=${encodeURIComponent(meet.title || '')}`}
                  : linked.ids.length || linked.learned.length || linked.claude.length
                    ? {label: 'For this work', ids: linked.ids, idsWhy: 'linked in the Claude session',
-                      tasks: [...linked.claude, ...linked.learned]} : null});
+                      tasks: [...linked.claude, ...linked.learned]}
+                   : logBtn.dataset.likely == null ? leadFor(a, b) : null});  // the rail or an Activity block
     return;
   }
   const ruleBtn = ev.target.closest('[data-rule-text]');
@@ -445,7 +480,7 @@ document.addEventListener('click', ev => {
   if (card.dataset.k === 'act') {
     const b = blocksCache[i];
     openPop(`<div class="ph"><div><h3>${hm(b.start * Z)}–${hm(b.end * Z)}</h3><div class="sub">${dur(b.total)} active</div></div>
-      <button class="btn bordered sm" data-log-a="${b.start * Z}" data-log-b="${b.end * Z}">Log this time</button></div>` +
+      <button class="btn bordered sm" data-log-a="${b.start * Z}" data-log-b="${b.end * Z}" data-act="${i}">Log this time</button></div>` +
       b.items.filter(a => a.min >= 0.5).slice(0, 14).map(a => {
         const top = [...a.titles].sort((x, y) => y[1] - x[1]).slice(0, 3), r = ruleOf(a.it);
         return `<div class="li">${icon(a.it.icon, a.it.app)}<div class="t"><div>${esc(top[0][0] || a.it.app)}</div>

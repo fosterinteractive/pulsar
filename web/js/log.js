@@ -78,6 +78,19 @@ function makePicker(listEl, searchEl, onPick) {
     selected = groups.flatMap(g => g.tasks).find(t => t.taskId === b.dataset.id) || null;
     redraw(); if (selected) onPick(selected);
   };
+  /* Enter in the search picks the first task shown (it never submits the form with a task no longer on screen);
+     the arrow keys move between the search and the tasks */
+  searchEl.addEventListener('keydown', ev => {
+    const first = listEl.querySelector('.pk');
+    if (ev.key === 'Enter') { ev.preventDefault(); first?.click(); first?.focus(); }
+    if (ev.key === 'ArrowDown' && first) { ev.preventDefault(); first.focus(); }
+  });
+  listEl.addEventListener('keydown', ev => {
+    const all = [...listEl.querySelectorAll('.pk')], i = all.indexOf(document.activeElement);
+    if (i < 0 || !['ArrowDown', 'ArrowUp'].includes(ev.key)) return;
+    ev.preventDefault();
+    if (ev.key === 'ArrowUp' && i === 0) searchEl.focus(); else all[Math.max(0, Math.min(all.length - 1, i + (ev.key === 'ArrowDown' ? 1 : -1)))].focus();
+  });
   searchEl.oninput = () => {
     clearTimeout(timer);
     const q = searchEl.value.trim();
@@ -208,8 +221,13 @@ logForm.addEventListener('submit', async ev => {
   if (f.date.value === state.date) refreshLogged();
 });
 logDlg.querySelectorAll('[data-close]').forEach(b => b.onclick = () => logDlg.close());
+logDlg.addEventListener('keydown', ev => {  // Cmd+Enter (Ctrl+Enter elsewhere) logs from anywhere in the dialog
+  if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); logForm.requestSubmit(); }
+});
 $('#log-new').onclick = () => {
-  const last = (state.logged?.entries || []).filter(x => x.e != null).reduce((m, x) => Math.max(m, x.e), 0);
+  const gap = document.querySelector('#lane-logged .gaprail');  // the first active stretch with no entry
+  if (gap) { const a = +gap.dataset.a, b = +gap.dataset.b; openLog({start: a, minutes: b - a, hint: rulesInRange(a, b), lead: leadFor(a, b)}); return; }
+  const last = (state.logged?.entries || []).filter(x => x.e != null && x.e < 1440).reduce((m, x) => Math.max(m, x.e), 0);
   const start = last || (state.date === todayLocal() ? Math.max(0, nowMin() - 30) : 9 * 60);
   openLog({start, minutes: 30, hint: rulesInRange(start, start + 30)});
 };
@@ -240,7 +258,7 @@ $('#log-new').onclick = () => {
     if (start == null) return;
     const a = +sel.dataset.a, b = +sel.dataset.b;
     sel.remove(); start = null;
-    if (b - a >= 5 && a >= 0 && b <= DAY_END) openLog({start: a, minutes: b - a, hint: rulesInRange(a, b)});
+    if (b - a >= 5 && a >= 0 && b <= DAY_END) openLog({start: a, minutes: b - a, hint: rulesInRange(a, b), lead: leadFor(a, b)});
   });
   lane.addEventListener('pointercancel', () => { if (start == null) return; sel.remove(); start = null; });
 })();
