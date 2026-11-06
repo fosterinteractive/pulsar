@@ -105,8 +105,10 @@ yours.
   a pending `state` that a signed-in Settings click created (random, used once, ten minutes), and it can only finish
   that one sign-in.
 - **Writing to Productive** happens in one place (`productive.create_entry`), only from `POST /api/log`, which only
-  the log dialog's button and the confirm step of Log the day send (section 5.4). With `PULSAR_READ_ONLY=1` in the
-  environment, every write is refused at the lowest level (`productive.https`). Test servers always run with it.
+  the log dialog's button, the confirm step of Log the day (section 5.4) and `pulsar_log` in Claude Code, after the
+  person's yes in Claude Code's own prompt (section 5.6), send. With `PULSAR_READ_ONLY=1` in the environment, every
+  write is refused at the lowest level (`productive.https`), and `POST /api/log` refuses it before the Log the day
+  journal records anything. Test servers always run with it.
 - **Updates** are signed. See section 9.
 
 ## 4. Where the day comes from
@@ -418,21 +420,46 @@ tasks 41% and 65%.
 
 `pulsar.py --mcp [--port 5610]` is an MCP server on stdio (JSON-RPC, standard library) that a Claude Code session
 starts: `claude mcp add pulsar -- /usr/bin/python3 -E -s -B <path>/pulsar.py --mcp`. It talks to the running Pulsar
-over 127.0.0.1 with the key, after the same `/api/whoami` check the launcher makes, so Pulsar must be open.
+over 127.0.0.1 with the key, after the same `/api/whoami` check the launcher makes, so Pulsar must be open: when it is
+not, every tool fails with "Pulsar is not answering ... Open Pulsar, then ask again", except `pulsar_status`.
 
 | Tool | What it gives |
 |---|---|
+| `pulsar_status` | never fails: whether Pulsar answers, its version and the MCP's, whether writes are blocked and why, whether `pulsar_log` works from this app, today's date, time and time zone |
 | `pulsar_day` | the day in numbers: logged, active stretches with no entry, Likely by project, meetings (times only), repeats |
 | `pulsar_propose` | Log the day's proposal (5.4): start, minutes, task, service, confidence, why, alternatives |
 | `pulsar_session` | the calling session's own minutes (Claude Code gives every MCP server `CLAUDE_CODE_SESSION_ID`; Likely rows carry their sessions' ids), with a task for each and what is not logged yet; stretches another session also had are kept apart |
 | `pulsar_suggest` | the log dialog's task list for one stretch |
 | `pulsar_tasks` | tasks logged to lately (with the service used last), assigned ones, and a Productive search |
-| `pulsar_log` | without `confirm`, a dry run: services resolved, notes checked (`guard_note`), every entry through `POST /api/log` with `dry`, and a confirm code (once, 10 minutes, for exactly those entries); with the code, the entries go through `POST /api/log` one at a time, journalled as a Log the day run (Undo works), stopping at the first that is not logged |
+| `pulsar_preview` | read only: services resolved, notes checked (`guard_note`), every entry through `POST /api/log` with `dry` (overlaps, the journal); with no problem, a code (once, 10 minutes) holding exactly those entries, and `summary`, Pulsar's own text of what would be written, one line per entry: `Wed 4 Nov 09:00-10:00 (60 min): Build (Acme), Dev, billable. Note: "Search fixed."` |
+| `pulsar_log` | `code` and `summary`: writes the entries the code holds through `POST /api/log`, one at a time, journalled as a Log the day run (Undo works), stopping at the first that is not logged |
 
-Never returned: window titles, apps, addresses, typed messages, meeting titles, other sessions' titles, notes of
-logged entries, rule words. Returned on purpose: the calling session's own title, and note drafts from the person's
-own commit subjects (as the log dialog offers them). `PULSAR_READ_ONLY` in the MCP's environment refuses a confirmed
-write before anything is sent; the server's own `writes_blocked()` refuses it again.
+**The person says yes to every write, not the model.** `pulsar_log`'s definition carries
+`_meta: {"anthropic/requiresUserInteraction": true}`: Claude Code asks the person before every call, even in auto or
+bypass mode, and allow rules cannot skip it; with no one to ask (`-p`, `dontAsk`) the call is denied and never reaches
+Pulsar. The prompt shows the tool's arguments, so `pulsar_log` refuses unless `summary` is the preview's text word for
+word: the person approves Pulsar's words, not the model's. Other apps ignore the mark, so `pulsar_log` refuses any
+client whose name is not `claude-code` (from `initialize`, or from each request's `_meta` in the 2026-07-28 protocol).
+A code that is refused (wrong summary, wrong app, Pulsar closed, writes blocked) is not used up.
+
+**Protocols.** Claude Code 2.1.301 first sends `server/discover` (2026-07-28): Pulsar answers it, and every request
+after it carries its version, capabilities and client in `_meta`, with no handshake; results say
+`resultType: "complete"` and Pulsar's name, and `server/discover` and `tools/list` carry `ttlMs`. A client that starts
+with `initialize` (2025-11-25 and earlier) gets that protocol instead. An unknown version gets error -32022 with the
+versions Pulsar speaks.
+
+**What leaves.** Never returned: window titles, apps, addresses, typed messages, meeting titles, other sessions'
+titles, notes of logged entries, rule words. Returned on purpose: the calling session's own title, and note drafts
+(`noteDraft`) from repeats, from Ask Claude, and from commit subjects only when the entry's repository is the calling
+session's (`CLAUDE_PROJECT_DIR` through `sessions.project_of_path`, names compared loosely as `commits.matches` does);
+a meeting's note is its title and is never returned.
+
+**Writes blocked.** `PULSAR_READ_ONLY` in the MCP's environment refuses `pulsar_log` before anything is sent. The
+server refuses a blocked write (`PULSAR_READ_ONLY`, or Preview without "allow writes") in `_log_checked` before the
+journal or the Logs hear of it; a dry run still works. `pulsar_status` reports the MCP's own switch, Preview from
+`/api/config`, and the server's `PULSAR_READ_ONLY`, which `/api/config` does not show: it asks `/api/dayplan` with
+`ignore_logged=1` and a bad source, which a read-only server refuses for the source and any other for `ignore_logged`,
+before any work (a `writesBlocked` field in `/api/config` would be simpler).
 
 ## 6. The rest of the day view
 
@@ -590,7 +617,8 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 - A test server against real data: `PULSAR_READ_ONLY=1 python3 -E -s -B pulsar.py --port 5698 --no-open`, then
   `python3 pulsar.py --signin-url --port 5698` prints a one-time address for a browser. Block `**/api/log` and
   `**/api/entry/**` in a scripted browser as well. On such a server only, `?ignore_logged=1` in the page's address
-  makes Log the day plan a day as if nothing were logged, to see a whole proposal on a day already logged.
+  makes Log the day plan a day as if nothing were logged, to see a whole proposal on a day already logged. Give it
+  `XDG_CACHE_HOME` pointing at a copy of `~/.cache/pulsar`, so its journal and Logs are not the real ones.
 - The window has test hooks when built with `PULSAR_SWIFT_FLAGS="-D PULSAR_TEST"`: with `PULSAR_TEST_DIR` it saves a
   picture of the page, a download and a PDF, then quits.
 
