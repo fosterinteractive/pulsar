@@ -299,6 +299,7 @@ def run_all(opts=None, quiet=False, with_logged_checks=False):
                 extra.update(logged_checks(d, "all"))
         except Exception as exc:
             crashes.append((d, f"{type(exc).__name__}: {exc}", traceback.format_exc()[-800:]))
+    R.save_work_text()
     return days, crashes, extra
 
 

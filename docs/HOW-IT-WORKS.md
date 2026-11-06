@@ -333,15 +333,18 @@ logged, and **proposed plus logged never exceeds active time plus attended meeti
 placed, never placed. A row's task comes from, in this order: a rule, a task link pasted in the session, a ticket key
 in the title, the tasks logged in the same session, then the same repository (votes from the last 60 days, older days
 counting half every 7 days), the same session earlier that day, and task names that share words with the work (your
-own name does not count). A repository you work in for an hour or more and log under a tenth of is set aside as one
-you never log; days with entries that have no start time do not count, since they cannot be matched to the work.
-Confidence: high, medium or low, in words and a three-bar meter; the same session's votes are high from 60% (and 30
-minutes), else low. **Unticked at the start**: low confidence, no task, no service, agent-only time, meetings with no
-call seen. **Notes** are never written from session text: only a meeting's title, your usual note for a repeat, a note
-Ask Claude drafted for that task, or one from your commits in the work, each with "clients may see notes". The
-**service** is the one last used on the task, checked against the services that take time on that date
-(`bookable_services`). With Productive unreadable, nothing is proposed. About 6 seconds for a day the first time,
-under a second after.
+own name and common words such as "not" and "the" do not count). A session's task does not carry over to another
+client's repository: once a repository has an hour of votes, a session's task counts there only when its project has a
+quarter of them or more (`dayplan.fits`; on the replay: no change 43.7% to 45.2%, the right task at the right time
+36.4% to 37.6%, client work 13.4% to 15.1%, no slice worse by more than half a point). A repository you work in for an
+hour or more and log under a tenth of is set aside as one you never log; days with entries that have no start time do
+not count, since they cannot be matched to the work. Confidence: high, medium or low, in words and a three-bar meter;
+the same session's votes are high from 60% (and 30 minutes), else low. **Unticked at the start**: low confidence, no
+task, no service, agent-only time, meetings with no call seen. **Notes** are never written from session text: only a
+meeting's title, your usual note for a repeat, a note Ask Claude drafted for that task, or one from your commits in
+the work, each with "clients may see notes". The **service** is the one last used on the task, checked against the
+services that take time on that date (`bookable_services`). With Productive unreadable, nothing is proposed. About 6
+seconds for a day the first time, under a second after.
 
 **Ask Claude** (only when it is on in Settings): the review shows the plan at once, then sends the day to Claude
 (every row of ten minutes or more) and fills in the answer as it arrives. Claude's pick replaces only rows the planner
@@ -364,12 +367,12 @@ run's name, only the entries that run created, and only if each is still as it w
 dropped.
 
 Replayed on one person's 34 fully logged days (21 September to 4 November 2026, `tools/replay/`), each day planned
-as if nothing were logged, from the days before it only, and compared with what was logged: 44% of the minutes
-needed no change; the right task in the right amount for 47% of the logged minutes; the right task at the right time
-for 36% of them (35% of the proposed minutes). By confidence, right at that time and right somewhere that day: high
-66% and 94%, medium 30% and 75%, low 22% and 55%. The rows ticked at the start were right that day for 92% of their
-minutes. Repeats were the surest source (78% at the right time), calendar meetings the weakest (14%), so most start
-unticked. Most of the rest is tasks new that day (15% of the logged minutes), sessions that moved between tasks, and
+as if nothing were logged, from the days before it only, and compared with what was logged: 45% of the minutes
+needed no change; the right task in the right amount for 49% of the logged minutes; the right task at the right time
+for 38% of them (37% of the proposed minutes). By confidence, right at that time and right somewhere that day: high
+67% and 95%, medium 29% and 72%, low 24% and 54%. The rows ticked at the start were right that day for 94% of their
+minutes. Repeats were the surest source (78% at the right time), calendar meetings the weakest (16%), so most start
+unticked. Most of the rest is tasks new that day (14% of the logged minutes), sessions that moved between tasks, and
 time logged when the tracker saw nothing (8%).
 
 ### 5.5 Where the suggestions come from
@@ -383,7 +386,11 @@ time logged when the tracker saw nothing (8%).
   session, then in the same repository, over the last 60 days. Each earlier row votes, with its minutes, for the task
   that took most of it. Older logging counts less: a day's votes halve every 7 days (`HALF_LIFE`, as in
   `dayplan.py`), which sets the order; the "why" shows the minutes actually logged. A session's votes count in every
-  repository it worked in. Preferring the same session in the same repository was measured on 30 days of one
+  repository it worked in, here unlike in Log the day (5.4): putting another client's tasks after the repository's
+  own helped the first place (34.5% to 35.7% of entries, logged in time order) but lost the fifth (62.6% to 61.1%, and
+  up to 4.6 points for some weekdays and for meetings), because the work in a shared repository (the QA hub, the
+  skills) is often for the client the session worked for. Preferring the same session in the same repository was
+  measured on 30 days of one
   person's logging, each day learned from the days before it: the right task came first for fewer minutes (39%
   instead of 43%, and 44% instead of 51% for sessions that worked in two or more repositories that day). A long
   session moves from task to task over the weeks more than it changes task between repositories, and a row shared

@@ -34,6 +34,38 @@ def _entry_with_span(m, s, e, names):  # the merged piece's real first and last 
 
 dayplan._entry = _entry_with_span
 
+# the words of a row's work (session titles, what was typed, commits) do not depend on what is logged: read each once
+# and keep them in data/worktext.json (private: it holds typed text), so a replay reads the session files once
+_WT_PATH = None
+_WT: dict = {}
+_orig_work_text = getattr(learning, "work_text", None)
+
+
+def _work_text_kept(entry, t0, projects_dir=None):
+    global _WT_PATH
+    if _WT_PATH is None:
+        _WT_PATH = os.path.join(DATA, "worktext.json")
+        try:
+            _WT.update(json.load(open(_WT_PATH, encoding="utf-8")))
+        except (OSError, ValueError):
+            pass
+    k = f"{t0}|{entry['s']}|{entry['e']}|{'/'.join(entry.get('titles') or [])}|{'/'.join(entry.get('commits') or [])}"
+    if k not in _WT:
+        _WT[k] = _orig_work_text(entry, t0, projects_dir)
+        _WT["__dirty"] = 1
+    return _WT[k]
+
+
+def save_work_text():
+    if _WT.pop("__dirty", None) and _WT_PATH:
+        fd = os.open(_WT_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(_WT, fh, ensure_ascii=False)
+
+
+if _orig_work_text:
+    learning.work_text = _work_text_kept
+
 HERE = os.environ.get("PULSAR_REPLAY_DIR") or os.path.dirname(os.path.abspath(__file__))  # data/ and results go here
 DATA = os.path.join(HERE, "data")
 ENT = json.load(open(os.path.join(DATA, "entries.json")))

@@ -229,6 +229,27 @@ class PlannerTest(unittest.TestCase):
         [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600)]), ctx)["entries"]
         self.assertEqual((e["taskId"], e["confidence"], e["checked"]), ("11", "low", False))
 
+    def test_a_sessions_task_does_not_carry_over_to_another_clients_repository(self):
+        # replay, 3 Nov: a session that did one client's database upgrade the day before gave that task to the next
+        # day's work for other clients
+        key = dayplan.title_key("Fix the importer")
+        names = {"M": {"task": "Database upgrade", "project": "Munk"}, "P": {"task": "Pharmacy support", "project": "Pharmacy"}}
+        ctx = {**self.ctx, "sess": {key: {"M": 120.0}}, "repo": {"pharmacy": {"P": 300.0}}, "names": names}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, project="pharmacy")]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("P", "repo"))
+        # a repository with too little history says nothing: the session's task stays
+        ctx = {**ctx, "repo": {"pharmacy": {"P": 30.0}}}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, project="pharmacy")]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("M", "session"))
+
+    def test_common_words_never_match_a_task_name(self):
+        # a pick once matched a task name on "not"
+        ctx = {**self.ctx, "recent": ["90"], "names": {"90": {"task": "Not urgent: hero banner", "project": "X"}},
+               "sess": {}, "repo": {}}
+        p = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, project="z", titles=["Why is this not working"])]), ctx)
+        self.assertIsNone(p["entries"][0]["taskId"])
+        self.assertEqual(dayplan.words("the hero banner is not here and not done"), {"hero", "banner", "done"})
+
     def test_your_own_name_in_titles_is_no_evidence(self):
         ctx = {**self.ctx, "recent": ["90"], "names": {"90": {"task": "Estimations - Nick", "project": "X"}},
                "sess": {}, "repo": {}}

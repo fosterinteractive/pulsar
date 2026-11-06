@@ -64,10 +64,27 @@ GENERIC = {"the", "and", "for", "with", "drupal", "site", "website", "issues", "
            "check", "new", "task", "tasks", "from", "into", "about", "plan"}
 
 CONF_WORDS = {"high": "likely right", "medium": "probably right", "low": "check"}
+FIT_SHARE = 0.25     # a project with less of a repository's logged time than this is another client's there
+FIT_MIN = 60         # minutes of a repository's (fading) votes before its projects say anything
 
 
 def words(text: str, skip: frozenset = frozenset()) -> set:
-    return {w for w in WORD.findall((text or "").lower()) if w not in GENERIC and w not in skip}
+    """The words of a text for matching task names: three letters or more, without common English and Ukrainian words
+    ("not" once matched a task name) or `skip`."""
+    from .learn import _STOP
+    return {w for w in WORD.findall((text or "").lower()) if w not in GENERIC and w not in _STOP and w not in skip}
+
+
+def fits(ctx: dict, repo: str, task) -> bool | None:
+    """Whether a task's project is one this repository is logged to (FIT_SHARE of its votes): None when the
+    repository has too little history or the task's project is not known."""
+    v = (ctx.get("repo") or {}).get(repo or "") or {}
+    total = sum(v.values())
+    project = ((ctx.get("names") or {}).get(str(task)) or {}).get("project") if task else None
+    if total < FIT_MIN or not project:
+        return None
+    mine = sum(w for t, w in v.items() if ((ctx.get("names") or {}).get(t) or {}).get("project") == project)
+    return mine / total >= FIT_SHARE
 
 
 def title_key(title: str) -> str:
@@ -190,8 +207,13 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
             for k in keys:
                 for t, m in (ctx["sess"].get(k) or {}).items():
                     v[t] += m
+            tot = sum(v.values()) or 1
+            # a session's task never carries over to another client's repository (3 Nov: a session that did Munk's
+            # database upgrade the day before gave that task to other clients' work); the share counts every vote
+            v = {t: m for t, m in v.items() if fits(ctx, row.get("project"), t) is not False}
             if v:
-                t, m, share = _ranked(v)[0]
+                t, m, _ = _ranked(v)[0]
+                share = m / tot
                 # 40-60% was "medium" and was right no more often than "low" (replay, 34 days): it starts unticked
                 conf = "high" if share >= 0.6 and m >= 30 else "low"
                 out.append((t, "session", conf, f"you logged it while in this Claude session ({round(share * 100)}%)"))
