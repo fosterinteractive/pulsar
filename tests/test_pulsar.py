@@ -1348,6 +1348,29 @@ class ClockChangeTest(unittest.TestCase):
             ten = datetime.strptime(day + " 10:00", "%Y-%m-%d %H:%M").replace(tzinfo=kyiv).timestamp()
             self.assertEqual(server.clock(ten, t0, kyiv), expect, day)
 
+    def test_likely_rows_from_the_script_are_drawn_where_the_script_put_them(self):
+        """The fi-time-from-activity script writes wall-clock times. On the day the clocks went back in Kyiv, a row it
+        put at 10:00 must be drawn at 10:00, not an hour early; the cached proposal keeps elapsed minutes."""
+        import json
+        from pulsar import likely
+
+        def script(args, **k):
+            with open(args[args.index("--json") + 1], "w") as fh:
+                json.dump({"entries": [{"start": "02:00", "end": "02:30", "minutes": 30, "project": "p", "kind": "focused"},
+                                       {"start": "10:00", "end": "10:30", "minutes": 30, "project": "p", "kind": "focused"}]}, fh)
+            return mock.Mock(returncode=0, stdout="", stderr="")
+        s = {**config.DEFAULTS, "timezone": "Europe/Kyiv", "likely": "on"}
+        likely._cache.clear()
+        with mock.patch.object(likely, "own_script", lambda: True), mock.patch.object(likely.subprocess, "run", script), \
+             mock.patch.object(likely, "_with_tasks", lambda *a: None), \
+             mock.patch.object(server.config, "load", lambda: dict(s)), mock.patch.object(server, "current_settings", lambda: dict(s)), \
+             mock.patch.object(server.likely, "enabled", lambda s: True):
+            shown = server.api_proposal({"date": "2026-10-25"})["entries"]
+            kept = likely._cache[("2026-10-25", "Europe/Kyiv")][1]["entries"]
+        likely._cache.clear()
+        self.assertEqual([(e["s"], e["e"]) for e in shown], [(120, 150), (600, 630)])  # as the script said
+        self.assertEqual([(e["s"], e["e"]) for e in kept], [(120, 150), (660, 690)])   # elapsed: the day had 25 hours
+
     def test_the_week_heatmap_uses_the_clock_hour(self):
         from zoneinfo import ZoneInfo
         kyiv = ZoneInfo("Europe/Kyiv")
