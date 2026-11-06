@@ -1243,3 +1243,192 @@ def create_entry(entry: dict, settings: dict) -> dict:
         raise ProductiveUnclear("Productive's answer was unclear, so the entry may or may not exist. Check the Logged "
                                "column (it has been refreshed) before logging again. Productive said: " + text[:200])
     return {"id": ids[0]}
+
+
+# ---- a new task: the log dialog's "Create a task" (newtask.py) ------------------------------------
+
+def _mcp_items(doc: dict) -> Tuple[list, dict]:
+    """A query's rows as dicts, and its included records by "type:id"."""
+    cols = doc["items"]["columns"]
+    inc = doc.get("included") or {}
+    related = {f"{r[0]}:{r[1]}": dict(zip(inc.get("columns", []), r)) for r in inc.get("rows", [])}
+    return [dict(zip(cols, r)) for r in doc["items"]["rows"]], related
+
+
+def _id_of(ref) -> str:
+    """"projects:12" (the MCP's table form) -> "12"; "" for none."""
+    return str(ref).split(":")[-1] if ref else ""
+
+
+def active_projects(settings: dict) -> list:
+    """The active projects you can see, [{id, name}], by name (Productive shows only those your role may see). Read
+    only."""
+    conn = _need(settings)
+    out: list = []
+    if conn["kind"] == "token":
+        for page in range(1, 6):  # the status filter is not yet tried here: archived ones are left out below too
+            status, doc = rest_get("/projects", {"filter[status]": 1, "page[size]": 200, "page[number]": page},
+                                   conn["token"], settings.get("org_id"))
+            if status != 200 or not isinstance(doc, dict):
+                raise ProductiveError(f"Productive did not list the projects ({why(status, doc)}).")
+            out += [{"id": str(d.get("id")), "name": _attr(d, "name") or ""} for d in doc.get("data") or []
+                    if isinstance(d, dict) and not _attr(d, "archived_at")]
+            pages = (doc.get("meta") or {}).get("total_pages")
+            if not isinstance(pages, int) or page >= pages:
+                break
+    else:
+        for offset in range(0, 1000, 200):
+            rows, _ = _mcp_items(parse_mcp(mcp_text("query_resources", {
+                "resource_type": "projects", "limit": 200, "offset": offset, "sort": ["name"],
+                "filters": {"op": "and", "conditions": [{"field": "status", "operator": "eq", "value": "1"}]},
+                "include_fields": ["name"]}, conn["token"])))
+            out += [{"id": str(r.get("id")), "name": r.get("name") or ""} for r in rows]
+            if len(rows) < 200:
+                break
+    return sorted((p for p in out if p["id"].isdigit() and p["name"]), key=lambda p: p["name"].lower())
+
+
+def project_places(project_id: str, settings: dict) -> dict:
+    """Where a new task can go in a project, read only: {"tasks": its open top-level tasks, newest first, [{taskId,
+    title, list, assignee, created}], "lists": its active task lists [{id, name}]}. newtask.places chooses from them."""
+    if not str(project_id or "").isdigit():
+        raise ProductiveError("Pick a project.")
+    conn = _need(settings)
+    if conn["kind"] == "token":  # REST spellings of these filters are not yet tried: the rows are checked again below
+        status, doc = rest_get("/tasks", {"filter[project_id]": project_id, "filter[status]": 1, "sort": "-created_at",
+                                          "page[size]": 200}, conn["token"], settings.get("org_id"))
+        if status != 200 or not isinstance(doc, dict):
+            raise ProductiveError(f"Productive did not list the project's tasks ({why(status, doc)}).")
+        tasks = [{"taskId": str(d.get("id")), "title": _attr(d, "title") or "", "list": _rel(d, "task_list") or "",
+                  "assignee": _rel(d, "assignee") or "", "created": str(_attr(d, "created_at") or "")}
+                 for d in doc.get("data") or [] if isinstance(d, dict) and not _attr(d, "closed_at")
+                 and not _rel(d, "parent_task") and _rel(d, "project") in (None, str(project_id))]
+        status, doc = rest_get("/task_lists", {"filter[project_id]": project_id, "filter[status]": 1, "page[size]": 200},
+                               conn["token"], settings.get("org_id"))
+        if status != 200 or not isinstance(doc, dict):
+            raise ProductiveError(f"Productive did not list the project's task lists ({why(status, doc)}).")
+        lists = [{"id": str(d.get("id")), "name": _attr(d, "name") or ""} for d in doc.get("data") or []
+                 if isinstance(d, dict) and not _attr(d, "archived_at")]
+    else:
+        rows, _ = _mcp_items(parse_mcp(mcp_text("query_resources", {
+            "resource_type": "tasks", "limit": 200, "sort": ["-created_at"],
+            "filters": {"op": "and", "conditions": [{"field": "project", "operator": "eq", "value": str(project_id)},
+                                                    {"field": "task_type", "operator": "eq", "value": "1"},
+                                                    {"field": "workflow_status_category", "operator": "not_eq", "value": "3"}]},
+            "include_fields": ["title", "task_list", "assignee", "created_at"]}, conn["token"])))
+        tasks = [{"taskId": str(r.get("id")), "title": r.get("title") or "", "list": _id_of(r.get("task_list")),
+                  "assignee": _id_of(r.get("assignee")), "created": str(r.get("created_at") or "")} for r in rows]
+        rows, _ = _mcp_items(parse_mcp(mcp_text("query_resources", {
+            "resource_type": "task_lists", "limit": 200,
+            "filters": {"op": "and", "conditions": [{"field": "project", "operator": "eq", "value": str(project_id)},
+                                                    {"field": "status", "operator": "eq", "value": "1"}]},
+            "include_fields": ["name"]}, conn["token"])))
+        lists = [{"id": str(r.get("id")), "name": r.get("name") or ""} for r in rows]
+    return {"tasks": [t for t in tasks if t["taskId"].isdigit()], "lists": [x for x in lists if x["id"].isdigit()]}
+
+
+# Productive's refusals of a new task, in words the person can act on
+TASK_REFUSALS = (
+    (re.compile(r"invalid level of subtasks", re.I),
+     "a subtask cannot have subtasks of its own. Put it under another task, or in a task list"),
+    (re.compile(r"task_list is required", re.I), "this project needs a task list for it: pick one"),
+    (re.compile(r"\b403\b|forbidden|not (?:authori[sz]ed|allowed|permitted)|permission", re.I),
+     "your role may not add tasks to this project. Ask its PM, or pick another project"),
+)
+
+
+def task_refusal(text: str) -> str:
+    raw = re.sub(r"\s+", " ", str(text or "")).strip()
+    for rx, said in TASK_REFUSALS:
+        if rx.search(raw):
+            return f"Productive did not create the task: {said}."
+    return f"Productive did not create the task: {raw[:300]}"
+
+
+def _description_html(text: str) -> str:
+    """The description for the REST API, which keeps rich text as HTML: "- " lines as a list, other lines as
+    paragraphs, everything escaped."""
+    import html
+    out, items = [], []
+    for line in str(text or "").splitlines():
+        line = line.strip()
+        bullet = re.match(r"[-*•]\s+", line)
+        if bullet:
+            items.append("<li>" + html.escape(line[bullet.end():]) + "</li>")
+            continue
+        if items:
+            out.append("<ul>" + "".join(items) + "</ul>")
+            items = []
+        if line:
+            out.append(f"<p>{html.escape(line)}</p>")
+    if items:
+        out.append("<ul>" + "".join(items) + "</ul>")
+    return "".join(out)
+
+
+TASK_UNCLEAR = ("No clear answer from Productive ({}), so the task may or may not exist. Search for it in the task "
+                "list before creating it again.")
+
+
+def create_task(task: dict, settings: dict) -> dict:
+    """Creates one task, assigned to you: its title, description and project, and either a parent task (a subtask, as
+    FI puts each issue under the period's contingency task), a task list, or neither (directly in the project). Never
+    a service, estimate or status: a PM sets the service (fi-productive-process), the status is the workflow's first.
+    Called only from an explicit click in the page. {"taskId"}."""
+    conn = _write_conn(settings)
+    person = str(settings.get("person_id") or "")
+    if not person.isdigit():
+        raise ProductiveError("Pulsar does not know your Productive person ID yet, so nothing was created. Open "
+                              "Settings: it fills in by itself once Productive answers, or type it there.")
+    project, parent, task_list = (str(task.get(k) or "") for k in ("project_id", "parent_id", "task_list_id"))
+    if not project.isdigit() or (parent and not parent.isdigit()) or (task_list and not task_list.isdigit()):
+        raise ProductiveError("Pick a project, and where in it the task goes.")
+    title, description = str(task.get("title") or "").strip(), str(task.get("description") or "").strip()
+    if conn["kind"] == "token":
+        rels = {"project": {"data": {"type": "projects", "id": project}},
+                "assignee": {"data": {"type": "people", "id": person}}}
+        if parent:
+            rels["parent_task"] = {"data": {"type": "tasks", "id": parent}}
+        if task_list:
+            rels["task_list"] = {"data": {"type": "task_lists", "id": task_list}}
+        attrs = {"title": title, **({"description": _description_html(description)} if description else {})}
+        body = {"data": {"type": "tasks", "attributes": attrs, "relationships": rels}}
+        try:
+            status, raw = https("POST", API + "/tasks", json.dumps(body).encode("utf-8"), _rest_headers(conn, settings),
+                                timeout=30, write=True)
+        except (OSError, http.client.HTTPException) as exc:
+            raise ProductiveUnclear(TASK_UNCLEAR.format(exc))
+        if status >= 500:  # a server error after the task was sent: it may exist
+            raise ProductiveUnclear(TASK_UNCLEAR.format(f"HTTP {status}"))
+        if status not in (200, 201):
+            raise ProductiveError(task_refusal(f"HTTP {status} " + raw[:600].decode("utf-8", "replace")))
+        try:
+            tid = str(((json.loads(raw or b"{}") or {}).get("data") or {}).get("id") or "")
+        except ValueError:
+            tid = ""
+        if not tid.isdigit():
+            raise ProductiveUnclear(TASK_UNCLEAR.format("no task in the answer"))
+        return {"taskId": tid}
+    # The MCP's own spelling, as Claude Code sessions create tasks: bare ids, and task_list null under a parent
+    # (without it Productive answers "task_list is required (unless task_list=null)")
+    item = {"title": title, "project": project, "task_list": task_list or None, "assignee": person}
+    if parent:
+        item["parent_task"] = parent
+    if description:
+        item["description"] = description
+    try:
+        text = mcp_text("create_resource", {"resource_type": "tasks", "items": [item]}, conn["token"])
+    except ProductiveUnclear:
+        raise
+    except ProductiveError as exc:  # the tool said no (isError): nothing was created
+        raise ProductiveError(task_refusal(str(exc).replace("Productive refused it: ", "")))
+    except (OSError, http.client.HTTPException, ValueError) as exc:
+        raise ProductiveUnclear(TASK_UNCLEAR.format(exc))
+    # only Productive's success sentence counts: "task created (ID: 21297146)." (one), "Created 2 tasks (ID: …)"
+    ids = re.findall(r"(?:\btask created|\bcreated 1 tasks?) \(IDs?:\s*(\d+)", text, re.I)
+    if ids:
+        return {"taskId": ids[0]}
+    if re.match(r"\s*(?:Failed to create|Item 1: Invalid)", text):  # a refusal in plain text: nothing was created
+        raise ProductiveError(task_refusal(text))
+    raise ProductiveUnclear("Productive's answer was unclear, so the task may or may not exist. Search for it in the "
+                           "task list before creating it again. Productive said: " + text[:200])

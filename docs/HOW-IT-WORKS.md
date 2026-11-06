@@ -8,8 +8,8 @@ Pulsar is a small local web app. A Python 3.9 server (standard library only) rea
 Claude Code sessions, Productive and, if you connect it, Google Calendar. It serves one page, which draws the day and
 the report. On a Mac a thin app shows that page in a window of its own. Nothing runs anywhere but on your computer,
 except what the Claude Code switch sends to Anthropic when it is on (5.5, 5.7). Nothing is written to Productive
-without a click and a confirmation: logging, changing or deleting an entry, Log the day and its Undo, or `pulsar_log`
-from a Claude Code session after Claude Code asked you.
+without a click and a confirmation: logging, changing or deleting an entry, creating a task, Log the day and its Undo,
+or `pulsar_log` from a Claude Code session after Claude Code asked you.
 
 ## 1. The pieces
 
@@ -102,8 +102,9 @@ yours.
   holders need: every GET (reading), `POST /api/quit` (the launcher), and `POST /api/log` as `pulsar_log` sends it:
   inside a Log the day run (`run` and `row`, so the entry is journalled, never sent twice, listed with Undo) and never
   with `force` or `pieces` (the dialog's, 5.1), so the overlap check always holds. Everything else is refused with
-  403 and needs the page's session: changing or deleting an entry, settings (the token, `preview_writes`, the Claude
-  Code switch), updates, Ask Claude, the session note, Google Calendar, Productive's test.
+  403 and needs the page's session: changing or deleting an entry, creating a task or drafting one, settings (the
+  token, `preview_writes`, the Claude Code switch), updates, Ask Claude, the session note, Google Calendar,
+  Productive's test.
 - **What a program of the person's can still do.** This is not a wall between the person's own programs and Pulsar,
   and nothing on one account can be. Such a program can log new entries with the key as above (a Claude Code session
   in bypass mode or with a prompt injection can therefore log time without the `pulsar_log` prompt); it can write a
@@ -124,12 +125,14 @@ yours.
   browser back with no Pulsar session. It must still come to 127.0.0.1, as a plain page load. It does nothing without
   a pending `state` that a signed-in Settings click created (random, used once, ten minutes), and it can only finish
   that one sign-in.
-- **Writing to Productive** happens in three functions: `productive.create_entry` (from `POST /api/log`: the log
-  dialog's button, the confirm step of Log the day, section 5.4, and `pulsar_log` in Claude Code, section 5.6), and
+- **Writing to Productive** happens in four functions: `productive.create_entry` (from `POST /api/log`: the log
+  dialog's button, the confirm step of Log the day, section 5.4, and `pulsar_log` in Claude Code, section 5.6),
   `update_entry` and `delete_entry` (from `POST /api/entry/update` and `/api/entry/delete`: Edit, Delete, a dragged
-  edge and Log the day's Undo, section 5.2b, all from the page only). With `PULSAR_READ_ONLY=1` (any value but
+  edge and Log the day's Undo, section 5.2b, all from the page only), and `create_task` (from `POST /api/task/create`:
+  **Create in Productive** in the log dialog's new-task form, 5.1, from the page only). With `PULSAR_READ_ONLY=1` (any value but
   `preview`) in the environment, every write is refused at the lowest level (`productive.https`), and
-  `POST /api/log` refuses it before the Log the day journal records anything. Test servers always run with it.
+  `POST /api/log` refuses it before the Log the day journal records anything (`POST /api/task/create` before anything
+  is sent too). Test servers always run with it.
 - **Git in other people's repositories.** Notes from commits (`commits.py`) read any repository a session touched,
   an unpacked client archive too, so its `.git/config` is not trusted: `git log` runs with `--no-show-signature`,
   `-c log.showSignature=false`, `-c core.fsmonitor=false`, `-c core.hooksPath=/dev/null` and `--no-pager`, no
@@ -212,6 +215,27 @@ project, budget, billable, billing}`.
   hour. A column that asks while it is being read waits for that read rather than starting another.
 - **The keychain**: when it does not answer (locked, or a dialog nobody sees), the page says so and shows the saved
   copy, rather than asking for a token.
+- **Creating a task** (`create_task`, only from **Create in Productive**, 5.1). Productive needs a title (at most 140
+  characters), a project, and a task list or none: `task_list` null puts the task straight in the project, and is also
+  how a subtask is made (`parent_task`). A subtask cannot have subtasks ("invalid level of subtasks"). Pulsar sends the
+  title, the description, the project, the parent or the list, and the person as assignee. It never sends a service,
+  a status or an estimate: the status is the workflow's first, and a PM sets the service and the estimate
+  (fi-productive-process: a developer may create a task but not set its service). A time entry takes its own service
+  anyway, from the project's budgets (5.1). Through Claude Code's connection it is `create_resource` with bare ids, as
+  Claude Code sessions create tasks; only Productive's sentence "task created (ID: n)" or "Created 1 task (ID: n)"
+  counts as created, "Failed to create task …" is a refusal said in plain words, and any other answer may have
+  created it (said so, never tried again). Through the token it is a JSON:API `POST /tasks` with relationships, as
+  Productive's API reference shows it (not yet tried against Productive). The role: one person's Staff role created 43
+  tasks from 22 September to 4 November 2026, in 12 projects (10 of clients), 29 of them as subtasks, through Claude
+  Code; Productive's own permission is "Add, edit, and delete tasks", and a role without it in a project gets "your role
+  may not add tasks to this project".
+- **Where a new task can go** (`project_places`, `newtask.places`): the project's open top-level tasks and its active
+  task lists, two reads. Offered first: the period's contingency task, as the parent, when the project has one (FI's
+  maintenance projects put each issue under it, `newtask.PERIOD_TASK`; the one named for the entry's month first, else
+  the newest); else the task list of your newest open task in the project; else its only list; else straight in the
+  project; with several lists and none of yours, the form asks. On four projects checked on 5 November 2026, this was
+  where the person's own last tasks there had gone.
+- **Projects for a new task** (`active_projects`): the active projects you can see, one read kept 10 minutes.
 
 ### 4.3 Meetings (`pulsar/calendar.py`)
 
@@ -394,6 +418,42 @@ many stretches are left. Stretches logged from the page in the last ten minutes 
 shows them. It is offered for new entries in the day on screen only. Clicks to log a whole day again, entry by entry
 (Nick's own entries, on a simulated empty day): 4 Nov 2026, 21 entries, 57 clicks before and 38 with it; 3 Nov,
 38 entries, 108 and 71 (with ⌘⇧↩, 17 and 33). Entries away from the computer (calls) still need their start typed.
+
+**Create a task** (`web/js/newtask.js`, `pulsar/newtask.py`). Under the task list a small link, **No task fits this
+work? Create one in Productive**, is there for new time, never while an entry is changed. It is always there rather
+than only when Pulsar is unsure: the lists' first task was the logged one for under half of the minutes (5.5), so
+whether one fits is the person's call. It opens a small form over the dialog:
+- **Project**: the project of the task picked in the dialog (the work's own, a rule's or the person's), else the one
+  the work's repository names, loosely (`newtask.guess_project`: "acme-web" and "Acme-OS …", "globex-r" and "GX-OS
+  Globex …"), else none. Projects logged to in the last 30 days come first, with their minutes.
+- **Where it goes**: under the period's contingency task, in a task list, or straight in the project (4.2).
+- **Title and description**, drafted from the Likely rows of the project with most minutes in the dialog's time, whole
+  rows, as the session note takes them. At once, on this Mac (`local_draft`): the first commit subject made then is
+  the title, and all of them a list. With the Claude Code switch on, Haiku then drafts both (`claude_draft`) from the
+  same rows' steps (what was typed, Claude's replies, `askclaude.steps`), commits and session titles, with up to 8
+  titles of tasks logged to lately, the same project's first, as examples of the style. It runs as the session note
+  does (5.7): no tools, no MCP server, none of the person's settings, auto memory off, a JSON schema. A draft replaces
+  only a field the person has not typed in. A meeting's title is the draft when the time was a meeting and no work was
+  seen in it; Claude is not asked then. The title goes through the note's checks (`guard_title`: no path, web address,
+  token, code, tool's name or remark on the time, one sentence). The description is checked line by line, cut at a
+  sentence to 700 characters, and a sentence about the time itself ("the review time is logged as billable") is left
+  out.
+- One line says what will happen: "Creates “…” in <project>, in the task list “To Do”, assigned to you. A PM sets its
+  service and estimate."
+
+**Create in Productive** sends it (`POST /api/task/create`). Read-only and Preview refuse it before anything is sent,
+and the form says so when it opens. The same title in the same project within a minute is refused: a second click
+would create a second task. A refusal is said in plain words and the form stays open. Once created, the form closes,
+and the task is first in the dialog's list, under "Just created", and picked; its services load as for any task.
+
+**Local or Claude?** Measured on 14 ranges of one person's work (22 September to 2 November 2026) where a task was
+really created from the session doing that work, each draft's title read against the title created. On the whole
+Likely rows around it, as the dialog drafts: the commit subject gave a usable title for 3 of 14 (nothing for 9, a
+wrong one for 2); Haiku for 7 (3 right, 4 close enough to edit; nothing for 2, vague or wrong for 5). The real title's
+words found in the draft: 11% and 21%. Cut at the moment the task was created: 2 and 6 usable. In 4 ranges the work
+in that time was not the task's work, so no draft could be right. The session's title as a fallback named the task
+in none of 10 tries (a long session's first topic, or in another language), so it is never used. Haiku: $0.0008 to
+$0.0032 a draft, 6 to 8 seconds. Hence the local draft at once and Haiku's after it, only with the switch on.
 
 ### 5.2 Writing (`POST /api/log`)
 
@@ -763,7 +823,7 @@ writes").
 
 One setting, **Use Claude Code with Pulsar** (Settings → Claude, stored as `ask_claude`), so a colleague sets up
 nothing else. Saving it on:
-- turns on Ask Claude (5.5) and the session note in the log dialog (below);
+- turns on Ask Claude (5.5), the session note in the log dialog (below) and Claude's draft of a new task (5.1);
 - adds Pulsar to Claude Code: `claude mcp remove` (Pulsar's older entry, another path or port), then
   `claude mcp add --scope user pulsar -- /usr/bin/python3 -E -s -B <dir>/pulsar.py --mcp --port <port>`. An entry
   named `pulsar` that Pulsar did not add (no `pulsar.py --mcp`, or an `env` of its own, such as `PULSAR_READ_ONLY`)
@@ -936,6 +996,10 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `POST /api/entry/update`, `/api/entry/delete` | Change or delete one of your entries. Delete with `run`: only what that Log the day run created. |
 | `POST /api/likely/ask` | Ask Claude (only when switched on). |
 | `POST /api/likely/note` | `{date, s, e, project}`: the log dialog's note for a Likely block, from its session and commits (Haiku; only with the Claude Code switch on, 5.7). |
+| `GET /api/task/projects?date=[&hint=][&repo=]` | Active projects for a new task, those logged to lately first, and the likeliest (5.1). |
+| `GET /api/task/places?project=&date=` | Where in a project a new task can go, and which first (4.2). |
+| `POST /api/task/draft` | `{date, s, e[, meeting]}`: a new task's title and description from the work in that time; with `claude` and `projectName`, Haiku's (the switch on, 5.1). |
+| `POST /api/task/create` | `{projectId, parentId or taskListId, title, description}`: one task, assigned to you (the page only). |
 | `POST /api/calendar/connect`, `/disconnect` | Google Calendar. |
 | `POST /api/update/check`, `/install`, `/apply` | Updates. |
 | `POST /api/productive/test`, `/api/client-error`, `/api/quit` | Test the connection; log a page error; stop (launcher). |
@@ -961,6 +1025,8 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   and the places that open the dialog on a stretch pass `range: true`.
 - **`catchup.js`**: Earlier days in Log the day (5.4b), its list of workdays and the line that moves on to the next
   day. `logday.js` calls it at four places (`cuRender`, `cuButton`, `cuStrip`, `cuClosed`).
+- **`newtask.js`** (and `newtask.css`): Create a task in the log dialog (5.1). `log.js` has two small hooks marked
+  "newtask.js": the picker's `pick` and the link hidden while an entry is changed.
 - **`ask.js`** (and `ask.css`): Ask Claude while it works. The button turns into a small pulsar (beams sweep its
   edge, a glow breathes, Claude's mark flashes), the Likely header says what is going on by the time only, and the
   blocks that got a task are lit once. `day.js` calls `askStart()` and `askEnd()` around the request. CSS on transform

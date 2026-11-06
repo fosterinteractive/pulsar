@@ -12,6 +12,7 @@
 <link rel="stylesheet" href="/static/logday.css">
 <link rel="stylesheet" href="/static/ask.css">
 <link rel="stylesheet" href="/static/range.css">
+<link rel="stylesheet" href="/static/newtask.css">
 </head>
 <body>
 <header>
@@ -243,6 +244,7 @@
       <div class="field"><span>Task <a class="tasklink" id="log-task-open" target="_blank" rel="noopener noreferrer" hidden>Open in Productive</a></span>
         <input name="q" type="search" placeholder="Search every task in Productive" autocomplete="off" aria-label="Search tasks">
         <div class="picker" id="log-tasks" role="listbox" aria-label="Tasks"></div>
+        <button type="button" class="newtask-link" id="log-newtask">No task fits this work? Create one in Productive</button>
       </div>
       <p class="hint warnish tflags" id="log-flags" aria-live="polite" hidden></p>
       <label class="field"><span>Service</span><select name="service"></select></label>
@@ -255,6 +257,23 @@
     <div class="df"><button type="button" class="btn bordered" data-close>Cancel</button><button type="submit" class="btn primary" id="log-save">Log in Productive</button>
       <button type="submit" class="btn bordered" id="log-next" title="Log this, then open the next active stretch with no entry (⌘⇧↩)">Log and next</button>
       <button type="submit" class="btn bordered" id="log-anyway" title="Log the whole time, over the entries already logged in it" hidden>Log anyway</button></div>
+  </form>
+</dialog>
+<dialog id="taskdlg" aria-labelledby="task-title">
+  <form id="task-form" novalidate>
+    <div class="dh"><h2 id="task-title">New task in Productive</h2><button type="button" class="btn icon" data-close aria-label="Close">✕</button></div>
+    <div class="scrollarea">
+      <label class="field"><span>Project</span><select name="project"></select></label>
+      <label class="field"><span>Where it goes</span><select name="place"></select></label>
+      <label class="field"><span>Title</span><input name="title" maxlength="140" autocomplete="off" spellcheck="true"
+        placeholder="The issue or deliverable, e.g. “Area: what”" aria-describedby="task-draft-hint"></label>
+      <label class="field"><span>Description</span><textarea name="description" rows="4"
+        placeholder="What the task is and what was done, for the PM" aria-describedby="task-draft-hint"></textarea></label>
+      <p class="hint" id="task-draft-hint" aria-live="polite"></p>
+      <p class="hint task-where" id="task-where" aria-live="polite"></p>
+    </div>
+    <p class="msg" id="task-msg" role="status"></p>
+    <div class="df"><button type="button" class="btn bordered" data-close>Cancel</button><button type="submit" class="btn primary" id="task-save">Create in Productive</button></div>
   </form>
 </dialog>
 <dialog id="ruledlg" aria-labelledby="rule-title">
@@ -312,6 +331,7 @@
 <script src="/static/js/log.js"></script>
 <script src="/static/js/flow.js"></script>
 <script src="/static/js/range.js"></script>
+<script src="/static/js/newtask.js"></script>
 <script src="/static/js/logday.js"></script>
 <script src="/static/js/catchup.js"></script>
 <script src="/static/js/ask.js"></script>

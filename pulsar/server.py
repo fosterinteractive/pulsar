@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, askclaude, calendar, claudelink, config, dayplan, flags, learn, likely, logbook, productive, ranges, report, sessions, trackers, updater, names
+from . import __version__, askclaude, calendar, claudelink, config, dayplan, flags, learn, likely, logbook, newtask, productive, ranges, report, sessions, trackers, updater, names
 
 UPDATER = updater.Updater()
 
@@ -929,6 +929,132 @@ def api_search(q: dict) -> dict:
     return {"tasks": productive.search_tasks(text, current_settings()) if len(text) >= 2 else []}
 
 
+# ---- a new task from the log dialog (newtask.py, web/js/newtask.js) -----------------------------------
+
+_projects = config.Newest(4)  # person -> (until, active projects)
+
+
+def api_task_projects(q: dict) -> dict:
+    """The projects a new task can go to: every active one you can see, those you logged to in the last 30 days
+    first (most minutes first), then by name; and `pick`, the likeliest (newtask.guess_project) from the picked task's
+    project (`hint`) or the work's repository (`repo`). Read only; the list is kept ten minutes."""
+    s = current_settings()
+    key = s.get("person_id")
+    try:
+        if key not in _projects or time.time() > _projects[key][0]:
+            _projects[key] = (time.time() + 600, productive.active_projects(s))
+    except productive.ProductiveError as exc:
+        return {"projects": [], "error": f"Productive did not list your projects: {exc}"}
+    lately: dict = {}
+    for t in api_suggest({"date": q["date"]}).get("recent") or []:  # kept ten minutes, the log dialog's own list
+        lately[t.get("project")] = lately.get(t.get("project"), 0) + (t.get("minutes") or 0)
+    projects = sorted(({**p, "lately": round(lately.get(p["name"], 0))} for p in _projects[key][1]),
+                      key=lambda p: (-p["lately"], p["name"].lower()))
+    return {"projects": projects, "pick": newtask.guess_project(projects, str(q.get("hint") or "")[:200],
+                                                                str(q.get("repo") or "")[:200])}
+
+
+def api_task_places(q: dict) -> dict:
+    """Where in a project a new task can go (newtask.places). Read only."""
+    if not is_id(q.get("project") or ""):
+        raise ValueError("project=<id>&date=YYYY-MM-DD")
+    s = current_settings()
+    try:
+        found = productive.project_places(q["project"], s)
+    except productive.ProductiveError as exc:
+        return {"parents": [], "lists": [], "pick": "", "error": f"Productive did not say where tasks go there: {exc}"}
+    return newtask.places(found, q["date"], str(s.get("person_id") or ""))
+
+
+def _work_rows(date: str, a: float, b: float, s: dict, tz) -> tuple:
+    """(the Likely rows of the project with most minutes in [a, b) that overlap it, that project): whole rows, as the
+    session note takes them. a and b are the page's minutes (by the clock on the day the clocks change)."""
+    if not likely.enabled(s):
+        return [], ""
+    t0 = day_bounds(date, tz)[0]
+    proposal = likely.proposal(date, config.timezone_name(s), today(tz), False, s)
+    by: dict = {}
+    for r in proposal.get("entries") or []:
+        x, y = page_span(r, t0, tz)
+        m = min(y, b) - max(x, a)
+        if m > 0 and r.get("project"):
+            by.setdefault(r["project"], [0, []])
+            by[r["project"]][0] += m
+            by[r["project"]][1].append(dict(r))
+    if not by:
+        return [], ""
+    project = max(by, key=lambda p: by[p][0])
+    return by[project][1], project
+
+
+def api_task_draft(body: dict) -> dict:
+    """A title and description for a new task, from the work done in that time (newtask.py): made on this Mac, or with
+    "claude": true (the Claude Code switch on) by Haiku. A POST, because Claude may run. `meeting` (the page sends it
+    only when the time was a meeting) is used when no work was seen."""
+    s = current_settings()
+    date = str(body.get("date") or "")
+    if not DATE.match(date):
+        raise ValueError("date=YYYY-MM-DD")
+    try:
+        a, b = float(body.get("s")), float(body.get("e"))
+    except (TypeError, ValueError):
+        raise ValueError("s and e are minutes of the day") from None
+    tz = config.tz(s)
+    rows, project = _work_rows(date, a, b, s, tz)
+    if not body.get("claude"):
+        return {**newtask.local_draft(rows, str(body.get("meeting") or "")[:200]), "repo": project}
+    if not s["ask_claude"]:
+        raise ValueError("Claude Code is off. Switch it on in Settings first.")
+    if not rows:
+        return {"title": "", "description": "", "why": "no Likely work at that time"}
+    before, problem = history_rows(date, s, days=learn.LEARN_DAYS)
+    try:
+        return newtask.claude_draft(date, rows, day_bounds(date, tz)[0], [] if problem else before,
+                                    str(body.get("projectName") or "")[:200], tz=tz)
+    except askclaude.AskError as exc:
+        logbook.record("ask claude", str(exc), kind="warning")
+        return {"title": "", "description": "", "error": str(exc)}
+
+
+_task_lock = threading.Lock()
+_just_created: dict = {}  # (project, title) -> when it was created
+
+
+def api_task_create(body: dict) -> dict:
+    """One new task in Productive, assigned to you, only from a click in the page (the key alone is refused,
+    key_refusal): {"task": {taskId, title, project, projectId}}. The same title in the same project within a minute is
+    refused: a second click would create a second task."""
+    s = current_settings()
+    project, parent, task_list = (str(body.get(k) or "") for k in ("projectId", "parentId", "taskListId"))
+    title = re.sub(r"\s+", " ", str(body.get("title") or "")).strip()
+    description = str(body.get("description") or "").strip()
+    if not is_id(project):
+        raise ValueError("Pick a project.")
+    if (parent and not is_id(parent)) or (task_list and not is_id(task_list)) or (parent and task_list):
+        raise ValueError("Pick where in the project the task goes.")
+    if not title:
+        raise ValueError("Write the task's title.")
+    if len(title) > newtask.TITLE_LIMIT:
+        raise ValueError(f"Productive takes titles of up to {newtask.TITLE_LIMIT} characters; this one has {len(title)}.")
+    if len(description) > newtask.DESC_LIMIT:
+        raise ValueError(f"The description is too long ({len(description)} characters; at most {newtask.DESC_LIMIT}).")
+    if any(ord(c) < 32 and c not in "\n\t" for c in title + description):
+        raise ValueError("The title or description has a character nobody sees; type it again.")
+    if config.writes_blocked():  # refused here as well as in productive.https: nothing is sent
+        raise ValueError(config.writes_blocked())
+    key = (project, title.lower())
+    with _task_lock:  # one at a time: two quick clicks cannot both pass the check below
+        if time.time() - _just_created.get(key, 0) < 60:
+            raise ValueError("This task was created a moment ago. Search for it in the task list before creating it "
+                             "again.")
+        created = productive.create_task({"project_id": project, "parent_id": parent, "task_list_id": task_list,
+                                          "title": title, "description": description}, s)
+        _just_created[key] = time.time()
+    _recent.clear()  # the dialog's lists read Productive again
+    name = next((p["name"] for _, ps in list(_projects.values()) for p in ps if p["id"] == project), "")
+    return {"task": {"taskId": created["taskId"], "title": title, "project": name, "projectId": project}}
+
+
 def api_services(q: dict) -> dict:
     """The services that take time on that date; with flags=1 (the page), the task's ticket flags too (flags.py)."""
     if not is_id(q.get("task") or ""):
@@ -1482,7 +1608,8 @@ class Handler(BaseHTTPRequestHandler):
                       "/api/tasks/suggest": api_suggest, "/api/services": api_services, "/api/repeats": api_repeats,
                       "/api/calendar": api_calendar, "/api/meeting-tasks": api_meeting_tasks,
                       "/api/dayplan": api_dayplan, "/api/dayplan/journal": api_dayplan_journal, "/api/range": api_range,
-                      "/api/likely/picks": api_likely_picks}
+                      "/api/likely/picks": api_likely_picks, "/api/task/projects": api_task_projects,
+                      "/api/task/places": api_task_places}
             if url.path not in routes:
                 return self.send(404, b"not found", "text/plain")
             if not DATE.match(q.get("date", "")):
@@ -1559,6 +1686,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(api_ask_claude(body))
             if urlparse(self.path).path == "/api/likely/note":
                 return self.send_json(api_likely_note(body))
+            if urlparse(self.path).path == "/api/task/draft":
+                return self.send_json(api_task_draft(body))
+            if urlparse(self.path).path == "/api/task/create":
+                return self.send_json(api_task_create(body))
             if urlparse(self.path).path == "/api/calendar/connect":
                 url = calendar.start(self.server.server_address[1])
                 try:
