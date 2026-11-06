@@ -104,6 +104,11 @@ _NOTE_CHECKS = [
     ("code or a log", re.compile(r"[`{}<>=\\]|\$[A-Za-z_{(]|::|->|\(\)|Traceback|SQLSTATE|Stack trace|Uncaught"
                                  r"|\w+(?:Exception|Error)\b")),
     ("a tool's name", re.compile(r"\b(?:claude|pulsar|agents?|anthropic|chatgpt|gpt|openai|codex|copilot|llm)\b", re.I)),
+    # an amount of money: a currency sign or code next to a number, or a number of dollars, euros, cents
+    ("a money amount", re.compile(r"[$€£¥₴₹]\s?\d|\d\s?[$€£¥₴₹]"
+                                  r"|\b(?:USD|CAD|EUR|GBP|UAH|AUD|NZD|CHF|JPY|INR)\s?[$€£]?\d"
+                                  r"|\d(?:[\d.,]*\d)?\s?(?:[kKmMbB]\s?)?(?:USD|CAD|EUR|GBP|UAH|AUD|NZD|CHF|JPY|INR)\b"
+                                  r"|\d(?:[\d.,]*\d)?\s?(?:[kKmM]\s)?(?:dollars?|bucks|euros?|cents|hryvni?as?)\b", re.I)),
     ("how the time was spent", re.compile(r"\b(?:in parallel|overlap\w*|run time|time entr\w*|unattended|while away"
                                           r"|moved down|time (?:logged|tracked|counted))\b", re.I)),
 ]
@@ -128,6 +133,32 @@ def guard_note(note) -> tuple:
     if len(_SENTENCE_END.findall(text)) > 2:
         return "", "more than two sentences"
     return text, None
+
+
+# Words in project names that name no client: they are in many names, or common words
+_NAME_COMMON = frozenset("""the and for with from ongoing support website websites site sites web project projects phase
+internal proposal proposals audit audits improvement improvements navigation ops maintenance retainer development design
+initiative contracts vendors drupal wordpress astro team general admin meeting meetings estimate estimates estimations
+training sales marketing school college faculty university student students alumni office events news research
+recruitment upgrade upgrades migration hosting content redesign build launch review""".split())
+_NAME_WORD = re.compile(r"\b[^\W\d_][^\W_]{2,}\b")
+
+
+def foreign_name(note: str, own: list, others: list, person: str = ""):
+    """The first word of a drafted note that names a project (so a client) other than the note's own, or the person
+    themselves, else None. A name word is one of another project's name, capitalised as there (Fengate, CNIB, UTLaw),
+    in none of `own` (the task's project and title), not a common word and in fewer than three of the names (Ongoing,
+    Support); the person's first and last name count too. Compared as written: "music" is not "Music"."""
+    names = [str(x or "") for x in others]
+    own_words = {w.lower() for t in own for w in _NAME_WORD.findall(str(t or ""))}
+    df: dict = {}
+    for t in set(names) | {str(t or "") for t in own}:
+        for w in {w.lower() for w in _NAME_WORD.findall(t)}:
+            df[w] = df.get(w, 0) + 1
+    banned = {w for t in names for w in _NAME_WORD.findall(t) if w[0].isupper() and w.lower() not in own_words
+              and w.lower() not in _NAME_COMMON and df.get(w.lower(), 0) < 3}
+    banned |= {w for w in _NAME_WORD.findall(str(person or "")) if w[0].isupper()}
+    return next((w for w in _NAME_WORD.findall(str(note or "")) if w in banned), None)
 
 
 def _plain(note: str) -> str:
@@ -419,6 +450,8 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
     out: dict = {}
     blocked: list = []
     by_id = {b["id"]: b for b in blocks}
+    projects = sorted({t["project"] for t in names.values() if t.get("project")})
+    person = _person()
     for p in picks:
         try:
             i = int(p.get("id"))
@@ -433,6 +466,8 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
         first = ids[0] if ids else ""
         if note and not (tasks and tasks[0]["taskId"] == first):  # written for a task that could not be named
             note, bad = "", "no task"
+        elif note and foreign_name(note, [tasks[0]["project"], tasks[0]["title"]], projects, person):
+            note, bad = "", "a name from another project"  # another client's name on this client's invoice
         if bad:
             blocked.append(bad)
         out[f"{r['s']}|{r.get('project') or ''}"] = {"tasks": tasks, "why": str(p.get("why") or "")[:120], "note": note}
@@ -513,6 +548,8 @@ def note(date: str, row: dict, t0: float, history: list = (), run=subprocess.run
     drafted = res.get("structured_output")
     drafted = drafted.get("note") if isinstance(drafted, dict) else None
     text, bad = guard_note(drafted)
+    if text and foreign_name(text, _own_projects(row, history), [h.get("project") for h in history], _person()):
+        text, bad = "", "a name from another project"
     answer = {"note": text, "why": f"the draft had {bad}, so it was left out" if bad else "",
               "cost": res.get("total_cost_usd")}
     with _lock:
@@ -520,6 +557,28 @@ def note(date: str, row: dict, t0: float, history: list = (), run=subprocess.run
         for old in list(_notes)[:-60]:
             del _notes[old]
     return answer
+
+
+def _person() -> str:
+    """The person's name as Productive gave it (Settings), for foreign_name; "" when it cannot be read."""
+    try:
+        return str(config.load().get("person_name") or "")
+    except Exception:  # the check then has the projects alone
+        return ""
+
+
+def _own_projects(row: dict, history: list) -> list:
+    """The projects a block's note may name: those of its likely tasks (learned, linked) and those named like its
+    repository ("utlaw" and "UTLaw-OS Faculty of Law Ongoing Support"), with the tasks' titles."""
+    likely = {str(t.get("taskId")) for t in row.get("learned") or []} | {str(x) for x in row.get("tasks") or []}
+    repo = re.sub(r"[^a-z0-9]", "", str(row.get("project") or "").split(" / ")[0].lower())
+    own = [t.get("project") for t in row.get("learned") or []] + [t.get("title") for t in row.get("learned") or []]
+    for h in history:
+        p = str(h.get("project") or "")
+        flat = re.sub(r"[^a-z0-9]", "", p.lower())
+        if str(h.get("taskId")) in likely or (len(repo) >= 3 and (repo in flat or (len(flat) >= 3 and flat in repo))):
+            own += [p, h.get("task")]
+    return [x for x in dict.fromkeys(own) if x]
 
 
 def _env() -> dict:

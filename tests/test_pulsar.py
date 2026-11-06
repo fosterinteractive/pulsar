@@ -1125,6 +1125,36 @@ class ClaudeNoteTest(unittest.TestCase):
         self.assertEqual(got["picks"]["540|acme-site"]["note"], "")                  # it was written for 555
         self.assertEqual(got["notesBlocked"], ["no task"])
 
+    def test_a_note_naming_another_project_or_the_person_is_blanked(self):
+        """A note goes to the client of its task: another client's name, from the projects of the task list, never
+        does; nor the person's own name (who did the work)."""
+        from pulsar import askclaude
+        entries = self.ENTRIES + [{"taskId": "8", "task": "Sitemap", "project": "FG-OS Fengate Ongoing Support",
+                                   "minutes": 30, "date": "2026-11-02"},
+                                  {"taskId": "9", "task": "Ops", "project": "CNIB-OS CNIB Ongoing Support",
+                                   "minutes": 30, "date": "2026-11-02"},
+                                  {"taskId": "10", "task": "Hosting", "project": "NL-OS Northleaf Ongoing Support",
+                                   "minutes": 30, "date": "2026-11-01"}]
+        cases = {"Event pages show the right time zone again.": "",
+                 "Event pages fixed, as on Fengate.": "a name from another project",
+                 "CNIB events copied into Acme.": "a name from another project",
+                 "Events reviewed with Nick.": "a name from another project",
+                 "Support pages fixed; the ongoing work goes on.": "",   # words every project has
+                 "fengate-style menu built.": ""}                        # lower case: not the name as written
+        for draft, why in cases.items():
+            out = {"structured_output": {"picks": [{"id": 0, "tasks": ["7"], "why": "events", "note": draft}]}}
+            askclaude._cache.clear()
+            with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/bin/claude"), \
+                    mock.patch.object(askclaude.config, "load", lambda: {"person_name": "Nick Example"}):
+                got = askclaude.ask("2026-11-04", self.ROWS, 0, entries, history=[],
+                                    run=lambda cmd, **kw: mock.Mock(stdout=json.dumps(out), stderr="", returncode=0))
+            pick = got["picks"]["540|acme-site"]
+            self.assertEqual((pick["note"], got["notesBlocked"]), ("" if why else draft, [why] if why else []), draft)
+            self.assertEqual(pick["tasks"][0]["taskId"], "7")  # the task stays
+        # the picked task's own project may be named
+        self.assertIsNone(askclaude.foreign_name("Fengate sitemap fixed.", ["FG-OS Fengate Ongoing Support", "Sitemap"],
+                                                 ["FG-OS Fengate Ongoing Support", "Acme"]))
+
     def test_a_stretch_from_the_rail_gets_its_projects_whole_rows(self):
         """The yellow rail, a drag or Log and next ask for a stretch, not a block: the note is drafted from the rows
         of the asked project that overlap it (whole rows, commits in time order), never another project's."""
@@ -1174,7 +1204,8 @@ class NoteGuardTest(unittest.TestCase):
                      "Faculty blog: summary is optional again, so editors can save posts (PR #290).",
                      "MariaDB 10.6 upgrade prepared and rehearsed on the test copy. Deploy plan agreed.",
                      "Astro/Next.js project setup reviewed; estimate of 24 h for the rebuild.",
-                     "Accessibility fixes on the e.g. search form, v1.2 released."]:
+                     "Accessibility fixes on the e.g. search form, v1.2 released.",
+                     "Drupal 10.3 and PHP 8.3 upgrade done; 3 sites in sprint 4.", "Dollar signs removed from prices."]:
             self.assertEqual(askclaude.guard_note(note), (note, None), note)
         self.assertEqual(askclaude.guard_note('  "Search fixed."\n '), ("Search fixed.", None))
         self.assertEqual(askclaude.guard_note(""), ("", None))
@@ -1195,6 +1226,10 @@ class NoteGuardTest(unittest.TestCase):
             "how the time was spent": ["Two sessions in parallel.", "Overlapping work moved down.", "Run time of the build."],
             "more than two sentences": ["Fixed the form. Checked qa. Told the client."],
             "too long": ["Event pages fixed. " * 13],
+            # an invoice line with a sum in it: a rate, a budget or another client's figure
+            "a money amount": ["Quote of $2,400 sent.", "Budget raised to 5k CAD.", "Hosting is 20 € a month.",
+                               "Invoice for USD 300 sent.", "Saved 300 dollars on hosting.", "Raised US$3.1B.",
+                               "Rate set at £95."],
             # control and format characters: an escape, a direction override, a zero-width space hide or reorder words
             "a character nobody sees": ["Fixed\x1b[8m the form.", "Search fixed\u202e.dexif", "Search\u200b fixed."],
         }

@@ -235,6 +235,25 @@ class SessionNote(unittest.TestCase):
         self.assertEqual(got["note"], "")
         self.assertIn("file path", got["why"])
 
+    def test_a_session_note_naming_another_client_is_blanked(self):
+        """The log dialog's note has no task yet: the projects of the block's likely tasks, and those named like its
+        repository, are its own; any other project of the person's history is another client's."""
+        history = [{"taskId": "7", "task": "Events", "project": "EV-OS Eventsite Ongoing Support", "date": "2026-11-02"},
+                   {"taskId": "8", "task": "Sitemap", "project": "FG-OS Fengate Ongoing Support", "date": "2026-11-01"}]
+        drafts = iter(["Eventsite pages show the right time zone again.", "Same fix as on Fengate."])
+
+        def run(cmd, **kw):
+            return mock.Mock(stdout=json.dumps({"structured_output": {"note": next(drafts)}}), stderr="")
+        got = []
+        for s in (581, 583):  # starts no other test uses: the drafts are kept by their block
+            row = {"s": s, "e": 730, "project": "eventsite", "titles": ["Fix the event time zone"], "commits": ["Quiz"]}
+            with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/x/claude"), \
+                    mock.patch.object(askclaude.config, "load", lambda: {}), \
+                    mock.patch.object(askclaude, "steps", lambda *a, **k: [{"typed": "fix", "reply": "Done."}]):
+                got.append(askclaude.note("2026-11-04", row, T0, history, run=run))
+        self.assertEqual(got[0]["note"], "Eventsite pages show the right time zone again.")  # its own project
+        self.assertEqual((got[1]["note"], got[1]["why"]), ("", "the draft had a name from another project, so it was left out"))
+
     def test_nothing_to_go_on_asks_nobody(self):
         row = {"s": 1000, "e": 1010, "project": "eventsite", "titles": ["Fix the event time zone"]}
         got = askclaude.note("2026-11-04", row, T0, [], run=lambda *a, **k: self.fail("Claude was asked"))
