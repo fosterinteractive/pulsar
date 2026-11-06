@@ -267,6 +267,16 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
     return answer
 
 
+def latest(date: str):
+    """The last answer Ask Claude gave for `date` in this run of Pulsar (any model), or None: Log the day uses its
+    picks and notes, never asking Claude by itself."""
+    with _lock:
+        for sig, answer in reversed(list(_cache.items())):
+            if sig[0] == date:
+                return answer
+    return None
+
+
 def history_span(date: str) -> tuple:
     """(first, last) day of the 30 days of history before `date`."""
     d = datetime.strptime(date, "%Y-%m-%d")
