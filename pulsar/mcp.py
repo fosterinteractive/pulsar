@@ -6,12 +6,16 @@
 MCP over stdio: JSON-RPC 2.0, one message per line (the MCP SDK needs Python 3.10+; this is the standard library).
 
 Tools (all read only, except pulsar_log):
+  pulsar_status()                      never fails: is Pulsar open, its version, whether writes are blocked and why, the date
   pulsar_day(date)                     the day in numbers: logged, active stretches with no entry, Likely, meetings
   pulsar_propose(date)                 Log the day's proposal: entries with task, service and confidence
   pulsar_session(date)                 the calling Claude Code session's own minutes, with the task Pulsar suggests
   pulsar_suggest(date, start, minutes) the tasks the log dialog would offer for one stretch
   pulsar_tasks(query)                  your recent tasks (with the service you used last) and a Productive search
-  pulsar_log(date, entries, confirm)   a dry run with a confirm code; with the code, the entries are written
+  pulsar_preview(date, entries)        the dry run: what would be written, a code, and Pulsar's own summary of it
+  pulsar_log(code, summary)            writes what the code holds. Marked so Claude Code asks the person every time,
+                                       even in auto or bypass mode; the summary must be Pulsar's, word for word, so
+                                       the prompt shows Pulsar's words. Refused in any other app (they ignore the mark).
 
 What it never returns: window titles, apps, sites or addresses, typed messages, meeting titles, the titles of other
 Claude sessions, notes of logged entries, rule words. Every answer is built field by field from an allow-list; nothing
@@ -43,7 +47,9 @@ from urllib.parse import urlencode
 
 from . import __version__, config
 
-PROTOCOLS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")  # newest first
+MODERN = ("2026-07-28",)  # stateless: every request says its version in _meta; server/discover
+PROTOCOLS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")  # the initialize handshake; newest first
+META = "io.modelcontextprotocol/"
 DATE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 HHMM = re.compile(r"^([01][0-9]|2[0-3]):([0-5][0-9])$")
 ID = re.compile(r"^[0-9]{1,12}$")
@@ -377,6 +383,20 @@ def pulsar_day(args: dict) -> dict:
 NOTE_SOURCES = ("repeat", "commits", "claude")  # a meeting's note is its title: never returned
 
 
+def _caller_repo() -> str | None:
+    """The repository the calling session works in: Claude Code gives every MCP server it starts CLAUDE_PROJECT_DIR.
+    None when it did not, or the folder is in no repository."""
+    from . import sessions
+    folder = str(os.environ.get("CLAUDE_PROJECT_DIR") or "").strip()
+    return sessions.project_of_path(folder) if os.path.isabs(folder) else None
+
+
+def _same_repo(a: str, b: str | None) -> bool:
+    """Loosely, as commits.matches: the names contain one another ("Inovia" and inovia-web-ast)."""
+    a, b = (re.sub(r"[^a-z0-9]", "", (x or "").split(" / ")[0].lower()) for x in (a, b))
+    return len(a) >= 3 and len(b) >= 3 and (a in b or b in a)
+
+
 def plan_entry(e: dict) -> dict:
     out = {"start": hm(e["s"]), "end": hm(e["e"]), "minutes": mins(e["minutes"]),
            "taskId": str(e.get("taskId") or "") or None, "task": str(e.get("title") or ""),
@@ -387,7 +407,9 @@ def plan_entry(e: dict) -> dict:
            "why": safe_why(e.get("why")), "flags": [f for f in e.get("flags") or [] if isinstance(f, str)]}
     if e.get("meeting"):
         out["meeting"] = True
-    if e.get("note") and e.get("noteFrom") in NOTE_SOURCES:
+    # commit subjects only from the calling session's own repository: another repository's are another project's words
+    if e.get("note") and e.get("noteFrom") in NOTE_SOURCES and (
+            e["noteFrom"] != "commits" or _same_repo(out["repository"], _caller_repo())):
         out["noteDraft"], out["noteFrom"] = str(e["note"])[:300], e["noteFrom"]
     if e.get("sent"):
         out["alreadySent"] = e["sent"]
@@ -522,7 +544,7 @@ def pulsar_session(args: dict) -> dict:
             "rows": rows, "minutes": sum(r["minutes"] for r in rows),
             "notLoggedYet": to_log, "sharedNotLogged": shared,
             "note": ("The minutes Pulsar gave this Claude session that day (from the activity tracker and the session's "
-                     "messages). notLoggedYet is ready for pulsar_log; a dry run first, then the person's yes. The "
+                     "messages). notLoggedYet is ready for pulsar_preview, then the person's yes in pulsar_log. The "
                      "suggested task is a guess from past logging: you know what this session did, so when it does not "
                      "fit, find the right task with pulsar_tasks. sharedNotLogged are stretches another session also "
                      "had: ask before logging them here."
@@ -658,15 +680,15 @@ def pulsar_tasks(args: dict) -> dict:
         if (not words or hit(t) or t in found) and t.get("taskId") not in seen:
             seen.add(t.get("taskId"))
             item = task_out(t)
-            item.pop("serviceId", None)  # a task's own service may not take time on the date: pulsar_log picks one
+            item.pop("serviceId", None)  # a task's own service may not take time on the date: pulsar_preview picks one
             out.append({**item, "group": "assigned to you" if t in (sug.get("assigned") or []) else "Productive search"})
     warnings = [_short(v.get("error")) for v in got.values() if isinstance(v, dict) and v.get("error")]
     return {"query": query, "tasks": out[:15], "more": max(0, len(out) - 15), "closedLeftOut": True, "warnings": warnings}
 
 
-# ---- pulsar_log ----------------------------------------------------------------------------------------------
+# ---- pulsar_preview, pulsar_log -----------------------------------------------------------------------------
 
-_pending: dict = {}  # confirm code -> {fp, date, run, entries, until}
+_pending: dict = {}  # code -> {date, run, entries, summary, until}: what pulsar_preview checked
 _pending_lock = threading.Lock()
 
 
@@ -697,13 +719,6 @@ def _clean(args: dict) -> tuple:
             raise ToolError(f"Entries {x['n']} and {y['n']} overlap ({x['start']} {x['minutes']} min, "
                             f"{y['start']} {y['minutes']} min). Nothing was sent.")
     return date, out
-
-
-def _fingerprint(date: str, entries: list) -> str:
-    """What a confirm code stands for: the day and each entry's start, minutes, task and note (the service was
-    resolved by the dry run and is kept with the code)."""
-    canon = json.dumps([date] + [[e["start"], e["minutes"], e["taskId"], e["note"]] for e in entries], ensure_ascii=False)
-    return hashlib.sha256(canon.encode("utf-8")).hexdigest()
 
 
 def _resolve_services(date: str, entries: list) -> dict:
@@ -750,49 +765,32 @@ def _preview(e: dict, extra: dict | None = None) -> dict:
     return {**out, **(extra or {})}
 
 
-def pulsar_log(args: dict) -> dict:
+DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def _one_line(text) -> str:
+    return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def summary_line(date: str, e: dict) -> str:
+    """One entry as the person approves it, in Pulsar's words: 'Fri 6 Nov 09:00-09:45 (45 min): Build (Acme), Dev,
+    billable. Note: "…"'. The names are Productive's, from the dry run; only the note is the model's, quoted."""
+    d = datetime.strptime(date, "%Y-%m-%d")
+    project = _one_line(e.get("project"))
+    billing = {True: "billable", False: "not billable"}.get(e.get("billable"), "billing not known")
+    note = f'Note: "{e["note"]}"' if e["note"] else "No note."
+    return (f"{DAYS[d.weekday()]} {d.day} {MONTHS[d.month - 1]} {e['start']}-{hm(e['e'])} ({e['minutes']} min): "
+            f"{_one_line(e.get('task')) or 'task ' + e['taskId']}" + (f" ({project})" if project else "")
+            + f", {_one_line(e.get('service'))}, {billing}. {note}")
+
+
+def pulsar_preview(args: dict) -> dict:
+    """The dry run: services resolved, notes checked, every entry through POST /api/log with "dry" (Pulsar's overlap
+    check and journal). Nothing is written. With no problem, a code that holds exactly these entries, and the summary
+    pulsar_log must be given back."""
     from .askclaude import guard_note
     date, entries = _clean(args)
-    fp = _fingerprint(date, entries)
-    code = str(args.get("confirm") or "").strip().lower()
-    now = time.time()
-    if code:
-        with _pending_lock:
-            for k in [k for k, v in _pending.items() if v["until"] < now]:
-                _pending.pop(k, None)
-            held = _pending.get(code)
-            if not held:
-                raise ToolError("That confirm code is unknown or has expired (codes last 10 minutes and work once). "
-                                "Nothing was written. Run pulsar_log without confirm again.")
-            if held["fp"] != fp:
-                raise ToolError("These entries are not the ones the code was given for. Nothing was written. Run "
-                                "pulsar_log without confirm on the entries you mean, and show the person the preview.")
-            for e, kept in zip(entries, held["entries"]):
-                if e["serviceId"] and e["serviceId"] != kept["serviceId"]:
-                    raise ToolError(f"Entry {e['n']}: the service is not the one in the dry run. Nothing was written.")
-            _pending.pop(code)
-        blocked = config.writes_blocked()  # this process's own switch, before anything is sent
-        if blocked:
-            return {"written": 0, "results": [], "refused": blocked}
-        results = []
-        for e in sorted(held["entries"], key=lambda x: x["s"]):
-            got = post("/api/log", {"date": date, "start": e["start"], "minutes": e["minutes"], "taskId": e["taskId"],
-                                    "serviceId": e["serviceId"], "note": e["note"], "run": held["run"], "row": f"mcp-{e['n']}"})
-            if got.get("created"):
-                results.append(_preview(e, {"status": "logged", "entryId": str((got["created"] or {}).get("id") or "")}))
-                continue
-            if got.get("overlap"):
-                why = "it would overlap " + "; ".join(f"{o.get('start')} {o.get('project')}" for o in got["overlap"])
-            else:
-                why = _short(got.get("error")) or "no clear answer"
-            results.append(_preview(e, {"status": "not logged", "why": why}))
-            break  # the first one that is not logged stops the run, as Log the day does
-        done = sum(1 for r in results if r["status"] == "logged")
-        return {"date": date, "written": done, "of": len(entries), "results": results,
-                "stopped": done < len(entries),
-                "undo": "Pulsar's Log the day panel lists this run and can undo it." if done else ""}
-
-    # the dry run: services resolved, notes checked, and each entry through POST /api/log with "dry"
     problems = _resolve_services(date, entries)
     for e in entries:
         if e["note"]:
@@ -801,8 +799,9 @@ def pulsar_log(args: dict) -> dict:
                 problems.setdefault(e["n"], f"the note has {why}: clients may see notes, so write the outcome in "
                                             "plain words, or leave it empty")
     run = f"ld-{date}-{secrets.token_hex(6)}"
+    entries.sort(key=lambda x: x["s"])
     previews = []
-    for e in sorted(entries, key=lambda x: x["s"]):
+    for e in entries:
         found = [problems[e["n"]]] if e["n"] in problems else []
         if e.get("serviceId") and e.get("task"):  # Pulsar's own checks too, so every problem shows at once
             got = post("/api/log", {"date": date, "start": e["start"], "minutes": e["minutes"], "taskId": e["taskId"],
@@ -814,18 +813,121 @@ def pulsar_log(args: dict) -> dict:
                 found.append("it would overlap an entry already logged: " + "; ".join(
                     f"{o.get('start')} {o.get('minutes')} min {o.get('project')}" for o in got["overlap"]))
         previews.append(_preview(e, {"problem": "; ".join(found)} if found else None))
-    bad = [p for p in previews if p.get("problem")]
-    out = {"date": date, "dryRun": True, "entries": previews, "minutes": sum(e["minutes"] for e in entries)}
-    if bad:
-        return {**out, "confirm": None,
-                "next": "Nothing can be written until every problem is fixed. Fix them and run the dry run again."}
-    code = secrets.token_hex(3)
+    out = {"date": date, "entries": previews, "minutes": sum(e["minutes"] for e in entries)}
+    if any(p.get("problem") for p in previews):
+        return {**out, "code": None, "summary": None,
+                "next": "Nothing can be logged until every problem is fixed. Fix them and preview again."}
+    summary = "\n".join(summary_line(date, e) for e in entries)
+    code, now = secrets.token_hex(4), time.time()
     with _pending_lock:
-        _pending[code] = {"fp": fp, "date": date, "run": run, "entries": entries, "until": now + CONFIRM_FOR}
-    return {**out, "confirm": code,
-            "next": ("Show the person this list (time, task, service, minutes, note) and ask. Only after they say yes, "
-                     "call pulsar_log again with the same date and entries and confirm=" + code + ". The code works "
-                     "once, for 10 minutes. Notes may be shown to clients.")}
+        for k in [k for k, v in _pending.items() if v["until"] < now]:
+            _pending.pop(k, None)
+        while len(_pending) >= 50:  # previews nobody logged: the oldest goes
+            _pending.pop(min(_pending, key=lambda k: _pending[k]["until"]))
+        _pending[code] = {"date": date, "run": run, "entries": entries, "summary": summary, "until": now + CONFIRM_FOR}
+    return {**out, "code": code, "summary": summary,
+            "next": ("Show the person the summary as it is. To log it, call pulsar_log with this code and this summary, "
+                     "unchanged: Claude Code shows it to the person and asks them first, and nothing is written if they "
+                     "say no. The code works once, for 10 minutes. Notes may be shown to clients.")}
+
+
+def pulsar_log(args: dict, client: str = "") -> dict:
+    """Writes what a pulsar_preview code holds, one entry at a time through POST /api/log (a fresh read of the day,
+    the overlap check, the write lock, the journal), stopping at the first that is not logged, as Log the day does."""
+    if client != "claude-code":
+        raise ToolError(f"pulsar_log works only in Claude Code, which asks the person before every write. This app "
+                        f"({_one_line(client)[:40] or 'it did not say which'}) does not, so nothing was written. Log "
+                        "from Pulsar's window instead: Log the day, or the log dialog.")
+    code, summary = str(args.get("code") or "").strip().lower(), args.get("summary")
+    _config()  # Pulsar is open (else: "Open Pulsar"), before the code is used up
+    now = time.time()
+    with _pending_lock:
+        for k in [k for k, v in _pending.items() if v["until"] < now]:
+            _pending.pop(k, None)
+        held = _pending.get(code)
+        if not held:
+            raise ToolError("That code is unknown or has expired (codes last 10 minutes and work once). Nothing was "
+                            "written. Run pulsar_preview again.")
+        if summary != held["summary"]:
+            raise ToolError("summary is not Pulsar's text for this code, word for word. Nothing was written. Pass the "
+                            "summary pulsar_preview returned, unchanged: it is what the person approves.")
+        blocked = config.writes_blocked()  # this process's own switch, before anything is sent
+        if blocked:
+            raise ToolError(blocked)
+        _pending.pop(code)
+    date, results = held["date"], []
+    for e in held["entries"]:
+        try:
+            got = post("/api/log", {"date": date, "start": e["start"], "minutes": e["minutes"], "taskId": e["taskId"],
+                                    "serviceId": e["serviceId"], "note": e["note"], "run": held["run"],
+                                    "row": f"mcp-{e['n']}"})
+        except ToolError as exc:  # Pulsar stopped answering mid-run: this one may or may not have been written
+            results.append(_preview(e, {"status": "not known", "why": f"{exc} Check the Logged column; Pulsar's "
+                                                                      "journal will not send it twice."}))
+            break
+        if got.get("created"):
+            results.append(_preview(e, {"status": "logged", "entryId": str((got["created"] or {}).get("id") or "")}))
+            continue
+        if got.get("overlap"):
+            why = "it would overlap " + "; ".join(f"{o.get('start')} {o.get('project')}" for o in got["overlap"])
+        else:
+            why = _short(got.get("error")) or "no clear answer"
+        results.append(_preview(e, {"status": "not logged", "why": why}))
+        break  # the first one that is not logged stops the run, as Log the day does
+    done = sum(1 for r in results if r["status"] == "logged")
+    return {"date": date, "written": done, "of": len(held["entries"]), "results": results,
+            "stopped": done < len(held["entries"]),
+            "undo": "Pulsar's Log the day panel lists this run and can undo it." if done else ""}
+
+
+# ---- pulsar_status -------------------------------------------------------------------------------------------
+
+def _server_read_only():
+    """Whether the running Pulsar was started with PULSAR_READ_ONLY (True, False, or None when it cannot be told).
+    /api/config does not say. /api/dayplan refuses ignore_logged=1 ("read-only test servers only") unless it is, and
+    checks the source only after that: a bad source is refused either way, before any work, and the reason tells."""
+    got = fetch({"p": ("/api/dayplan", {"date": "2000-01-01", "ignore_logged": "1", "source": "none"})})["p"]
+    error = str(got.get("error") or "")
+    return False if "read-only test servers" in error else True if error.startswith("source is") else None
+
+
+def pulsar_status(args: dict, client: str = "") -> dict:
+    """Never fails: whether Pulsar answers, its version, whether writes are blocked and why, the date and time zone."""
+    out: dict = {"pulsar": "open", "version": None, "mcpVersion": __version__}
+    own = config.writes_blocked()  # this MCP server's own environment: pulsar_log checks it before sending
+    blocked = [("This MCP server runs read-only (PULSAR_READ_ONLY in its environment): pulsar_log sends nothing."
+                if os.environ.get("PULSAR_READ_ONLY") else own)] if own else []
+    cfg = {}
+    try:
+        cfg = _config()
+        out["version"] = cfg.get("version")
+        preview = cfg.get("preview")
+        if isinstance(preview, dict) and not preview.get("writes"):
+            blocked.append("Pulsar Preview does not write to Productive (Settings > Updates > Preview can allow it).")
+        try:
+            read_only = _server_read_only()
+        except Exception:
+            read_only = None
+        if read_only:
+            blocked.append("Pulsar runs read-only (PULSAR_READ_ONLY): it writes nothing to Productive.")
+        out["serverReadOnly"] = read_only
+    except ToolError as exc:
+        out.update({"pulsar": "not answering", "problem": str(exc), "next": "Ask the person to open Pulsar."})
+    except Exception as exc:  # never fails: say what went wrong, without any data
+        out.update({"pulsar": "not known", "problem": f"{type(exc).__name__} while asking Pulsar"})
+    tz_name = str(cfg.get("timezone") or "") or config.system_timezone()
+    try:
+        from zoneinfo import ZoneInfo
+        now = datetime.now(ZoneInfo(tz_name)) if tz_name else datetime.now()
+    except Exception:
+        now = datetime.now()
+    out.update({"writesBlocked": bool(blocked), "why": list(dict.fromkeys(blocked)),
+                "logFromHere": client == "claude-code",
+                **({} if client == "claude-code" else
+                   {"logFromHereWhy": "pulsar_log works only in Claude Code, which asks the person before every write."}),
+                "date": now.strftime("%Y-%m-%d"), "day": DAYS[now.weekday()], "time": now.strftime("%H:%M"),
+                "timezone": tz_name or None})
+    return out
 
 
 # ---- MCP -----------------------------------------------------------------------------------------------------
@@ -837,7 +939,7 @@ ENTRY_SCHEMA = {"type": "object", "required": ["start", "minutes", "taskId"], "a
                                          "description": "HH:MM, 24-hour, in Pulsar's time zone"},
                                "minutes": {"type": "integer", "minimum": 1, "maximum": 1440},
                                "taskId": {"type": "string", "description": "Productive task id"},
-                               "serviceId": {"type": "string", "description": "Optional: the dry run picks the service "
+                               "serviceId": {"type": "string", "description": "Optional: the preview picks the service "
                                                                               "you used last on the task"},
                                "note": {"type": "string", "description": "Optional. Clients may see notes: the outcome "
                                                                          "in one or two plain sentences, or empty"}}}
@@ -857,7 +959,7 @@ TOOLS = [
      "annotations": {"title": "Pulsar: propose the day's entries", **READ}},
     {"name": "pulsar_session", "title": "Pulsar: this Claude session",
      "description": ("The minutes Pulsar gave the calling Claude Code session on a day, each stretch with the task Pulsar "
-                     "suggests and how much is already logged; notLoggedYet is ready for pulsar_log. Use it for 'log "
+                     "suggests and how much is already logged; notLoggedYet is ready for pulsar_preview. Use it for 'log "
                      "this session' or 'how long did this take'. Read only."),
      "inputSchema": {"type": "object", "properties": {"date": DATE_SCHEMA}, "additionalProperties": False},
      "annotations": {"title": "Pulsar: this Claude session", **READ}},
@@ -877,26 +979,50 @@ TOOLS = [
                      "properties": {"query": {"type": "string", "description": "words of the task's or project's name"},
                                     "date": DATE_SCHEMA}},
      "annotations": {"title": "Pulsar: find a task", **READ}},
-    {"name": "pulsar_log", "title": "Pulsar: log time",
-     "description": ("Log time entries in Productive through Pulsar (its fresh read of the day, overlap check, write "
-                     "lock and journal). Two calls. Without confirm it is a dry run: nothing is written; it returns "
-                     "what would be written and a confirm code. Show that to the person. Only after they say yes, call "
-                     "again with the same date and entries and confirm=<code>. An entry that would overlap one already "
-                     "logged is never written."),
+    {"name": "pulsar_preview", "title": "Pulsar: preview time entries",
+     "description": ("Step 1 of logging time, and nothing is written: Pulsar checks the entries the way its log dialog "
+                     "would. It resolves each service (the one you used last on the task when none is given), checks "
+                     "notes (clients may see them), and runs every entry through Pulsar's own dry run (overlaps with "
+                     "logged entries, the Log the day journal). Returns each entry with any problem and, when there is "
+                     "none, a code and a summary: Pulsar's own words for exactly what would be written, one line per "
+                     "entry. Show the person the summary as it is, then call pulsar_log."),
      "inputSchema": {"type": "object", "required": ["date", "entries"], "additionalProperties": False,
                      "properties": {"date": DATE_SCHEMA,
-                                    "entries": {"type": "array", "minItems": 1, "maxItems": MOST_ENTRIES, "items": ENTRY_SCHEMA},
-                                    "confirm": {"type": "string", "description": "The code the dry run returned; only "
-                                                                                 "after the person said yes."}}},
+                                    "entries": {"type": "array", "minItems": 1, "maxItems": MOST_ENTRIES, "items": ENTRY_SCHEMA}}},
+     "annotations": {"title": "Pulsar: preview time entries", **READ}},
+    {"name": "pulsar_log", "title": "Pulsar: log time",
+     "description": ("Step 2: writes to Productive, through Pulsar, the entries a pulsar_preview code holds (a fresh "
+                     "read of the day, the overlap check, the write lock and the journal, so Log the day can undo them). "
+                     "Give the code and the preview's summary unchanged: Claude Code shows the summary to the person and "
+                     "asks them before this runs, every time; if they say no, nothing is written. Works only in Claude "
+                     "Code. The code works once, for 10 minutes."),
+     "inputSchema": {"type": "object", "required": ["code", "summary"], "additionalProperties": False,
+                     "properties": {"code": {"type": "string", "description": "The code pulsar_preview returned"},
+                                    "summary": {"type": "string", "description": "The summary pulsar_preview returned, "
+                                                                                 "word for word"}}},
      "annotations": {"title": "Pulsar: log time", "readOnlyHint": False, "destructiveHint": False,
-                     "idempotentHint": False, "openWorldHint": True}},
+                     "idempotentHint": False, "openWorldHint": True},
+     # Claude Code asks the person before every call, even in auto or bypass mode; allow rules cannot skip it, and
+     # without a person to ask (dontAsk, -p) the call is denied. Other apps ignore the mark: pulsar_log refuses them.
+     "_meta": {"anthropic/requiresUserInteraction": True}},
+    {"name": "pulsar_status", "title": "Pulsar: status",
+     "description": ("Never fails. Whether Pulsar is open on this Mac (every other tool needs it), its version, whether "
+                     "writes to Productive are blocked and why (a read-only test run, Pulsar Preview), whether "
+                     "pulsar_log works from this app, and today's date, time and time zone in Pulsar. Read only."),
+     "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
+     "annotations": {"title": "Pulsar: status", **READ}},
 ]
-HANDLERS = {"pulsar_day": pulsar_day, "pulsar_propose": pulsar_propose, "pulsar_session": pulsar_session,
-            "pulsar_suggest": pulsar_suggest, "pulsar_tasks": pulsar_tasks, "pulsar_log": pulsar_log}
-INSTRUCTIONS = ("Pulsar shows the person's working day on this Mac against their Productive time entries. To answer what "
-                "is not logged, or to propose entries: pulsar_propose. For the calling session: pulsar_session. To log: "
-                "pulsar_log without confirm (a dry run), show the person the list, and only after their yes call it "
-                "again with the confirm code. Never write a note the person would not; clients may see notes.")
+HANDLERS = {"pulsar_status": pulsar_status, "pulsar_day": pulsar_day, "pulsar_propose": pulsar_propose,
+            "pulsar_session": pulsar_session, "pulsar_suggest": pulsar_suggest, "pulsar_tasks": pulsar_tasks,
+            "pulsar_preview": pulsar_preview, "pulsar_log": pulsar_log}
+WITH_CLIENT = ("pulsar_status", "pulsar_log")  # they answer differently by app
+INSTRUCTIONS = ("Pulsar shows the person's working day on this Mac against their Productive time entries. Every tool "
+                "needs Pulsar open; pulsar_status says whether it is, and the date and time. To answer what is not "
+                "logged, or to propose entries: pulsar_propose. For the calling session: pulsar_session. To log: "
+                "pulsar_preview (it writes nothing), show the person its summary as it is, then pulsar_log with the "
+                "code and that summary unchanged; Claude Code asks the person before every write. Never write a note "
+                "the person would not; clients may see notes.")
+SERVER_INFO = {"name": "pulsar", "title": "Pulsar", "version": __version__}
 
 
 def tool_result(data: dict, error: bool = False) -> dict:
@@ -908,32 +1034,55 @@ def tool_result(data: dict, error: bool = False) -> dict:
 
 
 def handle(msg, state: dict):
-    """One JSON-RPC message: the response, or None for a notification or a response to us."""
+    """One JSON-RPC message: the response, or None for a notification or a response to us.
+
+    Both eras of the protocol. 2026-07-28 and later: no handshake; every request names its version and client in
+    _meta, and is answered on its own. Earlier: initialize first, and the version and client hold for the process."""
     if not isinstance(msg, dict) or msg.get("jsonrpc") != "2.0":
         return {"jsonrpc": "2.0", "id": msg.get("id") if isinstance(msg, dict) else None,
                 "error": {"code": -32600, "message": "Invalid Request"}}
     if not isinstance(msg.get("method"), str):
         return None  # a response to a request we never send, or junk: nothing to answer
-    method, mid, params = msg["method"], msg.get("id"), msg.get("params") or {}
+    method, mid = msg["method"], msg.get("id")
+    params = msg.get("params") if isinstance(msg.get("params"), dict) else {}
     if "id" not in msg:  # notifications/initialized, notifications/cancelled
         return None
+    meta = params.get("_meta") if isinstance(params.get("_meta"), dict) else {}
+    modern = method == "server/discover" or (META + "protocolVersion" in meta and method != "initialize")
 
     def ok(result):
+        if modern:
+            result = {"resultType": "complete", **result, "_meta": {META + "serverInfo": SERVER_INFO}}
         return {"jsonrpc": "2.0", "id": mid, "result": result}
 
-    def err(code, message):
-        return {"jsonrpc": "2.0", "id": mid, "error": {"code": code, "message": message}}
+    def err(code, message, data=None):
+        return {"jsonrpc": "2.0", "id": mid, "error": {"code": code, "message": message, **({"data": data} if data else {})}}
 
+    if modern:
+        version = meta.get(META + "protocolVersion")
+        if not isinstance(version, str) or not isinstance(meta.get(META + "clientCapabilities"), dict):
+            return err(-32602, f"Invalid params: _meta needs {META}protocolVersion and {META}clientCapabilities")
+        if version not in MODERN:
+            return err(-32022, "Unsupported protocol version", {"supported": [*MODERN, *PROTOCOLS], "requested": version})
+        info = meta.get(META + "clientInfo")
+        client = str(info.get("name") or "") if isinstance(info, dict) else ""
+    else:
+        client = state.get("client", "")
+
+    if method == "server/discover":
+        return ok({"supportedVersions": [*MODERN, *PROTOCOLS], "capabilities": {"tools": {}},
+                   "instructions": INSTRUCTIONS, "ttlMs": 3600000, "cacheScope": "public"})
     if method == "initialize":
         asked = str(params.get("protocolVersion") or "")
         state["protocol"] = asked if asked in PROTOCOLS else PROTOCOLS[0]
+        info = params.get("clientInfo")
+        state["client"] = str(info.get("name") or "") if isinstance(info, dict) else ""
         return ok({"protocolVersion": state["protocol"], "capabilities": {"tools": {"listChanged": False}},
-                   "serverInfo": {"name": "pulsar", "title": "Pulsar", "version": __version__},
-                   "instructions": INSTRUCTIONS})
+                   "serverInfo": SERVER_INFO, "instructions": INSTRUCTIONS})
     if method == "ping":
         return ok({})
     if method == "tools/list":
-        return ok({"tools": TOOLS})
+        return ok({"tools": TOOLS, **({"ttlMs": 3600000, "cacheScope": "public"} if modern else {})})
     if method == "tools/call":
         name, args = params.get("name"), params.get("arguments") or {}
         if name not in HANDLERS:
@@ -941,7 +1090,7 @@ def handle(msg, state: dict):
         if not isinstance(args, dict):
             return err(-32602, "arguments must be an object")
         try:
-            return ok(tool_result(HANDLERS[name](args)))
+            return ok(tool_result(HANDLERS[name](args, client) if name in WITH_CLIENT else HANDLERS[name](args)))
         except ToolError as exc:
             return ok(tool_result({"error": str(exc)}, error=True))
         except Exception as exc:  # never crash the server: say what went wrong, without any data

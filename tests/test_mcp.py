@@ -6,6 +6,7 @@
 import io
 import json
 import os
+import socket
 import sys
 import tempfile
 import threading
@@ -18,7 +19,7 @@ _SCRATCH = tempfile.mkdtemp(prefix="pulsar-tests-")
 os.environ.setdefault("XDG_CONFIG_HOME", os.path.join(_SCRATCH, "config"))
 os.environ.setdefault("XDG_CACHE_HOME", os.path.join(_SCRATCH, "cache"))
 
-from pulsar import config, dayplan, mcp, productive, server  # noqa: E402
+from pulsar import __version__, config, dayplan, logbook, mcp, productive, server  # noqa: E402
 
 DATE = "2026-11-04"
 SECRET_WORDS = ["Inbox – client@example.com", "Re: salary review", "fix the SECRET-TOKEN-123 thing",
@@ -63,6 +64,7 @@ class FakeDay:
                                                                  f"on your calendar as “{SECRET_WORDS[3]}”")],
                      "unplaced": [], "uncovered": [], "totals": {"proposed": 90, "logged": 30}}
         self.created = []
+        self.preview = None  # Pulsar Preview's block in /api/config: {"writes": bool}
 
     def patches(self):
         sug = {"recent": [{"taskId": "11", "title": "Build", "project": "Acme", "serviceId": "21", "service": "Dev",
@@ -71,7 +73,7 @@ class FakeDay:
         return [
             mock.patch.object(server, "current_settings", lambda: settings),
             mock.patch.object(server, "public_config", lambda s: {
-                "timezone": "UTC", "targetMinutes": 480,
+                "version": __version__, "preview": self.preview, "timezone": "UTC", "targetMinutes": 480,
                 "rules": [{"match": SECRET_WORDS[7], "taskId": "11", "title": "Build", "project": "Acme"}]}),
             mock.patch.object(mcp, "PROJECTS", os.path.join(_SCRATCH, "no-sessions")),
             mock.patch.object(server, "api_entries", lambda q: {"entries": self.entries, "source": "token"}),
@@ -80,7 +82,9 @@ class FakeDay:
             mock.patch.object(server, "api_calendar", lambda q: {"events": self.events, "problem": ""}),
             mock.patch.object(server, "api_repeats", lambda q: {"repeats": []}),
             mock.patch.object(server, "api_suggest", lambda q: sug),
-            mock.patch.object(server, "api_dayplan", lambda q: self.plan),
+            # pulsar_status's read-only probe (a bad source) reaches the real one: it relies on its order of checks
+            mock.patch.object(server, "api_dayplan", lambda q, real=server.api_dayplan:
+                              real(q) if q.get("source") == "none" else self.plan),
             mock.patch.object(productive, "entries", lambda d0, d1, s: (self.entries, "", None)),
             mock.patch.object(productive, "bookable_services", lambda t, d, s: {
                 "task": {"title": "Build", "project": "Acme", "projectId": "5", "serviceId": "21"},
@@ -108,7 +112,8 @@ class McpTest(unittest.TestCase):
         for p in self.day.patches():
             p.start()
             self.addCleanup(p.stop)
-        env = mock.patch.dict(os.environ, {"PULSAR_MCP_SESSION_ID": "abcdef12", "PULSAR_READ_ONLY": ""})
+        env = mock.patch.dict(os.environ, {"PULSAR_MCP_SESSION_ID": "abcdef12", "PULSAR_READ_ONLY": "",
+                                           "CLAUDE_PROJECT_DIR": "", "PULSAR_PREVIEW": ""})
         env.start()
         self.addCleanup(env.stop)
         mcp._pending.clear()
@@ -116,28 +121,75 @@ class McpTest(unittest.TestCase):
         if os.path.exists(dayplan.journal_path()):  # each test starts with no Log the day runs
             os.remove(dayplan.journal_path())
 
-    def call(self, name, args):
-        reply = mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": args}}, {})
+    def call(self, name, args, client="claude-code"):
+        """A tool call from a client that said its name in initialize (Claude Code's is "claude-code")."""
+        reply = mcp.handle({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": name, "arguments": args}},
+                           {"client": client})
         return json.loads(reply["result"]["content"][0]["text"]), reply["result"]["isError"]
 
     # ---- the protocol --------------------------------------------------------------------------------------
 
     def test_protocol(self):
         out = io.BytesIO()
-        lines = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}},
+        lines = [{"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                  "params": {"protocolVersion": "2025-06-18", "clientInfo": {"name": "claude-code", "version": "2"}}},
                  {"jsonrpc": "2.0", "method": "notifications/initialized"},
-                 {"jsonrpc": "2.0", "id": "d", "method": "server/discover"},
                  {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
-                 {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "nope"}}]
-        mcp.main(0, io.BytesIO(b"\n".join(json.dumps(x).encode() for x in lines) + b"\nnot json\n"), out)
+                 {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "nope"}},
+                 {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "pulsar_status"}}]
+        mcp.main(self.httpd.server_address[1],
+                 io.BytesIO(b"\n".join(json.dumps(x).encode() for x in lines) + b"\nnot json\n"), out)
         got = [json.loads(x) for x in out.getvalue().splitlines()]
         self.assertEqual(got[0]["result"]["protocolVersion"], "2025-06-18")
-        self.assertEqual(got[1]["error"]["code"], -32601)  # a method it does not know: Claude Code falls back
-        self.assertEqual({t["name"] for t in got[2]["result"]["tools"]}, set(mcp.HANDLERS))
-        self.assertEqual(got[3]["error"]["code"], -32602)
+        self.assertNotIn("resultType", got[0]["result"])
+        self.assertEqual({t["name"] for t in got[1]["result"]["tools"]}, set(mcp.HANDLERS))
+        self.assertEqual(got[2]["error"]["code"], -32602)
+        self.assertTrue(got[3]["result"]["structuredContent"]["logFromHere"])  # the client initialize named
         self.assertEqual(got[4]["error"]["code"], -32700)
         self.assertEqual(len(got), 5)  # nothing for the notification
-        mcp._state["port"] = self.httpd.server_address[1]
+
+    def test_protocol_2026_07_28(self):
+        """No handshake: server/discover, then every request with its version, capabilities and client in _meta."""
+        def req(i, method, params=None, client="claude-code", version="2026-07-28", caps=True):
+            meta = {"io.modelcontextprotocol/protocolVersion": version,
+                    "io.modelcontextprotocol/clientInfo": {"name": client, "version": "2"}}
+            if caps:
+                meta["io.modelcontextprotocol/clientCapabilities"] = {}
+            return {"jsonrpc": "2.0", "id": i, "method": method, "params": {**(params or {}), "_meta": meta}}
+        lines = [req(1, "server/discover"), req(2, "tools/list"),
+                 req(3, "tools/call", {"name": "pulsar_status", "arguments": {}}),
+                 req(4, "tools/call", {"name": "pulsar_log", "arguments": {"code": "x", "summary": "y"}}, client="other"),
+                 req(5, "tools/list", version="2099-01-01"), req(6, "tools/list", caps=False)]
+        out = io.BytesIO()
+        mcp.main(self.httpd.server_address[1], io.BytesIO(b"\n".join(json.dumps(x).encode() for x in lines)), out)
+        got = {x["id"]: x for x in map(json.loads, out.getvalue().splitlines())}
+        found = got[1]["result"]
+        self.assertEqual((found["resultType"], found["supportedVersions"][0]), ("complete", "2026-07-28"))
+        self.assertIn("2025-11-25", found["supportedVersions"])  # and the handshake, for older clients
+        self.assertEqual(found["_meta"]["io.modelcontextprotocol/serverInfo"]["name"], "pulsar")
+        self.assertEqual((found["capabilities"], found["instructions"]), ({"tools": {}}, mcp.INSTRUCTIONS))
+        self.assertGreaterEqual(found["ttlMs"], 0)
+        self.assertEqual(got[2]["result"]["resultType"], "complete")
+        self.assertGreaterEqual(got[2]["result"]["ttlMs"], 0)
+        self.assertEqual(len(got[2]["result"]["tools"]), len(mcp.TOOLS))
+        self.assertEqual(got[3]["result"]["resultType"], "complete")
+        self.assertTrue(got[3]["result"]["structuredContent"]["logFromHere"])  # the client from this request's _meta
+        self.assertTrue(got[4]["result"]["isError"])
+        self.assertIn("only in Claude Code", got[4]["result"]["content"][0]["text"])
+        self.assertEqual(got[5]["error"]["code"], -32022)
+        self.assertIn("2026-07-28", got[5]["error"]["data"]["supported"])
+        self.assertEqual(got[6]["error"]["code"], -32602)
+
+    def test_the_write_tool_is_marked_for_the_person(self):
+        tools = {t["name"]: t for t in mcp.TOOLS}
+        self.assertEqual(tools["pulsar_log"]["_meta"], {"anthropic/requiresUserInteraction": True})
+        self.assertFalse(tools["pulsar_log"]["annotations"]["readOnlyHint"])
+        self.assertEqual(set(tools["pulsar_log"]["inputSchema"]["required"]), {"code", "summary"})
+        for name in set(tools) - {"pulsar_log"}:
+            self.assertTrue(tools[name]["annotations"]["readOnlyHint"], name)
+            self.assertNotIn("_meta", tools[name])
+        for text in [mcp.INSTRUCTIONS] + [t["description"] for t in mcp.TOOLS]:
+            self.assertNotIn("\u2014", text)  # no em dashes in what the model reads
 
     def test_impostor_never_gets_the_key(self):
         mcp._state["verified"] = False
@@ -198,65 +250,169 @@ class McpTest(unittest.TestCase):
             return {"id": str(900 + len(created))}
         return mock.patch.object(productive, "create_entry", fake)
 
-    def test_dry_run_writes_nothing_and_confirm_writes_once(self):
-        args = {"date": DATE, "entries": [{"start": "09:00", "minutes": 60, "taskId": "11"},
-                                          {"start": "10:30", "minutes": 20, "taskId": "11", "note": "Search fixed."}]}
+    ARGS = {"date": DATE, "entries": [{"start": "09:00", "minutes": 60, "taskId": "11"},
+                                      {"start": "10:30", "minutes": 20, "taskId": "11", "note": "Search fixed."}]}
+
+    def test_preview_writes_nothing_and_says_it_in_pulsars_words(self):
         with self._create():
-            dry, err = self.call("pulsar_log", args)
-            self.assertFalse(err, dry)
+            dry, err = self.call("pulsar_preview", self.ARGS)
+        self.assertFalse(err, dry)
+        self.assertEqual(self.day.created, [])
+        self.assertEqual(dayplan.runs_for(DATE), [])  # a preview is not journalled
+        self.assertEqual([e["serviceId"] for e in dry["entries"]], ["21", "21"])  # the one used last
+        self.assertTrue(dry["code"])
+        self.assertEqual(dry["summary"], 'Wed 4 Nov 09:00-10:00 (60 min): Build (Acme), Dev, billable. No note.\n'
+                                         'Wed 4 Nov 10:30-10:50 (20 min): Build (Acme), Dev, billable. Note: "Search fixed."')
+        self.assertNotIn("\u2014", dry["summary"])
+
+    def test_log_writes_the_previewed_entries_once(self):
+        with self._create():
+            dry, _ = self.call("pulsar_preview", self.ARGS)
+            for summary in (dry["summary"] + " ", dry["summary"].replace("Search", "Bug"), "", None):
+                got, err = self.call("pulsar_log", {"code": dry["code"], "summary": summary})
+                self.assertTrue(err, summary)
+                self.assertIn("word for word", got["error"])
             self.assertEqual(self.day.created, [])
-            self.assertEqual([e["serviceId"] for e in dry["entries"]], ["21", "21"])  # the one used last
-            self.assertTrue(dry["confirm"])
-            changed, err = self.call("pulsar_log", {**args, "entries": args["entries"][:1], "confirm": dry["confirm"]})
-            self.assertTrue(err)
-            self.assertEqual(self.day.created, [])
-            done, err = self.call("pulsar_log", {**args, "confirm": dry["confirm"]})
+            done, err = self.call("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})  # the code still works
             self.assertFalse(err, done)
             self.assertEqual(done["written"], 2)
-            self.assertEqual([(e["started_at"][11:16], e["minutes"], e["service_id"]) for e in self.day.created],
-                             [("09:00", 60, "21"), ("10:30", 20, "21")])
-            again, err = self.call("pulsar_log", {**args, "confirm": dry["confirm"]})  # a code works once
+            self.assertEqual([(e["started_at"][11:16], e["minutes"], e["service_id"], e["note"]) for e in self.day.created],
+                             [("09:00", 60, "21", ""), ("10:30", 20, "21", "Search fixed.")])
+            again, err = self.call("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})  # a code works once
             self.assertTrue(err)
+            self.assertIn("unknown or has expired", again["error"])
             self.assertEqual(len(self.day.created), 2)
         runs = dayplan.runs_for(DATE)  # journalled like Log the day, so the page can undo it
         self.assertEqual(sorted(x["row"] for r in runs for x in r["rows"] if x["status"] == "logged"), ["mcp-1", "mcp-2"])
-        with self._create():  # and never twice: the journal refuses the same entry from a new run
-            dry, _ = self.call("pulsar_log", args)
-        self.assertIsNone(dry["confirm"])
+        with self._create():  # and never twice: the journal refuses the same entry from a new preview
+            dry, _ = self.call("pulsar_preview", self.ARGS)
+        self.assertIsNone(dry["code"])
         self.assertIn("not sent twice", dry["entries"][0]["problem"])
 
-    def test_problems_block_the_code(self):
-        with self._create():
-            dry, _ = self.call("pulsar_log", {"date": DATE, "entries": [
-                {"start": "10:10", "minutes": 10, "taskId": "11", "note": "Updated web/themes/acme/style.css"}]})
-        self.assertIsNone(dry["confirm"])
-        self.assertIn("file path", dry["entries"][0]["problem"])
-        self.assertIn("overlap", dry["entries"][0]["problem"])  # logged 10:00-10:30
-        _, err = self.call("pulsar_log", {"date": DATE, "entries": [{"start": "09:00", "minutes": 60, "taskId": "11"},
-                                                                    {"start": "09:30", "minutes": 10, "taskId": "11"}]})
+    def test_a_code_expires(self):
+        dry, _ = self.call("pulsar_preview", self.ARGS)
+        mcp._pending[dry["code"]]["until"] -= mcp.CONFIRM_FOR + 1
+        got, err = self.call("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})
         self.assertTrue(err)
         self.assertEqual(self.day.created, [])
 
-    def test_read_only_is_refused_at_both_ends(self):
-        args = {"date": DATE, "entries": [{"start": "09:00", "minutes": 60, "taskId": "11"}]}
-        dry, _ = self.call("pulsar_log", args)
+    def test_log_only_in_claude_code(self):
+        dry, _ = self.call("pulsar_preview", self.ARGS)
+        for client in ("", "claude-ai", "Claude Code", "cursor"):  # they ignore requiresUserInteraction
+            with self._create():
+                got, err = self.call("pulsar_log", {"code": dry["code"], "summary": dry["summary"]}, client=client)
+            self.assertTrue(err)
+            self.assertIn("only in Claude Code", got["error"])
+        self.assertEqual(self.day.created, [])
+        self.assertIn(dry["code"], mcp._pending)  # refused before the code is used
+
+    def test_problems_block_the_code(self):
+        with self._create():
+            dry, _ = self.call("pulsar_preview", {"date": DATE, "entries": [
+                {"start": "10:10", "minutes": 10, "taskId": "11", "note": "Updated web/themes/acme/style.css"}]})
+        self.assertIsNone(dry["code"])
+        self.assertIsNone(dry["summary"])
+        self.assertIn("file path", dry["entries"][0]["problem"])
+        self.assertIn("overlap", dry["entries"][0]["problem"])  # logged 10:00-10:30
+        _, err = self.call("pulsar_preview", {"date": DATE, "entries": [{"start": "09:00", "minutes": 60, "taskId": "11"},
+                                                                        {"start": "09:30", "minutes": 10, "taskId": "11"}]})
+        self.assertTrue(err)
+        self.assertEqual(self.day.created, [])
+
+    def test_read_only_is_refused_at_both_ends_and_never_journalled(self):
+        dry, _ = self.call("pulsar_preview", self.ARGS)
         with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):  # this process: nothing is sent
             with mock.patch.object(mcp, "post") as post:
-                done, _ = self.call("pulsar_log", {**args, "confirm": dry["confirm"]})
+                done, err = self.call("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})
             post.assert_not_called()
-        self.assertEqual(done["written"], 0)
-        self.assertIn("read-only", done["refused"])
-        dry, _ = self.call("pulsar_log", args)
+        self.assertTrue(err)
+        self.assertIn("read-only", done["error"])
+        before = len(logbook.read(1))
         real_blocked, asked = config.writes_blocked, []
 
         def blocked():  # this process lets it through once; then the server's own check, the real one, decides
             asked.append(1)
             return None if len(asked) == 1 else real_blocked()
         with mock.patch.object(config, "writes_blocked", blocked), \
-                mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):  # the server: the real create_entry refuses
-            done, _ = self.call("pulsar_log", {**args, "confirm": dry["confirm"]})
+                mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):  # the server refuses: the real create_entry
+            done, _ = self.call("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})
         self.assertEqual(done["written"], 0)
         self.assertIn("read-only", done["results"][0]["why"])
+        self.assertEqual(dayplan.runs_for(DATE), [])  # refused before the journal heard of it
+        self.assertEqual(len(logbook.read(1)), before)  # and not a line in Logs
+
+    # ---- note drafts from commits ------------------------------------------------------------------------
+
+    def _repo(self, name):
+        folder = os.path.join(_SCRATCH, "repos", name)
+        os.makedirs(os.path.join(folder, ".git"), exist_ok=True)
+        return folder
+
+    def test_commit_notes_only_from_the_callers_repository(self):
+        self.day.plan["entries"] = [plan_row(540, 600, note="Search keeps every letter", noteFrom="commits"),
+                                    plan_row(800, 830, repo="other-repo", note="Weekly call", noteFrom="repeat")]
+        self.day.rows[0]["s"] = 540  # the session's own row, for pulsar_session
+
+        def notes(folder):
+            with mock.patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": folder}):
+                data, _ = self.call("pulsar_propose", {"date": DATE})
+                mine, _ = self.call("pulsar_session", {"date": DATE})
+            return ([p.get("noteDraft") for p in data["proposed"]],
+                    [r.get("suggested", {}).get("noteDraft") for r in mine["rows"]])
+        kept = ["Search keeps every letter", "Weekly call"]
+        self.assertEqual(notes(self._repo("acme-site")), (kept, ["Search keeps every letter"]))
+        self.assertEqual(notes(os.path.join(self._repo("acme-site"), "web", "themes")), (kept, ["Search keeps every letter"]))
+        self.assertEqual(notes(self._repo("ACME_Site-2")), (kept, ["Search keeps every letter"]))  # loosely, as commits.matches
+        for folder in (self._repo("other-repo"), "", "relative/acme-site", os.path.join(_SCRATCH, "not-a-repo")):
+            self.assertEqual(notes(folder), ([None, "Weekly call"], [None]), folder)  # a repeat's note stays
+
+    # ---- Pulsar closed, and pulsar_status ----------------------------------------------------------------
+
+    def test_every_tool_says_open_pulsar_when_it_is_closed(self):
+        dry, _ = self.call("pulsar_preview", self.ARGS)
+        with socket.socket() as sock:  # a port nothing listens on
+            sock.bind(("127.0.0.1", 0))
+            dead = sock.getsockname()[1]
+        port = mcp._state["port"]
+        self.addCleanup(mcp._state.update, {"port": port})
+        for verified in (True, False):
+            mcp._state.update({"port": dead, "verified": verified})
+            for name, args in (("pulsar_day", {}), ("pulsar_propose", {}), ("pulsar_session", {}),
+                               ("pulsar_suggest", {"start": "09:00", "minutes": 30}), ("pulsar_tasks", {"query": "x"}),
+                               ("pulsar_preview", self.ARGS), ("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})):
+                got, err = self.call(name, args)
+                self.assertTrue(err, name)
+                self.assertIn("Open Pulsar", got["error"], name)
+            status, err = self.call("pulsar_status", {})
+            self.assertFalse(err)
+            self.assertEqual(status["pulsar"], "not answering")
+            self.assertIn("open Pulsar", status["next"])
+            self.assertRegex(status["date"], r"^\d{4}-\d{2}-\d{2}$")
+        self.assertIn(dry["code"], mcp._pending)  # the code waits for Pulsar
+        mcp._state["port"] = port
+        done, err = self.call("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})
+        self.assertFalse(err, done)
+
+    def test_status(self):
+        status, err = self.call("pulsar_status", {})
+        self.assertFalse(err)
+        self.assertEqual((status["pulsar"], status["version"], status["mcpVersion"]), ("open", __version__, __version__))
+        self.assertEqual((status["writesBlocked"], status["why"], status["serverReadOnly"]), (False, [], False))
+        self.assertEqual((status["timezone"], status["logFromHere"]), ("UTC", True))
+        self.assertRegex(status["time"], r"^\d{2}:\d{2}$")
+        with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):  # this process and the server: both say so
+            status, _ = self.call("pulsar_status", {})
+        self.assertTrue(status["writesBlocked"])
+        self.assertTrue(status["serverReadOnly"])
+        self.assertEqual(len(status["why"]), 2)
+        self.day.preview = {"writes": False}
+        status, _ = self.call("pulsar_status", {}, client="cursor")
+        self.assertEqual((status["writesBlocked"], status["logFromHere"]), (True, False))
+        self.assertIn("Preview", status["why"][0])
+        self.assertIn("only in Claude Code", status["logFromHereWhy"])
+        self.day.preview = {"writes": True}
+        status, _ = self.call("pulsar_status", {})
+        self.assertFalse(status["writesBlocked"])
 
 
 if __name__ == "__main__":
