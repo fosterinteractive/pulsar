@@ -6,11 +6,12 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
-## Unreleased
-- Likely and Ask Claude's picks stay with their day: switching days, or a restart, no longer loses them.
-- Ticket flags: a closed task, no budget on that date, or no estimate, in the log dialog and Log the day.
-- Settings: round entries to 5, 10 or 15 minutes.
+## 1.4.0 (2026-11-06)
 - Log the day: Earlier days, to catch up on several days one after another.
+- Ticket flags: a closed task, no budget on that date, or no estimate.
+- Round entries to 5, 10 or 15 minutes; new tasks found from the day's work.
+- Likely and Ask Claude's picks stay with their day, across day changes and restarts.
+- Fixes from a full interface test, and safer test runs.
 
 ## 1.3.0 (2026-11-06)
 - Log the day: the whole day proposed for review, written one entry at a time, with Undo.
