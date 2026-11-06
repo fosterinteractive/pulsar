@@ -8,6 +8,7 @@ What each Pulsar release changed, newest first.
 
 ## Unreleased
 - Pulsar in Claude Code: reasons are fixed phrases only, names are cleaned, and no model-written note is returned.
+- A dragged or picked stretch leads with Log the day's task and note for its main work, and offers a split when it mixes work.
 
 ## 1.4.0 (2026-11-06)
 - Log the day: Earlier days, to catch up on several days one after another.

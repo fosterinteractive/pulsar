@@ -264,14 +264,14 @@ It opens from many places, each with the time already filled in:
 
 | From | Start and length | First group in the task list |
 |---|---|---|
-| Dragging in the Logged column | the dragged stretch | the rules that match it |
-| The yellow rail (active, not logged) | the stretch | the rules |
-| The hatched rail (away) | the stretch | the rules |
-| An Activity block, **Log this time** | the block | the rules |
+| Dragging in the Logged column | the dragged stretch | Log the day's task for its main work (below), then the Likely block or meeting over most of it |
+| The yellow rail (active, not logged) | the stretch | the same |
+| The hatched rail (away) | the stretch | the same |
+| An Activity block, **Log this time** | the block | the same |
 | A Likely block, **Log this time** | the block; note = Claude's draft, if it wrote one | "For this work": Claude's pick, task links, learned tasks |
 | A meeting, **Log this time** | the meeting; note = its title | "For this meeting" |
 | A dashed card (a repeat) | the call as seen; note = the usual note | "Usually at this time" |
-| **+ Log** | after the last entry | the rules |
+| **+ Log** | the first yellow-rail stretch, else after the last entry | the same |
 
 After the first group come **From your rules**, **You logged to these lately** (tasks of your last 30 days, with the
 service you used last) and **Assigned to you** (open tasks in active projects, the urgent ones first: overdue, due
@@ -304,6 +304,46 @@ refuses (a path, a web address, code, a tool's name). The draft is the first thr
 "Area: " said once, stopping at 160 characters. Only `git config` and `git log` run, read only; none at all without
 git, or with only Apple's stand-in that would ask to install the developer tools. Session files are read once per
 change, so a refresh costs about 0.1 s.
+
+**A stretch picked in the Day view** (`web/js/range.js`, `GET /api/range`, `pulsar/ranges.py`). A drag in the Logged
+column, a rail, an Activity block, **+ Log** and Log and next open the dialog at once, as before, then ask what the
+stretch holds. The server works the day out as Log the day does (`dayplan.gather`; about a second once the day has
+been read) and keeps, for each minute, the claim that has it (`plan(..., keep=)`), before the layout joins and moves
+the pieces. Within the stretch, the minutes make parts by kind: Claude work by repository, a meeting, a call, work
+outside Claude, a repository you never log, already logged, away, no work seen. Each work part has Log the day's task
+for it (with its confidence and why) and a note source: its commits, Claude's draft for that task, a meeting's title
+or a repeat's usual note. Parts with the same task are one group, and the group with most minutes leads:
+
+- Its task comes first, in a group "For this time (mostly fi-drupal-qa, 50 min of 1 h)", with the other groups' tasks
+  and its alternatives after it; the dialog's other groups follow. It is picked unless a task was picked by hand. Not
+  when the main work is work outside Claude: its task is only the neighbour's, and on the replay the dialog's own
+  first task was right more often there (29% of those minutes against 22%). Everywhere else Log the day's task was the
+  better first pick: for entries logged as one, the logged task came first for 47% of the minutes instead of 44%; for
+  runs of two or three entries back to back, for 45% instead of 33%.
+- Its note fills an empty note: the commit draft or Claude's draft at once, with the line that says where it came
+  from; then, with the Claude Code switch on and the main work in a Claude session, Claude's note from the session
+  (`POST /api/likely/note` for that repository and the stretch, 5.7), unless Claude's pick already brought one. Never
+  once the person has typed in the note, and only in the dialog that asked.
+
+**A stretch that mixes work.** When the biggest group holds less than three quarters of the work minutes, or two
+groups have 20 minutes or more each, one line under the note says so: "This range mixes 3 kinds of work:
+fi-drupal-qa 50 min, a meeting 30 min, client-site 20 min. Split into 3 entries?". The groups are counted as the split
+would make them: minutes that are not work (away, no activity, time spent logging) go with the work before them, time
+already logged stays out, a piece with under 10 minutes of work (the shortest entry, or Settings' **Round entries
+to**) joins its neighbour, or is left out when it has none, and boundaries inside the stretch go on the grid. The
+threshold comes from the replay of 34 days (21 September to 5 November 2026, each day planned from the days before it
+as if nothing were logged; `tools/replay/range_hint.py`): the line shows for 8.8% of the 487 entries logged as one (one task) and for 53.0% of the
+436 runs of two or three entries back to back with different tasks. Log the day tells apart the work of 258 of those
+runs (in the rest one session moved between tasks), and the line shows for 89.5% of them. With 0.6 it was 6.2% and
+44.7%, with 0.7 8.4% and 48.9%, with 0.8 10.3% and 55.5%. On the runs it shows for, the split has the logged task for
+46% of the logged minutes, one entry with the main task for 37%.
+
+The question lists the entries, each with its time, task, project and service (the one Log the day picks: last used
+on the task, checked against the date) and its note, which can be changed there. **Log these N entries** sends them
+one at a time through `POST /api/log`, with the dialog's checks: an overlap or a refusal stops the rest and says why,
+and nothing is forced. An entry with no task (a call with no calendar entry) is listed and left to log on its own.
+**Log in Productive** still logs the stretch as one entry. This is a minimal way to log several entries from the
+dialog; the dialog's own (around entries already logged) should take its place once both are in.
 
 **Log and next** (the button beside Log, or ⌘⇧↩; ⌘↩ logs and closes) logs the entry and opens the dialog again on
 the next yellow-rail stretch after it, else the first one left in the day, with that stretch's suggestions
@@ -720,7 +760,10 @@ question) and cannot tell when inside it the work happened.
   no activity yet, a short list at the top of the board says what is missing and gives the one action that fixes
   it (Connect Productive, Get or Open ActivityWatch).
 - **Yellow rail**: stretches of at least 3 minutes, mostly active (personal time excluded), with no entry. Its total
-  is "Active, not logged".
+  is "Active, not logged". A click opens the log dialog on the stretch; so does the hatched rail (away) for its own.
+- **Dragging in the Logged column**: from an empty spot, up or down, on a 5-minute grid (across entries too); letting
+  go opens the log dialog on that stretch, which says what the stretch holds and offers a split when it mixes work
+  (5.1).
 - **Work time**: logged, billable, not billable, billing unknown, active, personal, active not logged, away (breaks),
   against the daily target (Settings, else the organization's working day in Productive, else 8 h).
 - **Total project time**: per project, then budget and service.
@@ -833,6 +876,7 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `POST /api/log` | Log one entry. With `run` and `row`: one row of Log the day, journalled. |
 | `GET /api/dayplan?date=&source=` | Log the day: the day proposed for review. Nothing is written. |
 | `GET /api/dayplan/journal?date=` | Log the day: what each run of that day sent, and what Undo would delete. |
+| `GET /api/range?date=&s=&e=[&source=]` | What a stretch of the day (minutes `s` to `e`) holds, by Log the day's minutes: parts, task groups, the one that leads, `mixed` and the `split` (5.1). Nothing is written. `ignore_logged=1` as for `/api/dayplan`. |
 | `POST /api/entry/update`, `/api/entry/delete` | Change or delete one of your entries. Delete with `run`: only what that Log the day run created. |
 | `POST /api/likely/ask` | Ask Claude (only when switched on). |
 | `POST /api/likely/note` | `{date, s, e, project}`: the log dialog's note for a Likely block, from its session and commits (Haiku; only with the Claude Code switch on, 5.7). |
@@ -856,6 +900,9 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   at a few places marked "flow.js".
 - **`logday.js`** (and `logday.css`): Log the day, its review panel, the confirm step, the run and Undo, and the
   ticket flags of each row.
+- **`range.js`** (and `range.css`): a stretch picked in the Day view (5.1): the task and note of its main work in the log
+  dialog, the line that says it mixes work, and the split. `log.js` calls it at two places (`rangeOpen`, `rangeLead`),
+  and the places that open the dialog on a stretch pass `range: true`.
 - **`catchup.js`**: Earlier days in Log the day (5.4b), its list of workdays and the line that moves on to the next
   day. `logday.js` calls it at four places (`cuRender`, `cuButton`, `cuStrip`, `cuClosed`).
 - **`ask.js`** (and `ask.css`): Ask Claude while it works. The button turns into a small pulsar (beams sweep its
@@ -894,7 +941,8 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 - A test server against real data: `PULSAR_READ_ONLY=1 python3 -E -s -B pulsar.py --port 5698 --no-open`, then
   `python3 pulsar.py --signin-url --port 5698` prints a one-time address for a browser. Block `**/api/log` and
   `**/api/entry/**` in a scripted browser as well. On such a server only, `?ignore_logged=1` in the page's address
-  makes Log the day plan a day as if nothing were logged, to see a whole proposal on a day already logged. Give it
+  makes Log the day plan a day as if nothing were logged, to see a whole proposal on a day already logged, and so are
+  the stretches picked for the log dialog (5.1). Give it
   `XDG_CACHE_HOME` pointing at a copy of `~/.cache/pulsar`, so its journal and Logs are not the real ones.
 - `PULSAR_MCP_IGNORE_LOGGED=1` in the MCP's environment, with `PULSAR_READ_ONLY=1` there and on the server (else
   every tool refuses): every tool sees the day as if nothing were logged. Log the day plans with `ignore_logged`, the

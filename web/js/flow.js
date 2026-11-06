@@ -31,7 +31,7 @@ function afterLog(date, start, minutes, said, andNext) {
   if (!andNext || date !== state.date) return false;
   const left = openStretches(), s = left.find(x => x.a >= a + minutes) || left[0];
   if (!s) { toast(`${said} No active time is left without an entry.`); return true; }
-  openLog({start: s.a, minutes: s.b - s.a, hint: rulesInRange(s.a, s.b), lead: leadFor(s.a, s.b)});
+  openLog({start: s.a, minutes: s.b - s.a, hint: rulesInRange(s.a, s.b), lead: leadFor(s.a, s.b), range: true});
   const more = left.length - 1;
   $('#log-next-hint').textContent = `${said} Next active stretch with no entry: ${hm(s.a)}–${hm(s.b)}`
     + (more ? `, then ${more} more.` : ', the last one.');
