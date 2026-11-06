@@ -12,6 +12,7 @@ project, budget, billable (True/False/None), billing (the service's billing type
 
 from __future__ import annotations
 
+import contextlib
 import http.client
 import json
 import os
@@ -446,6 +447,16 @@ WRITE_TOOLS = {"create_resource", "update_resource", "delete_resource", "perform
 
 
 _mcp_slots = threading.BoundedSemaphore(4)  # Productive's MCP endpoint hangs up when asked too much at once
+_bulk_slots = threading.BoundedSemaphore(2)  # secondary reads take two of them at most, so the day's own never waits
+
+
+def _gated(bulk: bool, fn):
+    """fn, run in a slot for secondary reads when `bulk` (weeks of history, the Tasks box's estimates): together they
+    hold at most two of the four MCP slots, and the day's entries and the log dialog always find one free."""
+    def run(*a):
+        with _bulk_slots if bulk else contextlib.nullcontext():
+            return fn(*a)
+    return run
 
 
 def mcp_text(tool: str, args: dict, token: str) -> str:
@@ -552,15 +563,16 @@ def minutes_of(s) -> float:
     return sign * ((float(h.group(1)) * 60 if h else 0) + (float(m.group(1)) if m else 0))
 
 
-def mcp_entries(d0: str, d1: str, token: str, person: str, names: Names) -> list:
+def mcp_entries(d0: str, d1: str, token: str, person: str, names: Names, bulk: bool = False) -> list:
+    """bulk: a long read in the background (weeks of history), which leaves room for the day's own reads."""
     first, last = datetime.strptime(d0, "%Y-%m-%d"), datetime.strptime(d1, "%Y-%m-%d")
     dates = [(first + timedelta(days=i)).strftime("%Y-%m-%d") for i in range((last - first).days + 1)]
     # three days per query, four at a time: each answer fits one page, and a month takes seconds
     chunks = [(dates[i], dates[min(i + 2, len(dates) - 1)]) for i in range(0, len(dates), 3)]
     with ThreadPoolExecutor(4) as pool:
-        parts = list(pool.map(lambda c: _mcp_rows([{"field": "date", "operator": "gt_eq", "value": c[0]},
-                                                    {"field": "date", "operator": "lt_eq", "value": c[1]}],
-                                                   person, token), chunks))
+        parts = list(pool.map(_gated(bulk, lambda c: _mcp_rows([{"field": "date", "operator": "gt_eq", "value": c[0]},
+                                                                {"field": "date", "operator": "lt_eq", "value": c[1]}],
+                                                               person, token)), chunks))
     rows = [r for part, _ in parts for r in part]
     included = {k: v for _, inc in parts for k, v in inc.items()}
 
@@ -581,7 +593,7 @@ def mcp_entries(d0: str, d1: str, token: str, person: str, names: Names) -> list
 
     learned, failed = {}, []
     with ThreadPoolExecutor(6) as pool:
-        for ref, name, deal in pool.map(one, todo):
+        for ref, name, deal in pool.map(_gated(bulk, one), todo):
             if name is not None:
                 learned[ref] = name
             else:
@@ -590,7 +602,7 @@ def mcp_entries(d0: str, d1: str, token: str, person: str, names: Names) -> list
                 learned["deal:" + ref] = deal
     names.set_many(learned)
     names.keep_for_now(failed)
-    _mcp_billing(sorted({r["service"] for r in rows if r.get("service")}), token, names)
+    _mcp_billing(sorted({r["service"] for r in rows if r.get("service")}), token, names, bulk)
     out = []
     for r in rows:
         task, service = included.get(r.get("task") or "", {}), included.get(r.get("service") or "", {})
@@ -614,7 +626,7 @@ def billable_of(billing_type) -> dict:
     return {"billable": None if bt not in BILLING else bt != "3", "billing": BILLING.get(bt, "")}
 
 
-def _mcp_billing(services: list, token: str, names: Names) -> None:
+def _mcp_billing(services: list, token: str, names: Names, bulk: bool = False) -> None:
     """Each service's billing type. Productive hides the field from some roles but still filters on it, so
     the services of the budgets in use are listed once per billing type, and what comes back is remembered: read
     again after a week, and after a day for a service found in no list (hidden from this role, "0")."""
@@ -641,7 +653,7 @@ def _mcp_billing(services: list, token: str, names: Names) -> None:
     found: dict = {}
     try:
         with ThreadPoolExecutor(4) as pool:
-            for bt, ids in pool.map(listing, jobs):
+            for bt, ids in pool.map(_gated(bulk, listing), jobs):
                 found.update({f"billing:services:{i}": bt for i in ids})
     except Exception:
         return  # try again next time
@@ -682,8 +694,9 @@ def identify(settings: dict, conn: dict) -> dict:
     return {}
 
 
-def entries(d0: str, d1: str, settings: dict, names: Optional[Names] = None) -> Tuple[list, Optional[str], Optional[str]]:
-    """(rows, problem, source). Never raises: a problem comes back as text for the page."""
+def entries(d0: str, d1: str, settings: dict, names: Optional[Names] = None,
+            bulk: bool = False) -> Tuple[list, Optional[str], Optional[str]]:
+    """(rows, problem, source). Never raises: a problem comes back as text for the page. bulk: see mcp_entries."""
     conn = connection(settings)
     if not conn["kind"]:
         return [], conn["problem"], None
@@ -693,7 +706,7 @@ def entries(d0: str, d1: str, settings: dict, names: Optional[Names] = None) -> 
             rows = rest_entries(d0, d1, conn["token"], settings.get("org_id"), settings.get("person_id"), names)
         else:
             person = settings.get("person_id") or mcp_detect(conn["token"]).get("person_id")
-            rows = mcp_entries(d0, d1, conn["token"], person, names)
+            rows = mcp_entries(d0, d1, conn["token"], person, names, bulk)
     except ProductiveError as exc:
         return [], str(exc), conn["kind"]
     except Exception as exc:  # network and the like
@@ -777,8 +790,8 @@ def task_details(ids: list, settings: dict, reasons: Optional[dict] = None) -> d
             return tid, None, f"{type(exc).__name__}: {exc}", False
 
     failed = {}
-    with ThreadPoolExecutor(6) as pool:
-        for tid, t, problem, connection_problem in pool.map(one, todo):
+    with ThreadPoolExecutor(6) as pool:  # several tasks: the Tasks box, which can wait; one: the log dialog, which cannot
+        for tid, t, problem, connection_problem in pool.map(_gated(len(todo) > 1 and conn["kind"] != "token", one), todo):
             if t:
                 _task_cache[tid] = (now, t)
                 found[tid] = t

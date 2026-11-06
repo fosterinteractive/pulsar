@@ -191,12 +191,13 @@ def validate(body: dict) -> dict:
     return out
 
 
-def productive_rows(d0: str, d1: str, s: dict) -> tuple:
+def productive_rows(d0: str, d1: str, s: dict, bulk: bool = False) -> tuple:
     """(rows, problem, source, from_copy). Every answer is kept per day, so when Productive cannot be reached
-    the day view and the report show the last copy of each day, and say so, instead of nothing."""
+    the day view and the report show the last copy of each day, and say so, instead of nothing. bulk: a long read
+    in the background, which leaves Productive room for the day's own reads."""
     first, last = datetime.strptime(d0, "%Y-%m-%d"), datetime.strptime(d1, "%Y-%m-%d")
     dates = [(first + timedelta(days=i)).strftime("%Y-%m-%d") for i in range((last - first).days + 1)]
-    rows, problem, source = productive.entries(d0, d1, s)
+    rows, problem, source = productive.entries(d0, d1, s, bulk=bulk)
     if problem and source:  # a connection that failed (no connection at all is a setup step, not an error)
         logbook.record("productive", problem)
     who = re.sub(r"\D", "", str(s.get("person_id") or "")) or "unknown"
@@ -609,7 +610,7 @@ def history_rows(date: str, s: dict, days: int = REPEAT_DAYS) -> tuple:
         if not (kept and time.time() - kept[0] < HISTORY_FOR):
             d0 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=span)).strftime("%Y-%m-%d")
             d1 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
-            rows, problem, _, from_copy = productive_rows(d0, d1, s)
+            rows, problem, _, from_copy = productive_rows(d0, d1, s, bulk=True)
             if problem and not from_copy:
                 return [], problem
             kept = (time.time(), rows)

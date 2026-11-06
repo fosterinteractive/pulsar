@@ -785,7 +785,7 @@ class HistoryReadTest(unittest.TestCase):
     def test_one_read_per_date_serves_every_length(self):
         calls = []
 
-        def fake_rows(d0, d1, s):
+        def fake_rows(d0, d1, s, bulk=False):
             calls.append((d0, d1))
             return [{"date": "2026-10-01", "taskId": "1"}, {"date": "2026-11-01", "taskId": "2"}], None, "mcp", False
         server._rows_before.clear()
@@ -1634,7 +1634,7 @@ class LearnPendingTest(unittest.TestCase):
         import threading
         gate, reads = threading.Event(), []
 
-        def rows(d0, d1, s):
+        def rows(d0, d1, s, bulk=False):
             if d0 != d1:  # the history, not the day's own entries
                 reads.append((d0, d1))
                 gate.wait(5)
@@ -1669,8 +1669,8 @@ class LearnPendingTest(unittest.TestCase):
         import threading
         calls = []
 
-        def slow(d0, d1, s):
-            calls.append((d0, d1))
+        def slow(d0, d1, s, bulk=False):
+            calls.append((d0, d1, bulk))
             time.sleep(0.2)
             return [{"date": "2026-10-20", "taskId": "1"}], None, "mcp", False
         server._rows_before.clear()
@@ -1683,7 +1683,27 @@ class LearnPendingTest(unittest.TestCase):
             for t in ts:
                 t.join()
         self.assertEqual(len(calls), 1)
+        self.assertTrue(calls[0][2])                                 # read as a background read
         self.assertEqual(len(got), 3)
+
+    def test_a_background_read_leaves_room_for_the_days_own(self):
+        import threading
+        lock, now, most = threading.Lock(), [0], [0]
+
+        def mcp(tool, args, token):
+            with lock:
+                now[0] += 1
+                most[0] = max(most[0], now[0])
+            time.sleep(0.03)
+            with lock:
+                now[0] -= 1
+            return "Loaded 0 time entries."
+        for bulk, slots in ((True, 2), (False, 4)):
+            most[0] = 0
+            with mock.patch.object(productive, "mcp_text", mcp):
+                productive.mcp_entries("2026-09-01", "2026-10-30", "t", "42", productive.Names(
+                    os.path.join(tempfile.mkdtemp(), "n.json")), bulk=bulk)
+            self.assertEqual(most[0], slots, bulk)                  # 60 days: two at a time in the background
 
 
 class SilentFailureTest(unittest.TestCase):
