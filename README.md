@@ -6,9 +6,11 @@ Your working day as your computer saw it, next to what you logged in Productive.
 what, and which active time has no entry yet. It runs on your own computer, and window titles never leave it.
 It writes to Productive only when you log time yourself: you pick the task and press "Log in Productive".
 
-- **Day**: one time axis with three columns: what was on screen (Activity), what you most likely worked on
-  (Likely, for Claude Code users), and your Productive entries (Logged). A yellow rail marks active time with no
-  entry. On the side: work time against your daily target, and totals per project and budget.
+- **Day**: one time axis with up to four columns: your meetings (Meetings, once Google Calendar is connected), what
+  was on screen (Activity), what you most likely worked on (Likely, for Claude Code users), and your Productive
+  entries (Logged). A yellow rail marks active time with no entry, a hatched rail time away from the computer, and a
+  dashed card an entry you log at this time most days. On the side: work time against your daily target, totals per
+  project and budget, and the day's tasks against their estimates.
 - **Report**: any range up to 93 days: logged against active time by day, time by project, top apps and sites,
   projects by day, when in the week you work, and a table of every day.
 
@@ -103,9 +105,11 @@ Code and reconnect Productive. A token of your own never expires, so it is the s
 | Personal windows | Telegram, WhatsApp, YouTube, Netflix, Instagram, Facebook, TikTok, Reddit (one word per line; a window whose app, title or site contains one counts as personal) |
 | ActivityWatch address | `http://localhost:5600` |
 | Likely column | shown when Claude Code sessions are on this computer (`~/.claude/projects`) |
+| “Ask Claude” button | off; needs Claude Code on this Mac |
+| Google Calendar | not connected; **Connect** signs in with Google (fosterinteractive.com accounts only) |
 
-Settings are saved in `~/.config/pulsar/settings.json`; names and copies of fetched days are cached in
-`~/.cache/pulsar/`. Delete either folder to start again.
+Settings are saved in `~/.config/pulsar/settings.json`; names, copies of fetched days and what Likely learned are
+cached in `~/.cache/pulsar/`. Delete either folder to start again.
 
 ## Good to know
 
@@ -224,33 +228,42 @@ you connect it) and GitHub (for updates).
 
 ## For developers
 
-Python standard library only, no build step.
+Python standard library only, no build step. How everything works, piece by piece: [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md).
 
 ```
 pulsar.py          start the server (--self-test, --signin-url, --no-open, --port)
 pulsar/
-  config.py            settings, time zone, the token (keychain or private file), session key, sign-in codes
+  config.py            settings, time zone, the tokens (keychain or private file), session key, sign-in codes
   trackers.py          ActivityWatch and MemTime readers
   productive.py        Productive: REST with a token, or Claude Code's MCP connection (renewed through
                        `claude mcp get`); billing; tasks; writing
   likely.py            the Likely column: sessions.py, or the fi-time-from-activity skill where it is installed
-  sessions.py          Claude Code sessions -> which project each minute of work went to
+  sessions.py          Claude Code sessions -> which project each minute of work went to; task links typed in them
+  learn.py             tasks for Likely rows, learned from what you logged in the same session or repository
+  askclaude.py         the optional Ask Claude button (claude -p, Productive read only)
+  calendar.py          Google Calendar: sign-in (OAuth, PKCE), a day's meetings, their history
+  google_client.json   the Google sign-in client: placeholders in git, the real one only in releases
+  changelog.py         CHANGELOG.md for Settings and release.sh
+  names.py             each minor version's pulsar name
   report.py            a range of days in numbers (no I/O)
-  server.py            HTTP routes, the JSON API and its guards
+  server.py            HTTP routes, the JSON API and its guards; away time, repeats, a meeting's task
   updater.py           signed self-update from GitHub releases
   logbook.py           the error log
 web/
-  index.html, style.css
+  index.html, style.css, meetings.css
   js/theme-early.js    the saved theme before the first paint
   js/core.js           state, formatting, theme, toast
   js/datepick.js       the calendar behind every date field
   js/day.js            the day view
+  js/meetings.js       the Meetings column and the Google Calendar part of Settings
   js/report.js         the report, its charts and downloads
   js/settings.js       the settings dialog and updates
   js/log.js            logging time and rules
   js/logs.js           the error log dialog
   js/main.js           views and start-up
 macos/                 the app: its window (Swift), its launcher, the icon and the release script (see macos/README.md)
+docs/HOW-IT-WORKS.md   how it all works
+CHANGELOG.md           one line per change, per release
 tests/                 python3 -m unittest discover -s tests
 
 Test servers: PULSAR_READ_ONLY=1 makes writing to Productive impossible; use `"dry": true` on /api/log.
