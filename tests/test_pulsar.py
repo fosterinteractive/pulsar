@@ -1879,6 +1879,58 @@ class KeychainStuckTest(unittest.TestCase):
             self.assertTrue(server.public_config({**config.DEFAULTS, "update_skip": "", "update_asked": 0})["productive"]["keychainStuck"])
 
 
+class YesterdayTest(unittest.TestCase):
+    """A day looked at while it was still today is worked out again once it is over, in memory and on disk."""
+
+    def setUp(self):
+        from pulsar import learn, likely
+        self.likely, self.learn, self.runs = likely, learn, []
+
+        def built_in(date, settings):  # what the day looks like at the moment it is worked out
+            self.runs.append(date)
+            return {"entries": [{"s": 600, "e": 600 + 60 * len(self.runs), "project": "p", "titles": []}]}
+        self.patches = [mock.patch.object(likely, "own_script", lambda: False),
+                        mock.patch.object(likely, "_built_in", built_in),
+                        mock.patch.object(likely, "_with_tasks", lambda *a, **k: None),
+                        mock.patch.object(learn, "DIR", tempfile.mkdtemp())]
+        for p in self.patches:
+            p.start()
+            self.addCleanup(p.stop)
+        likely._cache.clear()
+        self.addCleanup(likely._cache.clear)
+        self.s = {**config.DEFAULTS, "timezone": "UTC"}
+
+    def test_a_day_seen_at_noon_is_whole_the_next_day(self):
+        noon = self.likely.proposal("2026-11-05", "UTC", "2026-11-05", False, self.s)
+        self.assertEqual(self.likely.proposal("2026-11-05", "UTC", "2026-11-05", False, self.s), noon)  # reused today
+        whole = self.likely.proposal("2026-11-05", "UTC", "2026-11-06", False, self.s)    # the next morning
+        self.assertEqual(self.runs, ["2026-11-05", "2026-11-05"])
+        self.assertGreater(whole["entries"][0]["e"], noon["entries"][0]["e"])
+        self.assertIs(self.likely.proposal("2026-11-05", "UTC", "2026-11-07", False, self.s), whole)  # then kept
+
+    def test_learning_never_stores_a_day_that_is_not_over_or_was_seen_before_it_was(self):
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        self.likely.proposal(today, "UTC", today, False, self.s)  # the page shows today: cached, unfinished
+        tomorrow = productive.day_shift(today, 1)
+        with mock.patch.object(self.learn, "LEARN_DAYS", 2), \
+                mock.patch.object(self.learn.threading, "Thread", lambda target, **k: mock.Mock(start=target)):  # here, now
+            self.learn.warm(tomorrow, self.s)  # a page asked about tomorrow: the days before it include today
+        self.assertIsNone(self.learn._stored(today))                         # today is not over: not kept
+        self.assertIsNotNone(self.learn._stored(productive.day_shift(today, -1)))
+        self.assertEqual(self.runs.count(today), 1)                          # and not worked out for the disk either
+
+    def test_a_day_cached_while_it_was_today_is_worked_out_again_before_it_is_stored(self):
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        yesterday = productive.day_shift(today, -1)
+        seen = self.likely.proposal(yesterday, "UTC", yesterday, False, self.s)  # looked at yesterday, at noon
+        with mock.patch.object(self.learn, "LEARN_DAYS", 1), \
+                mock.patch.object(self.learn.threading, "Thread", lambda target, **k: mock.Mock(start=target)):
+            self.learn.warm(today, self.s)
+        stored = self.learn._stored(yesterday)
+        self.assertEqual(self.runs, [yesterday, yesterday])
+        self.assertGreater(stored[0]["e"], seen["entries"][0]["e"])
+
+
 class LearnPendingTest(unittest.TestCase):
     """The Likely column does not wait for the 60 days of history its learned tasks need."""
 

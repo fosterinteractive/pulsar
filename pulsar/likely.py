@@ -56,21 +56,22 @@ TODAY_FOR = 180  # seconds a proposal for today is reused: the script reads ever
 
 
 def proposal(date: str, tz_name: str, today: str, fresh: bool, settings: dict | None = None, keep: bool = True) -> dict:
-    """The proposal for a day: past days once, today again after three minutes (or on ↻). One run per day at a time;
+    """The proposal for a day: a past day once, today again after three minutes (or on ↻). A day worked out while it
+    was still today is worked out again once it is over, never kept as it was at that hour. One run per day at a time;
     a request that arrives while it runs waits for it instead of starting another. keep=False (learning's 60 past
     days, which it stores on disk) leaves the days in memory, the ones the page shows, where they are."""
     key = (date, tz_name)
     lock = _locks.setdefault(key, threading.Lock())
     with lock:
-        cached = _cache.get(key)
-        if cached and not fresh and (date < today or time.time() - cached[0] < TODAY_FOR):
+        cached = _cache.get(key)  # (when, proposal, whether the day was over when it was worked out)
+        if cached and not fresh and (cached[2] or (date >= today and time.time() - cached[0] < TODAY_FOR)):
             return cached[1]
         settings = settings or config.load()
         result = _run(date, tz_name, config.tz(settings)) if own_script() else _built_in(date, settings)
         if not result.get("error"):
             _with_tasks(result, date, settings, keep)
             if keep:
-                _cache[key] = (time.time(), result)
+                _cache[key] = (time.time(), result, date < today)
         return result
 
 
