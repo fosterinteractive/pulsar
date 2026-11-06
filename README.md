@@ -203,6 +203,7 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   your last four weeks in Productive. When the tracker sees a call near that time (Zoom, Meet, Teams, a Slack huddle),
   the Logged column shows it as a dashed card with the task, the usual note and the call's length. One click opens it
   in the log dialog; nothing is logged until you click **Log in Productive**.
+- **No task for the work yet.** The log dialog can create one, drafted from the work, on a click, and pick it.
 - **Time that runs into an entry already logged.** The log dialog shows the free time around it and offers to log
   that instead (**Log 2 entries around it**); **Log anyway** is still there.
 - **Google Calendar.** In **Settings → Google Calendar**, **Connect** opens Google's sign-in; after **Allow**, a

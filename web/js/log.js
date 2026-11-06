@@ -116,6 +116,13 @@ function makePicker(listEl, searchEl, onPick) {
       if (!selected && pre) selected = pre; else pre = null;
       redraw(); if (pre) onPick(pre);
     },
+    /* a task just created (newtask.js): first, in a group of its own, and picked */
+    pick(t) {
+      loading = false; searched = ''; searchEl.value = ''; clearTimeout(timer);
+      base = [{label: 'Just created', tasks: [t]}, ...base.filter(g => g.label !== 'Just created')
+        .map(g => ({...g, tasks: g.tasks.filter(x => x.taskId !== t.taskId)}))];
+      groups = base; selected = t; redraw(); onPick(t);
+    },
     get selected() { return selected; },
   };
 }
@@ -234,6 +241,7 @@ async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = 
   setLogMsg(''); $('#log-save').textContent = edit ? 'Save changes' : 'Log in Productive';
   noStartHint(date); showFlags(null);
   prepareNext(date, edit); showTaskLink(null);  // flow.js
+  $('#log-newtask').hidden = !!edit;  // newtask.js: a new task is for new time, not for an entry being changed
   logDlg.showModal();
   logPicker.loading();
   showDraft();
