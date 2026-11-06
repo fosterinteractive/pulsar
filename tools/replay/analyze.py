@@ -13,6 +13,7 @@ import replay as R
 
 PULSAR = re.compile(r"^pulsar(-preview)?$", re.I)
 LOGGING = R.dayplan.LOGGING
+EDITORS = re.compile(r"^(Cursor|Code|Visual Studio Code|Terminal|iTerm2|Warp|Claude)$", re.I)
 
 
 def arg(name, default):
@@ -132,7 +133,7 @@ def score_day(out: dict) -> dict:
                 in_real_span[x] = 1
     blocked_at = bytearray(R.N)
     for it in day["items"]:
-        if it.get("cat") == "work" and R.dayplan.EDITORS.search(it.get("app") or ""):
+        if it.get("cat") == "work" and EDITORS.search(it.get("app") or ""):
             for x in R.span(it["s"], it["e"]):
                 blocked_at[x] = 1
 
@@ -232,10 +233,18 @@ def score_day(out: dict) -> dict:
         real = set(x for a, b in e.get("part_spans") or [] for x in R.span(a, b))
         laid = set(R.span(e["s"], e["e"]))
         checks["minutes laid out off the work they stand for"] += len(laid - real)
+    night = bytearray(R.N)
+    for w in day["away"]:
+        if w.get("off"):
+            for x in R.span(w["s"], w["e"]):
+                night[x] = 1
+    checks["proposed minutes in Off stretches (nights)"] += 0
     for x in range(R.N):
         if prop_at[x] is None:
             continue
         e = ents[prop_at[x]]
+        if night[x]:
+            checks["proposed minutes in Off stretches (nights)"] += 1
         if away[x] and not attended_at[x]:
             checks["proposed minutes on away time"] += 1
             if e["kind"] in ("focused", "agent", "outside"):

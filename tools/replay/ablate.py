@@ -5,15 +5,22 @@
 """
 from __future__ import annotations
 
-import sys, types
+import os, sys, types
 from collections import defaultdict
 
 import analyze as A
 import replay as R
 
-SRC = open(R.dayplan.__file__, encoding="utf-8").read()
+# the planner to vary: the working copy, or ABLATE_SRC (e.g. `git show HEAD:pulsar/dayplan.py > before.py`)
+SRC = open(os.environ.get("ABLATE_SRC") or R.dayplan.__file__, encoding="utf-8").read()
 
 PATCHES = {
+    # a piece too short for an entry, with no entry near it, is left uncovered instead of becoming a tiny entry
+    "drop-lone-short": [(
+        """    skipped += [{"s": m["s"], "e": m["last"] + 1, "minutes": m["minutes"], "project": m.get("project") or "",""",
+        """    merged = [m for m in merged if m["minutes"] >= o["min_entry"] or m["kind"] == "skip" or not o["min_entry"]
+              or (m.get("attended") and m["minutes"] >= 5)]
+    skipped += [{"s": m["s"], "e": m["last"] + 1, "minutes": m["minutes"], "project": m.get("project") or "",""")],
     # a calendar meeting is "the same call" as a repeat only when the repeat covers half of the meeting itself (today:
     # half of the shorter, so a repeat stretched over the next meeting swallowed it and left its call with no task)
     "meeting-own-half": [(
@@ -31,12 +38,17 @@ PATCHES = {
     # a short piece joins a neighbour only in the same sitting and within MERGE_GAP of it (today: any neighbour,
     # however far: a 3-minute row after midnight pulled a 200-minute afternoon entry to 00:40)
     "join-near": [(
-        '''                    nb = [q for q in (merged[k - 1] if k else None, merged[k + 1] if k + 1 < len(merged) else None)
-                          if q is not None and q["kind"] != "skip"]''',
-        '''                    nb = [q for q in (merged[k - 1] if k else None, merged[k + 1] if k + 1 < len(merged) else None)
-                          if q is not None and q["kind"] != "skip"
-                          and max(q["s"], p["s"]) - min(q["last"], p["last"]) <= o["merge_gap"]
-                          and sitting[min(q["s"], p["s"])] == sitting[max(q["s"], p["s"])]]''')],
+        '''    if o["min_entry"]:
+        changed = True''',
+        '''    def near(p, q) -> bool:
+        x, y = sorted((p, q), key=lambda r: r["s"])
+        sx, sy = sitting[x["last"]], sitting[y["s"]]
+        return y["s"] - x["last"] <= o["merge_gap"] and (sx is None or sy is None or sx == sy)
+
+    if o["min_entry"]:
+        changed = True'''), (
+        '''                          if q is not None and q["kind"] != "skip"]''',
+        '''                          if q is not None and q["kind"] != "skip" and near(p, q)]''')],
     # "you never log this repository" only from days whose entries all have a start time (an entry logged by length
     # only cannot be matched to the work, so it made the person's main repositories look never logged)
     "never-timed": [(
@@ -108,7 +120,16 @@ def run(names: list):
     E = [e for d in days for e in d["entries"]]
     hi = [e for e in E if e["conf"] == "high"]
     tick = [e for e in E if e["checked"]]
+    M = sum(d["M"] for d in days)
+    cal = " | ".join(f"{c} {sum(e['minutes'] for e in E if e['conf'] == c)} min "
+                     f"{A.pct(sum(e['right_time'] for e in E if e['conf'] == c), sum(e['minutes'] for e in E if e['conf'] == c))}/"
+                     f"{A.pct(sum(e['right_day'] for e in E if e['conf'] == c), sum(e['minutes'] for e in E if e['conf'] == c))}"
+                     for c in ("high", "medium", "low"))
+    tm = sum(e["minutes"] for e in tick)
     print(f"{'+'.join(names) or 'baseline':28s} " + A.short(sm))
+    print(f"{'':28s} right amount {M} min ({A.pct(M, sm['Q'])} of logged) | calibration (right time/right day) {cal}")
+    print(f"{'':28s} ticked {tm} min, right day {sum(e['right_day'] for e in tick)}, wrong day {tm - sum(e['right_day'] for e in tick)}"
+          f" | nights {checks['proposed minutes in Off stretches (nights)']}")
     print(f"{'':28s} entries {len(E)} | high right time {A.pct(sum(e['right_time'] for e in hi), sum(e['minutes'] for e in hi))}"
           f" | ticked right time {A.pct(sum(e['right_time'] for e in tick), sum(e['minutes'] for e in tick))}"
           f" right day {A.pct(sum(e['right_day'] for e in tick), sum(e['minutes'] for e in tick))}"
