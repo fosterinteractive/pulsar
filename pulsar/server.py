@@ -428,11 +428,14 @@ def api_ask_claude(body: dict) -> dict:
         raise ValueError(proposal["error"])
     d0, _ = askclaude.history_span(date)
     before, problem = history_rows(date, s, days=learn.LEARN_DAYS)  # one read, kept an hour, shared with Likely
+    if problem:  # Claude picks from the tasks you logged to, and its answer is kept: with none, it is not asked
+        why = f"Your earlier entries could not be read from Productive, so Claude was not asked: {problem}"
+        logbook.record("ask claude", why, kind="warning", once_per=600)
+        return {"error": why, "picks": {}, "cost": 0}
     # each row's likely tasks (learned from the days before, never from this day's own entries): whose notes Claude
     # sees as examples of how this person writes them. A copy, so the cached proposal stays as it is.
     rows = [dict(e) for e in proposal.get("entries") or []]
-    if not problem:
-        learn.annotate({**proposal, "entries": rows}, date, s, before, [], tz)
+    learn.annotate({**proposal, "entries": rows}, date, s, before, [], tz)
     t0, t1 = day_bounds(date, tz)
     try:
         answer = askclaude.ask(date, rows, t0, [r for r in before if r.get("date", "") >= d0],
@@ -565,7 +568,7 @@ def api_suggest(q: dict) -> dict:
     if key not in _recent or time.time() > _recent[key][0]:
         d1 = q["date"]
         d0 = (datetime.strptime(d1, "%Y-%m-%d") - timedelta(days=30)).strftime("%Y-%m-%d")
-        rows, _, _, _ = productive_rows(d0, d1, s)
+        rows, history_error, _, _ = productive_rows(d0, d1, s)  # a saved copy, or nothing, when Productive fails
         by_task: dict = {}
         for r in sorted(rows, key=lambda r: (r["date"], r.get("start") or 0)):
             if not r.get("taskId"):
@@ -588,9 +591,11 @@ def api_suggest(q: dict) -> dict:
         for t in recent:  # what Productive says of the tasks you logged to: due date, status, blocked
             t.update({k: known[t["taskId"]][k] for k in ("due", "status", "blocked")} if t["taskId"] in known else {})
         assigned = urgent_first([t for t in mine if t["taskId"] not in by_task], today(config.tz(s)))
-        # kept 10 minutes; one without the assigned tasks only a minute, so the next dialog tries again
-        _recent[key] = (time.time() + (60 if problem else 600),
-                        {"recent": recent, "assigned": assigned, **({"assignedError": problem} if problem else {})})
+        # kept 10 minutes; one with a part that could not be read only a minute, so the next dialog tries again
+        _recent[key] = (time.time() + (60 if problem or history_error else 600),
+                        {"recent": recent, "assigned": assigned, **({"assignedError": problem} if problem else {}),
+                         **({"historyError": f"Your last 30 days could not be read: {history_error}"}
+                            if history_error else {})})
     return _recent[key][1]
 
 
@@ -753,7 +758,8 @@ def history_rows(date: str, s: dict, days: int = REPEAT_DAYS) -> tuple:
             rows, problem, _, from_copy = productive_rows(d0, d1, s, bulk=True)
             if problem and not from_copy:
                 return [], problem
-            kept = (time.time(), rows)
+            # a saved copy (Productive failed; some days may be missing) is kept a minute, not an hour: then asked again
+            kept = (time.time() - (HISTORY_FOR - 60 if from_copy else 0), rows)
             with _rows_lock:
                 _rows_before[key] = kept
     return [r for r in kept[1] if r.get("date", "") >= first], None

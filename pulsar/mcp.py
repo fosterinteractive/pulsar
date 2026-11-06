@@ -714,7 +714,7 @@ def pulsar_suggest(args: dict) -> dict:
         seen_ids.update(t["taskId"] for t in kept)
         if kept:
             groups.append({"label": label or "", "tasks": kept})
-    warnings: list = []
+    warnings: list = [_short(sug["historyError"])] if sug.get("historyError") else []
     entries = _entries(got["entries"], warnings)
     no_start = [x for x in entries if x.get("s") is None]
     return {"date": date, "start": hm(a), "end": hm(b), "minutes": b - a,
@@ -757,6 +757,7 @@ def pulsar_tasks(args: dict) -> dict:
             item.pop("serviceId", None)  # a task's own service may not take time on the date: pulsar_preview picks one
             out.append({**item, "group": "assigned to you" if t in (sug.get("assigned") or []) else "Productive search"})
     warnings = [_short(v.get("error")) for v in got.values() if isinstance(v, dict) and v.get("error")]
+    warnings += [_short(sug["historyError"])] if sug.get("historyError") else []
     return {"query": query, "tasks": out[:15], "more": max(0, len(out) - 15), "closedLeftOut": True, "warnings": warnings}
 
 

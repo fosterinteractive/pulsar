@@ -46,13 +46,18 @@ def _path(date: str) -> str:
     return os.path.join(DIR, f"{date}.json")
 
 
-def _stored(date: str):
+def _doc(date: str):
     try:
         with open(_path(date), encoding="utf-8") as fh:
             doc = json.load(fh)
-        return doc["rows"] if doc.get("format") == FORMAT and isinstance(doc.get("rows"), list) else None
-    except (OSError, ValueError, KeyError, TypeError):
+        return doc if isinstance(doc, dict) and doc.get("format") == FORMAT and isinstance(doc.get("rows"), list) else None
+    except (OSError, ValueError):
         return None
+
+
+def _stored(date: str):
+    doc = _doc(date)
+    return doc["rows"] if doc else None
 
 
 def rows_of(proposal: dict) -> list:
@@ -71,16 +76,28 @@ def warm(date: str, settings: dict) -> None:
         return
 
     def run():
-        from . import likely
+        from . import likely, trackers
+        up: list = []
+
+        def answering() -> bool:  # asked once a run, and only when a day without a tracker needs it
+            if not up:
+                up.append(trackers.answering(settings.get("activitywatch_url") or config.DEFAULTS["activitywatch_url"]))
+            return up[0]
+
         try:
             today = datetime.now(config.tz(settings)).strftime("%Y-%m-%d")  # a day is kept on disk only once it is over
-            todo = [d for d in _days_before(date) if d < today and _stored(d) is None]
+            docs = {d: _doc(d) for d in _days_before(date) if d < today}
+            # a day worked out while no tracker answered (ActivityWatch not up yet at login) is worked out again once
+            # one does; a day without activity while one answered is kept as it is
+            todo = [d for d, doc in docs.items() if doc is None or (doc.get("blind") and answering())]
             _state.update(done=LEARN_DAYS - len(todo), of=LEARN_DAYS)
             os.makedirs(DIR, mode=0o700, exist_ok=True)
             for d in todo:
                 got = likely.proposal(d, config.timezone_name(settings), today, False, settings, keep=False)
                 if not got.get("error"):
-                    config.write_atomic(_path(d), json.dumps({"format": FORMAT, "rows": rows_of(got)}))
+                    blind = got.get("tracker") == "no tracker" and not answering()
+                    config.write_atomic(_path(d), json.dumps({"format": FORMAT, "rows": rows_of(got),
+                                                              **({"blind": True} if blind else {})}))
                 _state["done"] += 1
         except Exception as exc:  # a hint: the suggestions just use fewer days
             logbook.record("learn", f"Learning tasks from past days: {type(exc).__name__}: {exc}", kind="warning")
