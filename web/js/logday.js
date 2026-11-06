@@ -90,7 +90,7 @@ async function askClaudeForDay(d) {
   }
   const none = LD.rows.filter(x => x.claudeNone).length;
   LD.askNote = `Claude looked at the day: ${changed ? `${changed} ${changed === 1 ? 'row' : 'rows'} changed` : 'no row changed'}`
-    + (none ? `, ${none} with no task found (Pulsar's guess kept)` : '') + '.';
+    + (none ? `, ${none} with no task found (Pulsar's guess kept)` : '') + '.' + (ans.warning ? ` ${ans.warning}` : '');
   renderReview(); render();
 }
 function closeLogDay() {

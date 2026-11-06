@@ -20,13 +20,19 @@ try:
 except ImportError:  # pragma: no cover - Python < 3.9
     ZoneInfo = None
 
-CONFIG_DIR = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"), "pulsar")
-CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "pulsar")
+# Pulsar Preview's launcher sets PULSAR_INSTANCE=preview: then its settings, sign-in, sessions, caches and keychain
+# items are its own ("pulsar-preview"), so nothing it does reaches Pulsar's. Anything else is Pulsar itself.
+INSTANCE = "preview" if os.environ.get("PULSAR_INSTANCE") == "preview" else ""
+NAME = "pulsar-preview" if INSTANCE else "pulsar"
+_CONFIG_BASE = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+CONFIG_DIR = os.path.join(_CONFIG_BASE, NAME)
+CACHE_DIR = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), NAME)
+MAIN_CONFIG_DIR = os.path.join(_CONFIG_BASE, "pulsar")  # Pulsar's own: Preview reads from it once, never writes
 SETTINGS_FILE = os.path.join(CONFIG_DIR, "settings.json")
 SECRET_FILE = os.path.join(CONFIG_DIR, "secret")        # this user's session key: the API answers only its holder
 SIGNIN_FILE = os.path.join(CONFIG_DIR, "signin-code")   # a one-time code the page trades for a session token
 TOKEN_FILE = os.path.join(CONFIG_DIR, "token")
-KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT = "pulsar", "productive"
+KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT = NAME, "productive"  # Preview's "Remove token" never touches Pulsar's
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_\-]{8,200}$")
 
 DEFAULTS = {
@@ -50,14 +56,21 @@ DEFAULTS = {
 
 def is_preview() -> bool:
     """Running as Pulsar Preview (macos/build_app.sh with PULSAR_PREVIEW_DIR): code from a branch, before a release."""
-    return bool(os.environ.get("PULSAR_PREVIEW"))
+    return bool(os.environ.get("PULSAR_PREVIEW")) or bool(INSTANCE)
+
+
+def read_only() -> bool:
+    """A test run or a demo (PULSAR_READ_ONLY): nothing reaches Productive or Claude Code's settings. The launcher of
+    Pulsar Preview sets PULSAR_READ_ONLY=preview, which this code reads as "a preview" (writes follow its own setting,
+    below), while code older than this, run in Preview, takes any value as read-only and so never writes."""
+    return bool(os.environ.get("PULSAR_READ_ONLY")) and os.environ.get("PULSAR_READ_ONLY") != "preview"
 
 
 def writes_blocked():
     """Why nothing may be written to Productive right now, or None: a test run, or a preview not allowed to."""
-    if os.environ.get("PULSAR_READ_ONLY"):
+    if read_only():
         return "Pulsar runs read-only (PULSAR_READ_ONLY): nothing was written."
-    if is_preview() and not load().get("preview_writes"):
+    if (is_preview() or os.environ.get("PULSAR_READ_ONLY") == "preview") and not load().get("preview_writes"):
         return ("Pulsar Preview does not write to Productive, so nothing was written. To test writing, allow it in "
                 "Settings > Updates > Preview.")
     return None
@@ -149,11 +162,39 @@ def _keep_copy(text: str, why: str) -> None:
                                f"is kept as {name} in {CONFIG_DIR}.", kind="warning")
 
 
+# What Pulsar Preview does not take from Pulsar's settings when it starts with none of its own: the update reminder,
+# the Google account (its token is Pulsar's), where Productive comes from (a token is Pulsar's too: "auto" then uses
+# Claude Code's connection) and permission to write.
+SEED_SKIP = ("update_skip", "update_asked", "calendar_account", "productive_source", "preview_writes")
+
+
+def _seed_preview() -> bool:
+    """Pulsar Preview's first start: its settings begin as a copy of Pulsar's (rules, time zone, who you are), read
+    once. After that the two never share a file. True when a copy was made."""
+    try:
+        with open(os.path.join(MAIN_CONFIG_DIR, "settings.json"), encoding="utf-8") as fh:
+            main = json.load(fh)
+    except (OSError, ValueError):
+        return False
+    if not isinstance(main, dict):
+        return False
+    seed = {k: v for k, v in main.items() if k in DEFAULTS and k not in SEED_SKIP}
+    try:
+        write_atomic(SETTINGS_FILE, json.dumps(seed, ensure_ascii=False, indent=2))
+    except OSError:
+        return False
+    return True
+
+
 def _load() -> dict:
     out = json.loads(json.dumps(DEFAULTS))  # a deep copy: callers may change the lists
     try:
         with open(SETTINGS_FILE, encoding="utf-8") as fh:
             text = fh.read()
+    except FileNotFoundError:
+        if not (INSTANCE and _seed_preview()):
+            return out
+        return _load()
     except OSError:
         return out
     try:

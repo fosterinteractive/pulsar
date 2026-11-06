@@ -887,7 +887,7 @@ def pulsar_status(args: dict, client: str = "") -> dict:
     out: dict = {"pulsar": "open", "version": None, "mcpVersion": __version__}
     own = config.writes_blocked()  # this MCP server's own environment: pulsar_log checks it before sending
     blocked = [("This MCP server runs read-only (PULSAR_READ_ONLY in its environment): pulsar_log sends nothing."
-                if os.environ.get("PULSAR_READ_ONLY") else own)] if own else []
+                if config.read_only() else own)] if own else []
     cfg = {}
     try:
         cfg = _config()

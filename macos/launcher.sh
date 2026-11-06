@@ -24,7 +24,7 @@
 #   PULSAR_NO_BROWSER=1   do not open the browser (for tests)
 #
 # Server output goes to ~/Library/Logs/Pulsar.log. Settings and caches are the server's business
-# (~/.config/pulsar, ~/.cache/pulsar); this script never touches them.
+# (~/.config/pulsar, ~/.cache/pulsar; Pulsar Preview's are pulsar-preview); this script only writes the sign-in code.
 
 set -u
 
@@ -47,6 +47,17 @@ if [ -f "$CONTENTS/Resources/preview-dir" ]; then
   PORT="${PULSAR_PORT:-5620}"
   URL="http://127.0.0.1:${PORT}/"
   LOG="$HOME/Library/Logs/Pulsar-Preview.log"
+  # Its own settings, sign-in, sessions and keychain items (PULSAR_INSTANCE=preview), so nothing it does reaches
+  # Pulsar's. The checkout's code says where it keeps them: an older checkout that does not know PULSAR_INSTANCE keeps
+  # Pulsar's, and is read-only anyway (PULSAR_READ_ONLY, below). Only once the developer tools are there: before
+  # that, /usr/bin/python3 is a stub that asks to install them.
+  if /usr/bin/xcode-select -p >/dev/null 2>&1; then
+    dir="$(PULSAR_INSTANCE=preview "$PY" -I -B -c 'import sys
+sys.path.insert(0, sys.argv[1])
+from pulsar import config
+print(config.CONFIG_DIR)' "$PREVIEW_DIR" 2>/dev/null)"
+    [ -n "$dir" ] && CONFIG_DIR="$dir"
+  fi
 fi
 
 log() {
@@ -92,8 +103,8 @@ open_page() {
   ( umask 077; /bin/mkdir -p "$CONFIG_DIR" && printf '%s %s' "$code" "$(date +%s)" >"$CONFIG_DIR/signin-code" )
   if [ "$MODE" = "--window" ]; then
     printf 'PULSAR_URL %s?code=%s\n' "$URL" "$code"
-  else
-    /usr/bin/open "${URL}?code=$code"
+  else  # the browser, through osascript reading its script on stdin: /usr/bin/open would show the code in ps
+    printf 'open location "%s?code=%s"\n' "$URL" "$code" | /usr/bin/osascript - >/dev/null
   fi
 }
 
@@ -177,8 +188,9 @@ started_by_app() {
     { [ -n "$PREVIEW_DIR" ] && [[ "$cmd" == *"$PREVIEW_DIR/pulsar.py"* ]]; }
 }
 
-# Starts the copy in folder $1 in the background and waits for it to answer. Returns 1 if it stops or
-# does not answer within 15 seconds (then it is stopped).
+# Starts the copy in folder $1 in the background and waits for it to answer with this user's key (is_ours): a
+# version answering on the port is not enough, since something else may hold the port while this copy failed to get
+# it. Returns 1 if it stops or does not answer within 15 seconds (then it is stopped).
 start_server() {
   local real="$1" server
   log "Pulsar $(version_of "$real") starting on port $PORT from $real"
@@ -192,12 +204,16 @@ os.execv("/usr/bin/python3", ["/usr/bin/python3", "-E", "-s", "-B"] + sys.argv[1
   server=$!
   for _ in $(seq 1 60); do
     sleep 0.25
-    [ -n "$(running_version)" ] && return 0
+    [ -n "$(running_version)" ] && is_ours && return 0
     kill -0 "$server" 2>/dev/null || break
   done
-  [ -n "$(running_version)" ] && return 0
+  is_ours && return 0
   kill "$server" 2>/dev/null
-  log "Pulsar $(version_of "$real") did not start"
+  if [ -n "$(running_version)" ]; then
+    log "Pulsar $(version_of "$real") did not start: port $PORT answers as Pulsar, but not with this user's key"
+  else
+    log "Pulsar $(version_of "$real") did not start"
+  fi
   return 1
 }
 
@@ -237,7 +253,10 @@ if [ -n "$PREVIEW_DIR" ]; then
     is_ours && { open_page; exit 0; }
     fail_dialog "Pulsar Preview could not start: another program is using port $PORT."
   fi
-  export PULSAR_PREVIEW=1
+  # PULSAR_READ_ONLY=preview: this code writes to Productive only when its Settings allow it; code that predates
+  # Preview takes any value as read-only and writes nothing.
+  export PULSAR_PREVIEW=1 PULSAR_INSTANCE=preview
+  [ -n "${PULSAR_READ_ONLY:-}" ] || export PULSAR_READ_ONLY=preview
   start_server "$PREVIEW_DIR" && { open_page; exit 0; }
   fail_dialog "Pulsar Preview could not start. Its log is ~/Library/Logs/Pulsar-Preview.log."
 fi

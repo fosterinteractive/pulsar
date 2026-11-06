@@ -3,6 +3,7 @@
 
     python3 pulsar.py [--port 5610] [--no-open]
     python3 pulsar.py --mcp [--port 5610]     # for Claude Code: an MCP server over the running Pulsar (pulsar/mcp.py)
+    python3 pulsar.py --instance preview ...  # Pulsar Preview's own folders and keychain items (launcher.sh)
 
 Then open http://127.0.0.1:5610/. Activity stays on this computer; Productive gets a time entry only when you
 log one yourself in the page.
@@ -78,9 +79,10 @@ def tidy() -> None:
                 try:
                     os.chmod(path, 0o600)
                     in_days = os.path.basename(os.path.dirname(folder)) == "days"  # days/<person>/<date>.json
-                    if name.startswith("proposal-") or os.path.basename(folder) == "days" or \
+                    if name.startswith(("proposal-", "askclaude-mcp-")) or os.path.basename(folder) == "days" or \
                             (in_days and time.time() - os.path.getmtime(path) > 120 * 86400):
-                        os.remove(path)  # prompts are not kept; copies from before they were kept per person go
+                        os.remove(path)  # prompts and Ask Claude's MCP files are not kept; copies from before they
+                        # were kept per person go
                 except OSError:
                     pass
 
@@ -94,7 +96,11 @@ def main() -> int:
     ap.add_argument("--signin-url", action="store_true", help="print a one-time address that signs a browser in, then exit")
     ap.add_argument("--mcp", action="store_true",
                     help="serve Pulsar's tools to Claude Code over stdio (MCP); Pulsar itself must be running")
+    ap.add_argument("--instance", choices=["preview"],
+                    help="Pulsar Preview's own settings, sign-in and keychain items (its launcher sets this itself)")
     args = ap.parse_args()
+    if args.instance:  # before pulsar.config is imported: it reads this once
+        os.environ.update({"PULSAR_INSTANCE": args.instance, "PULSAR_PREVIEW": "1"})
     if args.port is None:
         args.port = 5610
     if args.mcp:  # stdout is the protocol: nothing else may print there

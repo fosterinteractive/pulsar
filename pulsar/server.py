@@ -386,7 +386,7 @@ def api_ask_claude(body: dict) -> dict:
                              model=s["ask_claude_model"], history=before)
     except askclaude.AskError as exc:
         logbook.record("ask claude", str(exc), kind="warning")
-        return {"error": str(exc), "picks": {}}
+        return {"error": str(exc), "picks": {}, "cost": exc.cost}
 
 
 def api_likely_note(body: dict) -> dict:
@@ -922,7 +922,7 @@ def api_dayplan(q: dict) -> dict:
     """Log the day: the whole day proposed for review (dayplan.py). Nothing is written. ignore_logged=1 plans as if
     nothing were logged that day; only a read-only test server (PULSAR_READ_ONLY) accepts it."""
     ignore = q.get("ignore_logged") == "1"
-    if ignore and not os.environ.get("PULSAR_READ_ONLY"):
+    if ignore and not config.read_only():
         raise ValueError("ignore_logged is for read-only test servers only.")
     source = q.get("source", "auto")
     if source not in ("auto", "aw", "memtime"):

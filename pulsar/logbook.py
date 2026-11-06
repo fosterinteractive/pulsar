@@ -29,12 +29,17 @@ SECRET = re.compile(
     r"(?i:(bearer\s+|x-auth-token[\"']?\s*[:=]\s*[\"']?"
     r"|[\"']?\b(?:access_?|refresh_?|id_?)?token[\"']?\s*[:=]\s*[\"']?"
     r"|[\"']?\b(?:client_?secret|code_?verifier|api_?key|password)[\"']?\s*[:=]\s*[\"']?"
+    r"|[\"']?\bx-pulsar-(?:session|key)[\"']?\s*[:=]\s*[\"']?"  # Pulsar's own session token and key, as headers
     r"|[?&](?:x-amz-)?(?:sig|signature|key|token|credential|security-token)="
     r"|\bx-amz-(?:signature|credential|security-token)=)" + _VALUE + ")" +
     # an OAuth code: in an address or a form (code=…&…), never "exit code=1"
     r"|(?i:((?:^|[?&\s\"'])code=)(?=[^\s\"'&,;}<>]*\d)[^\s\"'&,;}<>]{8,})"
+    # in an address, a code is always a secret (Pulsar's sign-in code may have no digit at all)
+    r"|(?i:([?&]code=)[^\s\"'&,;}<>]{16,})"
     # keys that say what they are, and JSON web tokens
     r"|\b(?:gh[pousr]_|sk-ant-|sk-)[A-Za-z0-9_\-]{10,}"
+    # Google's access tokens (ya29.…) and refresh tokens (1//…), which the long-string rule below misses
+    r"|\bya29\.[A-Za-z0-9_\-.]{10,}|(?<![\w/])1//[A-Za-z0-9_\-]{10,}"
     r"|\beyJ" + _B64 + r"{10,}\." + _B64 + r"{10,}\." + _B64 + r"*"
     # anything else long and opaque: 40 or more base64url characters, upper and lower case and digits, standing alone
     # (not part of a word, a path, a file or a dotted name)
@@ -45,7 +50,7 @@ SECRET = re.compile(
 def scrub(text: str) -> str:
     """Remove anything that looks like a credential: tokens, keys, signatures, OAuth codes, very long opaque strings.
     Normal words, paths and identifiers stay."""
-    return SECRET.sub(lambda m: (m.group(1) or m.group(2) or "") + "[removed]", str(text or ""))
+    return SECRET.sub(lambda m: (m.group(1) or m.group(2) or m.group(3) or "") + "[removed]", str(text or ""))
 
 
 def record(where: str, message: str, kind: str = "error", detail: str = "", once_per: int = 60) -> None:

@@ -145,6 +145,7 @@ async function draftFromSession({date, s, e, project}) {
     logDrafted = {note: r.note, from: 'session'}; logFilled = false;
   }
   showDraft();
+  if (!r.note && r.error && !logDrafted) $('#log-note-hint').textContent = `No note from Claude: ${r.error}`;
 }
 function showDraft() {
   const d = logDrafted, sel = logPicker.selected;

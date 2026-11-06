@@ -752,11 +752,12 @@ TASK_FIELDS = ["title", "task_number", "initial_estimate", "worked_time", "remai
 _task_cache = config.Newest(300)  # task id -> (time, details)
 
 
-def task_details(ids: list, settings: dict, reasons: Optional[dict] = None) -> dict:
+def task_details(ids: list, settings: dict, reasons: Optional[dict] = None, transient: Optional[set] = None) -> dict:
     """Each task's estimate, time worked by everyone, and what is left, as Productive has them (cached 5 minutes).
     When none could be given because of the connection (the token refused or expired, Productive unreachable or down),
     it raises ProductiveError saying so, rather than answer as if the tasks did not exist. `reasons`, if given,
-    gets the reason for each task that could not be read."""
+    gets the reason for each task that could not be read; `transient`, the ids that failed because of the connection
+    (asking again later may work), unlike a task that is deleted or not visible."""
     conn = _need(settings)
     now = time.time()
     found = {t: d for t, (at, d) in list(_task_cache.items()) if t in ids and now - at < 300}
@@ -809,6 +810,8 @@ def task_details(ids: list, settings: dict, reasons: Optional[dict] = None) -> d
                 failed[tid] = (problem, connection_problem)
     if reasons is not None:
         reasons.update({tid: problem for tid, (problem, _) in failed.items()})
+    if transient is not None:
+        transient.update(tid for tid, (_, connection_problem) in failed.items() if connection_problem)
     blocking = [problem for problem, connection_problem in failed.values() if connection_problem]
     if not found and blocking:  # nothing to show, and the connection is why: say so
         raise ProductiveError(blocking[0])

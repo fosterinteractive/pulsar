@@ -614,7 +614,8 @@ $('#ask-claude').onclick = async () => {
   if (d !== state.date) return;
   state.claude = {date: d, picks: r.picks || {}};
   const n = Object.values(state.claude.picks).filter(p => p.tasks?.length).length;
-  toast(n ? `Claude picked a task for ${n} ${n === 1 ? 'block' : 'blocks'}. Log one to see them first.` : 'Claude found no task for these blocks.');
+  const said = n ? `Claude picked a task for ${n} ${n === 1 ? 'block' : 'blocks'}. Log one to see them first.` : 'Claude found no task for these blocks.';
+  toast(r.warning ? `${said} ${r.warning}` : said, !!r.warning);
   render();
 };
 /* logged time only: one Productive read, the other columns stay as they are */
