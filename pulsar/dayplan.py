@@ -354,7 +354,7 @@ def rule_in(items: list, rules: list, a: float, b: float, text: str = ""):
     return next((r for r in rules if r.get("match") and r["match"].lower() in low), None)
 
 
-def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
+def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = None) -> dict:
     """The proposal for one day.
 
     day: {"items": activity [{s, e, app, title, host, url, cat}], "away": [{s, e}], "rows": Likely rows
@@ -365,6 +365,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
           "assigned": [{taskId, title, project}], "picks": Ask Claude's answer {"<s>|<project>": {tasks, why, note}},
           "gone": the clock's minutes that do not exist that day (server.missing_hour), never placed}
     ctx: learn(...).
+    keep: a dict that, when given, receives who has each minute before the layout joins and moves them (ranges.py).
     Returns {"entries", "unplaced", "skipped", "uncovered", "totals"}; each entry
     {s, e, minutes, taskId, title, project, serviceId, service, note, noteFrom, confidence, why, source, kind,
      checked, flags, alts}."""
@@ -621,6 +622,8 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
             elif nb:
                 q = nb[0]
                 p.update(task=q["task"], project=q.get("project"), alts=list(q.get("alts") or []))
+    if keep is not None:  # the log dialog's range (ranges.py): each minute's claim and piece, as placed here
+        keep.update(owner=owner, claims=claims, pieces=pieces, work=work, away=away, names=names, ctx=ctx)
 
     def logged_between(a, b) -> bool:  # an entry already logged between minutes a and b: laid out from a, a piece
         return any(a < x[1] and x[0] < b for x in busy)  # joined across it would stop at it, the rest not placed
@@ -854,9 +857,9 @@ def ticket_flags(entries: list, found: dict, date: str, settings: dict) -> None:
         e["ticket"] = flags.for_task(b.get("task"), b.get("services"), date, settings) if b else []
 
 
-def gather(date: str, source: str = "auto", ignore_logged: bool = False) -> dict:
+def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: dict | None = None) -> dict:
     """The proposal for `date` from Pulsar's live data. ignore_logged (test servers only) plans as if nothing were
-    logged that day, to show a whole proposal on a day already logged."""
+    logged that day, to show a whole proposal on a day already logged. keep: as for plan()."""
     from concurrent.futures import ThreadPoolExecutor
     from . import askclaude, calendar, learn as learning, likely, logbook, productive, server
     s = server.current_settings()
@@ -940,7 +943,7 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False) -> dict
            "rules": s.get("rules") or [], "assigned": got["assigned"], "picks": (answer or {}).get("picks") or {},
            "gone": server.missing_hour(t0, t1, tz)}
     opts = opts_for(s)
-    result = plan(day, ctx, opts)
+    result = plan(day, ctx, opts) if keep is None else plan(day, ctx, opts, keep=keep)
     result["roundTo"] = opts["grid"]
 
     # the service of each task, checked against what takes time on that date

@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, askclaude, calendar, claudelink, config, dayplan, flags, learn, likely, logbook, productive, report, sessions, trackers, updater, names
+from . import __version__, askclaude, calendar, claudelink, config, dayplan, flags, learn, likely, logbook, productive, ranges, report, sessions, trackers, updater, names
 
 UPDATER = updater.Updater()
 
@@ -1151,6 +1151,42 @@ def api_dayplan(q: dict) -> dict:
     return dayplan.gather(q["date"], source, ignore)
 
 
+def api_range(q: dict) -> dict:
+    """The log dialog for a stretch picked in the Day view (a drag, a rail, + Log, Log and next): what [s, e) holds by
+    Log the day's minute ownership (ranges.py), the task and note of the part that holds most of it, and the entries
+    a split would make when it mixes kinds of work. Nothing is written. ignore_logged=1 as for /api/dayplan."""
+    date = q.get("date", "")
+    if not DATE.match(date):
+        raise ValueError("date=YYYY-MM-DD")
+    try:
+        a, b = float(q["s"]), float(q["e"])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError("s and e are minutes of the day") from None
+    if not 0 <= a < b <= 1440:
+        raise ValueError("s and e are minutes of the day, s before e")
+    ignore = q.get("ignore_logged") == "1"
+    if ignore and not config.read_only():
+        raise ValueError("ignore_logged is for read-only test servers only.")
+    source = q.get("source", "auto")
+    if source not in ("auto", "aw", "memtime"):
+        raise ValueError("source is auto, aw or memtime")
+    keep: dict = {}
+    got = dayplan.gather(date, source, ignore, keep)
+    if got.get("error") or not keep:
+        return {"error": got.get("error") or "The day could not be worked out.", "groups": [], "split": []}
+    s = current_settings()
+    res = ranges.analyse(keep, a, b, dayplan.opts_for(s))
+
+    def bookable(tid):
+        try:
+            return dayplan._bookable(tid, date, s)
+        except Exception:  # the entry says so; the person picks the service when logging
+            return None
+
+    ranges.with_services(res, keep["ctx"], bookable)
+    return {**res, "date": date, "roundTo": got.get("roundTo"), "ignoreLogged": ignore}
+
+
 def api_dayplan_journal(q: dict) -> dict:
     """The Log the day runs of a day, as the journal has them: what each row became, and what Undo would delete."""
     return {"runs": [{**r, "undo": dayplan.undo_ids({"runs": [r]}, r["run"])} for r in dayplan.runs_for(q["date"])]}
@@ -1445,7 +1481,7 @@ class Handler(BaseHTTPRequestHandler):
             routes = {"/api/activity": api_activity, "/api/entries": api_entries, "/api/proposal": api_proposal,
                       "/api/tasks/suggest": api_suggest, "/api/services": api_services, "/api/repeats": api_repeats,
                       "/api/calendar": api_calendar, "/api/meeting-tasks": api_meeting_tasks,
-                      "/api/dayplan": api_dayplan, "/api/dayplan/journal": api_dayplan_journal,
+                      "/api/dayplan": api_dayplan, "/api/dayplan/journal": api_dayplan_journal, "/api/range": api_range,
                       "/api/likely/picks": api_likely_picks}
             if url.path not in routes:
                 return self.send(404, b"not found", "text/plain")

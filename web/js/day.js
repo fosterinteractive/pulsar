@@ -162,12 +162,10 @@ function leadFor(a, b, hint = []) {
    project's rows in it: Claude's pick's note, else your commits; then, with Claude Code on, Claude's note from the
    sessions, saying which project when others worked in the stretch too */
 function logStretch(a, b) {
+  // the note at once from what the page knows (Claude's pick, the commits); range.js then works out what the stretch
+  // holds (GET /api/range: meetings and work outside Claude too), leads with its main task and asks Claude for the note
   const hint = rulesInRange(a, b), {work} = stretchWork(a, b, hint), draft = work ? rowTasks(work.rows).draft : null;
-  openLog({start: a, minutes: b - a, hint, lead: leadFor(a, b, hint), note: draft?.note || '', drafted: draft});
-  if (!work || !logDlg.open || !CONFIG?.likely?.askClaude || (draft && draft.from !== 'commits')) return;
-  const also = work.others.slice(0, 2).join(', ') + (work.others.length > 2 ? ` and ${work.others.length - 2} more` : '');
-  draftFromSession({date: state.date, s: a, e: b, project: work.project,
-                    from: `the ${work.project} session${also ? ` (the most minutes here; also ${also})` : ''}`});
+  openLog({start: a, minutes: b - a, hint, lead: leadFor(a, b, hint), note: draft?.note || '', drafted: draft, range: true});
 }
 
 /* the active minutes inside [a, b): from the first active minute, as long as the activity was (not the slot) */

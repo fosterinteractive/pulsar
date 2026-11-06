@@ -11,6 +11,7 @@
 <link rel="stylesheet" href="/static/flow.css">
 <link rel="stylesheet" href="/static/logday.css">
 <link rel="stylesheet" href="/static/ask.css">
+<link rel="stylesheet" href="/static/range.css">
 </head>
 <body>
 <header>
@@ -248,6 +249,7 @@
       <label class="field"><span>Note</span><textarea name="note" rows="3" placeholder="What was done: the outcome, in a sentence"
         aria-describedby="log-note-hint"></textarea></label>
       <p class="hint" id="log-note-hint" aria-live="polite"></p>
+      <div id="log-range" aria-live="polite" hidden></div>
     </div>
     <p class="msg" id="log-msg" role="status"></p>
     <div class="df"><button type="button" class="btn bordered" data-close>Cancel</button><button type="submit" class="btn primary" id="log-save">Log in Productive</button>
@@ -309,6 +311,7 @@
 <script src="/static/js/meetings.js"></script>
 <script src="/static/js/log.js"></script>
 <script src="/static/js/flow.js"></script>
+<script src="/static/js/range.js"></script>
 <script src="/static/js/logday.js"></script>
 <script src="/static/js/catchup.js"></script>
 <script src="/static/js/ask.js"></script>

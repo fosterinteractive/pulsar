@@ -59,7 +59,7 @@ function taskNote(t) {
   return bits.length ? ' · ' + bits.join(' · ') : '';
 }
 function makePicker(listEl, searchEl, onPick) {
-  let selected = null, groups = [], base = [], timer, loading = false, searched = '';
+  let selected = null, groups = [], base = [], timer, loading = false, searched = '', byHand = false;
   function draw() {
     const empty = loading ? 'Loading your tasks…' : searched ? `No task matches “${searched}”.` : 'No tasks to offer. Search for one above.';
     listEl.innerHTML = groups.filter(g => g.tasks.length || g.note).map(g => `<div class="pk-h">${esc(g.label)}</div>`
@@ -78,7 +78,7 @@ function makePicker(listEl, searchEl, onPick) {
   listEl.onclick = ev => {
     const b = ev.target.closest('.pk'); if (!b) return;
     selected = groups.flatMap(g => g.tasks).find(t => t.taskId === b.dataset.id) || null;
-    redraw(); if (selected) onPick(selected);
+    byHand = !!selected; redraw(); if (selected) onPick(selected);
   };
   /* Enter in the search picks the first task shown (it never submits the form with a task no longer on screen);
      the arrow keys move between the search and the tasks */
@@ -108,12 +108,21 @@ function makePicker(listEl, searchEl, onPick) {
   };
   return {
     /* a fresh start while the suggestions load: no search, no choice */
-    loading() { loading = true; base = groups = []; selected = null; searched = ''; searchEl.value = ''; clearTimeout(timer); draw(); },
+    loading() { loading = true; base = groups = []; selected = null; byHand = false; searched = ''; searchEl.value = ''; clearTimeout(timer); draw(); },
     /* the suggestions; a search typed meanwhile and a task picked from it stay */
     set(newGroups, pre) {
       loading = false; base = newGroups;
       if (searchEl.value.trim().length < 2) groups = base;
       if (!selected && pre) selected = pre; else pre = null;
+      redraw(); if (pre) onPick(pre);
+    },
+    /* a group put first once the suggestions are there (range.js), its first task picked unless one was picked by hand */
+    lead(g) {
+      if (loading || !g?.tasks.length) return;
+      base = dedupe([g, ...base.filter(x => x.label !== g.label)]);
+      if (searchEl.value.trim().length < 2) groups = base;
+      const pre = byHand || selected?.taskId === g.tasks[0].taskId ? null : g.tasks[0];
+      if (pre) selected = pre;
       redraw(); if (pre) onPick(pre);
     },
     get selected() { return selected; },
@@ -214,7 +223,7 @@ logForm.elements.date.addEventListener('change', () => {
 /* while the dialog edits an entry that is already logged: {id, taskId, serviceId, service, budget, title, noteRich,
    seen (the entry as the page showed it), orig (the fields as the dialog opened)} */
 let logEdit = null;
-async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = [], note = '', lead = null, edit = null, drafted = null} = {}) {
+async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = [], note = '', lead = null, edit = null, drafted = null, range = false} = {}) {
   logEdit = edit; logOpened++; logDrafting = 0;
   $('#log-title').textContent = edit ? 'Change a logged entry' : 'Log time in Productive';
   logForm.elements.date.disabled = !!edit;  // an entry changes within its own day
@@ -238,6 +247,7 @@ async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = 
   logPicker.loading();
   showDraft();
   fillSuggestions(date, hint, lead);
+  rangeOpen(range && !edit ? {date, start, minutes} : null);  // range.js: what a picked stretch holds
 }
 
 /* a block's minutes on the step of Settings' "Round entries to" (5, 10 or 15): the nearest step, at least one. When
@@ -286,12 +296,14 @@ async function fillSuggestions(date, hint, lead = null) {
   const ruled = hint.map(h => ({...known(h), minutes: Math.round(h.minutes)}));
   const led = [...(lead?.ids || []).map(id => named?.tasks?.[id]).filter(t => t?.title).map(t => ({...t, why: t.why || lead.idsWhy || ''})),
                ...(lead?.tasks || []), ...(found?.tasks || [])].map(known);
+  const ranged = rangeLead(date);  // range.js: Log the day's task for the work that holds most of the stretch
   logPicker.set(dedupe([
+    ...(ranged ? [{...ranged, tasks: ranged.tasks.map(known)}] : []),
     {label: lead?.label || '', tasks: led},
     {label: 'From your rules, in this time', tasks: ruled, showMin: true},
     {label: 'You logged to these lately', tasks: (s.recent || []).slice(0, 10), note: s.historyError || ''},
     {label: 'Assigned to you', tasks: (s.assigned || []).slice(0, 10), note: s.assignedError || ''},
-  ]), led[0] || ruled[0] || null);
+  ]), (ranged && known(ranged.tasks[0])) || led[0] || ruled[0] || null);
 }
 
 async function loadServices(task) {
@@ -406,7 +418,7 @@ $('#log-new').onclick = () => {
   if (gap) { logStretch(+gap.dataset.a, +gap.dataset.b); return; }  // day.js
   const last = (state.logged?.entries || []).filter(x => x.e != null && x.e < 1440).reduce((m, x) => Math.max(m, x.e), 0);
   const start = last || (state.date === todayLocal() ? Math.max(0, nowMin() - 30) : 9 * 60);
-  openLog({start, minutes: 30, hint: rulesInRange(start, start + 30)});
+  openLog({start, minutes: 30, hint: rulesInRange(start, start + 30), range: true});
 };
 
 /* drag in the Logged column to log that stretch */

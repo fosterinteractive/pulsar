@@ -15,7 +15,8 @@ from isolation import SCRATCH as _SCRATCH  # noqa: E402,F401  first: nothing rea
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPLAY = os.path.join(ROOT, "tools", "replay")
-TOOLS = ["collect.py", "cal_collect.py", "replay.py", "analyze.py", "variants.py", "ablate.py", "dialog_ablate.py"]
+TOOLS = ["collect.py", "cal_collect.py", "replay.py", "analyze.py", "variants.py", "ablate.py", "dialog_ablate.py",
+         "range_hint.py"]
 
 
 def run(tool: str, replay_dir):
