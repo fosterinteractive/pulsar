@@ -302,6 +302,7 @@ dialog#settings::backdrop { background: rgba(0,0,0,.35); }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .hint { color: var(--muted); font-size: 12px; margin: 2px 0 6px; }
 .hint:empty { display: none; }
+.hint.warnish { color: var(--gap); }
 .status { font-size: 12.5px; margin: 0 0 6px; padding: 8px 10px; border-radius: 8px; background: var(--seg); }
 .status.warn, .msg.warn { color: var(--gap); }
 .msg { font-size: 12.5px; margin: 0; padding: 10px 18px 0; }

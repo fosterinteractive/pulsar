@@ -36,6 +36,8 @@ PATH_RE = re.compile(r"(?:" + re.escape(HOME) + r"|/private/tmp|/private/var/fol
 ROOTS = {HOME, "/", "/private", "/private/tmp", "/tmp", "/private/var", "/private/var/folders", "/var", "/var/folders",
          "/Volumes"}
 TOOLING = os.path.join(HOME, ".claude")  # Claude Code's own files (memory, skills, plans): tools, not a project
+# Logging time: Pulsar itself, or Productive in a browser. It is work, but no client's: it goes to no session.
+LOGGING = re.compile(r"^Pulsar$|app\.productive\.io|(127\.0\.0\.1|localhost):56\d\d", re.I)
 
 
 def parse_ts(s: str) -> float:
@@ -260,11 +262,16 @@ def propose(t0: float, t1: float, items: list, tracker: str, projects_dir: str =
     m = lambda t: int((t - t0) // 60)  # noqa: E731 - a moment as the day's minute
 
     focus: list = [None] * n
+    logging_at = [False] * n
     for it in items:
         if it.get("cat") != "work":
             continue  # personal windows (Settings > Personal windows) and away time go to no session
+        is_logging = any(LOGGING.search(str(it.get(k) or "")) for k in ("app", "host", "url"))
         for x in range(max(0, int(it["s"])), min(n, int(-(-it["e"] // 1)))):
-            focus[x] = it
+            if is_logging:
+                logging_at[x] = True
+            else:
+                focus[x] = it
     present = [f is not None for f in focus]
     run_at: list = [[] for _ in range(n)]
     acts = []  # (minute, session) of every message and every end of an agent's run
@@ -360,7 +367,7 @@ def propose(t0: float, t1: float, items: list, tracker: str, projects_dir: str =
                      "titles": sorted({sessions[i]["title"] for i in e["_sessions"] if sessions[i]["title"]}),
                      "messages": len(typed), "first_message": (typed[0][1] if typed else "")[:200]})
     return {"tracker": tracker, "working": sum(present), "proposed": sum(r["minutes"] for r in rows),
-            "unplaced": [], "logging": 0, "entries": rows}
+            "unplaced": [], "logging": sum(1 for x in range(n) if logging_at[x] and owner[x] is None), "entries": rows}
 
 
 # ---- Productive tasks named in a session ------------------------------------------------------------------

@@ -122,6 +122,7 @@ for (const name of ['date', 'start', 'minutes', 'service'])
 logForm.elements.date.addEventListener('change', () => {
   const date = logForm.elements.date.value;
   if (!date) return;
+  noStartHint(date);
   if (logPicker.selected) loadServices(logPicker.selected);
   fillSuggestions(date, []);
 });
@@ -136,9 +137,21 @@ async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = 
   f.date.value = date; f.start.value = hm(start); f.minutes.value = minutes; f.note.value = note || '';
   f.service.innerHTML = '<option value="">Pick a task first</option>'; f.service.disabled = true;
   logForce = false; setLogMsg(''); $('#log-save').textContent = 'Log in Productive';
+  noStartHint(date);
   logDlg.showModal();
   logPicker.loading();
   fillSuggestions(date, hint, lead);
+}
+
+/* entries of that day with no start time: the overlap check cannot see them, so say they are there (it is how a
+   time already logged in Productive by duration only gets logged twice) */
+function noStartHint(date) {
+  const el = $('#log-nostart');
+  const rows = date === state.date ? (state.logged?.entries || []).filter(x => x.s == null) : [];
+  el.hidden = !rows.length;
+  if (rows.length) el.textContent = `This day also has ${rows.length} ${rows.length === 1 ? 'entry' : 'entries'} with no start time `
+    + `(${dur(rows.reduce((s, x) => s + x.minutes, 0))}: ${[...new Set(rows.map(x => x.project))].join(', ')}). `
+    + 'They are not on the timeline, so check this time is not among them.';
 }
 
 /* each request has a number: an answer that arrives after a newer request (the dialog reopened, the date changed)

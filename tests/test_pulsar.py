@@ -451,6 +451,16 @@ class SessionsTest(unittest.TestCase):
         self.assertEqual((e["titles"], e["messages"], e["first_message"]),
                          (["Fix the checkout form"], 1, "The checkout button does nothing"))
 
+    def test_time_spent_logging_goes_to_no_session(self):
+        self.write_session()
+        items = [{"s": 9, "e": 20, "app": "Cursor", "title": "Fix the checkout form", "host": "", "url": "", "cat": "work"},
+                 {"s": 20, "e": 28, "app": "Pulsar", "title": "Pulsar", "host": "", "url": "", "cat": "work"},
+                 {"s": 28, "e": 33, "app": "Google Chrome", "title": "Time", "host": "app.productive.io",
+                  "url": "https://app.productive.io/1-acme/time", "cat": "work"}]
+        got = self.sessions.propose(self.t0, self.t0 + 86400, items, "ActivityWatch", os.path.dirname(self.projects))
+        self.assertEqual(sum(e["minutes"] for e in got["entries"]), 11)    # only the editor's minutes
+        self.assertEqual(got["logging"], 13)
+
     def test_without_a_tracker_the_agents_run_time_is_the_work(self):
         self.write_session()
         got = self.sessions.propose(self.t0, self.t0 + 86400, [], "no tracker", os.path.dirname(self.projects))
