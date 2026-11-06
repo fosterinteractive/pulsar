@@ -280,6 +280,12 @@ logForm.addEventListener('submit', async ev => {
   const f = logForm.elements, task = logPicker.selected, andNext = ev.submitter?.id === 'log-next';
   if (!task) return setLogMsg('Pick a task.', true);
   if (!f.service.value) return setLogMsg('Pick a service.', true);
+  const mins = Number(f.minutes.value);
+  if (!(Number.isInteger(mins) && mins >= 1 && mins <= 1440)) {
+    f.minutes.setAttribute('aria-invalid', 'true'); f.minutes.focus();
+    return setLogMsg('Minutes are a whole number from 1 to 1440.', true);
+  }
+  f.minutes.removeAttribute('aria-invalid');
   if (!startHHMM(f.start.value)) { f.start.setAttribute('aria-invalid', 'true'); f.start.focus(); return setLogMsg('Write the start as HH:MM, 24-hour: 09:30 or 14:05.', true); }
   f.start.value = startHHMM(f.start.value);
   const btn = $('#log-save'); btn.disabled = $('#log-next').disabled = true; setLogMsg(logEdit ? 'Checking the day, then saving…' : 'Checking the day, then logging…');

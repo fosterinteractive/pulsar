@@ -277,7 +277,7 @@ function editorHTML(r) {
       ${r.serviceId ? '' : '<option value="">' + (svcs.length ? 'Pick a service' : r.taskId ? 'Loading or none on this date' : 'Pick a task first') + '</option>'}
       ${svcs.map(x => `<option value="${esc(x.id)}"${x.id === r.serviceId ? ' selected' : ''}>${esc(x.name)}${x.budget ? ' · ' + esc(x.budget) : ''}${x.billable ? ' · billable' : x.billable === false ? ' · not billable' : ''}</option>`).join('')}
     </select></label>
-    <div class="tl"><label class="field"><span>Start</span><input type="time" data-ld-start value="${hm(r.s)}"></label>
+    <div class="tl"><label class="field"><span>Start</span><input type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="5" placeholder="HH:MM" title="24-hour time, HH:MM" data-ld-start value="${hm(r.s)}"></label>
       <label class="field"><span>Minutes</span><input type="number" min="5" max="720" step="5" data-ld-min value="${r.minutes}"></label>
       <span class="endt">until ${hm(r.s + r.minutes)}</span></div>
     <label class="field"><span>Note</span><textarea rows="2" data-ld-note placeholder="What was done: the outcome, in a sentence">${esc(r.note || '')}</textarea></label>
@@ -298,8 +298,10 @@ function wireEditor(r) {
     fit();
     b.onpointerenter = b.onfocus = show; b.onpointerleave = b.onblur = back;
   }
-  li.querySelector('[data-ld-start]').onchange = ev => {
-    const m = /^(\d\d):(\d\d)$/.exec(ev.target.value); if (!m) return;
+  li.querySelector('[data-ld-start]').onchange = ev => {  // 24-hour HH:MM as everywhere in Pulsar (930, 9.30, 9:30 too)
+    const t = startHHMM(ev.target.value), m = t && /^(\d\d):(\d\d)$/.exec(t);
+    if (!m) { ev.target.value = hm(r.s); ev.target.setAttribute('aria-invalid', 'true'); return; }
+    ev.target.removeAttribute('aria-invalid'); ev.target.value = t;
     const s = +m[1] * 60 + +m[2]; r.s = s; r.e = Math.min(1440, s + r.minutes); r.minutes = r.e - r.s; ldChanged(r);
   };
   li.querySelector('[data-ld-min]').onchange = ev => {
