@@ -74,6 +74,8 @@ class FakeDay:
             mock.patch.object(server, "current_settings", lambda: settings),
             mock.patch.object(server, "public_config", lambda s: {
                 "version": __version__, "preview": self.preview, "timezone": "UTC", "targetMinutes": 480,
+                "writesBlocked": ("Pulsar runs read-only (PULSAR_READ_ONLY)." if os.environ.get("PULSAR_READ_ONLY") else None) or (
+                    "Pulsar Preview does not write to Productive." if self.preview and not self.preview.get("writes") else None),
                 "rules": [{"match": SECRET_WORDS[7], "taskId": "11", "title": "Build", "project": "Acme"}]}),
             mock.patch.object(mcp, "PROJECTS", os.path.join(_SCRATCH, "no-sessions")),
             mock.patch.object(server, "api_entries", lambda q: {"entries": self.entries, "source": "token"}),
@@ -397,13 +399,13 @@ class McpTest(unittest.TestCase):
         status, err = self.call("pulsar_status", {})
         self.assertFalse(err)
         self.assertEqual((status["pulsar"], status["version"], status["mcpVersion"]), ("open", __version__, __version__))
-        self.assertEqual((status["writesBlocked"], status["why"], status["serverReadOnly"]), (False, [], False))
+        self.assertEqual((status["writesBlocked"], status["why"], status["serverBlocked"]), (False, [], False))
         self.assertEqual((status["timezone"], status["logFromHere"]), ("UTC", True))
         self.assertRegex(status["time"], r"^\d{2}:\d{2}$")
         with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):  # this process and the server: both say so
             status, _ = self.call("pulsar_status", {})
         self.assertTrue(status["writesBlocked"])
-        self.assertTrue(status["serverReadOnly"])
+        self.assertTrue(status["serverBlocked"])
         self.assertEqual(len(status["why"]), 2)
         self.day.preview = {"writes": False}
         status, _ = self.call("pulsar_status", {}, client="cursor")

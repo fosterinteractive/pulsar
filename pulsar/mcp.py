@@ -882,15 +882,6 @@ def pulsar_log(args: dict, client: str = "") -> dict:
 
 # ---- pulsar_status -------------------------------------------------------------------------------------------
 
-def _server_read_only():
-    """Whether the running Pulsar was started with PULSAR_READ_ONLY (True, False, or None when it cannot be told).
-    /api/config does not say. /api/dayplan refuses ignore_logged=1 ("read-only test servers only") unless it is, and
-    checks the source only after that: a bad source is refused either way, before any work, and the reason tells."""
-    got = fetch({"p": ("/api/dayplan", {"date": "2000-01-01", "ignore_logged": "1", "source": "none"})})["p"]
-    error = str(got.get("error") or "")
-    return False if "read-only test servers" in error else True if error.startswith("source is") else None
-
-
 def pulsar_status(args: dict, client: str = "") -> dict:
     """Never fails: whether Pulsar answers, its version, whether writes are blocked and why, the date and time zone."""
     out: dict = {"pulsar": "open", "version": None, "mcpVersion": __version__}
@@ -901,16 +892,9 @@ def pulsar_status(args: dict, client: str = "") -> dict:
     try:
         cfg = _config()
         out["version"] = cfg.get("version")
-        preview = cfg.get("preview")
-        if isinstance(preview, dict) and not preview.get("writes"):
-            blocked.append("Pulsar Preview does not write to Productive (Settings > Updates > Preview can allow it).")
-        try:
-            read_only = _server_read_only()
-        except Exception:
-            read_only = None
-        if read_only:
-            blocked.append("Pulsar runs read-only (PULSAR_READ_ONLY): it writes nothing to Productive.")
-        out["serverReadOnly"] = read_only
+        if cfg.get("writesBlocked"):  # Pulsar's own reason: read-only, or a Preview not allowed to write
+            blocked.append(str(cfg["writesBlocked"]))
+        out["serverBlocked"] = bool(cfg.get("writesBlocked"))
     except ToolError as exc:
         out.update({"pulsar": "not answering", "problem": str(exc), "next": "Ask the person to open Pulsar."})
     except Exception as exc:  # never fails: say what went wrong, without any data
