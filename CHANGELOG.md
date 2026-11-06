@@ -23,6 +23,11 @@ What each Pulsar release changed, newest first.
 - Fixed: copies of MemTime's database no longer pile up in the temporary folder.
 - Fixed: an update whose self-test timed out can be tried again; a late answer no longer replaces a newer one.
 - The README says what Ask Claude sends to Anthropic, what it costs, and how to remove everything.
+- Fixed: Log the day writes exactly what you confirmed, even when Claude's answer arrives late.
+- Fixed: an entry with no start time is shown in Log the day, and its task is not proposed again ticked.
+- Fixed: Undo goes on past an entry deleted or changed by hand; a deleted entry can be logged again.
+- Fixed: a damaged Log the day journal stops writes instead of being emptied.
+- Fixed: in Claude Code, a write with no clear answer says "not known", never "not logged".
 
 ## 1.2.1 (2026-11-06)
 - Settings: categories with icons, and a search.

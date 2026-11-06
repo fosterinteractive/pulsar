@@ -301,7 +301,10 @@ name part of that address, so it is taken from links in the person's own Claude 
 column may read the sessions); with none seen, there is no link rather than a guessed one. Its top and bottom edges can be dragged in 5-minute
 steps; on release Pulsar asks "Change this entry?" before writing. `POST /api/entry/update` and `/api/entry/delete`
 read the day afresh and refuse an entry that is no longer there. They show overlaps first (Change anyway), take the
-same write lock as logging, and accept `"dry": true`. "Approved" is not refused by Pulsar: where a budget needs no
+same write lock as logging, and accept `"dry": true`. Both need `seen`, the entry as the page showed it with every
+field (start, minutes, task, service, note): one left out would never be compared. A new start in the hour the clocks
+repeat keeps the one of the two hours the entry is in; a start the clocks skip (02:30 the night they go forward) is
+refused, here and in `POST /api/log`, since Productive would store it an hour later. "Approved" is not refused by Pulsar: where a budget needs no
 approval, Productive approves every entry at once and its author can still change it; where an approver has approved
 it, Productive refuses and the page shows why. With
 `PULSAR_READ_ONLY` every change is refused at the lowest level, like any write.
@@ -342,7 +345,10 @@ of them or more (`dayplan.fits`; on the replay: no change 43.7% to 45.2%, the ri
 more and log under a tenth of is set aside as one you never log; days with entries that have no start time do not
 count, since they cannot be matched to the work. Confidence: high, medium or low, in words and a three-bar meter; the
 same session's votes are high from 60% (and 30 minutes), else low. **Unticked at the start**: low confidence, no task,
-no service, agent-only time, meetings with no call seen. **Notes** are never written from session text: only a
+no service, agent-only time, meetings with no call seen, and a task that already has time logged with **no start
+time** that day: such an entry is on no timeline, so no overlap check sees it, and it may be the same work. The
+review lists it ("no start"), the confirm step names it, and under the cap that task's proposals give way first, up to
+its minutes, before the least sure rows. **Notes** are never written from session text: only a
 meeting's title, your usual note for a repeat, a note Ask Claude drafted for that task, or one from your commits in
 the work, each with "clients may see notes". The **service** is the one last used on the task, checked against the
 services that take time on that date (`bookable_services`). With Productive unreadable, nothing is proposed. About 6
@@ -352,21 +358,31 @@ seconds for a day the first time, under a second after.
 (every row of ten minutes or more) and fills in the answer as it arrives. Claude's pick replaces only rows the planner
 is not sure of (medium, low), with the planner's guess kept as the first alternative; a row Claude found no task for
 keeps the planner's guess and says so. An empty answer is asked once more. Rows the person changed meanwhile are
-left alone. Haiku did as well as Sonnet here, at a small part of the cost.
+left alone. An answer that arrives while the confirm step is open waits until it closes (Back to the review); once a
+run has started it is only mentioned. Haiku did as well as Sonnet here, at a small part of the cost.
 
 **Writing.** The confirm step shows the totals, overlaps, unopened rows marked "check", and active time left
-unlogged; **Dry run** sends every row with `"dry": true` and shows exactly what would be sent. Then the rows go
-through `POST /api/log`, the same path as the log dialog (a fresh read of the day, the overlap check, the write lock),
+unlogged; **Dry run** sends every row with `"dry": true` and shows exactly what would be sent. The confirm step keeps
+the exact request of each row it lists, and **Log** sends those, not the rows as they may be a moment later; while a
+run writes, the rows cannot be opened, ticked or deleted. Then the rows go through `POST /api/log`, the same path as the log dialog (a fresh read of the day, the overlap check, the write lock),
 strictly one at a time, in time order, each with the run's name (`ld-<date>-<random>`) and the row's. The page stops
 at the first answer that is not "logged" (refused, with the reason, or unknown) and offers to try the rest again.
 
 **The journal** (`~/.cache/pulsar/logday-journal.json`, owner-only). Before each write the server records the row as
 `sending`, then `logged` with the new entry's id, `refused` with the reason, or `unknown` when no clear answer came
-(`productive.ProductiveUnclear`: a network error or an HTTP 5xx after the write was sent). A row that a run of that
-day already sent and that is `sending`, `unknown` or `logged` is refused, so a restart, a second tab or a retry never
-writes it twice. **Undo this run** (asked first) deletes, one at a time through `POST /api/entry/delete` with the
-run's name, only the entries that run created, and only if each is still as it wrote it. Runs older than 31 days are
-dropped.
+(`productive.ProductiveUnclear`: a network error or an HTTP 5xx after the write was sent; the answer then says
+`"unclear": true`, and so does any unexpected error, so neither is read as "not logged"). A row that a run of that day
+already sent is refused when it is `sending` or `unknown`, and when it is `logged` while its entry is still among the
+day's entries just read: one deleted by hand, or moved to another day, can be logged again (a read that failed counts
+as still there). So a restart, a second tab or a retry never writes it twice. An entry created whose `logged` the
+journal could not take is still answered as created, with a warning; its row stays `sending`. A journal that is there
+but cannot be read is never taken for an empty one: nothing is proposed or written from Log the day or Claude Code,
+and Logs says which file to look at. **Undo this run** (asked first) deletes, one at a time through
+`POST /api/entry/delete` with the run's name, only the entries that run created, and only if each is still as it
+wrote it. It tries every one: an entry deleted or moved by hand is marked `gone`, one changed by hand `changed`
+(neither is offered again), one Productive refuses stays offered, and the toast says how many were deleted and why
+the rest were left. **Start over** clears the last run's results and Undo. Runs that started more than 31 days ago
+are dropped (counted from today, never from an entry's date).
 
 Replayed on one person's 34 fully logged days (21 September to 4 November 2026, `tools/replay/`), each day planned
 as if nothing were logged, from the days before it only, and compared with what was logged: 45% of the minutes
@@ -511,8 +527,8 @@ not, every tool fails with "Pulsar is not answering ... Open Pulsar, then ask ag
 | `pulsar_session` | the calling session's own minutes (Claude Code gives every MCP server `CLAUDE_CODE_SESSION_ID`; Likely rows carry their sessions' ids), with a task for each and what is not logged yet; stretches another session also had are kept apart |
 | `pulsar_suggest` | the log dialog's task list for one stretch |
 | `pulsar_tasks` | tasks logged to lately (with the service used last), assigned ones, and a Productive search |
-| `pulsar_preview` | read only: services resolved, notes checked (`guard_note`), every entry through `POST /api/log` with `dry` (overlaps, the journal); with no problem, a code (once, 10 minutes) holding exactly those entries, and `summary`, Pulsar's own text of what would be written, one line per entry: `Wed 4 Nov 09:00-10:00 (60 min): Build (Acme), Dev, billable. Note: "Search fixed."` |
-| `pulsar_log` | `code` and `summary`: writes the entries the code holds through `POST /api/log`, one at a time, journalled as a Log the day run (Undo works), stopping at the first that is not logged |
+| `pulsar_preview` | read only: services resolved, notes checked (`guard_note`), every entry through `POST /api/log` with `dry` (overlaps, the journal); with no problem, a code (once, 10 minutes) holding exactly those entries, and `summary`, Pulsar's own text of what would be written, one line per entry: `Wed 4 Nov 2026 09:00-10:00 (60 min): Build (Acme), Dev in B, billable. Note: "Search fixed."` (the budget after "in"; a note with a straight `"` or a character nobody sees is refused, so it cannot pass for the summary's own words; a date after today is refused) |
+| `pulsar_log` | `code` and `summary`: writes the entries the code holds through `POST /api/log`, one at a time, journalled as a Log the day run (Undo works), stopping at the first that is not logged. Each result is `logged`, `not logged` (refused, with the reason), `not known` (no clear answer, an HTTP 5xx or any unexpected error: it may be in Productive, and the journal never sends it again) or `not sent` (after the stop); what was written before a failure is always returned |
 
 **The person says yes to every write, not the model.** `pulsar_log`'s definition carries
 `_meta: {"anthropic/requiresUserInteraction": true}`: Claude Code asks the person before every call, even in auto or
@@ -777,5 +793,11 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 - The night the clocks go back, the repeated hour (01:00 to 02:00 in Toronto, 03:00 to 04:00 in Kyiv) is one hour on
   the clock: Log the day folds the two hours together, and an entry there is sent as the first of them. The overlap
   check of `POST /api/log` still refuses one that would clash with an entry in the second.
+- The night the clocks go forward, dragging a logged card's edge, or dragging in the Logged column to log, across the
+  hour that is skipped asks for the clock difference, an hour more than the real time (the question shows both
+  times, and Productive then ends the entry an hour later). Rare enough to leave: change the minutes in the dialog.
+- When the service last used on a task no longer takes time, Pulsar picks one of the same name, and with several
+  budgets that have it, the first. The confirm step and `pulsar_preview`'s summary name the budget, so it is seen
+  before anything is written.
 - Learned tasks and Ask Claude guess; on one person's days they were right often but not always. They only ever
   suggest.
