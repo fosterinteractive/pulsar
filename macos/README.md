@@ -257,3 +257,24 @@ signature on `latest.json` (see "The release key") plus the SHA-256 it carries.
 
 The app's main executable is the compiled window; `launcher.sh` sits in Resources and is signed with the
 bundle. Neither has been through notarization here.
+
+## Preview: try a branch before it is released
+
+**Pulsar Preview** is a second app that runs a git checkout's code as it is, beside the released Pulsar, so new work
+can be tried on real data before anyone gets it. It uses its own port (5620), its own log
+(`~/Library/Logs/Pulsar-Preview.log`) and its own window storage, and the same settings, tokens and caches as Pulsar.
+It never installs or updates anything, and is never zipped or released.
+
+- **It writes nothing to Productive** unless **Settings > Updates > Preview > Allow this preview to write** is on.
+  The chip at the top always shows the branch and commit it runs; it turns red while writing is allowed.
+- **Set up once:** a checkout for it, and the app:
+
+  ```bash
+  git worktree add ~/Sites/pulsar-preview -b preview main
+  PULSAR_PREVIEW_DIR="$HOME/Sites/pulsar-preview" macos/build_app.sh
+  ditto "dist/Pulsar Preview.app" "/Applications/Pulsar Preview.app"
+  ```
+- **Put new work in it:** merge the branches to try into `preview` (in `~/Sites/pulsar-preview`, so the main checkout
+  is not touched), then quit and reopen Pulsar Preview: closing its window stops its server, and opening it runs the
+  code as it is now. Page files (`web/`) also reload with ↻; Python changes need the reopen.
+- **Release** only what was tried in Preview: merge it into `main` and run `release.sh` as below.
