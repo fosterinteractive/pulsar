@@ -30,12 +30,17 @@ Pulsar runs on macOS 12 Monterey or newer, Apple Silicon or Intel.
 2. Open **Terminal**, paste this line and press Return. It downloads Pulsar into Applications and opens it:
 
    ```bash
-   curl -fsSL https://github.com/fosterinteractive/pulsar/releases/latest/download/Pulsar.zip -o /tmp/Pulsar.zip && ditto -x -k /tmp/Pulsar.zip /Applications && rm /tmp/Pulsar.zip && open /Applications/Pulsar.app
+   d=$(/usr/bin/mktemp -d) && /usr/bin/curl -fsSL https://github.com/fosterinteractive/pulsar/releases/latest/download/Pulsar.zip -o "$d/Pulsar.zip" && /usr/bin/ditto -x -k "$d/Pulsar.zip" /Applications && /usr/bin/open /Applications/Pulsar.app; /bin/rm -rf "$d"
    ```
 
-   Pulsar is not signed by Apple. A file a browser downloads is marked as from the internet, and macOS then refuses
-   to open an unsigned app until you confirm it; a file `curl` downloads is not marked, so Pulsar opens at once. Its
-   own updates download the same way. A company-managed Mac may still block it: then IT has to allow it.
+   It downloads into a private temporary folder, which it removes, so no other account on the Mac can swap the file
+   between the download and the unpacking, and it calls `curl` and `ditto` by their full paths, so an older copy
+   earlier in your PATH (MAMP has one) is not used. Pulsar is not signed by Apple. A file a browser downloads is
+   marked as from the internet, and macOS then refuses to open an unsigned app until you confirm it; a file `curl`
+   downloads is not marked, so Pulsar opens at once. What protects this first install is Pulsar's own check: the app
+   installs the code it carries only when Pulsar's release key signed it, and says so if not. That check is part of
+   the app itself, so take Pulsar.zip only from Pulsar's GitHub release page, as above. Its own updates download the
+   same way and are signed too. A company-managed Mac may still block it: then IT has to allow it.
 3. If Pulsar says it needs Apple's developer tools, click **Install**. macOS asks for an administrator password
    the first time. Wait until the installation has finished (about 5 minutes, only once), then open Pulsar
    again.
@@ -342,6 +347,7 @@ pulsar/
   report.py            a range of days in numbers (no I/O)
   server.py            HTTP routes, the JSON API and its guards; away time, repeats, a meeting's task
   updater.py           signed self-update from GitHub releases
+  release_sig.py       the release keys and the signature checks: latest.json, and the code Pulsar.app installs
   logbook.py           the error log
 web/
   index.html, style.css, meetings.css

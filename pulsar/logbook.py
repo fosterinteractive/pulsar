@@ -41,6 +41,15 @@ SECRET = re.compile(
     # Google's access tokens (ya29.…) and refresh tokens (1//…), which the long-string rule below misses
     r"|\bya29\.[A-Za-z0-9_\-.]{10,}|(?<![\w/])1//[A-Za-z0-9_\-]{10,}"
     r"|\beyJ" + _B64 + r"{10,}\." + _B64 + r"{10,}\." + _B64 + r"*"
+    # a JSON field named as a key or a secret ("key", "private_key", "apiKey", "client-secret", "passphrase"): the
+    # name stays, the whole quoted value goes, spaces and all ("monkey", "keys" and "key_id" are not such names)
+    r"|([\"'](?:[A-Za-z0-9]+[_\-])*(?:[a-z0-9]+(?=[KS]))?(?:[Kk]ey|KEY|[Ss]ecret|SECRET|[Pp]assphrase|PASSPHRASE)"
+    r"[\"']\s*:\s*[\"'])[^\"'\n]+"
+    # bare lowercase hex of 32 or more, with a letter in it: Pulsar's own key, session tokens, sign-in codes and
+    # proofs are such. Not exactly 40, which is a git commit id, and not inside a path or a file name.
+    r"|(?<![\w\-/\\.])(?=[0-9a-f]*[a-f])(?![0-9a-f]{40}(?![0-9a-f]))[0-9a-f]{32,}(?![\w\-/\\]|\.\w)"
+    # a UUID standing alone (Productive's API tokens look like one); one inside a path, a session's file, stays
+    r"|(?<![\w\-/\\.])[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}(?![\w\-/\\]|\.\w)"
     # anything else long and opaque: 40 or more base64url characters, upper and lower case and digits, standing alone
     # (not part of a word, a path, a file or a dotted name)
     r"|(?<![\w\-/\\.])(?=" + _B64 + r"*[A-Z])(?=" + _B64 + r"*[a-z])(?=" + _B64 + r"*\d)" + _B64 + r"{40,}={0,2}"
@@ -48,9 +57,10 @@ SECRET = re.compile(
 
 
 def scrub(text: str) -> str:
-    """Remove anything that looks like a credential: tokens, keys, signatures, OAuth codes, very long opaque strings.
-    Normal words, paths and identifiers stay."""
-    return SECRET.sub(lambda m: (m.group(1) or m.group(2) or m.group(3) or "") + "[removed]", str(text or ""))
+    """Remove anything that looks like a credential: tokens, keys, signatures, OAuth codes, fields named as keys or
+    secrets, long bare hex and UUIDs, very long opaque strings. Normal words, paths and identifiers stay."""
+    return SECRET.sub(lambda m: (m.group(1) or m.group(2) or m.group(3) or m.group(4) or "") + "[removed]",
+                      str(text or ""))
 
 
 def record(where: str, message: str, kind: str = "error", detail: str = "", once_per: int = 60) -> None:

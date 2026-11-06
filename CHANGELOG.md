@@ -25,6 +25,12 @@ What each Pulsar release changed, newest first.
 - The Claude Code switch keeps Claude Code's file tools out of Pulsar's folders (deny rules).
 - Asking before every Claude Code session changes Productive is now a separate setting, off by default; Pulsar takes back the rules it added for it.
 - Settings > Claude: says when managed settings block Pulsar's rules or server, and which Claude account and plan Ask Claude uses.
+- Pulsar.app installs the code it carries only when Pulsar's release key signed it, and says so when not.
+- An update's description expires 60 days after its release, so an old one served again is ignored.
+- After an update the window signs in again through its launcher, which checks the server; a sign-in ends with its server.
+- A port held for a moment while Pulsar starts no longer marks a good version bad.
+- The error log also removes bare keys and tokens, UUIDs, and fields named as keys or secrets.
+- The install line downloads into a private temporary folder and calls curl and ditto by their full paths.
 
 ## 1.4.0 (2026-11-06)
 - Log the day: Earlier days, to catch up on several days one after another.

@@ -457,12 +457,14 @@ def _delete_secret(account: str, path: str) -> None:
 # * a browser gets a session token of its own: the launcher or pulsar.py writes a one-time sign-in code, the page
 #   trades it for a token (POST /api/session) and keeps it in localStorage, which belongs to Pulsar's own address and
 #   port only. Every API call carries it in a header. Unlike a cookie, no other service on 127.0.0.1 ever receives it.
-#   The server keeps only hashes of tokens; one unused for 90 days expires.
+#   The server keeps only hashes of tokens, in memory: a token is good only for the server that issued it, and one
+#   unused for 90 days expires. While Pulsar restarts (into an update) its port is free for a moment, and whatever
+#   takes it then receives the page's requests, token and all; that token was issued by a server that has gone, so it
+#   opens nothing. The page signs in again through the launcher, which checks the new server holds the key first.
 
-SESSIONS_FILE = os.path.join(CONFIG_DIR, "sessions.json")
+SESSIONS_FILE = os.path.join(CONFIG_DIR, "sessions.json")  # where older versions kept them; pulsar.py tidy() removes it
 SESSION_DAYS = 90
 _sessions: dict = {}
-_sessions_loaded = [False]
 
 
 def session_secret() -> str:
@@ -486,35 +488,20 @@ def _digest(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def _load_sessions() -> None:
-    if _sessions_loaded[0]:
-        return
-    try:
-        with open(SESSIONS_FILE, encoding="utf-8") as fh:
-            data = json.load(fh)
-        if isinstance(data, dict):
-            _sessions.update({k: float(v) for k, v in data.items() if isinstance(k, str) and isinstance(v, (int, float))})
-    except (OSError, ValueError):
-        pass
-    _sessions_loaded[0] = True
-
-
-def _save_sessions() -> None:
+def _prune_sessions() -> None:
     cutoff = time.time() - SESSION_DAYS * 86400
     for k in [k for k, v in _sessions.items() if v < cutoff]:
         del _sessions[k]
     for k in sorted(_sessions, key=_sessions.get)[:-20]:  # at most 20 browsers signed in
         del _sessions[k]
-    write_atomic(SESSIONS_FILE, json.dumps(_sessions))
 
 
 def new_session() -> str:
     import secrets
     token = secrets.token_hex(32)
     with _lock:
-        _load_sessions()
         _sessions[_digest(token)] = time.time()
-        _save_sessions()
+        _prune_sessions()
     return token
 
 
@@ -522,22 +509,18 @@ def valid_session(token: str) -> bool:
     if not token or not re.fullmatch(r"[0-9a-f]{64}", token):
         return False
     with _lock:
-        _load_sessions()
         key = _digest(token)
         last = _sessions.get(key)
         if last is None or time.time() - last > SESSION_DAYS * 86400:
             return False
-        if time.time() - last > 3600:  # sliding expiry, written at most hourly
+        if time.time() - last > 3600:  # sliding expiry, kept at most hourly
             _sessions[key] = time.time()
-            _save_sessions()
     return True
 
 
 def end_session(token: str) -> None:
     with _lock:
-        _load_sessions()
         _sessions.pop(_digest(token or ""), None)
-        _save_sessions()
 
 
 def is_key(value: str) -> bool:

@@ -21,6 +21,7 @@ from pulsar import __version__  # noqa: E402
 
 
 WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
+PORT_TAKEN = 98  # exit status when the port is already taken: says nothing about this copy (launcher.sh tries again)
 
 
 def page_files(web: str = WEB) -> list:
@@ -86,6 +87,10 @@ def tidy() -> None:
     from pulsar import config, logbook, trackers
     logbook.prune()
     trackers.sweep_memtime_copies()  # copies of MemTime's database that a killed or restarted Pulsar left behind
+    try:
+        os.remove(config.SESSIONS_FILE)  # where older versions kept sessions: now they live and die with the server
+    except OSError:
+        pass
     for base in (config.CONFIG_DIR, config.CACHE_DIR):
         for folder, _dirs, files in os.walk(base):
             try:
@@ -139,8 +144,9 @@ def main() -> int:
     try:
         server = serve(args.port)
     except OSError as exc:
+        import errno
         print(f"Pulsar could not listen on port {args.port}: {exc}. Is it already running?", file=sys.stderr)
-        return 1
+        return PORT_TAKEN if exc.errno == errno.EADDRINUSE else 1
     url = f"http://127.0.0.1:{args.port}/"
     print(f"Pulsar {__version__}: {url}  (Ctrl+C to stop)")
     if not args.no_open:

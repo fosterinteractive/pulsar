@@ -10,6 +10,11 @@
 #
 # PULSAR_SWIFT_FLAGS="-D PULSAR_TEST" builds the test window (it photographs, downloads and prints by itself).
 #
+# The code the app carries (Resources/app) comes with its description, Resources/app.manifest.json: its version and
+# each file's SHA-256. PULSAR_BUNDLE_SIGNING_KEY=<private key> signs it (release.sh passes the release key); the
+# launcher installs the code only when that signature is by one of PUBLIC_KEYS (pulsar/release_sig.py), so an app
+# built without the key runs the version already installed and installs nothing.
+#
 # The app is ad-hoc signed only: macOS asks for confirmation the first time it is opened (README.md).
 
 set -euo pipefail
@@ -96,6 +101,21 @@ rsync -a --prune-empty-dirs --include '*/' --include '*.py' --include '*.html' -
 # The real Google sign-in client stays out of git, with whoever builds releases; the repo holds placeholders.
 CLIENT="${PULSAR_GOOGLE_CLIENT:-$HOME/.config/pulsar/google_client.json}"
 [ -f "$CLIENT" ] && cp "$CLIENT" "$RES/pulsar/google_client.json"
+
+# The launcher's own copy of the release check, outside the code it checks, and the description of that code to sign.
+cp "$ROOT/pulsar/release_sig.py" "$APP/Contents/Resources/release_sig.py"
+if [ -z "$PREVIEW_DIR" ]; then  # Preview never installs anything
+  MANIFEST="$APP/Contents/Resources/app.manifest.json"
+  /usr/bin/python3 -I -B "$ROOT/pulsar/release_sig.py" bundle-manifest "$RES" "$VERSION" >"$MANIFEST"
+  if [ -n "${PULSAR_BUNDLE_SIGNING_KEY:-}" ]; then
+    /usr/bin/openssl dgst -sha256 -sign "$PULSAR_BUNDLE_SIGNING_KEY" -out "$MANIFEST.sig" "$MANIFEST"
+    # the very check the launcher makes, with the copy the app carries: a key that is not listed fails here
+    why="$(/usr/bin/python3 -I -B "$APP/Contents/Resources/release_sig.py" check-bundle "$RES" "$MANIFEST" "$MANIFEST.sig" "$VERSION")" ||
+      { echo "The launcher would refuse this app's code: $why (is the key one of PUBLIC_KEYS in pulsar/release_sig.py?)" >&2; exit 1; }
+  else
+    echo "Not signed (no PULSAR_BUNDLE_SIGNING_KEY): this app installs nothing, it runs the version already installed." >&2
+  fi
+fi
 
 # Ad-hoc signature: lets it run on Apple Silicon. It is not a Developer ID signature, so Gatekeeper
 # still asks for confirmation on first open.

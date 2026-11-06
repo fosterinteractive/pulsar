@@ -15,13 +15,17 @@
 #     bad-versions        versions that failed to start, one per line; never switched to again
 #
 # The app carries one version (B). The first time, or when B is newer than the installed one (C), B is
-# copied into versions/ and becomes current. When C is newer (the app updated itself since this bundle was
+# copied into versions/ and becomes current, but only when a release signed it: Resources/app.manifest.json lists
+# B's files and their SHA-256, signed with the release key, and release_sig.py (next to this script) checks the copy
+# against it before the copy is put in place. When C is newer (the app updated itself since this bundle was
 # built, pulsar/updater.py), C stays. Then the server starts from current in the background (it keeps
 # running after this script exits) and http://127.0.0.1:5610/ opens in the window (or the default browser). If
 # the new current does not start, it goes into bad-versions and previous starts instead.
 #
-#   PULSAR_PORT=5699      use another port (default 5610)
-#   PULSAR_NO_BROWSER=1   do not open the browser (for tests)
+#   PULSAR_PORT=5699          use another port (default 5610)
+#   PULSAR_NO_BROWSER=1       do not open the browser (for tests)
+#   PULSAR_TEST_DIALOGS=file  write each dialog's text to that file and take its default button, instead of
+#                             showing it (for tests)
 #
 # Server output goes to ~/Library/Logs/Pulsar.log. Settings and caches are the server's business
 # (~/.config/pulsar, ~/.cache/pulsar; Pulsar Preview's are pulsar-preview); this script only writes the sign-in code.
@@ -35,6 +39,8 @@ BUNDLED="$CONTENTS/Resources/app"
 ICON="$CONTENTS/Resources/AppIcon.icns"
 ROOT="$HOME/Library/Application Support/Pulsar"
 BAD="$ROOT/bad-versions"
+SIGNED="$CONTENTS/Resources/app.manifest.json"   # B's version and files (build_app.sh); .sig: the release signature
+PORT_TAKEN=98   # pulsar.py's exit status when something else holds the port: says nothing about the version
 LOG="$HOME/Library/Logs/Pulsar.log"
 PY=/usr/bin/python3
 MODE="${1:-}"
@@ -70,6 +76,11 @@ log() {
 
 # Shows a dialog; the last button is the default. Prints the button clicked (nothing if cancelled).
 dialog() {
+  if [ -n "${PULSAR_TEST_DIALOGS:-}" ]; then
+    printf '%s\n---\n' "$1" >>"$PULSAR_TEST_DIALOGS"
+    printf '%s\n' "${@: -1}"
+    return 0
+  fi
   /usr/bin/osascript \
     -e 'on run argv' \
     -e '  try' \
@@ -203,23 +214,31 @@ started_by_app() {
 
 # Starts the copy in folder $1 in the background and waits for it to answer with this user's key (is_ours): a
 # version answering on the port is not enough, since something else may hold the port while this copy failed to get
-# it. Returns 1 if it stops or does not answer within 15 seconds (then it is stopped).
+# it. Returns 0 once it answers; 2 when the port stayed taken (pulsar.py exits PORT_TAKEN: tried again, five times in
+# all, and never the copy's fault); 1 if it stops or does not answer within 15 seconds (then it is stopped).
 start_server() {
-  local real="$1" server
-  log "Pulsar $(version_of "$real") starting on port $PORT from $real"
-  cd "$real" || return 1
-  # Its own session, so it outlives this script and the app's process group. -B: no __pycache__ written.
-  /usr/bin/nohup "$PY" -c 'import os, sys
+  local real="$1" server rc try holder
+  for try in 1 2 3 4 5; do
+    log "Pulsar $(version_of "$real") starting on port $PORT from $real"
+    cd "$real" || return 1
+    # Its own session, so it outlives this script and the app's process group. -B: no __pycache__ written.
+    /usr/bin/nohup "$PY" -c 'import os, sys
 if os.getpid() != os.getpgrp():
     os.setsid()
 os.execv("/usr/bin/python3", ["/usr/bin/python3", "-E", "-s", "-B"] + sys.argv[1:])' \
-    "$real/pulsar.py" --no-open --port "$PORT" >>"$LOG" 2>&1 </dev/null &
-  server=$!
-  for _ in $(seq 1 60); do
-    sleep 0.25
-    [ -n "$(running_version)" ] && is_ours && return 0
-    kill -0 "$server" 2>/dev/null || break
+      "$real/pulsar.py" --no-open --port "$PORT" >>"$LOG" 2>&1 </dev/null &
+    server=$! rc=""
+    for _ in $(seq 1 60); do
+      sleep 0.25
+      [ -n "$(running_version)" ] && is_ours && return 0
+      kill -0 "$server" 2>/dev/null || { wait "$server"; rc=$?; break; }
+    done
+    [ "$rc" = "$PORT_TAKEN" ] || break
+    holder="$(listener_pid)"
+    log "Port $PORT was taken while Pulsar $(version_of "$real") started (try $try of 5)${holder:+, by: $(/bin/ps -o command= -p "$holder" 2>/dev/null)}"
+    sleep 1
   done
+  [ "$rc" = "$PORT_TAKEN" ] && return 2
   is_ours && return 0
   kill "$server" 2>/dev/null
   if [ -n "$(running_version)" ]; then
@@ -228,6 +247,29 @@ os.execv("/usr/bin/python3", ["/usr/bin/python3", "-E", "-s", "-B"] + sys.argv[1
     log "Pulsar $(version_of "$real") did not start"
   fi
   return 1
+}
+
+# Prints nothing and returns 0 when folder $1 holds exactly the code a release signed as version B: the app's
+# manifest and its signature, checked against the release keys by release_sig.py, the same check the updater makes,
+# run from the copy beside this script (outside the code it checks). Otherwise prints why not and returns 1.
+code_signed() {
+  [ -f "$CONTENTS/Resources/release_sig.py" ] || { echo "it has no release check"; return 1; }
+  "$PY" -I -B "$CONTENTS/Resources/release_sig.py" check-bundle "$1" "$SIGNED" "$SIGNED.sig" "$B"
+}
+
+# Puts the app's code into versions/B: a copy, checked file by file against the signed manifest before it is moved
+# into place, so what is installed is what was checked. Returns 1, with the reason in WHY, when the app's code is not
+# a signed release; then nothing is installed.
+install_bundled() {
+  local dest="$ROOT/versions/$B" tmp="$ROOT/versions/.$B.tmp-launcher"
+  WHY="$(code_signed "$dest")" && return 0   # already there, exactly as signed
+  /bin/rm -rf "$tmp"
+  /usr/bin/ditto --noqtn "$BUNDLED" "$tmp" || fail_dialog "Pulsar could not install version $B."
+  if ! WHY="$(code_signed "$tmp")"; then
+    /bin/rm -rf "$tmp"
+    return 1
+  fi
+  { /bin/rm -rf "$dest" && /bin/mv "$tmp" "$dest"; } || fail_dialog "Pulsar could not install version $B."
 }
 
 # The window was closed: stop the server if this app started it and it holds this user's key. A server started any
@@ -270,29 +312,39 @@ if [ -n "$PREVIEW_DIR" ]; then
   # Preview takes any value as read-only and writes nothing.
   export PULSAR_PREVIEW=1 PULSAR_INSTANCE=preview
   [ -n "${PULSAR_READ_ONLY:-}" ] || export PULSAR_READ_ONLY=preview
-  start_server "$PREVIEW_DIR" && { open_page; exit 0; }
+  start_server "$PREVIEW_DIR"
+  case $? in
+    0) open_page; exit 0 ;;
+    2) fail_dialog "Pulsar Preview could not start: another program is using port $PORT." ;;
+  esac
   fail_dialog "Pulsar Preview could not start. Its log is ~/Library/Logs/Pulsar-Preview.log."
 fi
 
-# 2. Install or upgrade from the app's own copy.
+# 2. Install or upgrade from the app's own copy, only as a release signed it (install_bundled). Code changed after the
+#    release was built, or an app built without the release key, installs nothing: such a copy could otherwise put a
+#    version higher than any release in place, which no real update would ever replace.
 B="$(version_of "$BUNDLED")"
 [[ "$B" =~ ^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$ ]] || fail_dialog "This copy of Pulsar is damaged. Download it again."
 CUR_REAL="$(real_of current)"
 C="$([ -n "$CUR_REAL" ] && version_of "$CUR_REAL")"
 if [ -z "$C" ] || { [ "$(vercmp "$B" "$C")" = 1 ] && ! is_bad "$B"; }; then
   /bin/mkdir -p "$ROOT/versions" || fail_dialog "Pulsar could not create its folder in Application Support."
-  dest="$ROOT/versions/$B"
-  if [ "$(version_of "$dest")" != "$B" ]; then
-    tmp="$ROOT/versions/.$B.tmp-launcher"
-    /bin/rm -rf "$tmp"
-    /usr/bin/ditto --noqtn "$BUNDLED" "$tmp" && /bin/rm -rf "$dest" && /bin/mv "$tmp" "$dest" ||
-      fail_dialog "Pulsar could not install version $B."
+  if install_bundled; then
+    [ -n "$C" ] && [ "$C" != "$B" ] && set_link previous "$(/usr/bin/readlink "$ROOT/current")"
+    set_link current "versions/$B" || fail_dialog "Pulsar could not switch to version $B."
+    log "Installed Pulsar $B from the app${C:+ (was $C)}"
+    CUR_REAL="$(real_of current)"
+    C="$B"
+  else
+    log "Did not install Pulsar $B from the app: ${WHY:-the check gave no reason}"
+    refused="This copy of Pulsar is not a signed release: ${WHY:-it could not be checked}. Pulsar did not install it.
+
+Download Pulsar.zip again from github.com/fosterinteractive/pulsar/releases."
+    [ -n "$C" ] || fail_dialog "$refused"
+    dialog "$refused
+
+Pulsar $C, installed before, opens instead." "OK" >/dev/null
   fi
-  [ -n "$C" ] && [ "$C" != "$B" ] && set_link previous "$(/usr/bin/readlink "$ROOT/current")"
-  set_link current "versions/$B" || fail_dialog "Pulsar could not switch to version $B."
-  log "Installed Pulsar $B from the app${C:+ (was $C)}"
-  CUR_REAL="$(real_of current)"
-  C="$B"
 fi
 
 # 3. Already running? Open the page. A server of another version than current that this app started (an
@@ -345,8 +397,13 @@ fi
 
 # 4. Start current. If it does not come up, try previous: if previous starts where current did not, current is the
 #    problem (whatever its self-test said), so it is marked bad and previous stays. If neither starts, the cause is
-#    the Mac (the port, a slow start), not a version: nothing is marked and a dialog says so.
-start_server "$CUR_REAL" && { open_page; exit 0; }
+#    the Mac (the port, a slow start), not a version: nothing is marked and a dialog says so. A port that stays taken
+#    while current starts is never current's fault: then nothing is marked and previous is not tried.
+start_server "$CUR_REAL"
+case $? in
+  0) open_page; exit 0 ;;
+  2) fail_dialog "Pulsar could not start: another program is using port $PORT. Nothing was changed; try opening it again." ;;
+esac
 PREV_REAL="$(real_of previous)"
 if [ -n "$PREV_REAL" ] && [ "$PREV_REAL" != "$CUR_REAL" ]; then
   log "Pulsar $C did not start; trying $(version_of "$PREV_REAL")"

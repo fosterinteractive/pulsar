@@ -52,16 +52,31 @@ $('#home').onclick = ev => {  // home: today, at the current hour
 /* the favicon is the header's pulsar (still: the page's styles do not reach it) */
 $('#favicon').href = 'data:image/svg+xml,' + encodeURIComponent($('#logo').outerHTML);
 
-/* a restart into a new version (by itself, or from Settings): reload the page into it and say so */
+/* Into a new version, never by a plain reload: while Pulsar restarts its port is free for a moment, and a reload
+   would load whatever answers there, as Pulsar's own page. The token this page holds was good only for the server
+   that issued it (config.py), so it goes. In the app the window asks its launcher, which checks the server on the
+   port holds this user's key before it signs the page in with a fresh one-time code. A browser cannot check that:
+   it says how to sign in again. */
+async function reopenSignedIn(v) {
+  try { localStorage.removeItem(SESSION); } catch (e) {}
+  if (APP) {
+    try { sessionStorage.setItem('pulsar-updated', v); } catch (e) {}
+    await warpIn(); toApp('reload'); return;
+  }
+  warpRelease();
+  $('#signin-text').textContent =
+    `Pulsar restarted as version ${v}. Open Pulsar from its app icon to sign this browser in again.`;
+  showSignIn();
+}
+
+/* a restart into a new version (from Settings here, or in another window): in again, signed in, and say so */
 setInterval(async () => {
   if (signedOut) return;
   try {
     const r = await fetch('/api/version');
-    if (!r.ok) return;  // signed out (401) or restarting: quiet, the next minute tries again
+    if (!r.ok) return;  // restarting: quiet, the next minute tries again
     const v = (await r.json()).version;
-    if (CONFIG && v && v !== CONFIG.version && !document.querySelector('dialog[open]')) {
-      sessionStorage.setItem('pulsar-updated', v); await warpIn(); location.reload();
-    }
+    if (CONFIG && v && v !== CONFIG.version && !document.querySelector('dialog[open]')) reopenSignedIn(v);
   } catch (e) { /* restarting: try again in a minute */ }
 }, 60 * 1000);
 

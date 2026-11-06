@@ -247,7 +247,7 @@ function paintUpdate(u) {
   $('#upd-checked').textContent = u.checked || 'not yet';
   const st = $('#update-status');
   st.textContent = u.message || (u.installed ? 'Up to date as far as Pulsar knows.' : 'This copy runs from source, so it does not update itself.');
-  st.classList.toggle('warn', u.status === 'failed');
+  st.classList.toggle('warn', u.status === 'failed' || u.status === 'expired');
   const now = $('#update-now');
   now.hidden = !offer;
   now.textContent = u.status === 'ready' ? `Restart into ${u.latest}` : `Update to ${u.latest}`;
@@ -268,8 +268,7 @@ function waitForVersion() {
       const v = r.ok ? (await r.json()).version : null;
       if (v && v !== from) {
         clearInterval(waitingForVersion);
-        try { sessionStorage.setItem('pulsar-updated', v); } catch (e) {}
-        dlg.close(); await warpIn(); location.reload(); return;  // the dialog closes first: it would not warp with the page
+        dlg.close(); reopenSignedIn(v); return;  // main.js; the dialog closes first: it would not warp with the page
       }
     } catch (e) { /* still restarting */ }
     if (Date.now() - t0 > 60 * 1000) {
