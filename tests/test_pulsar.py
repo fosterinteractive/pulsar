@@ -709,6 +709,89 @@ class LearnTest(unittest.TestCase):
         self.assertEqual(sess[k]["1"][1], 120)                                    # the real minutes, kept apart
 
 
+class NewTasksTest(unittest.TestCase):
+    """Tasks you never logged to (41% of one person's client minutes went to such tasks), found by the work's own
+    words and ticket keys among the tasks assigned to you or new in your projects. Replay of 34 days: the right task
+    among the dialog's first five for 579 of those minutes instead of 364, and Log the day right for 378 instead of 289,
+    with no group of entries worse by more than 0.1 point."""
+
+    TASKS = [
+        {"taskId": "1", "title": "[UTFLM-271] Blog listing order", "project": "Law", "created": "2026-11-01", "closed": "",
+         "assignee": "9"},
+        {"taskId": "2", "title": "Hero video autoplay on mobile", "project": "Acme", "created": "2026-11-04T09:00",
+         "closed": "", "assignee": "5"},
+        {"taskId": "3", "title": "Created tomorrow", "project": "Acme", "created": "2026-11-05", "closed": "", "assignee": "9"},
+        {"taskId": "4", "title": "Closed last week", "project": "Acme", "created": "2026-10-01", "closed": "2026-10-28",
+         "assignee": "9"},
+        {"taskId": "5", "title": "Old task of someone else", "project": "Acme", "created": "2026-08-01", "closed": "",
+         "assignee": "5"},
+        {"taskId": "6", "title": "Already logged", "project": "Acme", "created": "2026-11-02", "closed": "", "assignee": "9"},
+        {"taskId": "7", "title": "Elsewhere entirely", "project": "Other", "created": "2026-11-03", "closed": "",
+         "assignee": "5"},
+    ]
+    HISTORY = [{"date": "2026-10-30", "taskId": "6", "project": "Acme"}]
+
+    def test_ticket_keys_and_numbers(self):
+        from pulsar import learn
+        self.assertEqual(learn.ticket_keys("Fix UTFLM-271, see PR #728 and issue #56"), {"UTFLM-271", "#728", "#56"})
+        self.assertEqual(learn.ticket_keys("it&#39;s fine, page#top, #1, utf-8"), set())
+
+    def test_the_pool_is_open_on_the_day_yours_or_new_in_your_projects_never_created_after_it(self):
+        from pulsar import learn
+        got = learn.new_task_pool(self.TASKS, self.HISTORY, "2026-11-04", "9")
+        self.assertEqual(sorted(t["taskId"] for t in got), ["1", "2"])  # yours; new in a project you log to
+
+    def test_a_ticket_key_named_comes_first_words_need_a_strong_match(self):
+        from pulsar import learn
+        index = learn.new_task_index(learn.new_task_pool(self.TASKS, self.HISTORY, "2026-11-04", "9"))
+        got = learn.new_tasks(index, "Fixed the hero video autoplay on mobile Safari; UTFLM-271 next")
+        self.assertEqual([t["taskId"] for t in got], ["1", "2"])
+        self.assertEqual(got[0]["why"], "the work names UTFLM-271 (no entry of yours yet)")
+        self.assertTrue(got[1]["why"].startswith("named in this work: "))
+        self.assertTrue(all(t["new"] for t in got))
+        self.assertEqual(learn.new_tasks(index, "video meeting notes"), [])  # one word in common: not enough
+
+    def test_new_tasks_take_the_fifth_place_and_never_pass_the_sessions_vote(self):
+        from pulsar import learn
+        votes = [{"taskId": t, "title": "", "project": "", "why": "logged while in site: 10 min"} for t in "abcde"]
+        word = {"taskId": "n", "title": "", "project": "", "why": "named in this work: video", "key": False, "new": True}
+        key = {**word, "taskId": "k", "key": True}
+        self.assertEqual([t["taskId"] for t in learn.with_new(votes, [word])], ["a", "b", "c", "d", "n", "e"])
+        self.assertEqual([t["taskId"] for t in learn.with_new(votes, [key, word])][:3], ["k", "n", "a"])
+        session = [{**votes[0], "why": "logged while in this Claude session: 1 h 0 min"}] + votes[1:]
+        self.assertEqual([t["taskId"] for t in learn.with_new(session, [key])][:5], ["a", "b", "c", "d", "k"])
+        self.assertEqual([t["taskId"] for t in learn.with_new([], [word])], ["n"])
+
+    def test_recent_tasks_read_through_claude_codes_connection(self):
+        answer = "```json\n" + json.dumps({
+            "items": {"columns": ["type", "id", "title", "task_number", "created_at", "closed_at", "assignee", "project"],
+                      "rows": [["tasks", "11", "Blog listing", "271", "2026-11-01T09:00:00Z", None, "people:9", "projects:3"]]},
+            "included": {"columns": ["type", "id", "name"], "rows": [["projects", "3", "Law"]]}}) + "\n```"
+        sent = []
+        conn = {"kind": "claude-code", "token": "t", "problem": ""}
+        with mock.patch.object(productive, "_need", lambda s: conn), \
+                mock.patch.object(productive, "mcp_text", lambda tool, args, token: sent.append(args) or answer):
+            got = productive.recent_tasks("2026-10-05", {})
+        self.assertEqual(got, [{"taskId": "11", "title": "Blog listing", "number": "271", "project": "Law", "projectId": "3",
+                                "created": "2026-11-01T09:00:00Z", "closed": "", "assignee": "9"}])
+        self.assertIn({"field": "last_activity_at", "operator": "gt_eq", "value": "2026-10-05"},
+                      sent[0]["filters"]["conditions"])
+
+    def test_a_failed_read_of_recent_tasks_is_a_hint_not_an_error(self):
+        server._fresh.clear()
+        calls = []
+
+        def boom(since, s):
+            calls.append(since)
+            raise productive.ProductiveError("down")
+        with mock.patch.object(productive, "recent_tasks", boom):
+            self.assertIsNone(server.new_task_source("2026-11-04", {"person_id": "9"}))
+        with mock.patch.object(productive, "recent_tasks", lambda since, s: calls.append(since) or [{"taskId": "1"}]):
+            self.assertEqual(server.new_task_source("2026-11-04", {"person_id": "9"}), [{"taskId": "1"}])
+            self.assertEqual(server.new_task_source("2026-11-04", {"person_id": "9"}), [{"taskId": "1"}])  # kept
+        self.assertEqual(calls, ["2026-10-05", "2026-10-05"])
+
+
 class LearnWordsTest(unittest.TestCase):
     """One task found by its words: the task whose name, project and your notes share most words with the row's work
     takes the fifth place. Measured on 15 held-out days of real logging: the right task among the first five for 59%

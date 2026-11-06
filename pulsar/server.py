@@ -416,7 +416,8 @@ def api_proposal(q: dict) -> dict:
                 same_day, problem, _, _ = productive_rows(date, date, ps) if not ignore else ([], "", None, None)
                 if ignore:  # a copy: the cached rows, which the page reads too, keep their own tasks
                     result = {**result, "entries": [dict(e) for e in result.get("entries") or []]}
-                learn.annotate(result, date, s, before, [] if problem else same_day, tz)  # elapsed minutes, as entries
+                learn.annotate(result, date, s, before, [] if problem else same_day, tz,  # elapsed minutes, as entries
+                               new_task_source(date, ps))
     if not result.get("error") and clock_change(t0, t1, tz) is not None:
         # the clocks change today: rows by the clock, like the activity, each its real length (a copy: the cached
         # proposal stays in elapsed minutes, which learning and Ask Claude use)
@@ -778,6 +779,33 @@ def history_rows(date: str, s: dict, days: int = REPEAT_DAYS) -> tuple:
     return [r for r in kept[1] if r.get("date", "") >= first], None
 
 
+_fresh: dict = {}  # (date, person) -> (when, tasks)
+_fresh_lock = threading.Lock()
+
+
+def new_task_source(date: str, s: dict):
+    """The tasks worked on in the NEW_DAYS before `date` (productive.recent_tasks), for the tasks you never logged to
+    (learn.new_tasks); kept ten minutes, one read at a time. None when they cannot be read: a hint, never an error."""
+    key = (date, s.get("person_id"))
+    with _fresh_lock:
+        kept = _fresh.get(key)
+        if kept and time.time() - kept[0] < 600:
+            return kept[1]
+        since = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=learn.NEW_DAYS)).strftime("%Y-%m-%d")
+        try:
+            got = productive.recent_tasks(since, s)
+        except productive.ProductiveError as exc:  # not connected, refused, unreachable: said, and the rows go without
+            logbook.record("learn", f"Recent tasks could not be read: {exc}", kind="warning", once_per=600)
+            return None
+        except Exception as exc:  # anything else is a bug: said as one
+            logbook.record("learn", f"Reading recent tasks: {type(exc).__name__}: {exc}", kind="warning", once_per=600)
+            return None
+        _fresh[key] = (time.time(), got)
+        for old in sorted(_fresh, key=lambda k: _fresh[k][0])[:-4]:
+            del _fresh[old]
+        return got
+
+
 def history_in_background(date: str, s: dict) -> None:
     """Start reading the history for `date`, unless it is being read already."""
     with _rows_lock:
@@ -788,6 +816,7 @@ def history_in_background(date: str, s: dict) -> None:
     def run():
         try:
             history_rows(date, s, days=learn.LEARN_DAYS)
+            new_task_source(date, s)  # read with the history, so the second ask has both
         except Exception as exc:  # a hint for Likely: the page asks again and gets the rows without learned tasks
             logbook.record("learn", f"Reading your history from Productive: {type(exc).__name__}: {exc}", kind="warning")
     threading.Thread(target=run, daemon=True, name="pulsar-history").start()

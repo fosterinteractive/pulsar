@@ -956,6 +956,58 @@ def assigned_tasks(settings: dict) -> list:
                        {"field": "project.status", "operator": "eq", "value": "1"}], settings)
 
 
+def recent_tasks(since: str, settings: dict, limit: int = 2000) -> list:
+    """Tasks anyone worked on since `since` (YYYY-MM-DD), in the projects you can see, open or closed, the latest
+    activity first: [{taskId, title, number, project, projectId, created, closed, assignee}]. For the tasks you have
+    never logged to (learn.new_tasks). Read only."""
+    conn = _need(settings)
+    out: list = []
+
+    def item(tid, title, number, project, project_id, created, closed, assignee):
+        return {"taskId": str(tid), "title": title or "", "number": str(number or ""), "project": project or "",
+                "projectId": str(project_id or ""), "created": created or "", "closed": closed or "",
+                "assignee": str(assignee or "")}
+
+    if conn["kind"] == "token":
+        # REST: newest activity first, stopped at `since` here (the spelling of a date filter is not yet tried)
+        for page in range(1, 1 + (limit + 199) // 200):
+            status, doc = rest_get("/tasks", {"include": "project", "sort": "-last_activity_at", "page[size]": 200,
+                                              "page[number]": page}, conn["token"], settings.get("org_id"))
+            if status != 200 or not isinstance(doc, dict):
+                raise ProductiveError(f"Productive did not list tasks ({why(status, doc)}).")
+            inc = _index(doc)
+            rows = doc.get("data") or []
+            for d in rows:
+                if str(_attr(d, "last_activity_at") or "")[:10] < since:
+                    return out
+                project = inc.get(("projects", _rel(d, "project") or ""))
+                out.append(item(d.get("id"), _attr(d, "title"), _attr(d, "task_number"), _attr(project, "name"),
+                                _rel(d, "project"), _attr(d, "created_at"), _attr(d, "closed_at"), _rel(d, "assignee")))
+            if len(rows) < 200 or len(out) >= limit:
+                return out[:limit]
+        return out[:limit]
+    for offset in range(0, limit, 200):
+        size = min(200, limit - offset)
+        d = parse_mcp(mcp_text("query_resources", {
+            "resource_type": "tasks", "limit": size, "offset": offset, "sort": ["-last_activity_at"],
+            "filters": {"op": "and", "conditions": [{"field": "last_activity_at", "operator": "gt_eq", "value": since}]},
+            "include_fields": ["title", "task_number", "project", "project.name", "created_at", "closed_at", "assignee"]},
+            conn["token"]))
+        cols = d["items"]["columns"]
+        inc = d.get("included") or {}
+        related = {f"{r[0]}:{r[1]}": dict(zip(inc.get("columns", []), r)) for r in inc.get("rows", [])}
+        rows = d["items"]["rows"]
+        for row in rows:
+            r = dict(zip(cols, row))
+            ref = lambda k: (r.get(k) or ":").split(":")[1]  # noqa: E731
+            out.append(item(r.get("id"), r.get("title"), r.get("task_number"),
+                            (related.get(r.get("project") or "") or {}).get("name"), ref("project"), r.get("created_at"),
+                            r.get("closed_at"), ref("assignee")))
+        if len(rows) < size:
+            break
+    return out
+
+
 def search_tasks(q: str, settings: dict) -> list:
     return _task_rows([{"field": "title", "operator": "contains", "value": q}], settings, limit=25)
 

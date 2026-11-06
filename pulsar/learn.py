@@ -274,18 +274,133 @@ def text_match(index: dict, text: str, date: str, skip: frozenset = frozenset())
     return out
 
 
-def work_text(entry: dict, t0: float, projects_dir: str | None = None) -> str:
-    """The words of a Likely row's work: its sessions' titles, what you typed in them then (askclaude.steps: at most
-    15 messages, 400 characters each) and your commit subjects (commits.py). Read from the session files, never kept."""
+def work_steps(entry: dict, t0: float, projects_dir: str | None = None) -> list:
+    """The row's steps (askclaude.steps: at most 15, what you typed and Claude's last words), read from the session
+    files, never kept."""
     from . import askclaude, sessions
     titles = list(entry.get("titles") or [])
-    steps = askclaude.steps(t0, titles, entry["s"], entry["e"], projects_dir or sessions.PROJECTS_DIR) if titles else []
-    return " ".join(titles + [x.get("typed") or "" for x in steps] + list(entry.get("commits") or []))
+    return askclaude.steps(t0, titles, entry["s"], entry["e"], projects_dir or sessions.PROJECTS_DIR) if titles else []
 
 
-def annotate(proposal: dict, date: str, settings: dict, entries_before: list, entries_today: list, tz) -> None:
+def work_text(entry: dict, t0: float, projects_dir: str | None = None, steps: list | None = None,
+              replies: bool = False) -> str:
+    """The words of a Likely row's work: its sessions' titles, what you typed in them then (400 characters a message),
+    with `replies` Claude's last words of each step too, and your commit subjects (commits.py)."""
+    steps = work_steps(entry, t0, projects_dir) if steps is None else steps
+    said = [x.get("typed") or "" for x in steps] + ([x.get("reply") or "" for x in steps] if replies else [])
+    return " ".join(list(entry.get("titles") or []) + said + list(entry.get("commits") or []))
+
+
+# ---- tasks you never logged to --------------------------------------------------------------------------------------
+
+TICKET = re.compile(r"\b[A-Z][A-Z0-9]{1,9}-\d{1,5}\b")
+NUMBER = re.compile(r"(?<![\w#&/])#(\d{2,6})\b")  # "#56", "PR #728"; not "&#39;" or a URL's "#anchor"
+NEW_DAYS = 30     # a task created this many days back, in a project you log to, may be today's
+NEW_MIN = 0.5     # the words a new task must share with the work (cosine); a ticket key or #number named is enough
+                  # (on the replay, below 0.5 the first one found was the task logged then for 1% of the minutes)
+NEW_LIMIT = 2     # new tasks offered per row
+
+
+def ticket_keys(text: str) -> set:
+    """The ticket keys ("UTFLM-271") and numbers ("#728") a text names."""
+    return {k.upper() for k in TICKET.findall(text or "")} | {"#" + n for n in NUMBER.findall(text or "")}
+
+
+def new_task_pool(tasks: list, history: list, date: str, person: str, days: int = NEW_DAYS) -> list:
+    """Of `tasks` (productive.recent_tasks), the ones with no entry of yours in `history` that may be `date`'s work:
+    not closed before that day and not created after it, and assigned to you, or created in the last `days` days in a
+    project you logged to in the last 30 days."""
+    day0 = datetime.strptime(date, "%Y-%m-%d")
+    lo = (day0 - timedelta(days=days)).strftime("%Y-%m-%d")
+    lo30 = (day0 - timedelta(days=30)).strftime("%Y-%m-%d")
+    known = {str(r["taskId"]) for r in history if r.get("taskId")}
+    projects = {r.get("project") for r in history if lo30 <= str(r.get("date") or "") < date and r.get("project")}
+    out = []
+    for t in tasks:
+        created, closed = str(t.get("created") or "")[:10], str(t.get("closed") or "")[:10]
+        if str(t.get("taskId")) in known or not created or created > date or (closed and closed < date):
+            continue
+        if (person and str(t.get("assignee")) == str(person)) or (t.get("project") in projects and created >= lo):
+            out.append(t)
+    return out
+
+
+def new_task_index(pool: list, skip: frozenset = frozenset()) -> dict:
+    """The pool's titles and projects as TF-IDF vectors of unit length, and each task's ticket keys."""
+    tf = {}
+    for t in pool:
+        c: dict = {}
+        for w, _ in words(f"{t.get('title') or ''} {t.get('project') or ''}", skip):
+            c[w] = c.get(w, 0) + 1
+        tf[str(t["taskId"])] = c
+    df: dict = {}
+    for c in tf.values():
+        for w in c:
+            df[w] = df.get(w, 0) + 1
+    n = len(tf) or 1
+    idf = {w: math.log((n + 1) / (f + 0.5)) for w, f in df.items()}
+    vec = {}
+    for t, c in tf.items():
+        v = {w: (1 + math.log(f)) * idf[w] for w, f in c.items()}
+        size = math.sqrt(sum(x * x for x in v.values())) or 1
+        vec[t] = {w: x / size for w, x in v.items()}
+    return {"idf": idf, "vec": vec, "keys": {str(t["taskId"]): ticket_keys(t.get("title") or "") for t in pool},
+            "task": {str(t["taskId"]): t for t in pool}}
+
+
+def new_tasks(index: dict, text: str, skip: frozenset = frozenset(), limit: int = NEW_LIMIT) -> list:
+    """The pool's tasks the work names, best first: [{taskId, title, project, why, score, key}]. A ticket key or
+    #number of the task named in the work comes first; else the words they share (cosine, at least NEW_MIN)."""
+    idf = index.get("idf") or {}
+    count: dict = {}
+    shown: dict = {}
+    for w, word in words(text, skip):
+        if w in idf:
+            count[w] = count.get(w, 0) + 1
+            shown.setdefault(w, word)
+    q = {w: (1 + math.log(f)) * idf[w] for w, f in count.items()}
+    size = math.sqrt(sum(x * x for x in q.values())) or 1
+    named = ticket_keys(text)
+    found = []
+    for t, v in (index.get("vec") or {}).items():
+        keys = (index.get("keys") or {}).get(t, set()) & named
+        parts = {w: x * v[w] for w, x in q.items() if w in v}
+        score = sum(parts.values()) / size
+        if not keys and score < NEW_MIN:
+            continue
+        task = index["task"][t]
+        why = (f"the work names {sorted(keys)[0]}" if keys else
+               "named in this work: " + ", ".join(shown[w] for w, _ in sorted(parts.items(), key=lambda kv: -kv[1])[:3]))
+        found.append({"taskId": t, "title": task.get("title") or "", "project": task.get("project") or "",
+                      "why": why + " (no entry of yours yet)", "score": score + (1 if keys else 0), "key": bool(keys),
+                      "new": True})
+    return sorted(found, key=lambda x: -x["score"])[:limit]
+
+
+NEW_PLACE = 4      # the fifth place, after the first four learned tasks (a ticket key named: first, unless the first
+                   # is the same session's vote); at the second place they pushed out tasks you had logged before
+NEW_REPLIES = True  # Claude's last words of each step count as evidence for a new task (without: fewer found)
+
+
+def with_new(learned: list, found: list) -> list:
+    """The learned list with the new tasks found in the work: never above the same session's vote."""
+    ids = {f["taskId"] for f in found}
+    out = [x for x in learned if x["taskId"] not in ids]
+    strong = bool(out) and out[0]["why"].startswith("logged while in this Claude session")
+    place = None
+    for f in found:
+        if place is None:
+            place = 0 if f.get("key") and not strong else min(NEW_PLACE, len(out))
+        out.insert(min(place, len(out)), f)
+        place += 1
+    return out
+
+
+def annotate(proposal: dict, date: str, settings: dict, entries_before: list, entries_today: list, tz,
+             pool: list | None = None) -> None:
     """Add "learned" (tasks, why) to each row of a day's proposal, and "learning" ({done, of}) while past days are
-    still being worked out. Mutates the proposal; never raises."""
+    still being worked out. `pool` (productive.recent_tasks): tasks you never logged to, offered when the work names
+    them. Mutates the proposal; never raises."""
     try:
         warm(date, settings)
         days = {d: rows for d in _days_before(date) for rows in [_stored(d)] if rows}
@@ -296,15 +411,21 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
         names = {r["taskId"]: r for r in sorted(entries, key=lambda r: r.get("date") or "")}
         skip = frozenset(w for _, w in words(settings.get("person_name") or ""))
         index = note_index(entries, skip)
+        fresh = new_task_index(new_task_pool(pool, entries, date, str(settings.get("person_id") or "")), skip) \
+            if pool else None
         t0 = t0_of(date)
         for e, row in zip([e for e in proposal.get("entries") or [] if e.get("e", 0) - e.get("s", 0) >= 5],
                           days[date]):
+            found: list = []
             try:
-                text = text_match(index, work_text(e, t0), date, skip)
+                steps = work_steps(e, t0)
+                text = text_match(index, work_text(e, t0, steps=steps), date, skip)
+                if fresh and fresh["vec"]:
+                    found = new_tasks(fresh, work_text(e, t0, steps=steps, replies=NEW_REPLIES), skip)
             except (OSError, ValueError) as exc:  # the votes alone, as before
                 logbook.record("learn", f"Words of the work: {type(exc).__name__}: {exc}", kind="warning")
                 text = {}
-            e["learned"] = suggest(row, sess, repo, names, text=text)
+            e["learned"] = with_new(suggest(row, sess, repo, names, text=text), found)
         proposal["learning"] = dict(_state) if _state["of"] and _state["done"] < _state["of"] else None
     except Exception as exc:
         logbook.record("learn", f"Suggesting tasks: {type(exc).__name__}: {exc}", kind="warning")

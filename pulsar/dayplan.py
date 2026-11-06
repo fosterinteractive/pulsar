@@ -65,6 +65,7 @@ GENERIC = {"the", "and", "for", "with", "drupal", "site", "website", "issues", "
            "check", "new", "task", "tasks", "from", "into", "about", "plan"}
 
 CONF_WORDS = {"high": "likely right", "medium": "probably right", "low": "check"}
+NEW_PICK_MIN = 0.5   # the words a task you never logged to must share with the work to be picked (or a key named)
 FIT_SHARE = 0.25     # a project with less of a repository's logged time than this is another client's there
 FIT_MIN = 60         # minutes of a repository's (fading) votes before its projects say anything
 
@@ -267,6 +268,15 @@ def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, ass
         task, src, conf, why = found[0]
     else:
         task, src, conf, why = None, "none", "low", "no signal: pick the task"
+    # a task you never logged to that the work names (learn.new_tasks): the first alternative, and the pick over an
+    # answer that is unsure and not one you gave (a rule, a link, a ticket key): never above a sure vote
+    fresh = [x for x in row.get("learned") or [] if x.get("new")]
+    new_alt = [(str(fresh[0]["taskId"]), "new", "low", fresh[0].get("why") or "")] if fresh else []
+    weak = conf == "low" and src not in ("rule", "link", "ticket")
+    if fresh and weak and (fresh[0].get("key") or fresh[0].get("score", 0) >= NEW_PICK_MIN):
+        if task:
+            new_alt = [(task, src, conf, why)]
+        task, src, conf, why = str(fresh[0]["taskId"]), "new", "low", fresh[0].get("why") or ""
     alts = []
     claude_none = bool(pick) and not pick.get("tasks") and conf != "high"  # Claude found no task: keep ours, say so
     if pick and pick.get("tasks") and conf != "high":
@@ -276,8 +286,8 @@ def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, ass
         task, src, conf, why = str(first["taskId"]), "claude", "medium", f"Claude: {pick.get('why') or 'its pick'}"
         alts += [(str(t["taskId"]), "claude", "low", "Claude: another option") for t in pick["tasks"][1:]]
     seen = {task}
-    for t, s, c, w in alts + found[1:] + [(str(x["taskId"]), "learned", "low", x.get("why") or "")
-                                          for x in row.get("learned") or []]:
+    for t, s, c, w in alts + new_alt + found[1:] + [(str(x["taskId"]), "learned", "low", x.get("why") or "")
+                                                    for x in row.get("learned") or []]:
         if t and t not in seen:
             seen.add(t)
             alts.append((t, s, c, w))
@@ -865,7 +875,8 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False) -> dict
                 "repeats": pool.submit(server.api_repeats, {"date": date, "source": source}),
                 "cal": pool.submit(calendar.day, date, s),
                 "past": pool.submit(calendar.history, first28, server.REPEAT_DAYS, s),
-                "assigned": pool.submit(suggest)}
+                "assigned": pool.submit(suggest),
+                "fresh": pool.submit(server.new_task_source, date, s)}
         got = {k: j.result() for k, j in jobs.items()}
     rows, problem, _, from_copy = got["logged"]
     if problem and not ignore_logged:
@@ -894,7 +905,7 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False) -> dict
             m["tasks"] = server.meeting_tasks(m, got["past"], hist28, offered, skip)
     likely_rows = got["likely"].get("entries") or []
     if likely_rows and not hproblem:  # learned tasks per row, from the days before only (alternatives in the review)
-        learning.annotate({"entries": likely_rows}, date, s, history, [], tz)
+        learning.annotate({"entries": likely_rows}, date, s, history, [], tz, got["fresh"])
     t0_of = lambda d: server.day_bounds(d, tz)[0]  # noqa: E731
     days = {d: learning._stored(d) for d in learning._days_before(date)}
     ctx = learn(date, [] if hproblem else history, {d: r for d, r in days.items() if r}, t0_of,

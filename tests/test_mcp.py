@@ -526,7 +526,7 @@ class McpTest(unittest.TestCase):
                 mock.patch.object(server, "history_ready", lambda d, s: True), \
                 mock.patch.object(server, "history_rows", lambda d, s, days=0: ([], "")), \
                 mock.patch.object(server, "productive_rows", lambda d0, d1, s: (self.day.entries, "", None, None)), \
-                mock.patch.object(learn, "annotate", lambda p, d, s, before, today, tz: seen.append(list(today))):
+                mock.patch.object(learn, "annotate", lambda p, d, s, before, today, tz, *pool: seen.append(list(today))):
             REAL_API_PROPOSAL({"date": DATE})
             self.assertEqual(len(seen[-1]), 1)  # normally the day's own entries teach the rows after them
             with self.assertRaises(ValueError):

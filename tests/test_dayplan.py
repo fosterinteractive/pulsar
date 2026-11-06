@@ -250,6 +250,27 @@ class PlannerTest(unittest.TestCase):
         self.assertIsNone(p["entries"][0]["taskId"])
         self.assertEqual(dayplan.words("the hero banner is not here and not done"), {"hero", "banner", "done"})
 
+    def test_a_task_you_never_logged_to_named_by_the_work_replaces_an_unsure_pick_never_a_sure_one(self):
+        fresh = {"taskId": "77", "title": "Hero autoplay", "project": "Acme", "why": "the work names ACME-12 (no entry of yours yet)",
+                 "key": True, "score": 1.0, "new": True}
+        # nothing surer: the new task, unsure, unticked
+        r = {**row(540, 600, project="z", titles=["Something new"]), "learned": [fresh]}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), self.ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"], e["confidence"], e["checked"]), ("77", "new", "low", False))
+        # the same session's sure vote stays, with the new task as the first alternative
+        r = {**row(540, 600), "learned": [fresh]}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), self.ctx)["entries"]
+        self.assertEqual((e["taskId"], e["confidence"], e["alts"][0]["taskId"]), ("11", "high", "77"))
+        # a link you pasted is never replaced
+        r = {**row(540, 600, project="z", titles=["Something new"], tasks=["55"]), "learned": [fresh]}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), self.ctx)["entries"]
+        self.assertEqual(e["taskId"], "55")
+        # words that only half agree are offered, not picked
+        r = {**row(540, 600, project="z", titles=["Something new"]), "learned": [{**fresh, "key": False, "score": 0.45}]}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), self.ctx)["entries"]
+        self.assertIsNone(e["taskId"])
+        self.assertEqual(e["alts"][0]["taskId"], "77")
+
     def test_your_own_name_in_titles_is_no_evidence(self):
         ctx = {**self.ctx, "recent": ["90"], "names": {"90": {"task": "Estimations - Nick", "project": "X"}},
                "sess": {}, "repo": {}}
