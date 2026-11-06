@@ -150,6 +150,7 @@ aside { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-
 .kv span:first-child { color: var(--muted); }
 .kv.big span:last-child { font-size: 15px; font-weight: 600; }
 .kv.gap span:last-child { color: var(--gap-text); }
+.kv > .num { white-space: nowrap; }  /* a long name beside it wraps; "1 min" never breaks in two */
 .bar { height: 4px; border-radius: 2px; background: var(--seg); margin: 10px 0 2px; overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--text); opacity: .7; border-radius: 2px; }
 /* project totals, the MemTime way: a coloured bar per project, its budgets under it, folding */
