@@ -122,6 +122,7 @@ Code and reconnect Productive. A token of your own never expires, so it is the s
 | ActivityWatch address | `http://localhost:5600` |
 | Likely column | shown when Claude Code sessions are on this computer (`~/.claude/projects`) |
 | Claude Code | off; one switch turns on Ask Claude, notes from sessions and logging from a session (needs Claude Code on this Mac) |
+| Claude's models | Ask Claude: Sonnet; the note and a new task's draft: Haiku. **Settings → Claude** lists everything Pulsar asks Claude, what each sends, and a model (Haiku, Sonnet or Opus) to pick for each |
 | Google Calendar | not connected; **Connect** signs in with Google (fosterinteractive.com accounts only) |
 
 Settings are saved in `~/.config/pulsar/settings.json`; names, copies of fetched days and what Likely learned are
@@ -174,8 +175,8 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   and Save. That is all; it turns on:
   - **Ask Claude** in the Likely column: your own Claude Code suggests a task and a note for each block, and may
     search Productive (read only; tools that change anything are refused). Pick the model there: Sonnet (default),
-    Haiku or Opus. It takes 15 to 60 seconds.
-  - **Notes from the session** in the log dialog: Haiku drafts the note of a Likely block from that session and your
+    Haiku or Opus. It takes 15 to 60 seconds. Settings lists each use of Claude with its own model.
+  - **Notes from the session** in the log dialog: Haiku (or the model you pick) drafts the note of a Likely block from that session and your
     commits in a few seconds; it never replaces what you typed.
   - **Logging from a session:** Pulsar adds itself to Claude Code, so in any new session you can ask "what did I not
     log today?" or "log the time of this session". The session reads your day from Pulsar and shows the entries;
@@ -202,11 +203,11 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
 
   Ask Claude runs with none of your Claude Code settings, CLAUDE.md files or auto memory.
 
-  **What it costs.** Your Claude usage, not money to Pulsar. Each Claude run may cost at most $0.25 (Haiku),
+  **What it costs.** Your Claude usage, not money to Pulsar. Each Ask Claude run may cost at most $0.25 (Haiku),
   $0.75 (Sonnet) or $2 (Opus). When Claude answers with no picks, Pulsar asks once more, so one Ask Claude click may
   cost up to twice that; the cost shown is the last run's. **Log the day** runs Ask Claude by itself when the switch
-  is on and some entries are unsure. A day with Sonnet has cost about $0.10 to $0.25. A note may cost at most $0.10 and
-  usually costs under half a cent. Answers are kept only while Pulsar runs: asking again after Pulsar restarted, or
+  is on and some entries are unsure. A day with Sonnet has cost about $0.10 to $0.25. A note may cost at most $0.10 with Haiku
+  ($0.30 with Sonnet, $0.80 with Opus) and usually costs under half a cent. Answers are kept only while Pulsar runs: asking again after Pulsar restarted, or
   after the day's blocks changed, asks Claude again and costs again.
 
   Switching it off takes back everything it added, and nothing else.

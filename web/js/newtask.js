@@ -63,7 +63,7 @@ async function openNewTask() {
   fillProjects(r);
   if (f.project.value) loadPlaces();
   if (!CONFIG?.likely?.askClaude || !draft.repo || draft.from === 'meeting' || s == null) return;
-  // with the Claude Code switch on: Haiku drafts from the session (what was typed, Claude's replies) and the commits
+  // with the Claude Code switch on: Claude (Haiku unless chosen) drafts from the session (typed, Claude's replies), commits
   taskDrafting = true; $('#task-draft-hint').classList.add('drafting');
   $('#task-draft-hint').innerHTML = esc((DRAFT_FROM[draft.from] || '') + ' Claude is drafting a better one…');
   const c = await postJSON('/api/task/draft', {date, s, e, claude: true, projectName: f.project.selectedOptions[0]?.dataset.name || ''});

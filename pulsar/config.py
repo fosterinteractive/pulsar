@@ -42,7 +42,8 @@ DEFAULTS = {
     "activitywatch_url": "http://localhost:5600",
     "likely": "auto",            # auto | on | off: the column built from Claude Code sessions
     "ask_claude": False,         # the one Claude Code switch (claudelink.py): Ask Claude, notes, Pulsar in Claude Code
-    "ask_claude_model": "sonnet",  # sonnet | haiku | opus: Claude Code's names for the latest of each
+    "ask_claude_model": "sonnet",  # sonnet | haiku | opus: Ask Claude's model, kept in step with claude_models
+    "claude_models": {},         # {use: haiku | sonnet | opus}: the models chosen in Settings > Claude (claudeuses.py)
     "productive_source": "auto",  # auto | token | claude-code
     "org_id": "", "org_name": "", "person_id": "", "person_name": "", "person_day_hours": None,
     "update_skip": "",           # a release the person chose to skip in the reminder
@@ -148,6 +149,8 @@ def _fits(key: str, value) -> bool:
         return value in ("auto", "token", "claude-code")
     if key == "round_to":
         return not isinstance(value, bool) and value in ROUNDING
+    if key == "claude_models":  # any use and name: claudeuses.model() takes an unknown one as no choice
+        return isinstance(value, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in value.items())
     if key in ("personal_patterns", "claude_rules_added", "claude_denies_added"):
         return isinstance(value, list) and all(isinstance(p, str) for p in value)
     return type(value) is type(DEFAULTS[key])
@@ -174,7 +177,8 @@ def _keep_copy(text: str, why: str) -> None:
 # Claude Code's connection), permission to write, and the Claude Code switch (Ask Claude sends session text to
 # Anthropic and costs money, so it starts off in Preview until switched on there; the ask rules are Pulsar's own).
 SEED_SKIP = ("update_skip", "update_asked", "calendar_account", "productive_source", "preview_writes",
-             "ask_claude", "ask_claude_model", "claude_rules_added", "claude_denies_added", "claude_ask_productive")
+             "ask_claude", "ask_claude_model", "claude_models", "claude_rules_added", "claude_denies_added",
+             "claude_ask_productive")
 
 
 def _seed_preview() -> bool:

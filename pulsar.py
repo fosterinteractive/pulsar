@@ -39,7 +39,7 @@ def page_files(web: str = WEB) -> list:
 def self_test(web: str = WEB) -> int:
     """Imports every module, checks that the page and every file it loads are there and served, and that the server
     answers with this version: the updater runs this before it trusts a new version."""
-    from pulsar import askclaude, config, dayplan, flags, learn, likely, mcp, mcptools, names, productive, report, server, sessions, trackers, updater  # noqa: F401
+    from pulsar import askclaude, claudeuses, config, dayplan, flags, learn, likely, mcp, mcptools, names, productive, report, server, sessions, trackers, updater  # noqa: F401
     files = page_files(web)
     missing = [n for n in files + ["js/core.js", "js/main.js", "style.css"] if not os.path.isfile(os.path.join(web, n))]
     if missing:

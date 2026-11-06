@@ -4,9 +4,10 @@ only after a click in the page (server.api_task_create).
 
 The draft (`local_draft`) is made on this Mac from the commits made then (their subjects, already checked by
 commits.clean), or is a meeting's title when the time was a meeting. With the Claude Code switch on, `claude_draft`
-asks Haiku for a better one from the same work plus what was typed and Claude's replies (askclaude.steps), with the
-same isolation as the session note (askclaude.note): no tools, no MCP server, none of the person's settings, auto
-memory off, a JSON schema, and the draft checked on this Mac before the page sees it. Measured in HOW-IT-WORKS 5.1.
+asks Claude (the model chosen in Settings for "task", claudeuses.py; Haiku by default) for a better one from the same
+work plus what was typed and Claude's replies (askclaude.steps), with the same isolation as the session note
+(askclaude.note): no tools, no MCP server, none of the person's settings, auto memory off, a JSON schema, and the
+draft checked on this Mac before the page sees it. Measured in HOW-IT-WORKS 5.1.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ import subprocess
 import threading
 import unicodedata
 
-from . import askclaude, config, productive
+from . import askclaude, claudeuses, config, productive
 
 TITLE_MAX = 90     # characters in a drafted title (Productive takes 140)
 TITLE_LIMIT = 140  # Productive's own limit on a task's title
@@ -164,10 +165,12 @@ def examples(history: list, project: str = "", limit: int = 8) -> list:
 
 
 def claude_draft(date: str, rows: list, t0: float, history: list = (), project: str = "", run=subprocess.run,
-                 tz=None) -> dict:
-    """A title and description by Haiku from the rows' sessions (steps with Claude's replies), commits and session
-    titles: {"title", "description", "why", "cost"}. Either may be "" when the guard refused it (why says which).
-    Raises askclaude.AskError with a sentence for the page when Claude Code fails."""
+                 tz=None, model: str = None) -> dict:
+    """A title and description by Claude (`model`, chosen in Settings for "task"; Haiku by default) from the rows'
+    sessions (steps with Claude's replies), commits and session titles: {"title", "description", "why", "cost"}.
+    Either may be "" when the guard refused it (why says which). Raises askclaude.AskError with a sentence for the
+    page when Claude Code fails."""
+    model = claudeuses.chosen("task", model)
     rows = sorted(rows, key=lambda r: r.get("s", 0))
     a, b = min(r["s"] for r in rows), max(r["e"] for r in rows)
     titles = list(dict.fromkeys(t for r in rows for t in r.get("titles") or []))
@@ -176,7 +179,7 @@ def claude_draft(date: str, rows: list, t0: float, history: list = (), project: 
     if not said and not made:
         return {"title": "", "description": "", "why": "nothing in the session or the commits says what was done"}
     repo = _longest(rows).get("project") or ""
-    sig = (date, a, b, repo, len(said), len(made), said[-1]["reply"][:40] if said else "")
+    sig = (date, a, b, repo, len(said), len(made), said[-1]["reply"][:40] if said else "", model)
     with _lock:
         if sig in _cache:
             return _cache[sig]
@@ -189,15 +192,15 @@ def claude_draft(date: str, rows: list, t0: float, history: list = (), project: 
         raise askclaude.AskError("Claude Code was not found on this Mac.")
     os.makedirs(config.CACHE_DIR, exist_ok=True)
     try:  # no tools, no MCP servers, no settings' hooks: only the text above goes to Claude
-        done = run([binary, "-p", "--model", "haiku", "--no-session-persistence", "--output-format", "json",
-                    "--json-schema", json.dumps(SCHEMA), "--max-budget-usd", "0.1", "--tools", "",
-                    "--permission-mode", "dontAsk", "--strict-mcp-config", "--setting-sources", ""],
+        done = run([binary, "-p", "--model", model, "--no-session-persistence", "--output-format", "json",
+                    "--json-schema", json.dumps(SCHEMA), "--max-budget-usd", str(claudeuses.cap("task", model)),
+                    "--tools", "", "--permission-mode", "dontAsk", "--strict-mcp-config", "--setting-sources", ""],
                    input=prompt, capture_output=True, text=True, timeout=90, cwd=config.CACHE_DIR, env=askclaude._env())
     except subprocess.TimeoutExpired:
         raise askclaude.AskError("Claude took too long to draft the task.") from None
     except OSError as exc:
         raise askclaude.AskError(f"Claude Code could not be started ({exc}).") from None
-    res = askclaude._answer(done, "draft", 0.1)
+    res = askclaude._answer(done, "draft", "task", model)
     got = res.get("structured_output") if isinstance(res.get("structured_output"), dict) else {}
     title, bad_t = guard_title(got.get("title"))
     desc, bad_d = guard_description(got.get("description"))

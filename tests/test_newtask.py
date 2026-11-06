@@ -420,7 +420,8 @@ class ServerTest(unittest.TestCase):
             asked = []
             with mock.patch.object(server, "history_rows", lambda d, s, days=0: ([], None)), \
                     mock.patch.object(server.newtask, "claude_draft",
-                                      lambda date, rows, t0, history, project, tz=None: asked.append(rows) or {"title": "T"}):
+                                      lambda date, rows, t0, history, project, tz=None, model=None:
+                                      asked.append(rows) or {"title": "T"}):
                 self.assertEqual(server.api_task_draft({"date": "2026-11-04", "s": 600, "e": 690, "claude": True}),
                                  {"title": "T"})
             self.assertEqual([r["project"] for r in asked[0]], ["acme"])  # only the project with most minutes there

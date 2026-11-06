@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Settings > Claude lists everything Pulsar asks Claude and what each sends, with a model to pick for each.
 - Dragging in the Logged column moves in 1-minute steps, not 5, so short entries can be changed.
 - Log dialog: Create a task when none fits the work, with a drafted title and description; it is then picked.
 - Pulsar in Claude Code: the tools are answered inside Pulsar; the key alone opens nothing else and writes only previewed entries, marked "from Claude Code".
