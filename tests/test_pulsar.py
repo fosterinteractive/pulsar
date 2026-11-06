@@ -697,7 +697,7 @@ class AskClaudeTest(unittest.TestCase):
         rows = [{"s": 600, "e": 660, "project": "acme-site", "titles": [], "minutes": 60}]
         entries = [{"taskId": "7", "task": "Estimations", "project": "Proposals", "minutes": 30, "date": "2026-11-02"}]
         with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/bin/claude"), \
-                mock.patch.object(askclaude.productive, "task_details", lambda ids, s: {"99": {"title": "Found", "project": "P"}}), \
+                mock.patch.object(askclaude.productive, "task_details", lambda ids, s, *a: {"99": {"title": "Found", "project": "P"}}), \
                 mock.patch.object(askclaude.config, "load", lambda: {}):
             got = askclaude.ask("2026-11-03", rows, 0, entries, run=fake_run)
         cmd = seen["cmd"]
@@ -724,6 +724,104 @@ class AskClaudeTest(unittest.TestCase):
         with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/bin/claude"):
             got = askclaude.ask("2026-11-04", rows, 0, entries, run=fake)
         self.assertEqual(got["picks"]["540|acme-site"]["tasks"][0]["title"], "Estimations")
+
+    def ask(self, out, date, task_details=None, claude_json=None, seen=None):
+        """askclaude.ask with Claude Code faked: it answers `out` (a dict, or raw text), and `seen` gets the command
+        and the MCP file Claude Code was given, read while it ran."""
+        import json as _json
+        from pulsar import askclaude
+
+        def fake(cmd, **kw):
+            if seen is not None:
+                seen["cmd"] = cmd
+                path = cmd[cmd.index("--mcp-config") + 1]
+                seen["path"] = path
+                with open(path) as fh:
+                    seen["mcp"] = _json.load(fh)
+                seen["mode"] = stat.S_IMODE(os.stat(path).st_mode)
+            return mock.Mock(stdout=out if isinstance(out, str) else _json.dumps(out), stderr="", returncode=1)
+        rows = [{"s": 540, "e": 600, "project": "acme-site", "titles": [], "minutes": 60}]
+        entries = [{"taskId": "7", "task": "Estimations", "project": "Proposals", "minutes": 30, "date": "2026-11-02"}]
+        cj = os.path.join(tempfile.mkdtemp(), "claude.json")
+        with open(cj, "w") as fh:
+            _json.dump(claude_json or {}, fh)
+        with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/bin/claude"), \
+                mock.patch.object(askclaude.claudelink, "CLAUDE_JSON", cj), \
+                mock.patch.object(askclaude.productive, "task_details", task_details or (lambda *a: {})), \
+                mock.patch.object(askclaude.config, "load", lambda: {}):
+            return askclaude.ask(date, rows, 0, entries, run=fake)
+
+    def test_claude_gets_productive_alone_and_none_of_the_settings(self):
+        # Claude Code otherwise loads every MCP server of the person's, runs tools their settings allow even in
+        # dontAsk mode, and runs their hooks with the prompt (checked with the real claude 2.1.301)
+        seen = {}
+        entry = {"type": "http", "url": "https://mcp.productive.io/mcp", "headers": {"X-Extra": "kept as is"}}
+        out = {"structured_output": {"picks": [{"id": 0, "tasks": ["7"], "why": "w", "note": ""}]}}
+        self.ask(out, "2026-10-01", claude_json={"mcpServers": {"productive": entry, "coda": {"command": "npx"}}},
+                 seen=seen)
+        cmd = seen["cmd"]
+        self.assertIn("--strict-mcp-config", cmd)                       # no other MCP server
+        self.assertEqual(cmd[cmd.index("--setting-sources") + 1], "")  # no allowed tools, hooks or plugins from settings
+        self.assertEqual(seen["mcp"], {"mcpServers": {"productive": entry}})  # Claude Code's own entry, as it is
+        self.assertEqual(seen["mode"], 0o600)
+        self.assertFalse(os.path.exists(seen["path"]))                   # removed after the run
+        self.assertNotIn("kept as is", " ".join(cmd))                     # never on the command line
+        self.assertTrue(all(t.startswith("mcp__productive__") for t in cmd[cmd.index("--allowedTools") + 1].split(",")))
+        for other in ({"mcpServers": {"productive": {"type": "http", "url": "https://evil.example/mcp"}}}, {}):
+            seen = {}
+            self.ask(out, "2026-10-02" if other else "2026-10-03", claude_json=other, seen=seen)
+            self.assertEqual(seen["mcp"]["mcpServers"]["productive"], {"type": "http", "url": "https://mcp.productive.io/mcp"})
+
+    def test_claude_codes_own_errors_are_said(self):
+        from pulsar import askclaude
+        budget = {"type": "result", "subtype": "error_max_budget_usd", "is_error": True, "result": None,
+                  "errors": ["Reached maximum budget ($0.75)"], "total_cost_usd": 0.76}
+        with self.assertRaises(askclaude.AskError) as e:
+            self.ask(budget, "2026-10-04")
+        self.assertIn("limit of $0.75", str(e.exception))
+        self.assertIn("$0.76 of your Claude usage was spent", str(e.exception))
+        self.assertEqual(e.exception.cost, 0.76)
+        nologin = {"type": "result", "subtype": "success", "is_error": True, "result": "Not logged in · Please run /login",
+                   "total_cost_usd": 0}
+        with self.assertRaises(askclaude.AskError) as e:
+            self.ask(nologin, "2026-10-05")
+        self.assertIn("not signed in", str(e.exception))
+        for odd in ("[1, 2]", "null", '"text"', {"structured_output": {"picks": "none"}}, {"result": '{"picks": 3}'}):
+            with self.assertRaises(askclaude.AskError, msg=odd):  # never a 500
+                self.ask(odd, "2026-10-06")
+
+    def test_odd_picks_are_skipped_not_a_crash(self):
+        out = {"structured_output": {"picks": ["x", 5, {"id": "zero", "tasks": ["7"]}, {"id": 0, "tasks": 7},
+                                                {"id": 0, "tasks": ["7", None, 8], "why": None}]}}
+        got = self.ask(out, "2026-10-07")
+        self.assertEqual(got["picks"]["540|acme-site"]["tasks"][0]["taskId"], "7")
+
+    def test_tasks_found_by_search_never_vanish_silently(self):
+        from pulsar import askclaude, productive as prod
+        out = {"structured_output": {"picks": [{"id": 0, "tasks": ["99", "7"], "why": "w", "note": ""}]}}
+        calls = []
+
+        def down(ids, s, reasons=None, transient=None):
+            calls.append(ids)
+            raise prod.ProductiveError("Productive could not be reached (timed out)")
+        got = self.ask(out, "2026-10-08", task_details=down)
+        self.assertIn("1 task", got["warning"])
+        self.assertIn("timed out", got["warning"])
+        self.assertEqual([t["taskId"] for t in got["picks"]["540|acme-site"]["tasks"]], ["7"])
+        self.ask(out, "2026-10-08", task_details=down)
+        self.assertEqual(len(calls), 2)  # not kept: asking again asks again
+
+        def one_busy(ids, s, reasons=None, transient=None):
+            reasons.update({"99": "Productive could not be asked (HTTP 503)"}); transient.add("99")
+            return {}
+        self.assertIn("HTTP 503", self.ask(out, "2026-10-09", task_details=one_busy)["warning"])
+
+        def gone(ids, s, reasons=None, transient=None):  # deleted or not visible: nothing to ask again for
+            reasons.update({"99": "deleted, or not visible to you"})
+            return {}
+        got = self.ask(out, "2026-10-10", task_details=gone)
+        self.assertNotIn("warning", got)
+        self.assertIs(askclaude.latest("2026-10-10"), got)  # kept
 
     def test_a_short_day_asks_nothing(self):
         from pulsar import askclaude
@@ -1075,6 +1173,100 @@ class PreviewTest(unittest.TestCase):
                 self.assertIsNone(config.writes_blocked())
         with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):
             self.assertIn("read-only", config.writes_blocked())  # tests and demos stay read-only, preview or not
+
+
+class PreviewIsolationTest(unittest.TestCase):
+    """Pulsar Preview (PULSAR_INSTANCE=preview from its launcher) keeps its own settings, sign-in, sessions, caches and
+    keychain items, so "Remove token", "Disconnect" or a save in Preview never reach Pulsar's."""
+
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def py(self, code, env):
+        import subprocess
+        base = {k: v for k, v in os.environ.items() if not k.startswith("PULSAR_")}
+        done = subprocess.run([sys.executable, "-I", "-B", "-c", "import sys; sys.path.insert(0, sys.argv[1])\n" + code,
+                               self.ROOT], env={**base, "PULSAR_TESTS_OFFLINE": "1", **env}, capture_output=True,
+                              text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return done.stdout
+
+    def test_preview_has_its_own_folders_and_keychain_items(self):
+        import json as _json
+        tmp = tempfile.mkdtemp()
+        code = """import json
+from unittest import mock
+from pulsar import config
+calls = []
+config._keychain = lambda: True
+config.subprocess.run = lambda args, **kw: calls.append(args) or mock.Mock(returncode=0, stdout="", stderr="")
+config.delete_token(); config.delete_google_token()
+print(json.dumps([config.CONFIG_DIR, config.CACHE_DIR, config.KEYCHAIN_SERVICE, [c[c.index("-s") + 1] for c in calls]]))"""
+        env = {"XDG_CONFIG_HOME": os.path.join(tmp, "c"), "XDG_CACHE_HOME": os.path.join(tmp, "k")}
+        got = _json.loads(self.py(code, {**env, "PULSAR_INSTANCE": "preview"}))
+        self.assertEqual(got, [os.path.join(tmp, "c", "pulsar-preview"), os.path.join(tmp, "k", "pulsar-preview"),
+                               "pulsar-preview", ["pulsar-preview", "pulsar-preview"]])
+        got = _json.loads(self.py(code, env))  # Pulsar itself, and an older launcher's Preview: as before
+        self.assertEqual(got[1:], [os.path.join(tmp, "k", "pulsar"), "pulsar", ["pulsar", "pulsar"]])
+
+    def test_the_instance_flag_reaches_config_before_it_loads(self):
+        # how Claude Code starts Preview's MCP server (claudelink.command): it must read Preview's key, not Pulsar's
+        import subprocess
+        tmp = tempfile.mkdtemp()
+        base = {k: v for k, v in os.environ.items() if not k.startswith("PULSAR_")}
+        done = subprocess.run([sys.executable, "-I", "-B", os.path.join(self.ROOT, "pulsar.py"), "--instance", "preview",
+                               "--signin-url", "--port", "5999"], capture_output=True, text=True, timeout=60,
+                              env={**base, "PULSAR_TESTS_OFFLINE": "1", "XDG_CONFIG_HOME": tmp})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertTrue(os.path.exists(os.path.join(tmp, "pulsar-preview", "signin-code")))
+        self.assertFalse(os.path.exists(os.path.join(tmp, "pulsar")))
+
+    def test_preview_starts_from_a_copy_of_pulsars_settings_once(self):
+        import json as _json
+        main, own = tempfile.mkdtemp(), tempfile.mkdtemp()
+        rule = {"match": "acme", "taskId": "12", "title": "Acme", "project": "P"}
+        mine = {**config.DEFAULTS, "rules": [rule], "timezone": "Europe/Kyiv", "calendar_account": "a@b.c",
+                "productive_source": "token", "update_skip": "1.2.1", "preview_writes": True, "unknown_key": 1}
+        with open(os.path.join(main, "settings.json"), "w") as fh:
+            _json.dump(mine, fh)
+        with mock.patch.object(config, "INSTANCE", "preview"), mock.patch.object(config, "MAIN_CONFIG_DIR", main), \
+                mock.patch.object(config, "CONFIG_DIR", own), \
+                mock.patch.object(config, "SETTINGS_FILE", os.path.join(own, "settings.json")):
+            s = config.load()
+            self.assertEqual((s["rules"], s["timezone"]), ([rule], "Europe/Kyiv"))
+            for key in config.SEED_SKIP:  # Pulsar's Google account, token source, update choice, write permission
+                self.assertEqual(s[key], config.DEFAULTS[key], key)
+            config.update({"timezone": "UTC"})
+            with open(os.path.join(main, "settings.json")) as fh:
+                self.assertEqual(_json.load(fh), mine)  # Pulsar's file: never written, unknown keys and all
+            os.remove(os.path.join(main, "settings.json"))
+            self.assertEqual(config.load()["timezone"], "UTC")  # read once: from now on its own
+        with mock.patch.object(config, "INSTANCE", ""), mock.patch.object(config, "MAIN_CONFIG_DIR", main), \
+                mock.patch.object(config, "SETTINGS_FILE", os.path.join(tempfile.mkdtemp(), "settings.json")):
+            self.assertEqual(config.load(), config.DEFAULTS)  # Pulsar itself copies nothing
+
+    def test_read_only_preview_follows_its_own_setting(self):
+        # the launcher sets PULSAR_READ_ONLY=preview: older code reads it as read-only, this code as "a preview"
+        with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "preview", "PULSAR_PREVIEW": ""}):
+            self.assertFalse(config.read_only())
+            with mock.patch.object(config, "load", lambda: {"preview_writes": False}):
+                self.assertIn("Preview", config.writes_blocked())
+            with mock.patch.object(config, "load", lambda: {"preview_writes": True}):
+                self.assertIsNone(config.writes_blocked())
+            with self.assertRaises(ValueError):
+                server.api_dayplan({"date": "2026-11-03", "ignore_logged": "1"})  # test servers only
+        with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):
+            self.assertTrue(config.read_only())
+
+    def test_preview_finds_the_google_client_in_pulsars_folder(self):
+        import json as _json
+        from pulsar import calendar
+        main, own = tempfile.mkdtemp(), tempfile.mkdtemp()
+        with open(os.path.join(main, "google_client.json"), "w") as fh:
+            _json.dump({"installed": {"client_id": "12345-abcdefgh.apps.googleusercontent.com",
+                                      "client_secret": "GOCSPX-abcdefgh"}}, fh)
+        with mock.patch.object(config, "CONFIG_DIR", own), mock.patch.object(config, "MAIN_CONFIG_DIR", main), \
+                mock.patch.object(calendar, "CLIENT_FILE", os.path.join(own, "none.json")):
+            self.assertEqual(calendar.client()["id"], "12345-abcdefgh.apps.googleusercontent.com")
 
 
 class EditEntryTest(unittest.TestCase):
@@ -1702,6 +1894,13 @@ class ScrubTest(unittest.TestCase):
          "jwt [removed] here"),
         ("Authorization: Bearer abc.def-123", "Authorization: Bearer [removed]"),
         ("access_token=ya29.a0AfH6SM&x=1", "access_token=[removed]&x=1"),
+        ("Google gave ya29.a0AfB_byC1x2y3z4ABCdefGHIjk-lMNO_pq.rST here", "Google gave [removed] here"),
+        ("refresh 1//0gAbCdEfGhIjKlMnOpQrStUv-_Wx kept", "refresh [removed] kept"),
+        ("X-Pulsar-Session: 3f2a9c0d1e4b5a6978877665544332211aabbccddeeff00112233445566778899",
+         "X-Pulsar-Session: [removed]"),
+        ('{"X-Pulsar-Key": "3f2a9c0d1e4b5a69788776655443322", "Host": "127.0.0.1"}',
+         '{"X-Pulsar-Key": "[removed]", "Host": "127.0.0.1"}'),
+        ("GET /?code=abcdefabcdefabcdefabcdefabcdefab HTTP/1.1", "GET /?code=[removed] HTTP/1.1"),
     ]
     KEEP = [
         "/Users/nick/.claude/projects/-Users-nick-Sites-tua-trent/09cccb5f-9d87-4b3e-b524-2dad39b09fc2.jsonl",
@@ -1715,6 +1914,8 @@ class ScrubTest(unittest.TestCase):
         "Productive did not give the time entries (HTTP 503). Showing the copy saved 05.11 21:40.",
         "https://app.productive.io/1234-foster/tasks/5678?filter=open",
         "ValueError: date=YYYY-MM-DD",
+        "see /Users/nick/a//b and https://x.org/1//y",
+        "?code=short&x=1",
     ]
 
     def test_credentials_are_cut(self):

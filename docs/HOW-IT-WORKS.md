@@ -385,9 +385,19 @@ unticked.
   for the day:
 
   ```
-  claude -p --model <sonnet|haiku|opus> --no-session-persistence --output-format json --tools ""
+  claude -p --model <sonnet|haiku|opus> --no-session-persistence --output-format json --json-schema <picks>
+         --max-budget-usd <0.25|0.75|2> --tools "" --permission-mode dontAsk
+         --strict-mcp-config --mcp-config <a file naming Claude Code's own "productive" entry> --setting-sources ""
          --allowedTools <Productive search and read tools> --disallowedTools <Productive write tools>
   ```
+
+  Without `--strict-mcp-config` and `--setting-sources ""`, Claude Code (2.1.301, checked) loads every MCP server the
+  person has (Drive, Calendar, Coda), runs any tool their settings allow even in `dontAsk` mode, and runs their hooks,
+  which receive the whole prompt with the session text. The MCP file is owner-only in the cache folder and removed
+  after the run; the entry is copied as Claude Code has it, so its sign-in still applies (the subscription login is
+  kept too). An answer Claude Code marks `is_error` (the spending limit, not signed in) is said in words, with what
+  was spent; tasks Claude found by searching that Productive could not name just then come with a warning, and that
+  answer is not kept, so asking again tries again.
 
   It gets, for each row of ten minutes or more, the time, the repository, the session titles, up to 15 steps of the
   work (what was typed and Claude's reply at the end of each, `askclaude.steps()`, 5.7) and up to 10 of your commit
@@ -479,16 +489,18 @@ nothing else. Saving it on:
 - adds Pulsar to Claude Code: `claude mcp remove` (an older entry), then
   `claude mcp add --scope user pulsar -- /usr/bin/python3 -E -s -B <dir>/pulsar.py --mcp --port <port>`. An
   installed Pulsar is started through `~/Library/Application Support/Pulsar/current`, so updates keep it working;
-  Pulsar Preview adds itself as `pulsar-preview` on its own port;
+  Pulsar Preview adds itself as `pulsar-preview` on its own port, with `--instance preview` so the server reads
+  Preview's key;
 - adds "ask" rules for the Productive connection's `create_resource`, `update_resource`, `delete_resource` and
   `perform_action` to `~/.claude/settings.json`, so no session changes Productive without asking. The file is read,
   merged and renamed into place (a linked file stays linked), with a one-time backup `settings.json.pulsar-backup`;
   a file that is not valid JSON is left alone and the switch says so. Rules already there are not counted as added.
 
 Saving it off removes Pulsar from Claude Code and only the rules Pulsar added (`claude_rules_added` in Pulsar's
-settings). Settings shows where things stand from `~/.claude.json` and the settings file, read only, and offers **Add
-Pulsar to Claude Code again** when the entry is missing or starts another copy. A read-only run (`PULSAR_READ_ONLY`)
-never changes Claude Code.
+settings). The rules are one set for Pulsar and Preview: while the other is still in Claude Code they stay, and this
+copy keeps them on its list to take back later. Settings shows where things stand from `~/.claude.json` and the settings file, read only, and offers **Add
+Pulsar to Claude Code again** when the entry is missing or starts another copy. A read-only run (`PULSAR_READ_ONLY`, any value but
+`preview`) never changes Claude Code.
 
 **The session note.** With the switch on, **Log this time** on a Likely block shows the commit draft at once, then asks
 `POST /api/likely/note`: `askclaude.steps()` reads the block's sessions (matched by title) for each step's typed
