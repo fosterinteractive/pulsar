@@ -5,12 +5,13 @@ The installed layout (the Mac launcher creates it), under ~/Library/Application 
     current, previous   relative symlinks into versions/
     bad-versions        versions that failed to start, or failed their self-test twice; never used again
 A release is `pulsar-<version>.zip` (one top folder `pulsar-<version>/`), `latest.json`
-({version, url, sha256, notes, published}) and `latest.json.sig`: an ECDSA P-256 signature of latest.json made with
-the release key, which only the maintainer holds (see macos/README.md). The key's public half is below; a manifest
-that does not verify against it is ignored, so nobody else can ship code to installed copies, even with write
-access to the repository. A newer version is downloaded, its checksum checked, unpacked next to
-the others and asked to test itself (`pulsar.py --self-test`); only then does `current` move to it, and the running
-server restarts into it once nobody has used the page for a while (or at once from Settings).
+({version, url, sha256, notes, published, versions}) and `latest.json.sig`: an ECDSA P-256 signature of
+latest.json made with the release key, which only the maintainer holds (see macos/README.md). The keys' public halves
+are in release_sig.PUBLIC_KEYS; a manifest that does not verify against one of them is ignored, so nobody else can
+ship code to installed copies, even with write access to the repository.
+A newer version is downloaded, its checksum checked,
+unpacked next to the others and asked to test itself (`pulsar.py --self-test`); only then does `current` move to it,
+and the server restarts into it when the person clicks to.
 A copy run from a git checkout only says that a newer version exists.
 """
 
@@ -32,6 +33,7 @@ import zipfile
 from typing import Callable, Optional
 
 from . import __version__, config
+from .release_sig import PUBLIC_KEYS, openssl, verify  # noqa: F401  (release.sh and the tests use them from here)
 
 DEFAULT_MANIFEST = "https://github.com/fosterinteractive/pulsar/releases/latest/download/latest.json"
 ROOT = os.path.expanduser("~/Library/Application Support/Pulsar")
@@ -40,17 +42,8 @@ MAX_ZIP = 30 * 1024 * 1024
 RELEASES = "https://github.com/fosterinteractive/pulsar/releases/download/"
 VERSION_RE = re.compile(r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}")  # always used with fullmatch
 MAX_UNPACKED = 60 * 1024 * 1024
-# The keys a release may be signed with (ECDSA P-256). The first is the one releases are signed with; any further one
-# is a reserve kept offline (in the team's password manager): if the first is lost or leaks, a release signed with a
-# reserve brings a new list, and installed copies follow it without anyone reinstalling. Adding a key later takes a
-# release signed with a key already listed here, so the reserve must be in place before people install.
-PUBLIC_KEYS = (
-    """-----BEGIN PUBLIC KEY-----
-MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEmCWdtNVrg3SiHdiOL1WDTXva/S7e
-XbA0dD0U0N++R+VVLutC7Y66FFlNYSLKjKo+JAuRLrGtGKTXsjgo00mzLQ==
------END PUBLIC KEY-----
-""",
-)
+# Releases are signed with the keys in release_sig.PUBLIC_KEYS; the same module checks the code a Pulsar.app carries
+# before the launcher installs it, so both use one copy of the keys and one check.
 
 
 def overrides_allowed() -> bool:
@@ -65,33 +58,6 @@ def public_keys() -> tuple:
         with open(path, encoding="utf-8") as fh:
             return (fh.read(),)
     return PUBLIC_KEYS
-
-
-def openssl() -> Optional[str]:
-    for path in ("/usr/bin/openssl", shutil.which("openssl")):
-        if path and os.path.exists(path):
-            return path
-    return None
-
-
-def verify(data: bytes, signature: bytes, key_pem: str) -> bool:
-    """True only when `signature` is the release key's signature of `data` (checked with the system openssl,
-    as Python's standard library has no signature check)."""
-    tool = openssl()
-    if not tool or not signature:
-        return False
-    work = tempfile.mkdtemp(prefix="pulsar-verify-")
-    try:
-        paths = {}
-        for name, content in (("data", data), ("sig", signature), ("key.pem", key_pem.encode())):
-            paths[name] = os.path.join(work, name)
-            with open(paths[name], "wb") as fh:
-                fh.write(content)
-        run = subprocess.run([tool, "dgst", "-sha256", "-verify", paths["key.pem"], "-signature", paths["sig"], paths["data"]],
-                             capture_output=True, text=True, timeout=30)
-        return run.returncode == 0 and "Verified OK" in run.stdout
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
 
 
 def vtuple(v: str) -> tuple:

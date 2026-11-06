@@ -8,10 +8,10 @@
 # in CHANGELOG.md, and failing tests.
 # Then it sets __version__ and builds, in dist/:
 #   release/pulsar-<version>.zip   the code, one top folder pulsar-<version>/ (what the in-app updater downloads)
-#   release/latest.json            {version, url, sha256, notes, published} (what the in-app updater reads)
-#   Pulsar.zip                     the whole app, for new installs (build_app.sh)
+#   release/latest.json            {version, url, sha256, notes, published, versions}, signed (.sig)
+#   Pulsar.zip                     the whole app, for new installs, its code signed too (build_app.sh)
 # With --publish it shows what it will do, asks, commits the version change, pushes the branch and runs
-# gh release create v<version> with the three files on fosterinteractive/pulsar.
+# gh release create v<version> with the four files on fosterinteractive/pulsar.
 
 set -euo pipefail
 
@@ -132,14 +132,14 @@ with open(path, "w", encoding="utf-8") as fh:
     fh.write("\n")
 PY
 
-# Sign latest.json with the release key. Installed copies verify this signature against the public key in
-# pulsar/updater.py and ignore anything else, so a release can only come from whoever holds this key.
+# Sign latest.json with the release key. Installed copies verify this signature against PUBLIC_KEYS in
+# pulsar/release_sig.py and ignore anything else, so a release can only come from whoever holds this key.
 KEY="${PULSAR_SIGNING_KEY:-$HOME/.config/pulsar-release/update-signing-key.pem}"
 [ -f "$KEY" ] || die "the release signing key is missing: $KEY (see macos/README.md, 'The release key')"
 /usr/bin/openssl dgst -sha256 -sign "$KEY" -out "$OUT/latest.json.sig" "$OUT/latest.json"
 # The signature must pass the very check installed copies run, against PUBLIC_KEYS as Python reads them: a key that
 # is not listed, or listed in a form openssl cannot load, is caught here and not on everyone's Mac.
-python3 -E -s - "$ROOT" "$OUT/latest.json" "$OUT/latest.json.sig" <<'PY' || die "installed copies would refuse this release: its key is not one of PUBLIC_KEYS in pulsar/updater.py (or one of them cannot be read)"
+python3 -E -s - "$ROOT" "$OUT/latest.json" "$OUT/latest.json.sig" <<'PY' || die "installed copies would refuse this release: its key is not one of PUBLIC_KEYS in pulsar/release_sig.py (or one of them cannot be read)"
 import sys
 sys.path.insert(0, sys.argv[1])
 from pulsar import updater
@@ -147,13 +147,15 @@ data, sig = open(sys.argv[2], "rb").read(), open(sys.argv[3], "rb").read()
 sys.exit(0 if any(updater.verify(data, sig, key) for key in updater.PUBLIC_KEYS) else 1)
 PY
 
-"$ROOT/macos/build_app.sh" >/dev/null
+# The app, with the code it carries described and signed with the same key: its launcher installs that code only
+# with this signature (build_app.sh checks it the way the launcher will).
+PULSAR_BUNDLE_SIGNING_KEY="$KEY" "$ROOT/macos/build_app.sh" >/dev/null
 
 echo
 echo "Built Pulsar $VERSION:"
 echo "  $ROOT/$ZIP"
 echo "  $ROOT/$OUT/latest.json (+ latest.json.sig, signed)"
-echo "  $ROOT/dist/Pulsar.zip"
+echo "  $ROOT/dist/Pulsar.zip (its code signed: Pulsar.app/Contents/Resources/app.manifest.json.sig)"
 echo "  sha256 $SHA"
 
 GH=(gh release create "v$VERSION" "$ZIP" "$OUT/latest.json" "$OUT/latest.json.sig" dist/Pulsar.zip --repo "$REPO"

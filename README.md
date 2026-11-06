@@ -334,6 +334,7 @@ pulsar/
   report.py            a range of days in numbers (no I/O)
   server.py            HTTP routes, the JSON API and its guards; away time, repeats, a meeting's task
   updater.py           signed self-update from GitHub releases
+  release_sig.py       the release keys and the signature checks: latest.json, and the code Pulsar.app installs
   logbook.py           the error log
 web/
   index.html, style.css, meetings.css
