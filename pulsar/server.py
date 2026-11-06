@@ -360,8 +360,10 @@ def api_entries(q: dict) -> dict:
     out = []
     for x in rows:
         start = None if x.get("start") is None else round(clock(x["start"], t0, tz), 2)
-        out.append({**{k: v for k, v in x.items() if k not in ("start", "date")},
-                    "s": start, "e": None if start is None else round(start + x["minutes"], 2)})
+        # its end on the clock: over the hour the clocks skip in spring it ends an hour later than start + minutes
+        end = None if start is None else max(round(start + x["minutes"], 2),
+                                             round(clock(x["start"] + x["minutes"] * 60, t0, tz), 2))
+        out.append({**{k: v for k, v in x.items() if k not in ("start", "date")}, "s": start, "e": end})
     out.sort(key=lambda x: (x["s"] is None, x["s"] or 0))
     return {"entries": out, "source": source, "fetched": None if from_copy else datetime.now(tz).strftime("%d.%m %H:%M"),
             "warning": problem, "needsSetup": bool(problem) and source is None}

@@ -263,6 +263,68 @@ class PlannerTest(unittest.TestCase):
         self.assertIsNone(dayplan.pick_service(svcs, "9", "Gone"))
         self.assertEqual(dayplan.pick_service(svcs[:1], None, "")["id"], "1")
 
+    # found by the simulated days (test_simulate.py)
+
+    def test_minutes_in_a_personal_window_are_never_proposed(self):
+        items = [work(540, 550), work(550, 570, app="Telegram", cat="personal"), work(570, 600)]
+        p = dayplan.plan(day(items=items, rows=[row(540, 600)]), self.ctx)
+        self.assertEqual(sum(e["minutes"] for e in p["entries"]), 40)
+        self.assertEqual(p["totals"]["over"], 0)  # not placed first and cut by the cap after
+
+    def test_a_short_piece_never_joins_work_across_a_break(self):
+        rows = [row(540, 545), row(700, 760, titles=["Hero video"])]
+        p = dayplan.plan(day(items=[work(540, 545), work(700, 760)], away=[{"s": 545, "e": 700}], rows=rows), self.ctx)
+        self.assertEqual([(e["s"], e["e"], e["taskId"]) for e in p["entries"]], [(540, 545, "11"), (700, 760, "22")])
+
+    def test_an_attended_meeting_keeps_its_own_time(self):
+        meet = {"s": 600, "e": 630, "title": "Client review", "uid": "u", "declined": False, "all_day": False,
+                "tasks": [{"taskId": "33", "title": "Reviews", "project": "C", "n": 3, "of": 3}]}
+        call = work(600, 630, app="zoom.us", title="Zoom Meeting")
+        p = dayplan.plan(day(items=[work(595, 600), call], calls=[{"s": 600, "e": 630}], meetings=[meet],
+                             rows=[row(595, 600)]), self.ctx)  # five minutes of work just before it
+        self.assertIn((600, 630, "33"), [(e["s"], e["e"], e["taskId"]) for e in p["entries"]])
+        rep = {"s": 595, "e": 625, "minutes": 30, "at": 595, "taskId": "77", "title": "Scrum", "project": "PM",
+               "serviceId": "s77", "service": "Admin", "note": "", "days": 12}
+        p = dayplan.plan(day(items=[work(540, 570), work(595, 625, app="zoom.us", title="Zoom Meeting")],
+                             away=[{"s": 570, "e": 595}], calls=[{"s": 595, "e": 625}], repeats=[rep],
+                             rows=[row(540, 570, tasks=["77"])]), self.ctx)  # work of the same task before the break
+        self.assertEqual([(e["s"], e["e"], e["taskId"]) for e in p["entries"]], [(540, 570, "77"), (595, 625, "77")])
+
+    def test_work_after_an_entry_already_logged_is_placed(self):
+        p = dayplan.plan(day(items=[work(540, 640)], rows=[row(540, 640)], logged=[{"s": 550, "minutes": 15, "taskId": "9"}]),
+                         self.ctx)
+        self.assertEqual([(e["s"], e["e"]) for e in p["entries"]], [(540, 550), (565, 640)])
+        self.assertEqual(p["unplaced"], [])
+
+    def test_an_entry_never_moves_past_entries_already_logged(self):
+        logged = [{"s": 568, "minutes": 23, "taskId": "9"}, {"s": 595, "minutes": 23, "taskId": "9"}]
+        p = dayplan.plan(day(items=[work(540, 640)], rows=[row(591, 595)], logged=logged), self.ctx)
+        # four minutes between them: no room, listed (the editor time around them is work outside Claude, unticked)
+        self.assertEqual([e for e in p["entries"] if e["kind"] != "outside"], [])
+        self.assertFalse(any(e["s"] < 618 and e["e"] > 568 for e in p["entries"]), p["entries"])
+        self.assertIn(4, [u["minutes"] for u in p["unplaced"]])  # the session's four minutes
+
+    def test_an_entry_stopped_by_one_already_logged_ends_on_the_grid(self):
+        p = dayplan.plan(day(items=[work(540, 640)], rows=[row(540, 640)], logged=[{"s": 609, "minutes": 31, "taskId": "9"}]),
+                         self.ctx)
+        [e] = p["entries"]
+        self.assertEqual((e["s"], e["e"]), (540, 605))
+
+    def test_the_cap_leaves_no_entry_under_ten_minutes(self):
+        # 70 active minutes, 5 logged with no start: the cap takes 5 from the least sure entry, a lone 10 minutes
+        rows = [row(540, 600), row(800, 810, project="elsewhere", titles=["Something new"])]
+        p = dayplan.plan(day(items=[work(540, 600), work(800, 810)], rows=rows,
+                             logged=[{"s": None, "minutes": 5, "taskId": "9"}]), self.ctx)
+        self.assertEqual([(e["s"], e["e"]) for e in p["entries"]], [(540, 600)])  # not a 5-minute stub at 13:20
+        self.assertEqual(sum(u["minutes"] for u in p["unplaced"]), 10)
+        self.assertLessEqual(p["totals"]["proposed"] + p["totals"]["logged"], p["totals"]["cap"])
+
+    def test_an_entry_logged_over_the_hour_the_clocks_skip_ends_an_hour_later(self):
+        # 01:30 + 60 minutes on the night the clocks go forward at 02:00 ends at 03:30 on the clock (gather's "e")
+        logged = [{"s": 90, "e": 210, "minutes": 60, "taskId": "9"}]
+        p = dayplan.plan(day(items=[work(80, 240)], rows=[row(80, 240)], logged=logged), self.ctx)
+        self.assertFalse([e for e in p["entries"] if e["s"] < 210 and e["e"] > 90], p["entries"])
+
     def test_time_no_entry_covers_is_reported(self):
         # five minutes in a browser with nothing near them: too short for an entry of their own, so not covered
         p = dayplan.plan(day(items=[work(540, 600), work(800, 805, app="Safari")], rows=[row(540, 600)]), self.ctx)
@@ -272,6 +334,21 @@ class PlannerTest(unittest.TestCase):
         p = dayplan.plan(day(items=[work(540, 600), work(800, 805, app="Safari")], rows=[row(540, 600)],
                              logged=[{"s": 800, "minutes": 5, "taskId": "1"}]), self.ctx)
         self.assertEqual(p["uncovered"], [])
+
+
+class ClockChangeTest(unittest.TestCase):
+    def test_an_entry_over_the_hour_the_clocks_skip_ends_an_hour_later_everywhere(self):
+        # Toronto, 8 March 2026: 02:00 becomes 03:00. An entry at 01:30 for 60 minutes ends at 03:30 on the clock.
+        from zoneinfo import ZoneInfo
+        from pulsar import mcp
+        start = datetime(2026, 3, 8, 1, 30, tzinfo=ZoneInfo("America/Toronto")).timestamp()
+        row = {"id": "1", "date": "2026-03-08", "start": start, "minutes": 60, "taskId": "5", "project": "P"}
+        with mock.patch.object(server, "current_settings", lambda: {"timezone": "America/Toronto", "person_id": "1"}), \
+                mock.patch.object(server, "productive_rows", lambda d0, d1, s: ([row], None, "token", False)):
+            [got] = server.api_entries({"date": "2026-03-08"})["entries"]
+        self.assertEqual((got["s"], got["e"]), (90, 210))
+        covered = mcp.covered_minutes([got])
+        self.assertTrue(covered[90] and covered[209] and not covered[210])
 
 
 class JournalTest(unittest.TestCase):

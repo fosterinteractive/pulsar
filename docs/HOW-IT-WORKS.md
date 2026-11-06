@@ -328,19 +328,21 @@ claim wins:
    of the work next to it, never a meeting's, and starts unticked).
 
 Pieces of one task in one sitting join, pieces under 10 minutes join a neighbour within 30 minutes in the same sitting
-(never one hours away, which would move it there), boundaries go on a 5-minute grid, nothing overlaps an entry already
-logged, and **proposed plus logged never exceeds active time plus attended meetings**: the rest is listed as not
-placed, never placed. A row's task comes from, in this order: a rule, a task link pasted in the session, a ticket key
-in the title, the tasks logged in the same session, then the same repository (votes from the last 60 days, older days
-counting half every 7 days), the same session earlier that day, and task names that share words with the work (your
-own name and common words such as "not" and "the" do not count). A session's task does not carry over to another
-client's repository: once a repository has an hour of votes, a session's task counts there only when its project has a
-quarter of them or more (`dayplan.fits`; on the replay: no change 43.7% to 45.2%, the right task at the right time
-36.4% to 37.6%, client work 13.4% to 15.1%, no slice worse by more than half a point). A repository you work in for an
-hour or more and log under a tenth of is set aside as one you never log; days with entries that have no start time do
-not count, since they cannot be matched to the work. Confidence: high, medium or low, in words and a three-bar meter;
-the same session's votes are high from 60% (and 30 minutes), else low. **Unticked at the start**: low confidence, no
-task, no service, agent-only time, meetings with no call seen. **Notes** are never written from session text: only a
+(never one hours away, which would move it there, never across an entry already logged; a meeting someone attended
+keeps its own time, so nothing before it joins it), boundaries go on a 5-minute grid, a personal window's minutes are
+never in an entry, nothing overlaps an entry already logged, and **proposed plus logged never exceeds active time plus
+attended meetings**: the rest is listed as not placed, never placed (what the cap leaves under 10 minutes goes with
+it). A row's task comes from, in this order: a rule, a task link pasted in the session, a ticket key in the title, the
+tasks logged in the same session, then the same repository (votes from the last 60 days, older days counting half
+every 7 days), the same session earlier that day, and task names that share words with the work (your own name and
+common words such as "not" and "the" do not count). A session's task does not carry over to another client's
+repository: once a repository has an hour of votes, a session's task counts there only when its project has a quarter
+of them or more (`dayplan.fits`; on the replay: no change 43.7% to 45.2%, the right task at the right time 36.4% to
+37.6%, client work 13.4% to 15.1%, no slice worse by more than half a point). A repository you work in for an hour or
+more and log under a tenth of is set aside as one you never log; days with entries that have no start time do not
+count, since they cannot be matched to the work. Confidence: high, medium or low, in words and a three-bar meter; the
+same session's votes are high from 60% (and 30 minutes), else low. **Unticked at the start**: low confidence, no task,
+no service, agent-only time, meetings with no call seen. **Notes** are never written from session text: only a
 meeting's title, your usual note for a repeat, a note Ask Claude drafted for that task, or one from your commits in
 the work, each with "clients may see notes". The **service** is the one last used on the task, checked against the
 services that take time on that date (`bookable_services`). With Productive unreadable, nothing is proposed. About 6
@@ -763,5 +765,8 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 - The app is ad-hoc signed, not with an Apple Developer ID: macOS asks for confirmation on first open (Open Anyway).
 - The reserve release key has not been created yet.
 - ActivityWatch's AFK timeout decides what counts as a break: with 30 minutes, shorter breaks are not seen.
+- The night the clocks go back, the repeated hour (01:00 to 02:00 in Toronto, 03:00 to 04:00 in Kyiv) is one hour on
+  the clock: Log the day folds the two hours together, and an entry there is sent as the first of them. The overlap
+  check of `POST /api/log` still refuses one that would clash with an entry in the second.
 - Learned tasks and Ask Claude guess; on one person's days they were right often but not always. They only ever
   suggest.

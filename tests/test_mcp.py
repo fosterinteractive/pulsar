@@ -59,7 +59,7 @@ class FakeDay:
                      {"s": 630, "e": 720, "minutes": 90, "project": "other-repo", "kind": "focused", "titles": [],
                       "messages": 1, "first_message": "x", "sessions": ["99999999"]}]
         self.events = [{"s": 660, "e": 690, "title": SECRET_WORDS[3], "uid": "u1", "recurring": False}]
-        self.plan = {"entries": [plan_row(540, 600), plan_row(660, 690, task="12", repo="", meeting=SECRET_WORDS[3],
+        self.plan = {"entries": [plan_row(540, 600, why=f"your rule “{SECRET_WORDS[7]}”"), plan_row(660, 690, task="12", repo="", meeting=SECRET_WORDS[3],
                                                              note=SECRET_WORDS[3], noteFrom="meeting", checked=False,
                                                              why=f"you logged it during 2 of the last 3 meetings like this; "
                                                                  f"on your calendar as “{SECRET_WORDS[3]}”")],
