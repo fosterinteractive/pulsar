@@ -124,13 +124,15 @@ const logDlg = $('#logdlg'), logForm = $('#log-form');
 let logForce = false;
 const setLogMsg = (text, warn = false) => { const m = $('#log-msg'); m.textContent = text; m.className = 'msg' + (warn ? ' warn' : ''); };
 const logPicker = makePicker($('#log-tasks'), logForm.elements.q, t => { resetForce(); loadServices(t); showDraft(); showTaskLink(t); });
-/* a note Claude drafted (Ask Claude, then Log on a Likely block): {note, taskId, title} until the person edits it */
+/* a drafted note until the person edits it: Claude's (Ask Claude, then Log on a Likely block) {note, taskId, title},
+   or one from their commits {note, from: 'commits'} */
 let logDrafted = null;
 /* a note Pulsar filled in (a meeting's title, a repeat's usual note): it says so until the person edits it */
 let logFilled = false;
 function showDraft() {
   const d = logDrafted, sel = logPicker.selected;
   $('#log-note-hint').innerHTML = !d ? (logFilled ? esc('Filled in for you: clients may see notes on invoices; check it.') : '')
+    : d.from === 'commits' ? esc('From your commits: check it before logging; clients may see notes.')
     : CLAUDE_MARK.split('<span')[0] + esc(
     !sel || sel.taskId === d.taskId ? 'Drafted by Claude: check it before logging; clients may see notes.'
       : `Drafted by Claude for “${d.title}”: check it before logging; clients may see notes.`);
@@ -154,7 +156,7 @@ logForm.elements.date.addEventListener('change', () => {
 });
 
 /* lead: a group offered first and picked: {label, tasks}, {label, ids} (the page knows only the tasks' ids), or
-   {label, url} (the server works them out, each with why). drafted: Claude's note {note, taskId, title}, when `note` is it */
+   {label, url} (the server works them out, each with why). drafted: the drafted note (logDrafted), when `note` is it */
 let logEdit = null;  // {id, serviceId, title} while the dialog edits an entry that is already logged
 async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = [], note = '', lead = null, edit = null, drafted = null} = {}) {
   logEdit = edit;

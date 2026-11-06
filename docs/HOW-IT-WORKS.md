@@ -250,8 +250,21 @@ says so before you log.
 
 The start is a 24-hour `HH:MM` text field, like every time in Pulsar (`9:30`, `930` and `9.30` become `09:30`; a
 time that is not one is refused before anything is sent). A note Pulsar filled in, a meeting's title or a repeat's
-usual note, says "Filled in for you: clients may see notes on invoices; check it" until it is edited. The picked
-task has an **Open in Productive** link (see 5.2b for where its address comes from).
+usual note, says "Filled in for you: clients may see notes on invoices; check it" until it is edited. On a Likely
+block with commits of yours, the note is drafted from them (below), with "From your commits: check it before logging;
+clients may see notes"; a note Ask Claude drafted comes first. The picked task has an **Open in Productive** link (see
+5.2b for where its address comes from).
+
+**Notes from commits** (`commits.py`). For each Likely row the page shows (not the 60 past days learning reads), the
+repositories its Claude sessions worked in during the row (the session's folder and the paths its tools named), kept
+when their name matches the row's project ("Inovia" and inovia-web-ast, "claude-rules / skills" and claude-rules).
+In each, `git log --all --no-merges` since the day before, keeping your commits (the repository's `user.email`) from
+five minutes before the row to ten minutes after it; a commit goes to one row only, the one it was made in, else the
+nearest. Merges, version bumps, changelog, WIP and fixup commits are skipped, and so is any subject `guard_note`
+refuses (a path, a web address, code, a tool's name). The draft is the first three subjects joined with "; ", a shared
+"Area: " said once, stopping at 160 characters. Only `git config` and `git log` run, read only; none at all without
+git, or with only Apple's stand-in that would ask to install the developer tools. Session files are read once per
+change, so a refresh costs about 0.1 s.
 
 **Log and next** (the button beside Log, or ⌘⇧↩; ⌘↩ logs and closes) logs the entry and opens the dialog again on
 the next yellow-rail stretch after it, else the first one left in the day, with that stretch's suggestions
@@ -312,7 +325,8 @@ repository (votes from the last 60 days, older days counting half every 7 days),
 and task names that share words with the work (your own name does not count). Confidence: high, medium or low, in
 words and a three-bar meter. **Unticked at the start**: low confidence, no task, no service, agent-only time,
 meetings with no call seen. **Notes** are never written from session text: only a meeting's title, your usual note
-for a repeat, or a note Ask Claude drafted for that task, each with "clients may see notes". The **service** is the
+for a repeat, a note Ask Claude drafted for that task, or one from your commits in the work, each with "clients may
+see notes". The **service** is the
 one last used on the task, checked against the services that take time on that date (`bookable_services`). With
 Productive unreadable, nothing is proposed. About 6 seconds for a day the first time, under a second after.
 
@@ -366,13 +380,14 @@ unticked.
          --allowedTools <Productive search and read tools> --disallowedTools <Productive write tools>
   ```
 
-  It gets, for each row of ten minutes or more, the time, the repository, the session titles and up to 15 typed
-  messages; and the tasks logged to in the last 30 days, with the instruction to prefer them and search Productive
+  It gets, for each row of ten minutes or more, the time, the repository, the session titles, up to 15 typed
+  messages and up to 10 of your commit subjects (Notes from commits); and the tasks logged to in the last 30 days, with the instruction to prefer them and search Productive
   only when none fits. It has no shell and no files, cannot change Productive, and its session is not kept (so it
   never shows up in Likely). The answer is a task (and two alternatives) with a short reason per row, shown on the
   Likely card and first in the dialog, with Claude's mark next to it.
   It also drafts the entry's **note** for its first task: Productive can copy notes into a client's invoice and time
-  export, so the prompt asks for the outcome in one or two plain sentences (200 characters at most), never paths,
+  export, so the prompt asks for the outcome as short as it can be, one plain sentence (two only when needed, 200
+  characters at most), based on the row's commits when it has any, never paths,
   addresses, tokens, code, logs, tool names, private matters, other clients or how the time was spent. Each row
   carries up to five of the person's own recent notes on its likely tasks (learned or linked, then the same projects),
   labelled with their task, as examples of their style; only notes that pass the guard are used. `guard_note` then

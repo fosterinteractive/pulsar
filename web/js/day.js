@@ -134,15 +134,31 @@ function claudePick(b) {
   return rows.map(e => picks[`${e.s}|${e.project}`]).find(p => p?.tasks?.length) || null;
 }
 
+/* a note from your commits in a block, as commits.note() makes it: the first three subjects, a shared "Area: " said
+   once, stopping at 160 characters */
+function commitNote(subjects) {
+  let out = '', last = null;
+  for (const s of [...new Set(subjects)].slice(0, 3)) {
+    const i = s.indexOf(': '), head = i > 0 ? s.slice(0, i) : null;
+    const next = out ? `${out}; ${head && head === last && s.length > i + 2 ? s.slice(i + 2) : s}` : s;
+    if (out && next.length > 160) break;
+    out = next; last = head;
+  }
+  return /^[a-z]+:?(\s|$)/.test(out) ? out.charAt(0).toUpperCase() + out.slice(1) : out;  // a word, not qa:full
+}
+
 /* for a Likely block, from its longest rows first: the Productive tasks linked in its sessions (ids), the tasks
-   learned from your logging in the same session or repository (with why), and Claude's pick with its drafted note */
+   learned from your logging in the same session or repository (with why), and Claude's pick with its drafted note,
+   else a note from your commits */
 function likelyTasks(b) {
   const rows = [...(b?.entries || [])].filter(e => e.project === b.project).sort((p, q) => q.minutes - p.minutes);
   const seen = new Set(), learned = [];
   for (const t of rows.flatMap(e => e.learned || [])) if (!seen.has(t.taskId) && seen.add(t.taskId)) learned.push(t);
   const pick = claudePick(b);
   const claude = (pick?.tasks || []).map((t, i) => ({...t, claude: true, why: i ? 'another option' : pick.why}));
-  const draft = pick?.note && pick.tasks[0] ? {note: pick.note, taskId: pick.tasks[0].taskId, title: pick.tasks[0].title} : null;
+  const made = commitNote([...rows].sort((p, q) => p.s - q.s).flatMap(e => e.commits || []));
+  const draft = pick?.note && pick.tasks[0] ? {note: pick.note, taskId: pick.tasks[0].taskId, title: pick.tasks[0].title}
+    : made ? {note: made, from: 'commits'} : null;
   return {ids: [...new Set(rows.flatMap(e => e.tasks || []))].slice(0, 4), learned: learned.slice(0, 5), claude, draft};
 }
 

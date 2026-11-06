@@ -68,22 +68,27 @@ def proposal(date: str, tz_name: str, today: str, fresh: bool, settings: dict | 
         settings = settings or config.load()
         result = _run(date, tz_name, config.tz(settings)) if own_script() else _built_in(date, settings)
         if not result.get("error"):
-            _with_tasks(result, date, settings)
+            _with_tasks(result, date, settings, keep)
             if keep:
                 _cache[key] = (time.time(), result)
         return result
 
 
-def _with_tasks(result: dict, date: str, settings: dict) -> None:
-    """The Productive tasks linked in each row's sessions, for the log dialog to offer first. A hint only: if the
-    sessions cannot be read, the rows stay as they are."""
-    from . import sessions
+def _with_tasks(result: dict, date: str, settings: dict, commits: bool = True) -> None:
+    """The Productive tasks linked in each row's sessions, for the log dialog to offer first, and your commits during
+    each row, for the note (commits.py; not for the past days learning reads). Hints only: if the sessions or a
+    repository cannot be read, the rows stay as they are."""
+    from . import commits as git_commits, logbook, sessions
+    t0 = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=config.tz(settings)).timestamp()
     try:
-        t0 = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=config.tz(settings)).timestamp()
         sessions.attach_tasks(result.get("entries") or [], t0, sessions.task_links(t0))
     except Exception as exc:
-        from . import logbook
         logbook.record("likely", f"Task links in Claude sessions: {type(exc).__name__}: {exc}", kind="warning")
+    if commits:
+        try:
+            git_commits.attach(result.get("entries") or [], t0)
+        except Exception as exc:
+            logbook.record("likely", f"Commits for the notes: {type(exc).__name__}: {exc}", kind="warning")
 
 
 def _built_in(date: str, settings: dict) -> dict:

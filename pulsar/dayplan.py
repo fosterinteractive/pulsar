@@ -18,8 +18,9 @@ Then the pieces of one task in one sitting join, short ones join a neighbour, bo
 nothing overlaps an entry already logged, and the total is capped: proposed plus logged never exceeds active time
 plus attended meetings. What does not fit is shown in `unplaced`, never placed.
 
-Notes are never written from session text: only a meeting's title, a repeat's usual note, or a note Claude drafted
-(Ask Claude) for that task, each marked so the page can say "clients may see notes".
+Notes are never written from session text: only a meeting's title, a repeat's usual note, a note Claude drafted
+(Ask Claude) for that task, or the subjects of the person's own commits in the work (commits.py), each marked so the
+page can say "clients may see notes".
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from . import config
+from . import commits as git_commits, config
 
 GRID = 5             # entry boundaries on this grid, in minutes
 MIN_ENTRY = 10       # shorter pieces join a neighbour
@@ -470,12 +471,14 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
             known(str(t["taskId"]), t.get("title"), t.get("project"))
         ch = choose(r, ctx, hit, sameday, assigned, pick)
         note = (pick or {}).get("note") or ""
+        claude_note = bool(note and ch["task"] and str(pick["tasks"][0]["taskId"]) == ch["task"])
+        # else the row's own commits (commits.py): they say what was done whatever the task
+        note, note_from = (note, "claude") if claude_note else (git_commits.note(r.get("commits") or []), "commits")
         c = {"kind": "agent" if agent else "focused", "task": ch["task"], "source": ch["source"],
              "conf": _min_conf(ch["conf"], "medium") if agent else ch["conf"], "why": ch["why"],
              "project": r.get("project"), "titles": r.get("titles") or [], "alts": [x["taskId"] for x in ch["alts"]],
              "altWhy": {x["taskId"]: x["why"] for x in ch["alts"]},
-             "note": note if note and ch["task"] and str(pick["tasks"][0]["taskId"]) == ch["task"] else "",
-             "noteFrom": "claude" if note and ch["task"] and str(pick["tasks"][0]["taskId"]) == ch["task"] else "",
+             "note": note, "noteFrom": note_from if note else "",
              "claudeNone": ch["claudeNone"]}
         span = range(int(r["s"]), min(N, int(math.ceil(r["e"]))))
         claim(c, [x for x in span if not away[x] and not logging_[x] and (work[x] or not agent)])
@@ -668,7 +671,8 @@ def _entry(m: dict, s: int, e: int, names: dict) -> dict:
         flags.append("agent")
     if kinds.get("unattended", 0) >= 0.5 * m["minutes"]:
         flags.append("unattended")
-    # a note only from a part of this task (a meeting's title, a repeat's usual note, Claude's draft for this task);
+    # a note only from a part of this task (a meeting's title, a repeat's usual note, Claude's draft for this task,
+    # its commits);
     # an entry with no task keeps the note only when that part is most of it
     noted = [q for q in sorted(m["parts"], key=lambda q: -q["minutes"]) if q.get("note")
              and (q.get("task") == task if task else q is lead)]

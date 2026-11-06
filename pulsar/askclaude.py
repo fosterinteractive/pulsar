@@ -37,7 +37,8 @@ READ_TOOLS = ["mcp__productive__search_records", "mcp__productive__query_resourc
 WRITE_TOOLS = ["mcp__productive__create_resource", "mcp__productive__update_resource",
                "mcp__productive__delete_resource", "mcp__productive__perform_action"]
 PROMPT = """You help a person at their company log time in Productive. Below are blocks of their work on {date}, from \
-their Claude Code sessions: the time, the git repository, the session titles and what they typed.
+their Claude Code sessions: the time, the git repository, the session titles, what they typed and the subjects of \
+the commits they made then.
 For each block, find the Productive task the work belongs to. First look in YOUR TASKS: the tasks this person logged \
 time to in the last 30 days, which are the ones they use now (estimates and scoping go to their estimations task, \
 meetings to their meeting task, and so on). Only when none of them fits, use the Productive tools to search tasks by \
@@ -46,8 +47,11 @@ project with no client gets no task. Read only: never create or change anything.
 
 Then draft the NOTE for the best task: the description of the time entry. The company may copy notes into the \
 client's invoice and time reports, so the client may read it.
-- Say what was done or decided, the outcome, in plain words the client understands: one or two short sentences, at \
-most {note_max} characters. "Event pages show the right time zone again", not "Looked into the time zone code".
+- Say what was done or decided, the outcome, in plain words the client understands, as short as it can be: one \
+sentence, two only when one cannot say it, at most {note_max} characters. "Event pages show the right time zone \
+again", not "Looked into the time zone code".
+- "commits" are the surest sign of what was done: when a block has them, the note says what they say, in plainer \
+words; what they typed tells what the commits were for.
 - Write it the way this person writes, in the language of their notes: "their_notes" in each block are their own \
 recent notes on the likely tasks, with the task each was for. Match their length, tone and form, above all those for \
 the task you pick, but take every fact from the block itself, never from those notes.
@@ -196,12 +200,13 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
     the page when Claude Code is missing or its answer cannot be read."""
     blocks = [{"id": i, "time": "%02d:%02d-%02d:%02d" % (r["s"] // 60, r["s"] % 60, (r["e"] // 60) % 24, r["e"] % 60),
                "repository": r.get("project") or "", "session_titles": (r.get("titles") or [])[:3],
-               "typed": typed(t0, r.get("titles") or [], r["s"], r["e"]), "their_notes": their_notes(r, history)}
+               "typed": typed(t0, r.get("titles") or [], r["s"], r["e"]), "commits": (r.get("commits") or [])[:10],
+               "their_notes": their_notes(r, history)}
               for i, r in enumerate(rows) if r["e"] - r["s"] >= 10]
     if not blocks:
         return {"picks": {}, "cost": 0}
     model = model if model in MODELS else "sonnet"
-    sig = (date, model, tuple((r["s"], r["e"], r.get("project")) for r in rows))
+    sig = (date, model, tuple((r["s"], r["e"], r.get("project"), len(r.get("commits") or [])) for r in rows))
     with _lock:
         if sig in _cache:
             return _cache[sig]

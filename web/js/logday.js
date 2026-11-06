@@ -250,6 +250,7 @@ function noteHint(r) {
   if (r.noteFrom === 'claude' && !r.noteEdited) return `${CLAUDE_MARK.split('<span')[0]}Drafted by Claude: check it before logging; clients may see notes.`;
   if (r.noteFrom === 'meeting' && !r.noteEdited) return "The meeting's title. Clients may see notes.";
   if (r.noteFrom === 'repeat' && !r.noteEdited) return 'Your usual note for this. Clients may see notes.';
+  if (r.noteFrom === 'commits' && !r.noteEdited) return 'From your commits. Clients may see notes.';
   return 'Clients may see notes: the outcome, in a sentence.';
 }
 function editorHTML(r) {
