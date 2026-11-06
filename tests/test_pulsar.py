@@ -727,8 +727,13 @@ class AskClaudeTest(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--max-budget-usd") + 1], "0.75")   # a cap on one day's cost
         self.assertEqual(cmd[cmd.index("--tools") + 1], "")              # no shell, no files
         self.assertEqual(cmd[cmd.index("--permission-mode") + 1], "dontAsk")  # no other MCP tool, whatever the default
-        self.assertNotIn("create_resource", cmd[cmd.index("--allowedTools") + 1])
-        self.assertIn("mcp__productive__create_resource", cmd[cmd.index("--disallowedTools") + 1])
+        allowed = cmd[cmd.index("--allowedTools") + 1].split(",")
+        self.assertEqual(sorted(allowed), sorted(askclaude.READ_TOOLS))  # named one by one: no mcp__productive__*
+        self.assertTrue(all(t.startswith("mcp__productive__") and "*" not in t and t not in askclaude.WRITE_TOOLS
+                            for t in allowed), allowed)
+        self.assertFalse(any("*" in part for part in cmd), cmd)  # no wildcard anywhere, in any flag
+        self.assertTrue(set(askclaude.WRITE_TOOLS) <= set(cmd[cmd.index("--disallowedTools") + 1].split(",")))
+        self.assertNotIn("--dangerously-skip-permissions", cmd)
         self.assertIn('"Estimations"', seen["input"])
         self.assertEqual(got["picks"], {"600|acme-site": {"tasks": [{"taskId": "7", "title": "Estimations", "project": "Proposals"},
                                                                      {"taskId": "99", "title": "Found", "project": "P"}],
