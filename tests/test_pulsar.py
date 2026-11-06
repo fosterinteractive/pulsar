@@ -632,6 +632,7 @@ class AskClaudeTest(unittest.TestCase):
         self.assertIn("--json-schema", cmd)
         self.assertEqual(cmd[cmd.index("--max-budget-usd") + 1], "0.75")   # a cap on one day's cost
         self.assertEqual(cmd[cmd.index("--tools") + 1], "")              # no shell, no files
+        self.assertEqual(cmd[cmd.index("--permission-mode") + 1], "dontAsk")  # no other MCP tool, whatever the default
         self.assertNotIn("create_resource", cmd[cmd.index("--allowedTools") + 1])
         self.assertIn("mcp__productive__create_resource", cmd[cmd.index("--disallowedTools") + 1])
         self.assertIn('"Estimations"', seen["input"])
@@ -655,6 +656,23 @@ class AskClaudeTest(unittest.TestCase):
         got = askclaude.ask("2026-11-03", [{"s": 600, "e": 605, "project": "x", "titles": []}], 0, [],
                             run=lambda *a, **k: self.fail("Claude must not run"))
         self.assertEqual(got["picks"], {})
+
+
+class HistoryReadTest(unittest.TestCase):
+    def test_one_read_per_date_serves_every_length(self):
+        calls = []
+
+        def fake_rows(d0, d1, s):
+            calls.append((d0, d1))
+            return [{"date": "2026-10-01", "taskId": "1"}, {"date": "2026-11-01", "taskId": "2"}], None, "mcp", False
+        server._rows_before.clear()
+        with mock.patch.object(server, "productive_rows", fake_rows):
+            long, _ = server.history_rows("2026-11-06", {"person_id": "9"}, days=60)
+            short, _ = server.history_rows("2026-11-06", {"person_id": "9"}, days=28)
+        self.assertEqual(len(calls), 1)                                  # 60 days read once
+        self.assertEqual(calls[0], ("2026-09-07", "2026-11-05"))
+        self.assertEqual([r["taskId"] for r in long], ["1", "2"])
+        self.assertEqual([r["taskId"] for r in short], ["2"])            # the 28 days sliced from it
 
 
 class AwayTest(unittest.TestCase):

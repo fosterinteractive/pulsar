@@ -292,8 +292,13 @@ def delete_google_token() -> None:
 
 def _read_secret(account: str, path: str, what: str) -> str | None:
     if _keychain():
-        run = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account,
-                              "-w"], capture_output=True, text=True, timeout=15)
+        try:
+            run = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account,
+                                  "-w"], capture_output=True, text=True, timeout=15)
+        except subprocess.TimeoutExpired:  # a keychain waiting on a dialog nobody sees: say so, do not break the page
+            from . import logbook
+            logbook.record("keychain", f"The keychain did not answer within 15 s for the {what}.", kind="warning")
+            return None
         if run.returncode not in (0, 44):  # 44: no such item; anything else is a keychain that said no (locked, denied)
             from . import logbook
             logbook.record("keychain", f"The keychain did not give Pulsar its {what} (security exit "
@@ -426,7 +431,7 @@ def end_session(token: str) -> None:
 def is_key(value: str) -> bool:
     """The launcher's proof of being this user: the key from SECRET_FILE itself."""
     import hmac
-    return bool(value) and hmac.compare_digest(value, session_secret())
+    return bool(value) and hmac.compare_digest(value.encode("utf-8", "replace"), session_secret().encode("utf-8"))
 
 
 def new_signin_code() -> str:
@@ -453,7 +458,7 @@ def take_signin_code(code: str) -> bool:
         except OSError:
             pass
         return False
-    if not (saved and hmac.compare_digest(saved, str(code or ""))):
+    if not (saved and hmac.compare_digest(saved.encode("utf-8"), str(code or "").encode("utf-8", "replace"))):
         return False
     try:
         os.remove(SIGNIN_FILE)
