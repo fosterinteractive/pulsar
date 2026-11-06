@@ -133,17 +133,20 @@ let logFilled = false;
 let logDrafting = 0;  // the dialog's number while Claude drafts a note for it (draftFromSession), else 0
 let logOpened = 0;    // how many times the dialog opened: a note that arrives late is only for the dialog that asked
 
-/* With Claude Code on: Claude drafts the note of a Likely block from its session (what was typed, Claude's replies)
-   and commits. It replaces the note only while the person has not typed in it, and only in the dialog that asked. */
-async function draftFromSession({date, s, e, project}) {
+let logDraftFrom = '';  // whose session Claude drafts from, in words, when it is not "this session" (a stretch)
+
+/* With Claude Code on: Claude drafts the note of a Likely block, or of a stretch (from, day.js logStretch), from its
+   session (what was typed, Claude's replies) and commits. It replaces the note only while the person has not typed in
+   it, and only in the dialog that asked. */
+async function draftFromSession({date, s, e, project, from = ''}) {
   const mine = logOpened, f = logForm.elements, was = f.note.value;
-  logDrafting = mine; showDraft();
+  logDrafting = mine; logDraftFrom = from; showDraft();
   const r = await postJSON('/api/likely/note', {date, s, e, project}).catch(() => ({}));
   if (logDrafting === mine) logDrafting = 0;
   if (mine !== logOpened || !logDlg.open) return;
   if (r.note && f.note.value === was) {
     f.note.value = r.note;
-    logDrafted = {note: r.note, from: 'session'}; logFilled = false;
+    logDrafted = {note: r.note, from: 'session', source: from}; logFilled = false;
   }
   showDraft();
   if (!r.note && r.error && !logDrafted) $('#log-note-hint').textContent = `No note from Claude: ${r.error}`;
@@ -156,9 +159,9 @@ function showDraft() {
     return;
   }
   $('#log-note-hint').innerHTML = !d ? (logFilled ? esc('Filled in for you: clients may see notes on invoices; check it.')
-                                        : logDrafting ? esc('Claude is drafting a note from this session…') : '')
-    : d.from === 'commits' ? esc('From your commits' + (logDrafting ? '; Claude is drafting one from the session…' : ': check it before logging; clients may see notes.'))
-    : d.from === 'session' ? CLAUDE_MARK.split('<span')[0] + esc('Drafted by Claude from this session and your commits: check it before logging; clients may see notes.')
+                                        : logDrafting ? esc(`Claude is drafting a note from ${logDraftFrom || 'this session'}…`) : '')
+    : d.from === 'commits' ? esc('From your commits' + (logDrafting ? `; Claude is drafting one from ${logDraftFrom || 'the session'}…` : ': check it before logging; clients may see notes.'))
+    : d.from === 'session' ? CLAUDE_MARK.split('<span')[0] + esc(`Drafted by Claude from ${d.source || 'this session'} and your commits: check it before logging; clients may see notes.`)
     : CLAUDE_MARK.split('<span')[0] + esc(
     !sel || sel.taskId === d.taskId ? 'Drafted by Claude: check it before logging; clients may see notes.'
       : `Drafted by Claude for “${d.title}”: check it before logging; clients may see notes.`);
@@ -399,7 +402,7 @@ logDlg.addEventListener('keydown', ev => {  // Cmd+Enter (Ctrl+Enter elsewhere) 
 });
 $('#log-new').onclick = () => {
   const gap = document.querySelector('#lane-logged .gaprail');  // the first active stretch with no entry
-  if (gap) { const a = +gap.dataset.a, b = +gap.dataset.b; openLog({start: a, minutes: b - a, hint: rulesInRange(a, b), lead: leadFor(a, b)}); return; }
+  if (gap) { logStretch(+gap.dataset.a, +gap.dataset.b); return; }  // day.js
   const last = (state.logged?.entries || []).filter(x => x.e != null && x.e < 1440).reduce((m, x) => Math.max(m, x.e), 0);
   const start = last || (state.date === todayLocal() ? Math.max(0, nowMin() - 30) : 9 * 60);
   openLog({start, minutes: 30, hint: rulesInRange(start, start + 30)});
@@ -431,7 +434,7 @@ $('#log-new').onclick = () => {
     if (start == null) return;
     const a = +sel.dataset.a, b = +sel.dataset.b;
     sel.remove(); start = null;
-    if (b - a >= 5 && a >= 0 && b <= DAY_END) openLog({start: a, minutes: b - a, hint: rulesInRange(a, b), lead: leadFor(a, b)});
+    if (b - a >= 5 && a >= 0 && b <= DAY_END) logStretch(a, b);  // day.js
   });
   lane.addEventListener('pointercancel', () => { if (start == null) return; sel.remove(); start = null; });
 })();

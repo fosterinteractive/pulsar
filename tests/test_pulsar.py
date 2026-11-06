@@ -1107,6 +1107,38 @@ class ClaudeNoteTest(unittest.TestCase):
         self.assertEqual(got["picks"]["540|acme-site"]["note"], "")                  # it was written for 555
         self.assertEqual(got["notesBlocked"], ["no task"])
 
+    def test_a_stretch_from_the_rail_gets_its_projects_whole_rows(self):
+        """The yellow rail, a drag or Log and next ask for a stretch, not a block: the note is drafted from the rows
+        of the asked project that overlap it (whole rows, commits in time order), never another project's."""
+        from pulsar import askclaude
+        rows = [{"s": 0, "e": 80, "project": "qa", "titles": ["Auto task"], "commits": ["Runs report"], "minutes": 80},
+                {"s": 86, "e": 113, "project": "qa", "titles": ["QA analysis"], "commits": ["Retry on 503"], "minutes": 27},
+                {"s": 129, "e": 144, "project": "qa", "titles": ["Auto task"], "commits": ["Labels"], "minutes": 15},
+                {"s": 144, "e": 150, "project": "site", "titles": ["DB update"], "commits": ["Site fix"], "minutes": 6},
+                {"s": 630, "e": 657, "project": "qa", "titles": ["Later"], "commits": ["Later fix"], "minutes": 27}]
+        s = {**config.DEFAULTS, "timezone": "UTC", "likely": "on", "ask_claude": True, "person_id": "9"}
+        seen = []
+
+        def note(date, row, t0, history, tz=None):
+            seen.append(row)
+            return {"note": "Runs report.", "why": ""}
+        with mock.patch.object(server, "current_settings", lambda: dict(s)), \
+                mock.patch.object(server.likely, "proposal", lambda *a, **k: {"entries": [dict(r) for r in rows]}), \
+                mock.patch.object(server, "history_rows", lambda *a, **k: ([], None)), \
+                mock.patch.object(server.learn, "annotate", lambda *a, **k: None), \
+                mock.patch.object(askclaude, "note", note):
+            got = server.api_likely_note({"date": "2026-11-05", "s": 0, "e": 150, "project": "qa"})
+            self.assertEqual(got["note"], "Runs report.")
+            self.assertEqual((seen[0]["s"], seen[0]["e"], seen[0]["project"]), (0, 144, "qa"))
+            self.assertEqual(seen[0]["commits"], ["Runs report", "Retry on 503", "Labels"])  # not site's, not later
+            self.assertEqual(seen[0]["titles"], ["Auto task", "QA analysis"])
+            self.assertEqual(server.api_likely_note({"date": "2026-11-05", "s": 150, "e": 160, "project": "qa"})["note"], "")
+            self.assertEqual(len(seen), 1)  # nothing of qa there: Claude is not asked
+            s["ask_claude"] = False
+            with self.assertRaises(ValueError):
+                server.api_likely_note({"date": "2026-11-05", "s": 0, "e": 150, "project": "qa"})
+        self.assertEqual(len(seen), 1)
+
     def test_an_old_claude_code_gives_picks_without_notes(self):
         import json as _json
         text = 'Done. ' + _json.dumps({"picks": [{"id": 0, "tasks": ["7"], "why": "events", "note": "Event pages fixed."}]})

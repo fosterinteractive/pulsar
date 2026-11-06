@@ -119,21 +119,55 @@ function activityBlocks(items, Z, end) {
 const busiest = m => [...m].sort((x, y) => y[1] - x[1])[0]?.[0];
 const topWindow = a => ({...a.it, title: busiest(a.titles) ?? a.it.title, url: busiest(a.urls) || ''});
 
-/* what to offer first for a stretch picked some other way (the yellow rail, a drag, an Activity block): the Likely
-   block that covers most of it, else the meeting that does, as if it had been logged from there */
-function leadFor(a, b) {
-  const cover = (s, e) => Math.max(0, Math.min(b, e) - Math.max(a, s));
-  const Z = state.zoom;
-  const lk = likelyCache.map(k => [k, cover(k.start * Z, k.end * Z)]).sort((p, q) => q[1] - p[1])[0];
-  if (lk && lk[1] >= (b - a) / 2) {
-    const t = likelyTasks(lk[0]);
-    if (t.ids.length || t.learned.length || t.claude.length)
-      return {label: `For this work (${lk[0].project})`, ids: t.ids, idsWhy: 'linked in the Claude session', tasks: [...t.claude, ...t.learned]};
+/* the Likely rows inside [a, b), by the minutes each project has there: the project with most, its rows (most
+   minutes inside first), those minutes, and the other projects. null when no Likely row is there. */
+function likelyIn(a, b) {
+  const L = state.likely, by = new Map();
+  for (const e of L && !L.disabled && !L.error ? L.entries || [] : []) {
+    const m = Math.min(b, e.e) - Math.max(a, e.s);
+    if (m <= 0) continue;
+    const p = by.get(e.project) || {project: e.project, minutes: 0, rows: []};
+    p.minutes += m; p.rows.push([e, m]); by.set(e.project, p);
   }
+  const [top, ...others] = [...by.values()].sort((p, q) => q.minutes - p.minutes);
+  return top ? {project: top.project, minutes: top.minutes, rows: top.rows.sort((p, q) => q[1] - p[1]).map(r => r[0]),
+                others: others.map(p => p.project)} : null;
+}
+
+/* a stretch picked some other way (the yellow rail, the hatched rail, a drag, an Activity block, + Log, Log and next):
+   work, the Likely project with most minutes in it (its rows, not the blocks, which change with the zoom), when it has
+   half the stretch, or less when no meeting covers half and no rule (hint, rulesInRange) has more of it; meet, the
+   meeting that covers most of it, if half. */
+function stretchWork(a, b, hint = []) {
+  const cover = (s, e) => Math.max(0, Math.min(b, e) - Math.max(a, s));
   const mt = (typeof meetCache !== 'undefined' ? meetCache : []).filter(x => !x.declined).map(x => [x, cover(x.s, x.e)]).sort((p, q) => q[1] - p[1])[0];
-  if (mt && mt[1] >= (b - a) / 2)
-    return {label: `For “${mt[0].title || 'the meeting'}”`, url: `/api/meeting-tasks?date=${state.date}&uid=${encodeURIComponent(mt[0].uid || '')}&title=${encodeURIComponent(mt[0].title || '')}`};
+  const meet = mt && mt[1] >= (b - a) / 2 ? mt[0] : null, work = likelyIn(a, b);
+  if (work) work.half = work.minutes >= (b - a) / 2;
+  return {work: work && (work.half || (!meet && !hint.some(h => h.minutes > work.minutes))) ? work : null, meet};
+}
+
+/* what to offer first for such a stretch: that project's tasks, as for its Likely block (saying how much of the
+   stretch it had when not half), else the meeting's */
+function leadFor(a, b, hint = []) {
+  const {work, meet} = stretchWork(a, b, hint), t = work ? rowTasks(work.rows) : null;
+  if (t && (t.ids.length || t.learned.length || t.claude.length))
+    return {label: `For this work (${work.project}${work.half ? '' : `, ${dur(Math.round(work.minutes))} of ${dur(Math.round(b - a))}`})`,
+            ids: t.ids, idsWhy: 'linked in the Claude session', tasks: [...t.claude, ...t.learned]};
+  if (meet)
+    return {label: `For “${meet.title || 'the meeting'}”`, url: `/api/meeting-tasks?date=${state.date}&uid=${encodeURIComponent(meet.uid || '')}&title=${encodeURIComponent(meet.title || '')}`};
   return null;
+}
+
+/* the log dialog for such a stretch: leadFor's tasks first, and the note drafted as for a Likely block, from that
+   project's rows in it: Claude's pick's note, else your commits; then, with Claude Code on, Claude's note from the
+   sessions, saying which project when others worked in the stretch too */
+function logStretch(a, b) {
+  const hint = rulesInRange(a, b), {work} = stretchWork(a, b, hint), draft = work ? rowTasks(work.rows).draft : null;
+  openLog({start: a, minutes: b - a, hint, lead: leadFor(a, b, hint), note: draft?.note || '', drafted: draft});
+  if (!work || !logDlg.open || !CONFIG?.likely?.askClaude || (draft && draft.from !== 'commits')) return;
+  const also = work.others.slice(0, 2).join(', ') + (work.others.length > 2 ? ` and ${work.others.length - 2} more` : '');
+  draftFromSession({date: state.date, s: a, e: b, project: work.project,
+                    from: `the ${work.project} session${also ? ` (the most minutes here; also ${also})` : ''}`});
 }
 
 /* the active minutes inside [a, b): from the first active minute, as long as the activity was (not the slot) */
@@ -147,13 +181,15 @@ function activeSpan(a, b) {
   return first == null ? {start: a, minutes: b - a} : {start: Math.floor(first), minutes: Math.max(1, Math.round(total))};
 }
 
-/* Claude's answer for a Likely block (the Ask Claude button): the pick of its longest row that has one */
-function claudePick(b) {
+/* a Likely block's rows of its own project, longest first */
+function blockRows(b) { return [...(b?.entries || [])].filter(e => e.project === b.project).sort((p, q) => q.minutes - p.minutes); }
+/* Claude's answer (the Ask Claude button) for some Likely rows: the pick of the first row that has one */
+function rowsPick(rows) {
   const picks = state.claude?.date === state.date ? state.claude.picks : null;
-  if (!picks || !b) return null;
-  const rows = [...(b.entries || [])].filter(e => e.project === b.project).sort((p, q) => q.minutes - p.minutes);
-  return rows.map(e => picks[`${e.s}|${e.project}`]).find(p => p?.tasks?.length) || null;
+  return picks ? rows.map(e => picks[`${e.s}|${e.project}`]).find(p => p?.tasks?.length) || null : null;
 }
+/* for a Likely block: the pick of its longest row that has one */
+function claudePick(b) { return b ? rowsPick(blockRows(b)) : null; }
 
 /* a note from your commits in a block, as commits.note() makes it: the first three subjects, a shared "Area: " said
    once, stopping at 160 characters */
@@ -168,14 +204,14 @@ function commitNote(subjects) {
   return /^[a-z]+:?(\s|$)/.test(out) ? out.charAt(0).toUpperCase() + out.slice(1) : out;  // a word, not qa:full
 }
 
-/* for a Likely block, from its longest rows first: the Productive tasks linked in its sessions (ids), the tasks
-   learned from your logging in the same session or repository (with why), and Claude's pick with its drafted note,
-   else a note from your commits */
-function likelyTasks(b) {
-  const rows = [...(b?.entries || [])].filter(e => e.project === b.project).sort((p, q) => q.minutes - p.minutes);
+/* for some Likely rows of one project, the most telling first (a block's longest, a stretch's most minutes in it): the
+   Productive tasks linked in their sessions (ids), the tasks learned from your logging in the same session or
+   repository (with why), and Claude's pick with its drafted note, else a note from your commits */
+function likelyTasks(b) { return rowTasks(blockRows(b)); }
+function rowTasks(rows) {
   const seen = new Set(), learned = [];
   for (const t of rows.flatMap(e => e.learned || [])) if (!seen.has(t.taskId) && seen.add(t.taskId)) learned.push(t);
-  const pick = claudePick(b);
+  const pick = rowsPick(rows);
   const claude = (pick?.tasks || []).map((t, i) => ({...t, claude: true, why: i ? 'another option' : pick.why}));
   const made = commitNote([...rows].sort((p, q) => p.s - q.s).flatMap(e => e.commits || []));
   const draft = pick?.note && pick.tasks[0] ? {note: pick.note, taskId: pick.tasks[0].taskId, title: pick.tasks[0].title}
@@ -515,19 +551,19 @@ document.addEventListener('click', ev => {
     } else if (logBtn.dataset.act != null) {  // an Activity block: the active minutes in it
       const sp = activeSpan(a, b); a = sp.start; b = sp.start + sp.minutes;
     }
-    const linked = logBtn.dataset.likely != null ? likelyTasks(likelyCache[+logBtn.dataset.likely]) : {ids: [], learned: [], claude: [], draft: null};
     const meet = logBtn.dataset.meet != null ? meetCache[+logBtn.dataset.meet] : null;
     pop.classList.remove('on');
+    if (!meet && logBtn.dataset.likely == null) { logStretch(a, b); return; }  // a rail or an Activity block
+    const linked = logBtn.dataset.likely != null ? likelyTasks(likelyCache[+logBtn.dataset.likely]) : {ids: [], learned: [], claude: [], draft: null};
     openLog({start: a, minutes: b - a, hint: rulesInRange(a, b), note: meet?.title || linked.draft?.note || '',
              drafted: meet ? null : linked.draft,
              lead: meet ? {label: 'For this meeting', url: `/api/meeting-tasks?date=${state.date}&uid=${
                              encodeURIComponent(meet.uid || '')}&title=${encodeURIComponent(meet.title || '')}`}
                  : linked.ids.length || linked.learned.length || linked.claude.length
                    ? {label: 'For this work', ids: linked.ids, idsWhy: 'linked in the Claude session',
-                      tasks: [...linked.claude, ...linked.learned]}
-                   : logBtn.dataset.likely == null ? leadFor(a, b) : null});  // the rail or an Activity block
+                      tasks: [...linked.claude, ...linked.learned]} : null});
     // with Claude Code on, a note from the block's session and commits, unless Claude's pick already brought one
-    if (!meet && logBtn.dataset.likely != null && CONFIG?.likely?.askClaude && (!linked.draft || linked.draft.from === 'commits'))
+    if (!meet && logDlg.open && CONFIG?.likely?.askClaude && (!linked.draft || linked.draft.from === 'commits'))
       draftFromSession({date: state.date, s: a, e: b, project: likelyCache[+logBtn.dataset.likely].project});
     return;
   }
