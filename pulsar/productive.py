@@ -148,6 +148,8 @@ def https(method: str, url: str, body: Optional[bytes] = None, headers: Optional
     Reads reuse a kept-alive connection per host (a new TLS connection to Productive costs ~160 ms) and retry once
     on a fresh one if the server had dropped it, or had closed a fresh one without answering. A write always uses a
     new connection and is never retried: a second attempt could log the same time twice."""
+    if config.tests_offline():
+        raise ProductiveError("A test tried to reach the network; tests must fake it.")
     u = urllib.parse.urlsplit(url)
     if u.scheme != "https" or not u.hostname:
         raise ProductiveError("Refusing a non-HTTPS address.")
@@ -376,7 +378,7 @@ def claude_code_token() -> Tuple[Optional[str], Optional[str], bool]:
 def _claude_code_token() -> tuple:
     """(token, problem, connected, expired, server name): connected says Claude Code has a Productive connection at
     all, so its problem (an expired token) is worth showing even when Pulsar was not asked to use it."""
-    if sys.platform != "darwin":
+    if sys.platform != "darwin" or config.tests_offline():
         return None, "Claude Code's Productive connection is read from the macOS keychain; use a token instead.", False, False, ""
     try:
         run = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
@@ -410,6 +412,8 @@ _renewed_at = [0.0]
 def _claude_binary() -> Optional[str]:
     """The claude command: on the PATH, where its installers put it, or the one inside the VS Code or Cursor
     extension. The app starts Pulsar with a bare PATH, so the usual places are looked at too."""
+    if config.tests_offline():  # tests never start Claude Code
+        return None
     import glob
     import shutil
     home = os.path.expanduser("~")

@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, urlsplit
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Never the real settings, caches or log: point them at a scratch folder before importing.
 _SCRATCH = tempfile.mkdtemp(prefix="pulsar-tests-")
+os.environ["PULSAR_TESTS_OFFLINE"] = "1"  # nothing reaches Productive, Google, Claude Code or the keychain
 os.environ["XDG_CONFIG_HOME"] = os.path.join(_SCRATCH, "config")
 os.environ["XDG_CACHE_HOME"] = os.path.join(_SCRATCH, "cache")
 
