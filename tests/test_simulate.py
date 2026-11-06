@@ -524,7 +524,8 @@ class Run:
                     d.picks[key] = {"tasks": [{"taskId": tid, "title": TASKS[tid][0], "project": TASKS[tid][1]}],
                                     "why": "the messages say so", "note": d.rng.choice(SAFE_NOTES + [""])}
         day = {"items": items, "away": away, "rows": rows, "logged": logged, "meetings": meetings, "repeats": repeats,
-               "calls": calls, "rules": d.rules, "assigned": self.assigned(), "picks": d.picks}
+               "calls": calls, "rules": d.rules, "assigned": self.assigned(), "picks": d.picks,
+               "gone": server.missing_hour(d.t0, d.t1, d.tz)}
         if d.malformed:
             day = self.spoil(day)
         t0_of = lambda x: server.day_bounds(x, d.tz)[0]  # noqa: E731

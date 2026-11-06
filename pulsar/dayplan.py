@@ -343,7 +343,8 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
           Productive [{s (None without a start), e (its end on the clock), minutes, taskId}], "meetings": calendar events [{s, e, title, uid,
           declined, all_day, tasks: [{taskId, title, project, n, of}]}], "repeats": repeats seen today [{s, e, minutes,
           taskId, title, project, serviceId, service, note, days}], "calls": call windows [{s, e}], "rules",
-          "assigned": [{taskId, title, project}], "picks": Ask Claude's answer {"<s>|<project>": {tasks, why, note}}}
+          "assigned": [{taskId, title, project}], "picks": Ask Claude's answer {"<s>|<project>": {tasks, why, note}},
+          "gone": the clock's minutes that do not exist that day (server.missing_hour), never placed}
     ctx: learn(...).
     Returns {"entries", "unplaced", "skipped", "uncovered", "totals"}; each entry
     {s, e, minutes, taskId, title, project, serviceId, service, note, noteFrom, confidence, why, source, kind,
@@ -365,7 +366,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
         for x in range(max(0, int(it["s"])), min(N, int(math.ceil(it["e"])))):
             work[x] = 1
             logging_[x] = logging_[x] or lg
-    for w in day.get("away") or []:
+    for w in (day.get("away") or []) + (day.get("gone") or []):  # gone: the clock's missing spring hour
         for x in range(max(0, int(math.ceil(w["s"]))), min(N, int(w["e"]))):
             away[x] = 1
     sitting: list = [None] * N
@@ -381,6 +382,9 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
                 p = x
 
     owner: list = [None] * N
+    for w in day.get("gone") or []:  # the clock's missing spring hour: no entry can start or run there
+        for x in range(max(0, int(math.ceil(w["s"]))), min(N, int(w["e"]))):
+            owner[x] = BLOCKED
     claims: list = []
     names: dict = {}  # taskId -> (title, project): what each source knows of a task
 
@@ -548,7 +552,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
     # work outside Claude (a browser, Slack): stretches of unclaimed active minutes
     runs, cur = [], None
     for x in range(N):
-        if work[x] and owner[x] is None:
+        if work[x] and owner[x] is None and not away[x]:  # never time away (or the clock's missing spring hour)
             if cur and x - cur[1] <= 2:
                 cur[1], cur[2] = x, cur[2] + 1
             else:
@@ -562,7 +566,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
         if n >= o["out_min"]:
             claim({"kind": "outside", "task": None, "source": "neighbour", "conf": "low", "titles": [],
                    "why": "work outside Claude (a browser, Slack, an editor with no session): the task of the work next to it"},
-                  [x for x in range(a, b + 1) if work[x]])
+                  [x for x in range(a, b + 1) if work[x] and not away[x]])
         else:
             short.append((a, b))
     for a, b in short:  # a short one joins the entry beside it
@@ -898,7 +902,8 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False) -> dict
     answer = askclaude.latest(date)
     day = {"items": act.get("items") or [], "away": act.get("away") or [], "rows": likely_rows, "logged": logged,
            "meetings": meetings, "repeats": got["repeats"].get("repeats") or [], "calls": calls,
-           "rules": s.get("rules") or [], "assigned": got["assigned"], "picks": (answer or {}).get("picks") or {}}
+           "rules": s.get("rules") or [], "assigned": got["assigned"], "picks": (answer or {}).get("picks") or {},
+           "gone": server.missing_hour(t0, t1, tz)}
     result = plan(day, ctx)
 
     # the service of each task, checked against what takes time on that date

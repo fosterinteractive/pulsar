@@ -74,6 +74,17 @@ def clock_change(t0: float, t1: float, tz):
     return hi
 
 
+def missing_hour(t0: float, t1: float, tz) -> list:
+    """The minutes of the clock that do not exist on the day the clocks go forward ([{s, e}], e.g. 03:00-04:00 in
+    Kyiv), else []: nothing may start in them, so Log the day treats them as time away."""
+    change = clock_change(t0, t1, tz)
+    if change is None:
+        return []
+    jump = int(round((datetime.fromtimestamp(t0 + change * 60, tz).utcoffset()
+                      - datetime.fromtimestamp(t0 + (change - 1) * 60, tz).utcoffset()).total_seconds() / 60))
+    return [{"s": change, "e": change + jump}] if jump > 0 else []
+
+
 def clock_spans(spans: list, t0: float, t1: float, tz, places: int = 3) -> list:
     """Spans in elapsed minutes ({s, e, ...}) placed by the wall clock, on a day the clocks change. A span across the
     change is cut there and each piece keeps its real length: a stretch over the repeated autumn hour no longer reads

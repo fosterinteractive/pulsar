@@ -2820,3 +2820,19 @@ class ReadOnlyKeychainTest(unittest.TestCase):
                 server.api_settings({"remove_token": True})
             with self.assertRaisesRegex(ValueError, "read-only"):
                 calendar.disconnect(config.load())
+
+
+class MissingHourTest(unittest.TestCase):
+    def test_the_spring_hour_is_missing_and_never_planned(self):
+        from zoneinfo import ZoneInfo
+        from pulsar import dayplan
+        tz = ZoneInfo("Europe/Kyiv")
+        t0, t1 = server.day_bounds("2026-03-29", tz)
+        self.assertEqual(server.missing_hour(t0, t1, tz), [{"s": 180, "e": 240}])
+        self.assertEqual(server.missing_hour(*server.day_bounds("2026-10-25", tz), tz), [])  # autumn: nothing missing
+        self.assertEqual(server.missing_hour(*server.day_bounds("2026-05-05", tz), tz), [])
+        work = {"s": 160, "e": 260, "app": "Cursor", "title": "x", "host": "", "url": "", "cat": "work"}
+        row = {"s": 160, "e": 260, "minutes": 100, "project": "repo", "kind": "focused", "titles": ["Fix it"],
+               "first_message": "", "tasks": []}
+        got = dayplan.plan({"items": [work], "rows": [row], "gone": [{"s": 180, "e": 240}]}, dayplan.learn("2026-03-29", [], {}, lambda d: 0))
+        self.assertFalse(any(e["s"] < 240 and e["e"] > 180 for e in got["entries"]), got["entries"])
