@@ -59,6 +59,13 @@ def self_test(web: str = WEB) -> int:
                 if resp.status != 200 or not resp.read():
                     raise ValueError(f"{name} came back empty")
     except Exception as exc:
+        import socket
+        import urllib.error
+        late = (socket.timeout, TimeoutError)
+        if isinstance(exc, late) or (isinstance(exc, urllib.error.URLError) and isinstance(exc.reason, late)):
+            # a busy or sleeping Mac, not a broken copy: the updater marks nothing for it (an HTTP error still fails)
+            print(f"Pulsar self-test: the server did not answer in time: {exc}", file=sys.stderr)
+            return updater.UNFINISHED
         print(f"Pulsar self-test: the server did not serve the page: {exc}", file=sys.stderr)
         return 1
     finally:

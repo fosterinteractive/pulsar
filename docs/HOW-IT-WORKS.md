@@ -662,7 +662,8 @@ sequenceDiagram
 - **Downloads** come only from `github.com/fosterinteractive/pulsar/releases/download/` (the repository must stay
   public). The zip must match the signed SHA-256, have one top folder, and no path may leave it.
 - **A version that fails** its self-test twice in a row is marked bad and never tried again; the running copy stays.
-  A self-test that could not finish (a timeout on a busy or sleeping Mac) marks nothing: the next Update tries again.
+  A self-test that could not finish (a timeout on a busy or sleeping Mac, its own or one of its requests to the
+  page, exit status 75) marks nothing: the next Update tries again.
 - **The restart** keeps the same arguments and port. The page polls `/api/version`, notices the new version, reloads,
   and lets the warp go once the new data is in.
 - **The window shell** (Pulsar.app itself) does not update this way: a new shell needs a new Pulsar.zip.
