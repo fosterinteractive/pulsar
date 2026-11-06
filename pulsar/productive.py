@@ -143,8 +143,9 @@ _pool_lock = threading.Lock()
 
 
 def https(method: str, url: str, body: Optional[bytes] = None, headers: Optional[dict] = None,
-          timeout: float = 60, write: bool = False) -> Tuple[int, bytes]:
+          timeout: float = 60, write: bool = False, head: Optional[dict] = None) -> Tuple[int, bytes]:
     """One HTTPS request. Redirects are never followed, so a token only ever goes to the address it was meant for.
+    `head`, if given, gets the answer's headers (names in lower case).
     Reads reuse a kept-alive connection per host (a new TLS connection to Productive costs ~160 ms) and retry once
     on a fresh one if the server had dropped it, or had closed a fresh one without answering. A write always uses a
     new connection and is never retried: a second attempt could log the same time twice."""
@@ -183,6 +184,8 @@ def https(method: str, url: str, body: Optional[bytes] = None, headers: Optional
                     for old in _pool.pop(u.hostname, []):
                         old.close()
             continue
+        if head is not None:
+            head.update({k.lower(): v for k, v in resp.getheaders()})
         if write or resp.will_close:
             conn.close()
         else:
@@ -277,12 +280,13 @@ def rest_entries(d0: str, d1: str, token: str, org: str, person: str, names: Nam
     # as inclusive or not.
     base = {"filter[person_id]": person, "filter[after]": day_shift(d0, -1), "filter[before]": day_shift(d1, 1),
             "page[size]": 200}
-    rows, inc, include = [], {}, "task,task.project,service,service.deal"
-    page = 1
+    # the person too, so a change can check the entry is yours; a role that may not include something gets less
+    includes = ["task,task.project,service,service.deal,person", "task,service,person", "task,service"]
+    rows, inc, page = [], {}, 1
     while True:
-        status, doc = get("/time_entries", {**base, "include": include, "page[number]": page}, token, org)
-        if status in (400, 403) and include != "task,service":  # a nested include the role may not see
-            include, page, rows, inc = "task,service", 1, [], {}
+        status, doc = get("/time_entries", {**base, "include": includes[0], "page[number]": page}, token, org)
+        if status in (400, 403) and len(includes) > 1:  # a nested include the role may not see
+            includes, page, rows, inc = includes[1:], 1, [], {}
             continue
         if status in (401, 403):
             raise ProductiveError("Productive refused the token (HTTP %d). Check it in Settings." % status)
@@ -310,6 +314,7 @@ def rest_entries(d0: str, d1: str, token: str, org: str, person: str, names: Nam
             learned[f"services:{service_id}"] = budget
         out.append({"id": str(d.get("id")), "date": date, "start": epoch(_attr(d, "started_at")),
                     "minutes": int(_attr(d, "time") or 0), "note": strip_html(_attr(d, "note") or ""),
+                    "noteRich": rich_note(_attr(d, "note") or ""), "personId": _rel(d, "person") or "",
                     "approved": bool(_attr(d, "approved_at")) or _attr(d, "approved") is True,
                     "task": _attr(task, "title") or "", "service": _attr(service, "name") or "",
                     "project": project or "", "budget": budget or "",
@@ -350,6 +355,13 @@ def _fill_rest_names(rows: list, token: str, org: str, names: Names, get: Get) -
 def strip_html(text: str) -> str:
     import html
     return html.unescape(re.sub(r"<[^>]+>", "", text)).replace("\xa0", " ").strip()
+
+
+def rich_note(text: str) -> bool:
+    """A note with formatting the plain text above leaves out: more than one paragraph, or any tag but <p>
+    (a list, a link, a line break, bold). Changing such a note in Pulsar saves it as plain text, so the page says so."""
+    tags = [t.lower() for t in re.findall(r"<\s*/?\s*([a-zA-Z][a-zA-Z0-9]*)", text or "")]
+    return any(t != "p" for t in tags) or tags.count("p") > 2
 
 
 # ---- Claude Code's Productive MCP connection --------------------------------------------------
@@ -464,13 +476,20 @@ def _gated(bulk: bool, fn):
     return run
 
 
-def mcp_text(tool: str, args: dict, token: str) -> str:
+def _mcp_headers(token: str, session: Optional[str]) -> dict:
+    head = {"Authorization": "Bearer " + token, "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream"}
+    if session:
+        head["Mcp-Session-Id"] = session
+    return head
+
+
+def mcp_text(tool: str, args: dict, token: str, session: Optional[str] = None) -> str:
+    """One tool call. `session`: the MCP session of a change (mcp_session), else none, as every read is."""
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                        "params": {"name": tool, "arguments": args}}).encode()
     with _mcp_slots:
-        status, raw = https("POST", MCP_URL, body, {"Authorization": "Bearer " + token, "Content-Type": "application/json",
-                                                    "Accept": "application/json, text/event-stream"},
-                            timeout=60, write=tool in WRITE_TOOLS)
+        status, raw = https("POST", MCP_URL, body, _mcp_headers(token, session), timeout=60, write=tool in WRITE_TOOLS)
     if status == 401:
         _cc_cache[0] = 0.0  # read the keychain again next time: Claude Code may have renewed it meanwhile
         raise TokenRefused("Productive refused Claude Code's token (HTTP 401): it has expired or was revoked. Pulsar "
@@ -492,6 +511,31 @@ def mcp_text(tool: str, args: dict, token: str) -> str:
     if msg.get("result", {}).get("isError"):  # the tool ran and failed: its text is the reason, never a result
         raise ProductiveError("Productive refused: " + content[:300])
     return content
+
+
+def mcp_session(token: str) -> Optional[str]:
+    """An MCP session for one change. Productive's MCP refuses to update a field the session has not loaded first
+    ("Update of time entry aborted to avoid overwriting data you have not seen. not loaded before update: note"), and
+    it keeps what a session loaded in that session; Pulsar's reads use none. None when the server gives no session:
+    the change is then tried without one, and only Productive's success sentence counts as done."""
+    from . import __version__
+    body = json.dumps({"jsonrpc": "2.0", "id": 0, "method": "initialize", "params": {
+        "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "Pulsar", "version": __version__}}})
+    head: dict = {}
+    with _mcp_slots:
+        status, _ = https("POST", MCP_URL, body.encode(), _mcp_headers(token, None), timeout=30, head=head)
+    if status == 401:
+        _cc_cache[0] = 0.0
+        raise TokenRefused("Productive refused Claude Code's token (HTTP 401): it has expired or was revoked. Pulsar "
+                           "reads the renewed one on the next try; if this stays, run /mcp in Claude Code and reconnect "
+                           "Productive.")
+    session = head.get("mcp-session-id") or ""
+    if status != 200 or not re.fullmatch(r"[\x21-\x7e]{1,200}", session):
+        return None
+    with _mcp_slots:  # the protocol's "ready" note; it has no answer to read
+        https("POST", MCP_URL, json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}).encode(),
+              _mcp_headers(token, session), timeout=30)
+    return session
 
 
 def parse_mcp(content: str) -> dict:
@@ -543,7 +587,7 @@ def _mcp_rows(conditions: list, person: str, token: str) -> Tuple[list, dict]:
     query_id continuation can land on a server that never saw it ("Query state not found")."""
     base = {"resource_type": "time_entries", "limit": 200,
             "filters": {"op": "and", "conditions": [{"field": "person_id", "operator": "eq", "value": person}, *conditions]},
-            "include_fields": ["date", "started_at", "time", "note", "is_approved", "task.title", "service.name"]}
+            "include_fields": ["date", "started_at", "time", "note", "is_approved", "person", "task.title", "service.name"]}
     rows, included, offset = [], {}, 0
     while True:
         d = parse_mcp(mcp_text("query_resources", {**base, "offset": offset}, token))
@@ -572,6 +616,8 @@ def minutes_of(s) -> float:
 
 def mcp_entries(d0: str, d1: str, token: str, person: str, names: Names, bulk: bool = False) -> list:
     """bulk: a long read in the background (weeks of history), which leaves room for the day's own reads."""
+    if not str(person or "").isdigit():  # a filter on "" could match anyone's entries
+        raise ProductiveError("Productive did not say who you are, so no entries were read: open Settings.")
     first, last = datetime.strptime(d0, "%Y-%m-%d"), datetime.strptime(d1, "%Y-%m-%d")
     dates = [(first + timedelta(days=i)).strftime("%Y-%m-%d") for i in range((last - first).days + 1)]
     # three days per query, four at a time: each answer fits one page, and a month takes seconds
@@ -616,6 +662,7 @@ def mcp_entries(d0: str, d1: str, token: str, person: str, names: Names, bulk: b
         billing = names.get("billing:" + (r.get("service") or ""))
         out.append({"id": str(r["id"]), "date": r.get("date"), "start": epoch(r.get("started_at")),
                     "minutes": round(minutes_of(r.get("time"))), "note": strip_html(r.get("note") or ""),
+                    "noteRich": rich_note(r.get("note") or ""), "personId": (r.get("person") or ":").split(":")[1],
                     "approved": bool(r.get("is_approved")), "task": task.get("title") or "",
                     "service": service.get("name") or "",
                     "project": names.get(r.get("task") or "") or "(no project)",
@@ -942,25 +989,40 @@ def _rest_headers(conn: dict, settings: dict) -> dict:
 
 UNCLEAR = ("No clear answer from Productive ({}), so the change may or may not have happened. The Logged column has "
            "been refreshed: check it before trying again.")
+UNCLEAR_SAID = ("Productive's answer was unclear, so the change may or may not have happened. The Logged column has been "
+                "refreshed: check it before trying again. Productive said: {}")
+
+
+def _said(pattern: str, text: str, entry_id: str) -> bool:
+    """Productive's own success sentence for this entry, and nothing else: its MCP answers a refusal ("Update of time
+    entry aborted …", "Invalid parameters", "Failed to update time entry … 422") as plain text, not as an error."""
+    return any(i == str(entry_id) for i in re.findall(pattern, text, re.I))
+
+
+def _rest_write(method: str, entry_id: str, body: Optional[dict], conn: dict, settings: dict, ok: tuple, what: str) -> None:
+    try:
+        status, raw = https(method, f"{API}/time_entries/{int(entry_id)}",
+                            None if body is None else json.dumps(body).encode("utf-8"), _rest_headers(conn, settings),
+                            timeout=30, write=True)
+    except (OSError, http.client.HTTPException) as exc:
+        raise ProductiveUnclear(UNCLEAR.format(exc))
+    if status >= 500:  # a server error after the change was sent: it may have happened
+        raise ProductiveUnclear(UNCLEAR.format(f"HTTP {status}"))
+    if status not in ok:
+        raise ProductiveError(f"Productive refused {what} ({why(status, None)}): {raw[:300].decode('utf-8', 'replace')}")
 
 
 def update_entry(entry_id: str, change: dict, settings: dict) -> None:
-    """Changes one of your time entries: start, minutes, note, task, service (only what `change` names). Called only
-    from an explicit click in the page; the caller has checked the entry is yours and not approved."""
+    """Changes one of your time entries: start, minutes, note, task, service (only what `change` names, so nothing
+    else is written back). Called only from an explicit click in the page; the caller has checked the entry is yours,
+    as you saw it."""
     conn = _write_conn(settings)
     if conn["kind"] == "token":
         attrs = {k: v for k, v in (("time", change.get("minutes")), ("started_at", change.get("started_at")),
                                    ("note", change.get("note"))) if v is not None}
         rels = {k: {"data": {"type": k + "s", "id": str(change[k + "_id"])}} for k in ("task", "service") if change.get(k + "_id")}
         body = {"data": {"type": "time_entries", "id": str(entry_id), "attributes": attrs, "relationships": rels}}
-        try:
-            status, raw = https("PATCH", f"{API}/time_entries/{int(entry_id)}", json.dumps(body).encode("utf-8"),
-                                _rest_headers(conn, settings), timeout=30, write=True)
-        except (OSError, http.client.HTTPException) as exc:
-            raise ProductiveUnclear(UNCLEAR.format(exc))
-        if status != 200:
-            raise ProductiveError(f"Productive refused the change (HTTP {status}): {raw[:300].decode('utf-8', 'replace')}")
-        return
+        return _rest_write("PATCH", entry_id, body, conn, settings, (200,), "the change")
     item = {"id": str(entry_id)}
     if change.get("minutes") is not None:
         item["time"] = f"{int(change['minutes'])} min"
@@ -970,32 +1032,45 @@ def update_entry(entry_id: str, change: dict, settings: dict) -> None:
     for k in ("task", "service"):
         if change.get(k + "_id"):
             item[k] = str(change[k + "_id"])
+    # Productive updates only the fields this session has loaded: load them (and whose entry it is) first, in one session
+    token = conn["token"]
     try:
-        mcp_text("update_resource", {"resource_type": "time_entries", "items": [item]}, conn["token"])
+        session = mcp_session(token)
+        loaded = parse_mcp(mcp_text("load_resource", {"resource_type": "time_entries", "id": str(entry_id),
+                                                      "include_fields": [k for k in item if k != "id"] + ["person"]},
+                                    token, session)).get("item") or {}
+    except ProductiveError:
+        raise
+    except (OSError, http.client.HTTPException, ValueError) as exc:
+        raise ProductiveError(f"Productive could not be asked for the entry before changing it ({network_reason(exc)}), "
+                              "so nothing was changed.")
+    person = ((loaded.get("fields") or {}).get("person") or {})
+    if str(loaded.get("id")) != str(entry_id) or not isinstance(person, dict) or str(person.get("id")) != str(settings.get("person_id")):
+        raise ProductiveError("Productive did not show that entry as yours, so nothing was changed.")
+    try:
+        text = mcp_text("update_resource", {"resource_type": "time_entries", "items": [item]}, token, session)
     except ProductiveError:
         raise
     except (OSError, http.client.HTTPException, ValueError) as exc:
         raise ProductiveUnclear(UNCLEAR.format(exc))
+    if not (_said(r"time entry updated \(IDs?:\s*(\d+)\)", text, entry_id)
+            or _said(r"updated 1 time entr(?:y|ies) \(IDs?:\s*(\d+)\)", text, entry_id)):
+        raise ProductiveUnclear(UNCLEAR_SAID.format(text[:300] or "nothing"))
 
 
 def delete_entry(entry_id: str, settings: dict) -> None:
     """Deletes one of your time entries (Productive keeps it in its Recycle Bin). Only from an explicit click."""
     conn = _write_conn(settings)
     if conn["kind"] == "token":
-        try:
-            status, raw = https("DELETE", f"{API}/time_entries/{int(entry_id)}", None, _rest_headers(conn, settings),
-                                timeout=30, write=True)
-        except (OSError, http.client.HTTPException) as exc:
-            raise ProductiveUnclear(UNCLEAR.format(exc))
-        if status not in (200, 204):
-            raise ProductiveError(f"Productive refused to delete it (HTTP {status}): {raw[:300].decode('utf-8', 'replace')}")
-        return
+        return _rest_write("DELETE", entry_id, None, conn, settings, (200, 204), "to delete it")
     try:
-        mcp_text("delete_resource", {"resource_type": "time_entries", "items": [{"id": str(entry_id)}]}, conn["token"])
+        text = mcp_text("delete_resource", {"resource_type": "time_entries", "items": [{"id": str(entry_id)}]}, conn["token"])
     except ProductiveError:
         raise
     except (OSError, http.client.HTTPException, ValueError) as exc:
         raise ProductiveUnclear(UNCLEAR.format(exc))
+    if not _said(r"time entry deleted \(IDs?:\s*(\d+)\)", text, entry_id):
+        raise ProductiveUnclear(UNCLEAR_SAID.format(text[:300] or "nothing"))
 
 
 def create_entry(entry: dict, settings: dict) -> dict:
