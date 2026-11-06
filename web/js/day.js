@@ -339,22 +339,23 @@ function render() {
   }
 
   renderAside(gapMin);
+  renderFlow();  // flow.js: the first-run checklist and the week in the header
 
-  // first view of a day: scroll to the first thing that happened
-  // first view of a day: today opens at the current hour, another day at the first thing that happened
+  // first view of a day: today opens with now in the lower third, another day where its work begins
   if (state.scrolledFor !== state.date && act && logged) {
     if (state.date === todayLocal()) scrollToNow(false);
     else {
-      const firsts = [...(act.items || []).map(x => x.s), ...(logged.entries || []).filter(x => x.s != null).map(x => x.s)];
-      if (firsts.length) $('#scroll').scrollTop = Math.max(0, Math.min(...firsts) - 30) * ppm;
+      const first = firstWorkRun();  // flow.js
+      if (first != null) $('#scroll').scrollTop = Math.max(0, first - 30) * ppm;
     }
     state.scrolledFor = state.date;
   }
 }
 
-/* the current hour near the top, with the hour before it above for context */
+/* now in the lower third, the hours before it in view */
 function scrollToNow(smooth = true) {
-  $('#scroll').scrollTo({top: Math.max(0, (nowMin() - 60) * ppmOf(state.zoom)), behavior: smooth ? 'smooth' : 'auto'});
+  const sc = $('#scroll');
+  sc.scrollTo({top: Math.max(0, nowMin() * ppmOf(state.zoom) - sc.clientHeight * 0.7), behavior: smooth ? 'smooth' : 'auto'});
 }
 
 function renderAside(gapMin) {
@@ -427,7 +428,7 @@ function renderAside(gapMin) {
     const unplaced = (likely.unplaced || []).reduce((s, u) => s + u.minutes, 0);
     $('#likelybox').innerHTML = `<h2>Likely, from Claude sessions</h2>` +
       [...byProject].sort((a, b) => b[1] - a[1]).map(([p, m]) => `<div class="kv"><span>${esc(p)}</span><span class="num">${dur(m)}</span></div>`).join('') +
-      (unplaced ? `<div class="note">Parallel time that did not fit: ${dur(unplaced)}.</div>` : '') +
+      (unplaced ? `<div class="note">Not in the column: ${dur(unplaced)} of sessions that ran at the same time as other work.</div>` : '') +
       (likely.logging ? `<div class="note">Time logging: ${dur(likely.logging)}, never logged.</div>` : '') +
       (likely.learning ? `<div class="note">Learning your tasks from past days: ${likely.learning.done} of ${likely.learning.of}.</div>` : '') +
       `<div class="note">Tracker: ${esc(likely.tracker || 'none')}.</div>`;
@@ -506,14 +507,15 @@ document.addEventListener('click', ev => {
     openPop(`<div class="ph"><div><h3>${hm(b.start * Z)}–${hm(b.end * Z)}</h3><div class="sub">${dur(b.total)} from Claude sessions</div></div>
       <button class="btn bordered sm" data-log-a="${b.start * Z}" data-log-b="${b.end * Z}" data-likely="${i}">Log this time</button></div>` +
       b.entries.map(x => `<div class="li"><div class="t"><div><b>${esc(x.project)}</b> · ${esc(x.titles.join(', ') || '(untitled)')}</div>
-        <small>${hm(x.s)}–${hm(x.e)} · ${x.kind === 'parallel' ? 'parallel, moved down' : 'focused'} · ${esc(x.messages)} messages${x.first_message ? ' · ' + esc(x.first_message) : ''}</small></div>
+        <small>${hm(x.s)}–${hm(x.e)}${x.kind === 'parallel' ? ' · at the same time as other work, so shown after it' : ''} · ${esc(x.messages)} messages${x.first_message ? ' · ' + esc(x.first_message) : ''}</small></div>
         <span class="num">${dur(x.minutes)}</span></div>`).join(''), ev);
   } else {
     const x = loggedCache[i];
     openPop(`<h3>${esc(x.project)}</h3><div class="sub">${hm(x.s)}–${hm(x.e)} · ${dur(x.minutes)}${x.approved ? ' · approved' : ''}</div>
       <p>${esc(x.note)}</p>
-      <dl><dt>Task</dt><dd>${esc(x.task)}</dd><dt>Budget</dt><dd>${esc(x.budget)}</dd><dt>Service</dt><dd>${esc(x.service)}</dd><dt>Billable</dt><dd>${x.billable == null ? 'Unknown' : x.billable ? 'Yes' : 'No'}${x.billing ? ' · ' + esc(x.billing) : ''}</dd><dt>Entry</dt><dd class="num">${esc(x.id)}</dd></dl>
-      <div class="btnrow"><button class="btn bordered sm" data-edit="${i}">Edit</button><button class="btn bordered sm" data-del="${i}">Delete</button></div>
+      <dl><dt>Task</dt><dd>${esc(x.task)}</dd><dt>Budget</dt><dd>${esc(x.budget)}</dd><dt>Service</dt><dd>${esc(x.service)}</dd><dt>Billable</dt><dd>${x.billable == null ? 'Unknown' : x.billable ? 'Yes' : 'No'}${x.billing ? ' · ' + esc(x.billing) : ''}</dd></dl>
+      <div class="btnrow"><button class="btn bordered sm" data-edit="${i}">Edit</button><button class="btn bordered sm" data-del="${i}">Delete</button>${
+        productiveTaskURL(x.taskId) ? `<a class="btn bordered sm" href="${esc(productiveTaskURL(x.taskId))}" target="_blank" rel="noopener noreferrer">Open in Productive</a>` : ''}</div>
       ${x.approved ? '<p class="sub">Approved. Where your budget has an approver, Productive may refuse a change and say why.</p>' : ''}`, ev);
   }
 });

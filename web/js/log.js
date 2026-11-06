@@ -122,16 +122,19 @@ function makePicker(listEl, searchEl, onPick) {
 const logDlg = $('#logdlg'), logForm = $('#log-form');
 let logForce = false;
 const setLogMsg = (text, warn = false) => { const m = $('#log-msg'); m.textContent = text; m.className = 'msg' + (warn ? ' warn' : ''); };
-const logPicker = makePicker($('#log-tasks'), logForm.elements.q, t => { resetForce(); loadServices(t); showDraft(); });
+const logPicker = makePicker($('#log-tasks'), logForm.elements.q, t => { resetForce(); loadServices(t); showDraft(); showTaskLink(t); });
 /* a note Claude drafted (Ask Claude, then Log on a Likely block): {note, taskId, title} until the person edits it */
 let logDrafted = null;
+/* a note Pulsar filled in (a meeting's title, a repeat's usual note): it says so until the person edits it */
+let logFilled = false;
 function showDraft() {
   const d = logDrafted, sel = logPicker.selected;
-  $('#log-note-hint').innerHTML = !d ? '' : CLAUDE_MARK.split('<span')[0] + esc(
+  $('#log-note-hint').innerHTML = !d ? (logFilled ? esc('Filled in for you: clients may see notes on invoices; check it.') : '')
+    : CLAUDE_MARK.split('<span')[0] + esc(
     !sel || sel.taskId === d.taskId ? 'Drafted by Claude: check it before logging; clients may see notes.'
       : `Drafted by Claude for “${d.title}”: check it before logging; clients may see notes.`);
 }
-logForm.elements.note.addEventListener('input', () => { if (logDrafted) { logDrafted = null; showDraft(); } });
+logForm.elements.note.addEventListener('input', () => { if (logDrafted || logFilled) { logDrafted = null; logFilled = false; showDraft(); } });
 /* after "Log anyway", any change to what would be logged means a new check for overlaps */
 function resetForce() {
   if (!logForce) return;
@@ -162,9 +165,11 @@ async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = 
   minutes = Math.max(1, Math.min(1440 - start, Math.round(minutes)));
   f.date.value = date; f.start.value = hm(start); f.minutes.value = minutes; f.note.value = note || '';
   logDrafted = drafted?.note && drafted.note === note ? drafted : null;
+  logFilled = !edit && !logDrafted && !!f.note.value.trim();
   f.service.innerHTML = '<option value="">Pick a task first</option>'; f.service.disabled = true;
   logForce = false; setLogMsg(''); $('#log-save').textContent = edit ? 'Save changes' : 'Log in Productive';
   noStartHint(date);
+  prepareNext(date, edit); showTaskLink(null);  // flow.js
   logDlg.showModal();
   logPicker.loading();
   showDraft();
@@ -229,16 +234,18 @@ async function loadServices(task) {
 
 logForm.addEventListener('submit', async ev => {
   ev.preventDefault();
-  const f = logForm.elements, task = logPicker.selected;
+  const f = logForm.elements, task = logPicker.selected, andNext = ev.submitter?.id === 'log-next';
   if (!task) return setLogMsg('Pick a task.', true);
   if (!f.service.value) return setLogMsg('Pick a service.', true);
-  const btn = $('#log-save'); btn.disabled = true; setLogMsg(logEdit ? 'Checking the day, then saving…' : 'Checking the day, then logging…');
+  if (!startHHMM(f.start.value)) { f.start.setAttribute('aria-invalid', 'true'); f.start.focus(); return setLogMsg('Write the start as HH:MM, 24-hour: 09:30 or 14:05.', true); }
+  f.start.value = startHHMM(f.start.value);
+  const btn = $('#log-save'); btn.disabled = $('#log-next').disabled = true; setLogMsg(logEdit ? 'Checking the day, then saving…' : 'Checking the day, then logging…');
   const r = logEdit
     ? await postJSON('/api/entry/update', {id: logEdit.id, date: f.date.value, start: f.start.value, minutes: +f.minutes.value,
                                            taskId: task.taskId, serviceId: f.service.value, note: f.note.value.trim(), force: logForce})
     : await postJSON('/api/log', {date: f.date.value, start: f.start.value, minutes: +f.minutes.value, taskId: task.taskId,
                                   serviceId: f.service.value, note: f.note.value.trim(), force: logForce});
-  btn.disabled = false;
+  btn.disabled = $('#log-next').disabled = false;
   if (r.error) {  // the next try checks overlaps again: the failed write may have landed
     logForce = false; btn.textContent = logEdit ? 'Save changes' : 'Log in Productive';
     if (f.date.value === state.date) refreshLogged();
@@ -249,12 +256,16 @@ logForm.addEventListener('submit', async ev => {
     return setLogMsg('This overlaps ' + r.overlap.map(o => `${o.start} ${dur(o.minutes)} ${o.project}`).join('; ') + '.', true);
   }
   logDlg.close(); suggestCache = null;
-  toast(logEdit ? `Changed: ${f.start.value}, ${dur(+f.minutes.value)}, ${task.title}.` : `Logged ${dur(+f.minutes.value)} to ${task.title}.`);
+  const said = logEdit ? `Changed: ${f.start.value}, ${dur(+f.minutes.value)}, ${task.title}.` : `Logged ${dur(+f.minutes.value)} to ${task.title}.`;
   if (f.date.value === state.date) refreshLogged();
+  if (!logEdit && afterLog(f.date.value, f.start.value, +f.minutes.value, said, andNext)) return;  // flow.js: Log and next
+  toast(said);
 });
 logDlg.querySelectorAll('[data-close]').forEach(b => b.onclick = () => logDlg.close());
 logDlg.addEventListener('keydown', ev => {  // Cmd+Enter (Ctrl+Enter elsewhere) logs from anywhere in the dialog
-  if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); logForm.requestSubmit(); }
+  if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) {  // with Shift: Log and next
+    ev.preventDefault(); logForm.requestSubmit(ev.shiftKey && !$('#log-next').hidden ? $('#log-next') : null);
+  }
 });
 $('#log-new').onclick = () => {
   const gap = document.querySelector('#lane-logged .gaprail');  // the first active stretch with no entry

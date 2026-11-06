@@ -215,7 +215,7 @@ function dailyChart(days) {
   s += `<line x1="${ml}" x2="${W - mr}" y1="${y(TARGET)}" y2="${y(TARGET)}" stroke="var(--muted)" stroke-opacity=".6" shape-rendering="crispEdges"/>`
     + `<text class="tick" x="${W - mr + 6}" y="${y(TARGET) + 4}">${dur(TARGET)}</text>`;
   days.forEach((d, i) => {
-    s += `<rect class="hit" x="${ml + i * band}" y="${mt}" width="${band}" height="${ph}" ${tipAttr(dayLabel(d.date), [
+    s += `<rect class="hit" data-day="${d.date}" x="${ml + i * band}" y="${mt}" width="${band}" height="${ph}" ${tipAttr(dayLabel(d.date) + ' · click to open', [
       [dur(d.logged), 'logged'], [dur(d.billable), 'billable', 'var(--accent)'], [dur(d.nonBillable), 'not billable', 'var(--accent2)'],
       ...(d.logged - d.billable - d.nonBillable > 0 ? [[dur(d.logged - d.billable - d.nonBillable), 'billing unknown', 'var(--unknown)']] : []),
       [dur(d.active), 'active, work', 'var(--deemph)'],
@@ -281,7 +281,7 @@ function projectTable(plist, days) {
   return `<table class="tbl wrap"><thead><tr><th>Day</th>${rows.map(r => `<th class="pcol">${esc(r.name)}</th>`).join('')}<th>Total</th></tr></thead><tbody>`
     + days.map(d => {
       const vals = rows.map(r => r.byDay.get(d.date) || 0), tot = vals.reduce((a, b) => a + b, 0);
-      return `<tr class="${d.weekday >= 5 ? 'we' : ''}"><td>${dayLabel(d.date)}</td>${vals.map(v => `<td>${v ? dur(v) : '–'}</td>`).join('')}<td>${tot ? dur(tot) : '–'}</td></tr>`;
+      return `<tr class="${d.weekday >= 5 ? 'we' : ''}"><td>${dayLink(d.date)}</td>${vals.map(v => `<td>${v ? dur(v) : '–'}</td>`).join('')}<td>${tot ? dur(tot) : '–'}</td></tr>`;
     }).join('')
     + `</tbody><tfoot><tr><td>Total</td>${rows.map(r => `<td>${dur(r.minutes)}</td>`).join('')}<td>${dur(rows.reduce((a, r) => a + r.minutes, 0))}</td></tr></tfoot></table>`;
 }
@@ -308,7 +308,7 @@ function daysTable(days) {
   const s = k => days.reduce((a, d) => a + d[k], 0);
   const src = d => (d.source === 'aw' ? 'ActivityWatch' : d.source === 'memtime' ? 'MemTime' : '–');
   return `<table class="tbl"><thead><tr><th>Day</th><th>Logged</th><th>Billable</th><th>Active, work</th><th>Not logged</th><th>Personal</th><th>Entries</th><th>Approved</th><th style="text-align:left">Tracker</th></tr></thead><tbody>`
-    + [...days].reverse().map(d => `<tr class="${d.weekday >= 5 ? 'we' : ''}"><td>${dayLabel(d.date)}</td><td>${dur(d.logged)}</td><td>${dur(d.billable)}</td><td>${dur(d.active)}</td>
+    + [...days].reverse().map(d => `<tr class="${d.weekday >= 5 ? 'we' : ''}"><td>${dayLink(d.date)}</td><td>${dur(d.logged)}</td><td>${dur(d.billable)}</td><td>${dur(d.active)}</td>
       <td>${dur(d.notLogged)}</td><td>${dur(d.personal)}</td><td>${d.entries}</td><td>${d.logged ? pct(d.approved, d.logged) + '%' : '–'}</td><td style="text-align:left">${src(d)}</td></tr>`).join('')
     + `</tbody><tfoot><tr><td>Total</td><td>${dur(s('logged'))}</td><td>${dur(s('billable'))}</td><td>${dur(s('active'))}</td><td>${dur(s('notLogged'))}</td><td>${dur(s('personal'))}</td>
       <td>${s('entries')}</td><td>${pct(s('approved'), s('logged'))}%</td><td></td></tr></tfoot></table>`;
