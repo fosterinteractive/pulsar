@@ -264,6 +264,21 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual(p["uncovered"], [])
 
 
+class ClockChangeTest(unittest.TestCase):
+    def test_an_entry_over_the_hour_the_clocks_skip_ends_an_hour_later_everywhere(self):
+        # Toronto, 8 March 2026: 02:00 becomes 03:00. An entry at 01:30 for 60 minutes ends at 03:30 on the clock.
+        from zoneinfo import ZoneInfo
+        from pulsar import mcp
+        start = datetime(2026, 3, 8, 1, 30, tzinfo=ZoneInfo("America/Toronto")).timestamp()
+        row = {"id": "1", "date": "2026-03-08", "start": start, "minutes": 60, "taskId": "5", "project": "P"}
+        with mock.patch.object(server, "current_settings", lambda: {"timezone": "America/Toronto", "person_id": "1"}), \
+                mock.patch.object(server, "productive_rows", lambda d0, d1, s: ([row], None, "token", False)):
+            [got] = server.api_entries({"date": "2026-03-08"})["entries"]
+        self.assertEqual((got["s"], got["e"]), (90, 210))
+        covered = mcp.covered_minutes([got])
+        self.assertTrue(covered[90] and covered[209] and not covered[210])
+
+
 class JournalTest(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()

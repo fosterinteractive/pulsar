@@ -265,7 +265,8 @@ def covered_minutes(entries: list) -> list:
     for e in entries:
         if e.get("s") is None:
             continue
-        for m in range(max(0, int(e["s"])), min(1440, int(e["s"]) + mins(e["minutes"]))):
+        end = max(int(e["s"]) + mins(e["minutes"]), mins(e.get("e")))  # e: its end on the clock (Pulsar's)
+        for m in range(max(0, int(e["s"])), min(1440, end)):
             covered[m] = True
     return covered
 
