@@ -8,6 +8,7 @@
 <link rel="icon" id="favicon">
 <link rel="stylesheet" href="/static/style.css">
 <link rel="stylesheet" href="/static/meetings.css">
+<link rel="stylesheet" href="/static/flow.css">
 </head>
 <body>
 <header>
@@ -26,7 +27,7 @@
       <circle cx="16" cy="16" r="2.8" fill="#ffffff" stroke="#7c3aed" stroke-width="1"/>
     </svg><h1>Pulsar</h1></a><button type="button" class="ver" id="ver-chip" title="Version and updates"></button><span class="preview-chip" id="preview-chip" hidden></span></span>
   <span class="seg" id="view"><button data-v="day">Day</button><button data-v="report">Report</button></span>
-  <span class="sub dayonly" id="dayname"></span>
+  <span class="daytitle dayonly"><span class="sub dayonly" id="dayname"></span><button type="button" class="weekline" id="weekline" hidden aria-haspopup="dialog"></button></span>
   <span class="spacer"></span>
   <span class="seg dayonly">
     <button class="btn icon" id="prev" title="Previous day (←)">‹</button>
@@ -47,6 +48,7 @@
 
 <main id="dayview">
   <section class="board">
+    <div class="checklist" id="checklist" hidden role="region" aria-label="Before Pulsar can fill your day"></div>
     <div class="cols">
       <div class="colhead"></div>
       <div class="colhead meetcol"><b>Meetings</b><span id="h-meet">…</span><div class="allday" id="meet-allday"></div></div>
@@ -211,11 +213,13 @@
     <div class="scrollarea">
       <div class="row3">
         <label class="field"><span>Date</span><input name="date" type="date" required></label>
-        <label class="field"><span>Start</span><input name="start" type="time" required></label>
+        <label class="field"><span>Start</span><input name="start" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
+          placeholder="HH:MM" maxlength="5" required title="24-hour time, HH:MM"></label>
         <label class="field"><span>Minutes</span><input name="minutes" type="number" min="1" max="1440" required></label>
       </div>
       <p class="hint warnish" id="log-nostart" hidden></p>
-      <div class="field"><span>Task</span>
+      <p class="hint" id="log-next-hint" aria-live="polite"></p>
+      <div class="field"><span>Task <a class="tasklink" id="log-task-open" target="_blank" rel="noopener noreferrer" hidden>Open in Productive</a></span>
         <input name="q" type="search" placeholder="Search every task in Productive" autocomplete="off" aria-label="Search tasks">
         <div class="picker" id="log-tasks" role="listbox" aria-label="Tasks"></div>
       </div>
@@ -225,7 +229,8 @@
       <p class="hint" id="log-note-hint" aria-live="polite"></p>
     </div>
     <p class="msg" id="log-msg" role="status"></p>
-    <div class="df"><button type="button" class="btn bordered" data-close>Cancel</button><button type="submit" class="btn primary" id="log-save">Log in Productive</button></div>
+    <div class="df"><button type="button" class="btn bordered" data-close>Cancel</button><button type="submit" class="btn primary" id="log-save">Log in Productive</button>
+      <button type="submit" class="btn bordered" id="log-next" title="Log this, then open the next active stretch with no entry (⌘⇧↩)">Log and next</button></div>
   </form>
 </dialog>
 <dialog id="ruledlg" aria-labelledby="rule-title">
@@ -275,6 +280,7 @@
 <script src="/static/js/settings.js"></script>
 <script src="/static/js/meetings.js"></script>
 <script src="/static/js/log.js"></script>
+<script src="/static/js/flow.js"></script>
 <script src="/static/js/logs.js"></script>
 <script src="/static/js/main.js"></script>
 </body>

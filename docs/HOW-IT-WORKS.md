@@ -240,6 +240,19 @@ The service list is the task's project's services that take time on that date (`
 used last on that task is picked, else one with the same name in a newer budget, else the task's own. A blocked task
 says so before you log.
 
+The start is a 24-hour `HH:MM` text field, like every time in Pulsar (`9:30`, `930` and `9.30` become `09:30`; a
+time that is not one is refused before anything is sent). A note Pulsar filled in, a meeting's title or a repeat's
+usual note, says "Filled in for you: clients may see notes on invoices; check it" until it is edited. The picked
+task has an **Open in Productive** link (see 5.2b for where its address comes from).
+
+**Log and next** (the button beside Log, or ⌘⇧↩; ⌘↩ logs and closes) logs the entry and opens the dialog again on
+the next yellow-rail stretch after it, else the first one left in the day, with that stretch's suggestions
+(`leadFor`, as the rail itself) and their first task picked. A line at the top says what was just logged and how
+many stretches are left. Stretches logged from the page in the last ten minutes are left out even before Productive
+shows them. It is offered for new entries in the day on screen only. Clicks to log a whole day again, entry by entry
+(Nick's own entries, on a simulated empty day): 4 Nov 2026, 21 entries, 57 clicks before and 38 with it; 3 Nov,
+38 entries, 108 and 71 (with ⌘⇧↩, 17 and 33). Entries away from the computer (calls) still need their start typed.
+
 ### 5.2 Writing (`POST /api/log`)
 
 1. The day is read again from Productive: someone (or another tab) may have logged since.
@@ -251,8 +264,12 @@ says so before you log.
 
 ### 5.2b Changing a logged entry
 
-A logged entry's popover has **Edit** (the log dialog, in its own day: task, service, start, minutes, note) and
-**Delete** (asked first; Productive keeps it in its Recycle Bin). Its top and bottom edges can be dragged in 5-minute
+A logged entry's popover has **Edit** (the log dialog, in its own day: task, service, start, minutes, note),
+**Delete** (asked first; Productive keeps it in its Recycle Bin) and **Open in Productive** (the task's page:
+`https://app.productive.io/<org id>-<name>/tasks/<id>`). Productive's API gives the organization's id but not the
+name part of that address, so it is taken from links in the person's own Claude sessions
+(`sessions.productive_address`, the newest first, only links whose id is the organization's, only while the Likely
+column may read the sessions); with none seen, there is no link rather than a guessed one. Its top and bottom edges can be dragged in 5-minute
 steps; on release Pulsar asks "Change this entry?" before writing. `POST /api/entry/update` and `/api/entry/delete`
 read the day afresh and refuse an entry that is no longer there. They show overlaps first (Change anyway), take the
 same write lock as logging, and accept `"dry": true`. "Approved" is not refused by Pulsar: where a budget needs no
@@ -315,6 +332,15 @@ tasks 41% and 65%.
 
 ## 6. The rest of the day view
 
+- **Where a day opens**: today with the now line in the lower third of the view; another day at the start of its
+  first long run of work (activity, entries and meetings less than 15 minutes apart, 30 minutes or more of them), so
+  a stray minute at 00:30 does not decide it.
+- **The week** (under the day's name): "This week: X h logged of Y h active", Monday to Friday up to today, from
+  `/api/report` for that week (kept 15 minutes) with the day on screen as its Logged column shows it now. A click
+  lists each day; a day opens it. Where the header is narrow it reads "Week: X h of Y h".
+- **First run**: when Productive is not connected (or does not know who you are), no tracker answers, or today has
+  no activity yet, a short list at the top of the board says what is missing and gives the one action that fixes
+  it (Connect Productive, Get or Open ActivityWatch).
 - **Yellow rail**: stretches of at least 3 minutes, mostly active (personal time excluded), with no entry. Its total
   is "Active, not logged".
 - **Work time**: logged, billable, not billable, billing unknown, active, personal, active not logged, away (breaks),
@@ -333,7 +359,8 @@ tasks 41% and 65%.
 Any range up to 93 days. Productive and the trackers are read at the same time. For each day, the tracker that saw
 more of it is used. It shows logged against active time by day (billable, not billable and unknown stacked), time by
 project, top apps and sites, projects by day, when in the week you work (a heatmap by hour), every task against its
-estimate, and a table of every day. **Download** gives the days or the entries as CSV (values starting with `=`,
+estimate, and a table of every day. A day's bar and its row in the tables open that day in the Day view.
+**Download** gives the days or the entries as CSV (values starting with `=`,
 `+`, `-` or `@` are escaped, so a spreadsheet never runs them) or a print view that saves as PDF.
 
 ## 8. What is kept, and where
@@ -403,7 +430,7 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 
 | Route | What |
 |---|---|
-| `GET /api/config` | Settings for the page, the connection's state, update state, calendar state. Never a token. |
+| `GET /api/config` | Settings for the page, the connection's state (with `productive.web`, the organization's address for task links, or ''), update state, calendar state. Never a token. |
 | `GET /api/activity?date=&source=` | Tracker items and away time. |
 | `GET /api/entries?date=` | Productive entries. |
 | `GET /api/proposal?date=[&fresh=1]` | Likely rows, with task links and learned tasks. |
@@ -433,6 +460,9 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   the rails, the side panels), and one click handler opens popovers and the log dialog. Cards are keyboard
   reachable (Enter, Space, Escape back to the card).
 - **`log.js`**: the log dialog, the task picker (shared with the rule dialog) and rules.
+- **`flow.js`** (and `flow.css`): Log and next, the start as `HH:MM`, links to Productive, the first-run checklist,
+  the week in the header, report days that open the Day view, and where a day opens. `day.js` and `log.js` call it
+  at a few places marked "flow.js".
 - **`meetings.js`**: the Meetings column and the Google part of Settings.
 - **`settings.js`**: Settings (a sidebar of categories, each with its own icon, and a search that shows the matching
   sections of every category; the last category open opens again), updates and the reminder, the changelog. Saving

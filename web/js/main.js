@@ -86,7 +86,8 @@ async function signInFromAddress() {
   if (c.error) toast(c.error, true); else applyConfig(c);
   if (!validDate(params.get('date'))) state.date = todayLocal();  // today in the configured time zone
   const first = setView(params.get('view'));
-  if (CONFIG && !CONFIG.productive.active) toast('Productive is not connected yet: open Settings, top right, to add your token.', true);
+  // the Day view says so in its checklist (flow.js); the report only in its banner
+  if (CONFIG && !CONFIG.productive.active && state.view !== 'day') toast('Productive is not connected yet: open Settings, top right, to add your token.', true);
   try {
     const was = sessionStorage.getItem('pulsar-updated');
     if (was) {  // core.js opened the page inside the lens: let go once this version has drawn its data

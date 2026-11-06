@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, askclaude, calendar, config, learn, likely, logbook, productive, report, trackers, updater, names
+from . import __version__, askclaude, calendar, config, learn, likely, logbook, productive, report, sessions, trackers, updater, names
 
 UPDATER = updater.Updater()
 
@@ -109,6 +109,22 @@ def current_settings() -> dict:
     return config.update(found) if found else s
 
 
+_address: dict = {}  # org id -> (when, Productive's web address for it, or '')
+
+
+def productive_address(s: dict) -> str:
+    """Where a task opens in Productive's web app, for "Open in Productive": from links in the person's Claude sessions
+    (sessions.productive_address), so only while Pulsar may read them. Kept six hours, or ten minutes while unknown."""
+    org = str(s.get("org_id") or "")
+    if not org or not likely.enabled(s):
+        return ""
+    when, found = _address.get(org, (0.0, ""))
+    if time.time() - when > (6 * 3600 if found else 600):
+        found = sessions.productive_address(org)
+        _address[org] = (time.time(), found)
+    return found
+
+
 def public_config(s: dict) -> dict:
     conn = productive.connection(s)
     return {
@@ -122,7 +138,7 @@ def public_config(s: dict) -> dict:
                    "askClaude": s["ask_claude"], "askClaudeModel": s["ask_claude_model"], "claudeFound": askclaude.available()},
         "productive": {"source": s["productive_source"], "active": conn["kind"], "problem": conn.get("problem"),
                        "tokenSaved": bool(config.get_token()), "orgId": s["org_id"], "orgName": s["org_name"],
-                       "personId": s["person_id"], "personName": s["person_name"]},
+                       "personId": s["person_id"], "personName": s["person_name"], "web": productive_address(s)},
         "calendar": calendar.status(s),  # configured, connected, account: never a token
         "preview": ({**PREVIEW, "writes": bool(s["preview_writes"])} if config.is_preview() else None),
     }
