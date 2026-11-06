@@ -711,7 +711,9 @@ def api_log(body: dict) -> dict:
 
 def _own_entry(body: dict, s: dict) -> tuple:
     """(the entry as Productive has it now, every entry of that day): read afresh, so a change never works from a
-    stale copy. Refuses one that is not there any more or is approved (Productive would refuse it too)."""
+    stale copy. Refuses one that is not there any more. "Approved" alone is not refused: where a budget needs no
+    approval, Productive approves every entry at once and still lets its author change it; where an approver has
+    approved it, Productive refuses the change itself and the page shows its reason."""
     entry_id, date = str(body.get("id") or ""), str(body.get("date") or "")
     if not (is_id(entry_id) and DATE.match(date)):
         raise ValueError("id and date are needed.")
@@ -721,8 +723,6 @@ def _own_entry(body: dict, s: dict) -> tuple:
     mine = next((x for x in existing if str(x.get("id")) == entry_id), None)
     if not mine:
         raise ValueError("That entry is not in Productive on that day any more. The Logged column has been refreshed.")
-    if mine.get("approved"):
-        raise ValueError("This entry is approved, so Productive does not let it change. Ask whoever approved it.")
     return mine, existing
 
 

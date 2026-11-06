@@ -1017,14 +1017,12 @@ class EditEntryTest(unittest.TestCase):
         self.assertEqual(self.updated, [])
         self.assertEqual(server.api_entry_update({"id": "1", "date": "2026-11-04", "start": "10:15", "minutes": 30}), {"updated": "1"})
 
-    def test_approved_or_missing_entries_are_refused(self):
-        with self.assertRaises(ValueError):
-            server.api_entry_update({"id": "3", "date": "2026-11-04", "start": "12:00", "minutes": 20})
-        with self.assertRaises(ValueError):
-            server.api_entry_delete({"id": "3", "date": "2026-11-04"})
+    def test_missing_entries_are_refused_and_approved_ones_left_to_productive(self):
         with self.assertRaises(ValueError):
             server.api_entry_delete({"id": "99", "date": "2026-11-04"})
-        self.assertEqual((self.updated, self.deleted), ([], []))
+        self.assertEqual(self.deleted, [])
+        # auto-approved (a budget with no approval step) is still the author's to change: Productive decides
+        self.assertEqual(server.api_entry_update({"id": "3", "date": "2026-11-04", "start": "12:00", "minutes": 20}), {"updated": "3"})
 
     def test_delete_and_its_dry_run(self):
         self.assertEqual(server.api_entry_delete({"id": "2", "date": "2026-11-04", "dry": True}), {"dry": True, "wouldDelete": "2"})

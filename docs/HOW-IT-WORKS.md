@@ -254,7 +254,9 @@ says so before you log.
 A logged entry's popover has **Edit** (the log dialog, in its own day: task, service, start, minutes, note) and
 **Delete** (asked first; Productive keeps it in its Recycle Bin). Its top and bottom edges can be dragged in 5-minute
 steps; on release Pulsar asks "Change this entry?" before writing. `POST /api/entry/update` and `/api/entry/delete`
-read the day afresh, refuse an entry that is no longer there or is approved (Productive would refuse it too), show
+read the day afresh, refuse an entry that is no longer there, show overlaps first. "Approved" is not refused by
+Pulsar: where a budget needs no approval, Productive approves every entry at once and its author can still change it;
+where an approver has approved it, Productive refuses and the page shows why. They also show
 overlaps first (Change anyway), take the same write lock as logging, and accept `"dry": true`. With
 `PULSAR_READ_ONLY` every change is refused at the lowest level, like any write.
 

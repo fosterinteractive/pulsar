@@ -164,7 +164,8 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   **Disconnect** removes the access, at Google too. Only fosterinteractive.com accounts can sign in.
 - **Change what you logged.** Click an entry in Logged: **Edit** opens it in the log dialog, **Delete** asks first
   (Productive keeps deleted entries in its Recycle Bin). Drag an entry's top or bottom edge to make it start or end
-  earlier or later; Pulsar asks before it changes anything. Approved entries cannot be changed.
+  earlier or later; Pulsar asks before it changes anything. An entry an approver has approved can only be changed
+  in Productive by them; Pulsar shows Productive's answer.
 - **Report downloads.** In the Report, **Download** gives the days or the time entries as CSV (for Excel or
   Numbers), or a print view that saves as PDF.
 

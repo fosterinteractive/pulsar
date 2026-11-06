@@ -300,7 +300,7 @@ function render() {
     head.classList.toggle('warn', !!logged.warning);
     let html = loggedCache.map((x, i) => {
       const h = (x.e - x.s) * ppm, lines = Math.max(0, Math.floor((h - 36) / 15));
-      const rz = x.approved || x.s == null ? '' : '<i class="rz rz-t" data-rz="t" title="Drag to change the start"></i><i class="rz rz-b" data-rz="b" title="Drag to change the end"></i>';
+      const rz = x.s == null ? '' : '<i class="rz rz-t" data-rz="t" title="Drag to change the start"></i><i class="rz rz-b" data-rz="b" title="Drag to change the end"></i>';
       return `<div class="card logged" data-k="logged" data-i="${i}" style="--c:${color(x.project)};${place(x, ppm, 18)}"
         tabindex="0" role="button" aria-label="${esc(`Logged ${hm(x.s)}–${hm(x.e)}: ${x.project}${x.task ? ', ' + x.task : ''}, ${dur(x.minutes)}`)}">
         <div class="row"><span class="t">${esc(x.project)}</span>${x.billable ? `<span class="bill" title="Billable${x.billing ? ': ' + esc(x.billing) : ''}">$</span>` : ''}<span class="m num">${dur(x.minutes)}</span></div>
@@ -513,8 +513,8 @@ document.addEventListener('click', ev => {
     openPop(`<h3>${esc(x.project)}</h3><div class="sub">${hm(x.s)}–${hm(x.e)} · ${dur(x.minutes)}${x.approved ? ' · approved' : ''}</div>
       <p>${esc(x.note)}</p>
       <dl><dt>Task</dt><dd>${esc(x.task)}</dd><dt>Budget</dt><dd>${esc(x.budget)}</dd><dt>Service</dt><dd>${esc(x.service)}</dd><dt>Billable</dt><dd>${x.billable == null ? 'Unknown' : x.billable ? 'Yes' : 'No'}${x.billing ? ' · ' + esc(x.billing) : ''}</dd><dt>Entry</dt><dd class="num">${esc(x.id)}</dd></dl>
-      ${x.approved ? '<p class="sub">Approved: Productive does not let it change.</p>'
-        : `<div class="btnrow"><button class="btn bordered sm" data-edit="${i}">Edit</button><button class="btn bordered sm" data-del="${i}">Delete</button></div>`}`, ev);
+      <div class="btnrow"><button class="btn bordered sm" data-edit="${i}">Edit</button><button class="btn bordered sm" data-del="${i}">Delete</button></div>
+      ${x.approved ? '<p class="sub">Approved. Where your budget has an approver, Productive may refuse a change and say why.</p>' : ''}`, ev);
   }
 });
 function closePop(refocus = false) {
