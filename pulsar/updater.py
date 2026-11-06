@@ -31,7 +31,7 @@ import urllib.request
 import zipfile
 from typing import Callable, Optional
 
-from . import __version__
+from . import __version__, config
 
 DEFAULT_MANIFEST = "https://github.com/fosterinteractive/pulsar/releases/latest/download/latest.json"
 ROOT = os.path.expanduser("~/Library/Application Support/Pulsar")
@@ -142,6 +142,8 @@ def read_version(copy: str) -> str:
 
 def fetch(url: str, limit: int, timeout: float = 30) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": f"Pulsar/{__version__}"})
+    if config.tests_offline():
+        raise OSError("A test tried to reach the network; tests must fake it.")
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = resp.read(limit + 1)
     if len(data) > limit:

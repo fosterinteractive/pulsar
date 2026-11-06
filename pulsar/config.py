@@ -255,8 +255,13 @@ def target_minutes(settings: dict) -> int:
 
 # ---- the Productive token --------------------------------------------------------------
 
+def tests_offline() -> bool:
+    """Set by every test module: nothing may reach Productive, Google, Claude Code or the keychain from a test."""
+    return bool(os.environ.get("PULSAR_TESTS_OFFLINE"))
+
+
 def _keychain() -> bool:
-    return sys.platform == "darwin"
+    return sys.platform == "darwin" and not tests_offline()  # tests keep secrets in their temporary folder
 
 
 _token_cache: list = [0.0, None, False]  # time, token, filled
