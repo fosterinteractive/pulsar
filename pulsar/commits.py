@@ -4,8 +4,9 @@ the note's draft, and Ask Claude reads them with what you typed.
 Which repositories: those the row's Claude sessions worked in during the row (the session's folder and the paths its
 tools named) whose name matches the row's project. Which commits: yours (the repository's user.email), on any branch,
 from five minutes before the row to ten minutes after it; no merges, version bumps or work in progress.
-Read only: `git config` and `git log`, nothing else. No git command runs when git is missing, or when it is only
-Apple's stand-in that would ask to install the developer tools.
+Read only: `git config` and `git log`, nothing else, both through `_run_git`, which keeps a repository's own settings from
+running anything (a signature check's program, a hook, fsmonitor, a fetch). No git command runs when git is missing,
+or when it is only Apple's stand-in that would ask to install the developer tools.
 """
 
 from __future__ import annotations
@@ -80,18 +81,32 @@ def matches(project: str, root: str) -> bool:
     return any(len(n) >= 3 and (p in n or n in p) for n in names)
 
 
+# Any folder with a .git in it can be read here, a client's unpacked archive too, and its .git/config is not the
+# person's: settings in it that make git start a program are overridden on the command line, which wins over every
+# file. log.showSignature with gpg.program (or gpg.ssh.program) would run that program for each signed commit;
+# core.hooksPath and core.fsmonitor name programs too. In the environment: git's own variables from outside are
+# dropped (a GIT_DIR would point it elsewhere), no transport is allowed (a partial clone would fetch a missing object
+# through a remote, and core.sshCommand, the repository names), nothing asks for a password, and no lock is taken.
+SAFE = ("--no-pager", "-c", "log.showSignature=false", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null")
+
+
+def _run_git(git: str, root: str, args: list, run, timeout: float):
+    """One read-only git command in a repository that may not be the person's own (above)."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update(GIT_TERMINAL_PROMPT="0", GIT_OPTIONAL_LOCKS="0", GIT_ALLOW_PROTOCOL="", GIT_NO_LAZY_FETCH="1")
+    return run([git, "-C", root, *SAFE, *args], capture_output=True, text=True, encoding="utf-8", errors="replace",
+               timeout=timeout, env=env)
+
+
 def _log(git: str, root: str, since: float, run) -> list:
     """[(author time, subject)] of your commits in a repository since a time, on any branch."""
-    env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"}
     try:
-        email = run([git, "-C", root, "config", "user.email"], capture_output=True, text=True, timeout=5,
-                    env=env).stdout.strip().lower()
+        email = _run_git(git, root, ["config", "user.email"], run, 5).stdout.strip().lower()
         if not email:
             return []
         when = datetime.fromtimestamp(since, timezone.utc).strftime("%Y-%m-%d %H:%M:%S +0000")
-        done = run([git, "-C", root, "log", "--exclude=refs/stash", "--all", "--no-merges", "-n", "500",
-                    f"--since={when}", "--format=%at%x09%ae%x09%s"],
-                   capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=10, env=env)
+        done = _run_git(git, root, ["log", "--no-show-signature", "--exclude=refs/stash", "--all", "--no-merges", "-n",
+                                "500", f"--since={when}", "--format=%at%x09%ae%x09%s"], run, 10)
     except (OSError, subprocess.TimeoutExpired):
         return []
     out = []
