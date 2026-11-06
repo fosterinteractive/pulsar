@@ -136,6 +136,9 @@ input[type=date] {
 .gaprail { position: absolute; left: -1px; width: 3px; background: var(--gap); border-radius: 2px; opacity: .85; pointer-events: none; }
 .state { position: absolute; left: 12px; right: 12px; top: 16px; color: var(--faint); font-size: 12px; }
 .state.err { color: var(--gap-text); }
+/* in a lane, the message (an error, "loading…", nothing on this day) stays at the top of what is in view: the day
+   opens scrolled to its work or to now, far below the lane's top */
+.lane > .state { position: sticky; top: 16px; left: auto; right: auto; margin: 16px 12px 0; z-index: 1; }
 
 /* aside */
 aside { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-height: 0; }
