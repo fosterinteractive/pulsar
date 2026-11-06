@@ -518,6 +518,9 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     for t, n in (ctx.get("names") or {}).items():
         known(t, n.get("task"), n.get("project"))
     sameday: dict = {}
+    # the tasks logged to in the last 30 days: Claude's pick of any other task (one it found by searching Productive)
+    # starts unticked, as does any row whose note Claude drafted, so neither goes through on one click
+    recent = {str(t) for t in ctx.get("recent") or ()}
     for i in sorted(range(len(rows)), key=lambda i: (rows[i].get("kind") == "parallel", rows[i]["s"])):
         r = rows[i]
         agent = r.get("kind") == "parallel"
@@ -544,7 +547,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
              "project": r.get("project"), "titles": r.get("titles") or [], "alts": [x["taskId"] for x in ch["alts"]],
              "altWhy": {x["taskId"]: x["why"] for x in ch["alts"]},
              "note": note, "noteFrom": note_from if note else "",
-             "claudeNone": ch["claudeNone"]}
+             "claudeNone": ch["claudeNone"], "claudeFound": ch["source"] == "claude" and str(ch["task"]) not in recent}
         span = range(int(r["s"]), min(N, int(math.ceil(r["e"]))))
         own = bool(OWN_REPO.match(r.get("project") or ""))
         claim(c, [x for x in span if not away[x] and (own or not logging_[x]) and (work[x] or not agent)
@@ -621,7 +624,8 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
                 p["kind"], p["why"] = "skip", "next to work in a repository you never log"
             elif nb:
                 q = nb[0]
-                p.update(task=q["task"], project=q.get("project"), alts=list(q.get("alts") or []))
+                p.update(task=q["task"], project=q.get("project"), alts=list(q.get("alts") or []),
+                         claudeFound=bool(q.get("claudeFound")))
     if keep is not None:  # the log dialog's range (ranges.py): each minute's claim and piece, as placed here
         keep.update(owner=owner, claims=claims, pieces=pieces, work=work, away=away, names=names, ctx=ctx)
 
@@ -789,6 +793,12 @@ def _entry(m: dict, s: int, e: int, names: dict) -> dict:
     noted = [q for q in sorted(m["parts"], key=lambda q: -q["minutes"]) if q.get("note")
              and (q.get("task") == task if task else q is lead)]
     note, note_from = (noted[0]["note"], noted[0].get("noteFrom") or "") if noted else ("", "")
+    # Claude's pick of a task not logged to in the last 30 days (found by searching Productive), and a note Claude
+    # drafted: never ticked at the start, so a prompt injection in the work cannot log through one click
+    if task and any(q.get("claudeFound") and q.get("task") == task for q in m["parts"]):
+        flags.append("claudefound")
+    if note and note_from == "claude":
+        flags.append("claudenote")
     title, project = names.get(str(task), ("", "")) if task else ("", "")
     alts = []
     for q in sorted(m["parts"], key=lambda q: -q["minutes"]):
