@@ -623,7 +623,7 @@ class LearnTest(unittest.TestCase):
                     "task": "Releases", "project": "Acme"},
                    {"date": "2026-11-03", "start": t0("2026-11-03") + 600 * 60, "minutes": 40, "taskId": "2",
                     "task": "Releases", "project": "Acme"}]
-        sess, repo = learn.votes(days, entries, t0)
+        sess, repo = learn.votes(days, entries, t0, "2026-11-04")
         names = {r["taskId"]: r for r in entries}
         same_session = learn.suggest({"k": [k1], "p": "acme-site"}, sess, repo, names)
         self.assertEqual([(t["taskId"], t["why"]) for t in same_session],
@@ -632,6 +632,47 @@ class LearnTest(unittest.TestCase):
         self.assertEqual([t["taskId"] for t in new_session], ["2", "1"])     # the repository's, most minutes first
         self.assertEqual(learn.suggest({"k": [], "p": "elsewhere"}, sess, repo, names), [])
         self.assertEqual(learn.key("tiny"), "")                               # titles too short to tell sessions apart
+
+    def test_a_session_votes_in_every_repository_it_worked_in(self):
+        """Measured on 30 days of real logging: preferring the same session in the same repository put the right
+        task first less often (39% of minutes instead of 43%), so a session's votes ignore the repository."""
+        from pulsar import learn
+        t0 = lambda d: datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()  # noqa: E731
+        k = learn.key("Database upgrade")
+        days = {"2026-11-02": [{"k": [k], "p": "client-a", "s": 600, "e": 690},
+                               {"k": [k], "p": "client-b", "s": 700, "e": 730}]}
+        entries = [{"date": "2026-11-02", "start": t0("2026-11-02") + 600 * 60, "minutes": 90, "taskId": "1",
+                    "task": "Client A upgrade", "project": "A"},
+                   {"date": "2026-11-02", "start": t0("2026-11-02") + 700 * 60, "minutes": 30, "taskId": "2",
+                    "task": "Client B upgrade", "project": "B"}]
+        sess, repo = learn.votes(days, entries, t0, "2026-11-03")
+        got = learn.suggest({"k": [k], "p": "client-b"}, sess, repo, {r["taskId"]: r for r in entries})
+        self.assertEqual([(t["taskId"], t["why"]) for t in got],
+                         [("1", "logged while in this Claude session: 1 h 30 min"),
+                          ("2", "logged while in this Claude session: 30 min")])
+
+    def test_recent_logging_comes_first_and_the_minutes_shown_are_real(self):
+        """A day's votes halve every HALF_LIFE days: an hour logged yesterday beats two hours three weeks ago, and the
+        why still says the minutes logged."""
+        from pulsar import learn
+        t0 = lambda d: datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()  # noqa: E731
+        k = learn.key("Theme refactor")
+        days = {"2026-10-14": [{"k": [k], "p": "acme-site", "s": 600, "e": 720}],
+                "2026-11-03": [{"k": [k], "p": "acme-site", "s": 600, "e": 660}]}
+        entries = [{"date": "2026-10-14", "start": t0("2026-10-14") + 600 * 60, "minutes": 120, "taskId": "1",
+                    "task": "Old sprint", "project": "Acme"},
+                   {"date": "2026-11-03", "start": t0("2026-11-03") + 600 * 60, "minutes": 60, "taskId": "2",
+                    "task": "New sprint", "project": "Acme"}]
+        names = {r["taskId"]: r for r in entries}
+        sess, repo = learn.votes(days, entries, t0, "2026-11-04")
+        self.assertEqual([(t["taskId"], t["why"]) for t in learn.suggest({"k": [k], "p": "acme-site"}, sess, repo, names)],
+                         [("2", "logged while in this Claude session: 1 h 0 min"),
+                          ("1", "logged while in this Claude session: 2 h 0 min")])
+        self.assertEqual([t["taskId"] for t in learn.suggest({"k": [], "p": "acme-site"}, sess, repo, names)], ["2", "1"])
+        w_old, w_new = sess[k]["1"][0], sess[k]["2"][0]
+        self.assertAlmostEqual(w_old, 120 * 0.5 ** (21 / learn.HALF_LIFE))       # three half-lives: 15 minutes' weight
+        self.assertAlmostEqual(w_new, 60 * 0.5 ** (1 / learn.HALF_LIFE))
+        self.assertEqual(sess[k]["1"][1], 120)                                    # the real minutes, kept apart
 
 
 class AskClaudeTest(unittest.TestCase):

@@ -1,8 +1,9 @@
 """Tasks for the Likely rows, learned from your own logging: the task you logged while working in the same Claude
-Code session, else in the same repository, over the last LEARN_DAYS days. Local and free; no one is asked anything.
+Code session, else in the same repository, over the last LEARN_DAYS days. Older logging counts less: a day's votes
+halve every HALF_LIFE days. Local and free; no one is asked anything.
 
-On one person's 105 blocks of work, with 60 days of history, the right task was first for 41% of the minutes and
-among the first five for 65% (the list of recent tasks alone: 20% and 43%).
+On 30 days of one person's logging (337 rows), each day learned from the days before it only, the right task was
+first for 43% of the minutes and among the first five for 57% (39% and 52% when every day counted the same).
 
 A past day's Likely rows take a few seconds each to work out, so they are worked out once, in the background, and kept
 in ~/.cache/pulsar/likely-days/<date>.json: the times, the repository and a hash of each session title (never the
@@ -20,6 +21,7 @@ from datetime import datetime, timedelta
 from . import config, logbook
 
 LEARN_DAYS = 60
+HALF_LIFE = 7  # days: a day's votes count half as much this many days later (as in dayplan.py)
 FORMAT = 1
 DIR = os.path.join(config.CACHE_DIR, "likely-days")
 _warming = threading.Lock()
@@ -94,37 +96,50 @@ def main_task(rows: list, a: float, b: float):
     return best if cover[best] >= min(600, (b - a) / 3) else None
 
 
-def votes(days: dict, entries: list, t0_of) -> tuple:
-    """({session key: {task: minutes}}, {repository: {task: minutes}}) from past days' rows and your entries.
-    days: {date: rows}; t0_of(date) gives the day's midnight in epoch seconds."""
+def votes(days: dict, entries: list, t0_of, date: str) -> tuple:
+    """({session key: {task: [weight, minutes]}}, {repository: {task: [weight, minutes]}}) from past days' rows and
+    your entries, for the rows of `date`. The minutes are the real ones; the weight is the minutes halved every
+    HALF_LIFE days before `date`, and sets the order. days: {date: rows}; t0_of(date) gives the day's midnight in
+    epoch seconds."""
     by_day: dict = {}
     for r in entries:
         by_day.setdefault(r.get("date"), []).append(r)
+    day0 = datetime.strptime(date, "%Y-%m-%d")
     sess: dict = {}
     repo: dict = {}
-    for date, rows in days.items():
-        t0 = t0_of(date)
+
+    def add(table: dict, at: str, task: str, w: float, m: float) -> None:
+        got = table.setdefault(at, {}).setdefault(task, [0.0, 0])
+        got[0] += w
+        got[1] += m
+
+    for d, rows in days.items():
+        t0 = t0_of(d)
+        fade = 0.5 ** (max((day0 - datetime.strptime(d, "%Y-%m-%d")).days, 0) / HALF_LIFE)
         for row in rows:
-            task = main_task(by_day.get(date, []), t0 + row["s"] * 60, t0 + row["e"] * 60)
+            task = main_task(by_day.get(d, []), t0 + row["s"] * 60, t0 + row["e"] * 60)
             if not task:
                 continue
             m = row["e"] - row["s"]
             for k in row["k"]:
-                sess.setdefault(k, {})[task] = sess.setdefault(k, {}).get(task, 0) + m
-            repo.setdefault(row["p"], {})[task] = repo.setdefault(row["p"], {}).get(task, 0) + m
+                add(sess, k, task, m * fade, m)
+            add(repo, row["p"], task, m * fade, m)
     return sess, repo
 
 
 def suggest(row: dict, sess: dict, repo: dict, names: dict, limit: int = 5) -> list:
-    """The tasks for one row, the session's first, then the repository's; each with why, in words."""
+    """The tasks for one row, the session's first, then the repository's, each in the order of its weight (recent
+    logging first); each with why, in words, with the real minutes."""
     out: dict = {}
     s_votes: dict = {}
     for k in row["k"]:
-        for t, m in sess.get(k, {}).items():
-            s_votes[t] = s_votes.get(t, 0) + m
-    for t, m in sorted(s_votes.items(), key=lambda kv: -kv[1]):
+        for t, (w, m) in sess.get(k, {}).items():
+            got = s_votes.setdefault(t, [0.0, 0])
+            got[0] += w
+            got[1] += m
+    for t, (w, m) in sorted(s_votes.items(), key=lambda kv: -kv[1][0]):
         out.setdefault(t, f"logged while in this Claude session: {_dur(m)}")
-    for t, m in sorted(repo.get(row["p"], {}).items(), key=lambda kv: -kv[1]):
+    for t, (w, m) in sorted(repo.get(row["p"], {}).items(), key=lambda kv: -kv[1][0]):
         out.setdefault(t, f"logged while in {row['p']}: {_dur(m)}")
     return [{"taskId": t, "title": names.get(t, {}).get("task") or "", "project": names.get(t, {}).get("project") or "",
              "why": why} for t, why in list(out.items())[:limit] if t in names]
@@ -144,7 +159,7 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
         days[date] = rows_of(proposal)  # rows already logged today teach the ones after them
         t0_of = lambda d: datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=tz).timestamp()  # noqa: E731
         entries = [r for r in entries_before + entries_today if r.get("taskId")]
-        sess, repo = votes(days, entries, t0_of)
+        sess, repo = votes(days, entries, t0_of, date)
         names = {r["taskId"]: r for r in sorted(entries, key=lambda r: r.get("date") or "")}
         for e, row in zip([e for e in proposal.get("entries") or [] if e.get("e", 0) - e.get("s", 0) >= 5],
                           days[date]):

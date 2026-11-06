@@ -367,7 +367,14 @@ unticked.
   never what a tool returned. Older links were too often about other work.
 - **Learned tasks** (`pulsar/learn.py`): for each Likely row, the task you logged while working in the same Claude
   session, then in the same repository, over the last 60 days. Each earlier row votes, with its minutes, for the task
-  that took most of it. Past days' rows are worked out once in the background and kept in
+  that took most of it. Older logging counts less: a day's votes halve every 7 days (`HALF_LIFE`, as in
+  `dayplan.py`), which sets the order; the "why" shows the minutes actually logged. A session's votes count in every
+  repository it worked in. Preferring the same session in the same repository was measured on 30 days of one
+  person's logging, each day learned from the days before it: the right task came first for fewer minutes (39%
+  instead of 43%, and 44% instead of 51% for sessions that worked in two or more repositories that day). A long
+  session moves from task to task over the weeks more than it changes task between repositories, and a row shared
+  by two sessions has one repository, which may be the other session's.
+  Past days' rows are worked out once in the background and kept in
   `~/.cache/pulsar/likely-days/<date>.json`: times, repository names and a hash of each session title, never the
   titles or anything typed. Until all 60 days are there, the page says "Learning your tasks… N of 60". The rows do
   not wait for the 60 days of Productive history: while it is read, they come without learned tasks and with
@@ -412,9 +419,11 @@ unticked.
   usual length. A start within 10 minutes of the usual time, or of an hour either side (clock changes), is snapped
   to it. The card disappears once that task has an entry that day.
 
-How well they guess, on one person's 105 blocks of work with 60 days of history (the right task being the one logged
-at that time): the "lately" list alone had it first for 20% of the minutes and in its first five for 43%; learned
-tasks 41% and 65%.
+How well they guess, on 30 days of one person's logging (337 Likely rows, 1 October to 5 November 2026), each day
+learned from the 60 days before it only, the right task being the one logged over most of the row: learned tasks had
+it first for 43% of the minutes and in their first five for 57% (39% and 52% before older days counted less). For
+rows whose session worked in two or more repositories that day, 51% and 63% (51% and 60% before). The "lately" list
+alone: 29% and 56%.
 
 ### 5.6 Pulsar in Claude Code (`pulsar/mcp.py`, experimental)
 
