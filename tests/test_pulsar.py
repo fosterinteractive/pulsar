@@ -13,10 +13,8 @@ from datetime import datetime, timezone
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# Tests never touch the real settings, caches or error log: point them at a scratch folder before importing.
-_SCRATCH = tempfile.mkdtemp(prefix="pulsar-tests-")
-os.environ["XDG_CONFIG_HOME"] = os.path.join(_SCRATCH, "config")
-os.environ["XDG_CACHE_HOME"] = os.path.join(_SCRATCH, "cache")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from isolation import SCRATCH as _SCRATCH  # noqa: E402,F401  first: nothing real is reachable (isolation.py)
 
 from pulsar import config, productive, report, server, trackers, updater  # noqa: E402
 
@@ -1052,7 +1050,11 @@ class PreviewTest(unittest.TestCase):
     """Pulsar Preview writes nothing to Productive until its own setting allows it."""
 
     def test_a_preview_writes_only_when_allowed(self):
-        with mock.patch.dict(os.environ, {"PULSAR_PREVIEW": "1"}), mock.patch.dict(os.environ, {}, clear=False):
+        sent = []  # a connection and a Productive that record, so a broken guard fails here instead of writing
+        with mock.patch.dict(os.environ, {"PULSAR_PREVIEW": "1"}), mock.patch.dict(os.environ, {}, clear=False), \
+                mock.patch.object(productive, "connection", lambda s: {"kind": "claude-code", "token": "t"}), \
+                mock.patch.object(productive, "mcp_text", lambda *a: sent.append(a) or "time entry created (ID: 1)."), \
+                mock.patch.object(productive.http.client, "HTTPSConnection", lambda *a, **k: sent.append(a)):
             os.environ.pop("PULSAR_READ_ONLY", None)
             with mock.patch.object(config, "load", lambda: {"preview_writes": False}):
                 self.assertIn("Preview", config.writes_blocked())
@@ -1062,6 +1064,7 @@ class PreviewTest(unittest.TestCase):
                     productive.https("POST", "https://api.productive.io/api/v2/time_entries", b"{}", {}, write=True)
             with mock.patch.object(config, "load", lambda: {"preview_writes": True}):
                 self.assertIsNone(config.writes_blocked())
+        self.assertEqual(sent, [])
         with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):
             self.assertIn("read-only", config.writes_blocked())  # tests and demos stay read-only, preview or not
 
@@ -1095,13 +1098,23 @@ class EditEntryTest(unittest.TestCase):
         self.assertEqual(self.updated, [])
         got = server.api_entry_update({"id": "1", "date": "2026-11-04", "start": "10:00", "minutes": 75, "force": True})
         self.assertEqual(got, {"updated": "1"})
-        self.assertEqual(self.updated[0][1]["minutes"], 75)
+        entry, change = self.updated[0]
+        self.assertEqual((entry, change["started_at"], change["minutes"]), ("1", "2026-11-04T10:00:00+00:00", 75))
+        # nothing the request did not name is changed: not the note, the task or the service
+        self.assertEqual([k for k in ("note", "task_id", "service_id") if change.get(k)], [])
 
     def test_shrinking_writes_and_a_dry_run_writes_nothing(self):
         got = server.api_entry_update({"id": "1", "date": "2026-11-04", "start": "10:15", "minutes": 30, "dry": True})
         self.assertEqual((got["dry"], got["wouldChange"]["started_at"][:16], got["overlap"]), (True, "2026-11-04T10:15", []))
         self.assertEqual(self.updated, [])
         self.assertEqual(server.api_entry_update({"id": "1", "date": "2026-11-04", "start": "10:15", "minutes": 30}), {"updated": "1"})
+        self.assertEqual([(i, c["started_at"], c["minutes"]) for i, c in self.updated], [("1", "2026-11-04T10:15:00+00:00", 30)])
+
+    def test_a_new_note_task_and_service_are_passed_on_as_given(self):
+        server.api_entry_update({"id": "2", "date": "2026-11-04", "start": "11:00", "minutes": 30, "note": "Fixed the menu",
+                                 "taskId": "77", "serviceId": "88"})
+        entry, change = self.updated[0]
+        self.assertEqual((entry, change["note"], change["task_id"], change["service_id"]), ("2", "Fixed the menu", "77", "88"))
 
     def test_missing_entries_are_refused_and_approved_ones_left_to_productive(self):
         with self.assertRaises(ValueError):
@@ -1120,11 +1133,16 @@ class EditEntryTest(unittest.TestCase):
         for p in self.patches[3:]:
             p.stop()
         self.patches = self.patches[:3]
-        with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):
+        sent = []  # a connection and a Productive that record, so a broken guard fails here instead of writing
+        with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}), \
+                mock.patch.object(productive, "connection", lambda s: {"kind": "claude-code", "token": "t"}), \
+                mock.patch.object(productive, "mcp_text", lambda *a: sent.append(a) or "done"), \
+                mock.patch.object(productive, "https", lambda *a, **k: sent.append(a) or (200, b"{}")):
             with self.assertRaises(productive.ProductiveError):
                 productive.update_entry("1", {"minutes": 5}, {"person_id": "1"})
             with self.assertRaises(productive.ProductiveError):
                 productive.delete_entry("1", {"person_id": "1"})
+        self.assertEqual(sent, [])
 
 
 class LogTest(unittest.TestCase):
@@ -1140,6 +1158,7 @@ class LogTest(unittest.TestCase):
             mock.patch.object(server.productive, "entries", lambda d0, d1, s: (self.existing, None, "token")),
             mock.patch.object(server.productive, "create_entry", lambda e, s: self.created.append(e) or {"id": "9"}),
             mock.patch.dict(server._just_logged, clear=True),
+            mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "", "PULSAR_PREVIEW": ""}),  # writes reach the fakes only
         ]
         for p in self.patches:
             p.start()

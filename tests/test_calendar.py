@@ -17,10 +17,8 @@ from unittest import mock
 from urllib.parse import parse_qs, urlsplit
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# Never the real settings, caches or log: point them at a scratch folder before importing.
-_SCRATCH = tempfile.mkdtemp(prefix="pulsar-tests-")
-os.environ["XDG_CONFIG_HOME"] = os.path.join(_SCRATCH, "config")
-os.environ["XDG_CACHE_HOME"] = os.path.join(_SCRATCH, "cache")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from isolation import SCRATCH as _SCRATCH  # noqa: E402,F401  first: nothing real is reachable (isolation.py)
 
 from zoneinfo import ZoneInfo  # noqa: E402
 
