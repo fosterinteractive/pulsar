@@ -377,6 +377,11 @@ def api_calendar(q: dict) -> dict:
 
 
 def api_proposal(q: dict) -> dict:
+    """The Likely column. ignore_logged=1 (read-only test servers only, as for Log the day) learns the rows' tasks from
+    the days before only, never from the day's own entries, so a day already logged can be planned blind."""
+    ignore = q.get("ignore_logged") == "1"
+    if ignore and not config.read_only():
+        raise ValueError("ignore_logged is for read-only test servers only.")
     s = config.load()
     if not likely.enabled(s):
         return {"disabled": True, "entries": []}
@@ -393,7 +398,9 @@ def api_proposal(q: dict) -> dict:
                 result = {**result, "learnPending": True}
             else:
                 before, _ = history_rows(date, ps, days=learn.LEARN_DAYS)
-                same_day, problem, _, _ = productive_rows(date, date, ps)
+                same_day, problem, _, _ = productive_rows(date, date, ps) if not ignore else ([], "", None, None)
+                if ignore:  # a copy: the cached rows, which the page reads too, keep their own tasks
+                    result = {**result, "entries": [dict(e) for e in result.get("entries") or []]}
                 learn.annotate(result, date, s, before, [] if problem else same_day, tz)  # elapsed minutes, as entries
     if not result.get("error") and clock_change(t0, t1, tz) is not None:
         # the clocks change today: rows by the clock, like the activity, each its real length (a copy: the cached
