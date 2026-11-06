@@ -112,7 +112,8 @@ def _request(path: str, params: dict | None = None, body: dict | None = None, ke
             got = {}
         if exc.code == 401:
             raise ToolError("Pulsar refused the key. Is the Pulsar on this port another user's?")
-        return {"error": _short(got.get("error")) or f"HTTP {exc.code}", "_status": exc.code}
+        return {"error": _short(got.get("error")) or f"HTTP {exc.code}", "_status": exc.code,
+                **({"unclear": True} if got.get("unclear") is True else {})}  # it may have been written
     except (urllib.error.URLError, ConnectionError, TimeoutError, OSError) as exc:
         raise ToolError(f"Pulsar is not answering on 127.0.0.1:{_state['port']}. Open Pulsar, then ask again. "
                         f"({type(getattr(exc, 'reason', exc)).__name__})")
@@ -770,6 +771,8 @@ def _clean(args: dict) -> tuple:
     """(date, [entry]) checked: start HH:MM, whole minutes, ids, notes; no two entries on the same minutes."""
     cfg = _config()
     date = _date_arg(args, cfg)
+    if date > _today(cfg.get("timezone") or ""):
+        raise ToolError(f"{date} has not begun yet: Pulsar logs only days that have. Nothing was sent.")
     raw = args.get("entries")
     if not isinstance(raw, list) or not raw:
         raise ToolError("entries is a list of {start, minutes, taskId, serviceId?, note?}.")
@@ -848,15 +851,17 @@ def _one_line(text) -> str:
 
 
 def summary_line(date: str, e: dict) -> str:
-    """One entry as the person approves it, in Pulsar's words: 'Fri 6 Nov 09:00-09:45 (45 min): Build (Acme), Dev,
-    billable. Note: "…"'. The names are Productive's, from the dry run; only the note is the model's, quoted."""
+    """One entry as the person approves it, in Pulsar's words: 'Fri 6 Nov 2026 09:00-09:45 (45 min): Build (Acme), Dev
+    in Acme 2026, billable. Note: "…"'. The names are Productive's, from the dry run; only the note is the model's,
+    quoted (it cannot hold a straight double quote)."""
     d = datetime.strptime(date, "%Y-%m-%d")
     project = _one_line(e.get("project"))
     billing = {True: "billable", False: "not billable"}.get(e.get("billable"), "billing not known")
     note = f'Note: "{e["note"]}"' if e["note"] else "No note."
-    return (f"{DAYS[d.weekday()]} {d.day} {MONTHS[d.month - 1]} {e['start']}-{hm(e['e'])} ({e['minutes']} min): "
+    budget = _one_line(e.get("budget"))
+    return (f"{DAYS[d.weekday()]} {d.day} {MONTHS[d.month - 1]} {d.year} {e['start']}-{hm(e['e'])} ({e['minutes']} min): "
             f"{_one_line(e.get('task')) or 'task ' + e['taskId']}" + (f" ({project})" if project else "")
-            + f", {_one_line(e.get('service'))}, {billing}. {note}")
+            + f", {_one_line(e.get('service'))}" + (f" in {budget}" if budget else "") + f", {billing}. {note}")
 
 
 def pulsar_preview(args: dict) -> dict:
@@ -869,6 +874,8 @@ def pulsar_preview(args: dict) -> dict:
     for e in entries:
         if e["note"]:
             ok, why = guard_note(e["note"])
+            if ok and '"' in e["note"]:
+                ok, why = "", 'a straight double quote (")'
             if not ok:
                 problems.setdefault(e["n"], f"the note has {why}: clients may see notes, so write the outcome in "
                                             "plain words, or leave it empty")
@@ -932,24 +939,32 @@ def pulsar_log(args: dict, client: str = "") -> dict:
             raise ToolError(blocked)
         _pending.pop(code)
     date, results = held["date"], []
+    unclear = " Check the Logged column; Pulsar's journal will not send it twice."
     for e in held["entries"]:
         try:
             got = post("/api/log", {"date": date, "start": e["start"], "minutes": e["minutes"], "taskId": e["taskId"],
                                     "serviceId": e["serviceId"], "note": e["note"], "run": held["run"],
                                     "row": f"mcp-{e['n']}"})
-        except ToolError as exc:  # Pulsar stopped answering mid-run: this one may or may not have been written
-            results.append(_preview(e, {"status": "not known", "why": f"{exc} Check the Logged column; Pulsar's "
-                                                                      "journal will not send it twice."}))
+        except Exception as exc:  # Pulsar stopped answering mid-run, or an answer that is not JSON: may have happened
+            why = str(exc) if isinstance(exc, ToolError) else f"{type(exc).__name__} while waiting for Pulsar's answer."
+            results.append(_preview(e, {"status": "not known", "why": why + unclear}))
             break
         if got.get("created"):
-            results.append(_preview(e, {"status": "logged", "entryId": str((got["created"] or {}).get("id") or "")}))
+            results.append(_preview(e, {"status": "logged", "entryId": str((got["created"] or {}).get("id") or ""),
+                                        **({"warning": _short(got["warning"])} if got.get("warning") else {})}))
             continue
+        if got.get("unclear") or int(got.get("_status") or 0) >= 500:  # sent, and no clear answer came back
+            results.append(_preview(e, {"status": "not known",
+                                        "why": (_short(got.get("error")) or "no clear answer") + "." + unclear}))
+            break
         if got.get("overlap"):
             why = "it would overlap " + "; ".join(f"{o.get('start')} {o.get('project')}" for o in got["overlap"])
         else:
             why = _short(got.get("error")) or "no clear answer"
         results.append(_preview(e, {"status": "not logged", "why": why}))
         break  # the first one that is not logged stops the run, as Log the day does
+    for e in held["entries"][len(results):]:  # after a stop: never sent
+        results.append(_preview(e, {"status": "not sent"}))
     done = sum(1 for r in results if r["status"] == "logged")
     return {"date": date, "written": done, "of": len(held["entries"]), "results": results,
             "stopped": done < len(held["entries"]),
@@ -1058,7 +1073,9 @@ TOOLS = [
                      "read of the day, the overlap check, the write lock and the journal, so Log the day can undo them). "
                      "Give the code and the preview's summary unchanged: Claude Code shows the summary to the person and "
                      "asks them again before this runs, every time; if they say no, nothing is written. Works only in "
-                     "Claude Code. The code works once, for 10 minutes."),
+                     "Claude Code. The code works once, for 10 minutes. Each result is logged, not logged (with the "
+                     "reason), not known (it may be in Productive: ask the person to look before logging it again) or "
+                     "not sent (after a stop)."),
      "inputSchema": {"type": "object", "required": ["code", "summary"], "additionalProperties": False,
                      "properties": {"code": {"type": "string", "description": "The code pulsar_preview returned"},
                                     "summary": {"type": "string", "description": "The summary pulsar_preview returned, "

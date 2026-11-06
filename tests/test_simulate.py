@@ -888,6 +888,7 @@ class Run:
             mock.patch.object(askclaude, "latest", lambda date: {"picks": d.picks} if d.picks else None),
             mock.patch.object(logbook, "record", record),
             mock.patch.object(mcp, "PROJECTS", self.folder),
+            mock.patch.object(mcp, "_today", lambda tz_name: d.date),  # the made-up day is today (later days are refused)
             mock.patch.dict(os.environ, env),
         ]
         with contextlib.ExitStack() as stack:

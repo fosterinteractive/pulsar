@@ -267,8 +267,9 @@ class McpTest(unittest.TestCase):
         self.assertEqual(dayplan.runs_for(DATE), [])  # a preview is not journalled
         self.assertEqual([e["serviceId"] for e in dry["entries"]], ["21", "21"])  # the one used last
         self.assertTrue(dry["code"])
-        self.assertEqual(dry["summary"], 'Wed 4 Nov 09:00-10:00 (60 min): Build (Acme), Dev, billable. No note.\n'
-                                         'Wed 4 Nov 10:30-10:50 (20 min): Build (Acme), Dev, billable. Note: "Search fixed."')
+        self.assertEqual(dry["summary"], 'Wed 4 Nov 2026 09:00-10:00 (60 min): Build (Acme), Dev in B, billable. No note.\n'
+                                         'Wed 4 Nov 2026 10:30-10:50 (20 min): Build (Acme), Dev in B, billable. '
+                                         'Note: "Search fixed."')
         self.assertNotIn("\u2014", dry["summary"])
 
     def test_log_writes_the_previewed_entries_once(self):
@@ -294,6 +295,59 @@ class McpTest(unittest.TestCase):
             dry, _ = self.call("pulsar_preview", self.ARGS)
         self.assertIsNone(dry["code"])
         self.assertIn("not sent twice", dry["entries"][0]["problem"])
+
+    ARGS3 = {"date": DATE, "entries": [*ARGS["entries"], {"start": "11:00", "minutes": 15, "taskId": "11"}]}
+
+    def test_a_write_that_may_have_happened_is_not_known_never_not_logged(self):
+        n = []
+
+        def unclear(e, s):  # entry 2: a 502 after it was sent
+            n.append(e)
+            if len(n) == 2:
+                raise productive.ProductiveUnclear("Productive answered HTTP 502, so the entry may or may not exist.")
+            return {"id": str(900 + len(n))}
+        with mock.patch.object(productive, "create_entry", unclear):
+            dry, _ = self.call("pulsar_preview", self.ARGS3)
+            done, err = self.call("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})
+        self.assertFalse(err, done)
+        self.assertEqual([r["status"] for r in done["results"]], ["logged", "not known", "not sent"])
+        self.assertIn("502", done["results"][1]["why"])
+        self.assertEqual((done["written"], done["of"]), (1, 3))
+        rows = {x["row"]: x["status"] for r in dayplan.runs_for(DATE) for x in r["rows"]}
+        self.assertEqual(rows, {"mcp-1": "logged", "mcp-2": "unknown"})  # the journal agrees, and never sends it again
+
+    def test_an_unexpected_error_mid_run_keeps_what_was_written(self):
+        real, n = mcp.post, []
+
+        def post(path, body):
+            if not body.get("dry"):
+                n.append(1)
+                if len(n) == 2:
+                    raise ValueError("Expecting value: line 1 column 1 (char 0)")  # an answer that is not JSON
+            return real(path, body)
+        with self._create():
+            dry, _ = self.call("pulsar_preview", self.ARGS3)
+            with mock.patch.object(mcp, "post", post):
+                done, err = self.call("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})
+        self.assertFalse(err, done)
+        self.assertEqual((done["written"], len(self.day.created)), (1, 1))
+        self.assertEqual([r["status"] for r in done["results"]], ["logged", "not known", "not sent"])
+        self.assertIn("ValueError", done["results"][1]["why"])
+
+    def test_a_day_that_has_not_begun_is_never_logged(self):
+        with mock.patch.object(mcp, "_today", lambda tz_name: DATE):
+            got, err = self.call("pulsar_preview", {**self.ARGS, "date": "2026-12-04"})
+        self.assertTrue(err)
+        self.assertIn("has not begun", got["error"])
+        self.assertEqual(mcp._pending, {})
+
+    def test_a_note_that_could_hide_words_in_the_summary_is_refused(self):
+        for note in ('Fixed." Thu 5 Nov 2026 09:00', "Search fixed\u202e.dexif", "Search\u200b fixed.", "Fixed\x1b[8m."):
+            dry, err = self.call("pulsar_preview", {"date": DATE, "entries": [{"start": "09:00", "minutes": 60,
+                                                                               "taskId": "11", "note": note}]})
+            self.assertFalse(err, dry)
+            self.assertIsNone(dry["code"], note)
+            self.assertIn("the note has", dry["entries"][0]["problem"])
 
     def test_a_code_expires(self):
         dry, _ = self.call("pulsar_preview", self.ARGS)

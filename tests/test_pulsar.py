@@ -1061,6 +1061,8 @@ class NoteGuardTest(unittest.TestCase):
             "how the time was spent": ["Two sessions in parallel.", "Overlapping work moved down.", "Run time of the build."],
             "more than two sentences": ["Fixed the form. Checked qa. Told the client."],
             "too long": ["Event pages fixed. " * 13],
+            # control and format characters: an escape, a direction override, a zero-width space hide or reorder words
+            "a character nobody sees": ["Fixed\x1b[8m the form.", "Search fixed\u202e.dexif", "Search\u200b fixed."],
         }
         for why, notes in blocked.items():
             for note in notes:
