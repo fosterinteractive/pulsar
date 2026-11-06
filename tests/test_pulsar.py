@@ -517,6 +517,21 @@ class TaskLinksTest(SessionsTest):
         found = self.sessions.task_links(self.t0, os.path.dirname(self.projects))
         self.assertEqual([tid for f in found for _, tid in f["links"]], ["222"])
 
+    def test_the_organizations_address_comes_from_links_seen_never_made_up(self):
+        root = os.path.dirname(self.projects)
+        self.assertEqual(self.sessions.productive_address("60023", root), "")      # no session yet: no address
+        with open(os.path.join(self.projects, "old.jsonl"), "w") as fh:
+            fh.write('{"t": "see https://app.productive.io/1-acme/tasks/5 and https://app.productive.io/60023-foster-interactive/tasks/7"}\n')
+        self.assertEqual(self.sessions.productive_address("60023", root), "https://app.productive.io/60023-foster-interactive")
+        self.assertEqual(self.sessions.productive_address("1", root), "https://app.productive.io/1-acme")
+        self.assertEqual(self.sessions.productive_address("999", root), "")         # another organization: never guessed
+        self.assertEqual(self.sessions.productive_address("", root), "")
+        self.assertEqual(self.sessions.productive_address("1/../2", root), "")
+        # a link cut by the 8 MB pieces the file is read in is still found
+        with open(os.path.join(self.projects, "old.jsonl"), "w") as fh:
+            fh.write("x" * ((8 << 20) - 20) + "https://app.productive.io/42-big-org/tasks/1\n")
+        self.assertEqual(self.sessions.productive_address("42", root), "https://app.productive.io/42-big-org")
+
 
 class RepeatsTest(unittest.TestCase):
     """The daily meeting: an entry logged at the same time most days is offered when the tracker sees the call."""

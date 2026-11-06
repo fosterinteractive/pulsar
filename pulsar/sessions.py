@@ -20,6 +20,7 @@ import glob
 import json
 import os
 import re
+import time
 from datetime import datetime
 
 HOME = os.path.expanduser("~")
@@ -404,6 +405,43 @@ def task_links(t0: float, projects_dir: str = PROJECTS_DIR) -> list:
         if links and titles:
             found.append({"titles": {x for x in titles if len(x) >= 5}, "links": sorted(links)})
     return found
+
+
+ORG_ADDRESS = re.compile(rb"app\.productive\.io/(\d+)-([a-z0-9]+(?:-[a-z0-9]+)*)/")
+
+
+def productive_address(org_id: str, projects_dir: str = PROJECTS_DIR, days: int = 60) -> str:
+    """The organization's address in Productive's web app, "https://app.productive.io/<org id>-<name>", as links in
+    the person's own Claude sessions show it (each of them opens a task as <address>/tasks/<id>). Productive's API
+    gives the id but not the name part, so it is never made up: '' when no link to this organization has been seen.
+    The newest sessions first, read as bytes, stopping at the first file with one: well under a second."""
+    if not re.fullmatch(r"\d+", str(org_id or "")):
+        return ""
+    want, since = str(org_id).encode(), time.time() - days * 86400
+    paths = []
+    for path in glob.glob(os.path.join(projects_dir, "*", "*.jsonl")):
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            continue
+        if mtime >= since:
+            paths.append((mtime, path))
+    for _, path in sorted(paths, reverse=True):
+        names, tail = [], b""
+        try:
+            with open(path, "rb") as fh:
+                while True:  # in pieces: a session file can be hundreds of MB
+                    chunk = fh.read(8 << 20)
+                    if not chunk:
+                        break
+                    data, tail = tail + chunk, chunk[-200:]  # a link cut in two is whole in the next piece
+                    names += [name for oid, name in ORG_ADDRESS.findall(data) if oid == want]
+        except OSError:
+            continue
+        if names:
+            name = max(set(names), key=names.count).decode()
+            return f"https://app.productive.io/{org_id}-{name}"
+    return ""
 
 
 LINK_BEFORE = 3 * 3600  # a link typed this long before a row still names its task; older ones were about other work
