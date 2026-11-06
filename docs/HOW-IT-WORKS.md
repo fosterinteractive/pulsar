@@ -365,7 +365,12 @@ unticked.
   never what a tool returned. Older links were too often about other work.
 - **Learned tasks** (`pulsar/learn.py`): for each Likely row, the task you logged while working in the same Claude
   session, then in the same repository, over the last 60 days. Each earlier row votes, with its minutes, for the task
-  that took most of it. Past days' rows are worked out once in the background and kept in
+  that took most of it. A session's votes count in every repository it worked in. Preferring the same session in
+  the same repository was measured on 30 days of one person's logging, each day learned from the days before it: the
+  right task came first for fewer minutes (35% instead of 39%, and 44% instead of 51% for sessions that worked in two
+  or more repositories that day). A long session moves from task to task over the weeks more than it changes task
+  between repositories, and a row shared by two sessions has one repository, which may be the other session's.
+  Past days' rows are worked out once in the background and kept in
   `~/.cache/pulsar/likely-days/<date>.json`: times, repository names and a hash of each session title, never the
   titles or anything typed. Until all 60 days are there, the page says "Learning your tasks… N of 60". The rows do
   not wait for the 60 days of Productive history: while it is read, they come without learned tasks and with
