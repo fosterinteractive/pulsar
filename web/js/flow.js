@@ -1,6 +1,6 @@
-/* The flow of logging a day, kept apart from day.js and log.js: Log and next, the start as 24-hour HH:MM, links to
-   Productive, the first-run checklist, the week in the header, report days that open in the Day view, and where a
-   day opens. day.js and log.js call into it at a few places, each marked "flow.js". */
+/* The flow of logging a day, kept apart from day.js and log.js: Log and next, Start and End as 24-hour HH:MM in step
+   with Minutes, links to Productive, the first-run checklist, the week in the header, report days that open in the
+   Day view, and where a day opens. day.js and log.js call into it at a few places, each marked "flow.js". */
 
 /* ---------- Log and next ---------- */
 /* entries logged from this page in the last ten minutes: Productive can take a moment to show a new entry, and the
@@ -16,11 +16,13 @@ function openStretches(skipA = 0, skipB = 0) {
     out = out.flatMap(s => (c.b <= s.a || c.a >= s.b ? [s] : [{a: s.a, b: c.a}, {a: c.b, b: s.b}].filter(p => p.b - p.a >= 3)));
   return out.sort((p, q) => p.a - q.a);
 }
-/* the dialog opens: "Log and next" is there for new entries in the day on screen (the rails are that day's) */
+/* the dialog opens: "Log and next" is there for new entries in the day on screen (the rails are that day's); End
+   from the start and minutes it opened with */
 function prepareNext(date, edit) {
   logForm.elements.start.removeAttribute('aria-invalid');  // a start the last dialog refused is not this one's
   $('#log-next').hidden = !!edit || date !== state.date;
   $('#log-next-hint').textContent = '';
+  syncTimes('start', false);
 }
 logForm.elements.date.addEventListener('change', () => prepareNext(logForm.elements.date.value, logEdit));
 /* after a successful log (log.js): remember it, and with Log and next open the next stretch after it (else the day's
@@ -50,6 +52,64 @@ logForm.elements.start.addEventListener('blur', ev => {
   if (ev.target.value) ev.target.setAttribute('aria-invalid', String(!v)); else ev.target.removeAttribute('aria-invalid');
 });
 logForm.elements.start.addEventListener('input', ev => ev.target.removeAttribute('aria-invalid'));
+
+/* ---------- Start, End and Minutes stay in step ---------- */
+/* End is Start plus Minutes, for the eye: only start and minutes are sent. A new Start keeps Minutes and moves End, so
+   what is logged stays the same, as before End existed and as calendars do; End changes Minutes; Minutes moves End.
+   Typed values are never rounded. An entry stays in its day: End is 24:00 at the latest. While typing, the other
+   fields follow each time the value is a time; a value left (Tab, Enter, a click away) is also checked and said. */
+/* an end as HH:MM, '' when it is not one; midnight is the end of the day, 24:00 (typed 24:00 or 00:00) */
+function endHHMM(v) {
+  const t = /^24[:.h]?00$/.test(String(v ?? '').trim()) ? '24:00' : startHHMM(v);
+  return t === '00:00' ? '24:00' : t;
+}
+const clockMin = t => +t.slice(0, 2) * 60 + +t.slice(3, 5);
+let timesBusy = false;  // the fields written here are not typing
+let timesCut = false;   // Minutes were cut at midnight: the next Log stops once, to show it
+function syncTimes(from, left) {
+  const f = logForm.elements, s = startHHMM(f.start.value), m = Number(f.minutes.value), e = endHHMM(f.end.value);
+  if (!s) return;  // the start's own check says what is wrong with it
+  const a = clockMin(s), setMinutes = v => {  // as if typed, so whatever follows Minutes (a new overlap check) follows
+    if (+f.minutes.value === v) return;
+    timesBusy = true; f.minutes.value = v; f.minutes.removeAttribute('aria-invalid');
+    f.minutes.dispatchEvent(new Event('input', {bubbles: true})); timesBusy = false;
+  };
+  let say = null, bad = false;  // null leaves the line under the times as it is
+  if (from === 'end') {
+    const b = e ? clockMin(e) : -1;
+    if (left && e) f.end.value = e;
+    if (b > a) { setMinutes(b - a); say = ''; }
+    else if (left) {
+      bad = true;
+      say = !e ? 'Write the end as HH:MM, 24-hour: 17:30, or 24:00 for midnight.' : b === a ? 'End is the same as Start.'
+        : 'End is before Start. An entry cannot run past midnight: end it at 24:00 and log the rest on the next day.';
+    }
+  } else if (Number.isInteger(m) && m >= 1) {
+    if (a + m <= 1440) { f.end.value = a + m === 1440 ? '24:00' : hm(a + m); say = ''; }
+    else if (!left) { f.end.value = '24:00'; say = `An entry cannot run past midnight: from ${s}, ${dur(1440 - a)} at most.`; }
+    else { setMinutes(1440 - a); f.end.value = '24:00'; timesCut = true;
+      say = `An entry cannot run past midnight, so it now ends at 24:00: ${dur(1440 - a)}. Log the rest on the next day.`; }
+  }
+  if (say == null) return;
+  if (!say) timesCut = false;  // typed again since the cut: it has been seen
+  $('#log-times').textContent = say; $('#log-times').hidden = !say;
+  if (bad) f.end.setAttribute('aria-invalid', 'true'); else f.end.removeAttribute('aria-invalid');
+}
+for (const name of ['start', 'end', 'minutes'])
+  for (const type of ['input', 'change'])
+    logForm.elements[name].addEventListener(type, () => { if (!timesBusy) syncTimes(name, type === 'change'); });
+/* before anything is sent (log.js): what is wrong with Start, End and Minutes together, else ''. A start or minutes
+   wrong on their own are log.js's to say. */
+function timesProblem() {
+  const f = logForm.elements, s = startHHMM(f.start.value), m = Number(f.minutes.value);
+  if (!s || !Number.isInteger(m) || m < 1) return '';
+  if (clockMin(s) + m > 1440) syncTimes('minutes', true);  // ⌘↩ sends without a change event: cut here
+  const e = endHHMM(f.end.value);
+  if (!timesCut && e && clockMin(e) > clockMin(s)) return '';
+  if (!timesCut) syncTimes('end', true);  // says what is wrong with End
+  (timesCut ? f.minutes : f.end).focus(); timesCut = false;
+  return $('#log-times').textContent;
+}
 
 /* ---------- links to Productive ---------- */
 /* a task's page in Productive. The organization's address comes from links seen in your Claude sessions (the API

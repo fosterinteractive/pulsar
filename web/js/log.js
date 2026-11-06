@@ -337,6 +337,7 @@ logForm.addEventListener('submit', async ev => {
   const anyway = ev.submitter?.id === 'log-anyway', pieces = !logEdit && !anyway ? logSplit?.pieces : null;
   if (!task) return setLogMsg('Pick a task.', true);
   if (!f.service.value) return setLogMsg('Pick a service.', true);
+  const times = timesProblem(); if (times) return setLogMsg(times, true);  // flow.js: End, and past midnight
   const mins = Number(f.minutes.value);
   if (!(Number.isInteger(mins) && mins >= 1 && mins <= 1440)) {
     f.minutes.setAttribute('aria-invalid', 'true'); f.minutes.focus();

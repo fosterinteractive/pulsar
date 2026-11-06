@@ -8,6 +8,7 @@ What each Pulsar release changed, newest first.
 
 ## Unreleased
 - A full budget and a closed service are said in plain words when Productive refuses an entry.
+- Log dialog: an End time, kept in step with Start and Minutes; an entry cannot run past midnight.
 - Pulsar in Claude Code: reasons are fixed phrases only, names are cleaned, and no model-written note is returned.
 - Log dialog: time that runs into an entry already logged can be logged around it, as one or more entries.
 - Logging from the yellow rail, a drag, + Log or Log and next drafts the note too, from the Likely work in that time.

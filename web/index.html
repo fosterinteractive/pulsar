@@ -228,12 +228,15 @@
   <form id="log-form" novalidate>
     <div class="dh"><h2 id="log-title">Log time in Productive</h2><button type="button" class="btn icon" data-close aria-label="Close">✕</button></div>
     <div class="scrollarea">
-      <div class="row3">
+      <div class="row3 times">
         <label class="field"><span>Date</span><input name="date" type="date" required></label>
         <label class="field"><span>Start</span><input name="start" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
           placeholder="HH:MM" maxlength="5" required title="24-hour time, HH:MM"></label>
+        <label class="field"><span>End</span><input name="end" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
+          placeholder="HH:MM" maxlength="5" required title="24-hour time, HH:MM; 24:00 is midnight" aria-describedby="log-times"></label>
         <label class="field"><span>Minutes</span><input name="minutes" type="number" min="1" max="1440" required></label>
       </div>
+      <p class="hint warnish" id="log-times" aria-live="polite" hidden></p>
       <p class="hint warnish" id="log-nostart" hidden></p>
       <p class="hint" id="log-next-hint" aria-live="polite"></p>
       <div class="field"><span>Task <a class="tasklink" id="log-task-open" target="_blank" rel="noopener noreferrer" hidden>Open in Productive</a></span>

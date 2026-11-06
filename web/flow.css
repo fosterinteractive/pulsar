@@ -7,6 +7,10 @@
 .field span .tasklink { margin-left: 8px; font-size: 11.5px; color: var(--accent); text-decoration: none; }
 .field span .tasklink:hover { text-decoration: underline; }
 .field input[aria-invalid="true"] { border-color: var(--gap); box-shadow: 0 0 0 1px var(--gap); }
+/* Date, Start, End, Minutes in a row; on a phone the date gets its own row above the three times */
+#log-form .times { grid-template-columns: 1.3fr 1fr 1fr 1fr; }
+@media (max-width: 560px) { #log-form .times { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 0; } #log-form .times > :first-child { grid-column: 1 / -1; } }
+#log-form .times + .hint { margin-top: -4px; }
 #log-next-hint { color: var(--text); }
 
 /* the week, under the day's name: quiet, a button that opens each day; the short form where the header is tight */

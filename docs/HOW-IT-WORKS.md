@@ -293,7 +293,14 @@ used last on that task is picked, else one with the same name in a newer budget,
 says so before you log.
 
 The start is a 24-hour `HH:MM` text field, like every time in Pulsar (`9:30`, `930` and `9.30` become `09:30`; a
-time that is not one is refused before anything is sent). A note Pulsar filled in, a meeting's title or a repeat's
+time that is not one is refused before anything is sent). **End** (`flow.js`), the same kind of field, sits between
+Start and Minutes and is Start plus Minutes; every way the dialog opens fills it. The three stay in step as you type:
+a new Start keeps Minutes and moves End (what is logged stays the same, as before End existed and as calendars do), a
+new End changes Minutes, new Minutes move End. Only the start and minutes are sent; the API is unchanged. An entry
+stays in its day, so End is `24:00` at the latest (typed `24:00` or `00:00`). A Start or Minutes that would run past
+midnight shows End `24:00` and a line saying so while typing; leaving the field cuts Minutes to midnight, and the next
+Log stops once to show the cut. An End before Start (or equal to it, or not a time) is said under the times, and Log
+sends nothing until it is fixed. A note Pulsar filled in, a meeting's title or a repeat's
 usual note, says "Filled in for you: clients may see notes on invoices; check it" until it is edited. On a Likely
 block with commits of yours, the note is drafted from them (below), with "From your commits: check it before logging;
 clients may see notes"; a note Ask Claude drafted comes first. The picked task has an **Open in Productive** link (see
@@ -302,7 +309,8 @@ clients may see notes"; a note Ask Claude drafted comes first. The picked task h
 The minutes of a block (a stretch of the rail, an Activity, Likely or meeting block, a drag) are rounded to Settings'
 **Round entries to** (5, 10 or 15 minutes): to the nearest step, and at least one step. When rounding up would run into
 an entry already logged that day, they are rounded down instead, and a block shorter than one step that would still
-run into it keeps its own minutes. Minutes typed in the dialog, and an entry being changed, are never rounded.
+run into it keeps its own minutes. Minutes typed in the dialog (or worked out from a typed End), and an entry being
+changed, are never rounded.
 
 **Around time already logged.** When the overlap check (5.2) finds entries inside the time asked for, the answer also
 has the pieces around them (`server.pieces_around`): the time asked for less the time logged, never more and never
@@ -889,9 +897,9 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   whose HTML did not change as it is, so its cards and icons are not rebuilt. Cards are keyboard
   reachable (Enter, Space, Escape back to the card).
 - **`log.js`**: the log dialog, the task picker (shared with the rule dialog and Log the day) and rules.
-- **`flow.js`** (and `flow.css`): Log and next, the start as `HH:MM`, links to Productive, the first-run checklist,
-  the week in the header, report days that open the Day view, and where a day opens. `day.js` and `log.js` call it
-  at a few places marked "flow.js".
+- **`flow.js`** (and `flow.css`): Log and next, Start and End as `HH:MM` in step with Minutes, links to Productive,
+  the first-run checklist, the week in the header, report days that open the Day view, and where a day opens.
+  `day.js` and `log.js` call it at a few places marked "flow.js".
 - **`logday.js`** (and `logday.css`): Log the day, its review panel, the confirm step, the run and Undo, and the
   ticket flags of each row.
 - **`catchup.js`**: Earlier days in Log the day (5.4b), its list of workdays and the line that moves on to the next
