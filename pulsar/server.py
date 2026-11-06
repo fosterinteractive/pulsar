@@ -228,7 +228,7 @@ def test_productive(s: dict) -> dict:
         return {"ok": False, "message": problem}
     who = s.get("person_name") or f"person {s.get('person_id')}"
     via = "your API token" if source == "token" else "Claude Code's connection"
-    return {"ok": True, "message": f"Connected as {who} through {via}: {len(rows)} entries today."}
+    return {"ok": True, "message": f"Connected as {who} through {via}."}
 
 
 # ---- API -----------------------------------------------------------------------------------------
@@ -364,6 +364,8 @@ def api_settings(body: dict) -> dict:
     if token and not config.TOKEN_RE.match(token):  # check before anything is removed or replaced
         raise ValueError("That does not look like a Productive token (letters, digits, - and _ only).")
     before = config.load()
+    connection = bool(token or body.get("remove_token")) or any(
+        k in changes and changes[k] != before.get(k) for k in ("productive_source", "org_id", "person_id"))
     if body.get("remove_token") and not token:
         config.delete_token()
     if token or body.get("remove_token") or ("productive_source" in changes and changes["productive_source"] != before["productive_source"]):
@@ -376,7 +378,8 @@ def api_settings(body: dict) -> dict:
     _identify_failed[0] = 0.0
     s = config.update(changes)
     s = current_settings()
-    return {"config": public_config(s), "test": test_productive(s)}
+    # Productive is asked again only when the connection changed: saving a rule or a time zone needs no test
+    return {"config": public_config(s), "test": test_productive(s) if connection else None}
 
 
 # ---- tasks, services, logging ----------------------------------------------------------------------------

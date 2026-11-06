@@ -94,73 +94,100 @@
 <dialog id="settings" aria-labelledby="settings-title">
   <form id="settings-form" novalidate>
     <div class="dh"><h2 id="settings-title">Settings</h2><button type="button" class="btn icon" id="settings-x" aria-label="Close">✕</button></div>
-    <div class="scrollarea">
-      <section>
-        <h3>Productive</h3>
-        <p class="status" id="pd-status"></p>
-        <label class="field"><span>Connect with</span>
-          <select name="productive_source">
-            <option value="auto">Automatic: my API token, else Claude Code's connection</option>
-            <option value="token">My API token</option>
-            <option value="claude-code">Claude Code's connection</option>
-          </select></label>
-        <label class="field"><span>API token</span><input type="password" name="token" autocomplete="off" spellcheck="false"></label>
-        <p class="hint">In Productive: Settings, then API integrations, then Generate new token, with Read/Write access (read-only shows your time but cannot log it). The token stays on this computer (in the keychain on a Mac) and is never shown again.</p>
-        <div class="row2">
-          <label class="field"><span>Organization ID</span><input name="org_id" inputmode="numeric" placeholder="found automatically"></label>
-          <label class="field"><span>Your person ID</span><input name="person_id" inputmode="numeric" placeholder="found automatically"></label>
+    <div class="sbody">
+      <nav class="side" aria-label="Settings">
+        <label class="ssearch"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.3"/><path d="m10.2 10.2 3 3"/></svg><input type="search" id="settings-search" placeholder="Search" aria-label="Search settings" autocomplete="off" spellcheck="false"></label>
+        <div class="tabs" role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+        <button type="button" role="tab" id="t-conn" aria-controls="p-conn" aria-selected="true"><span class="ic ic-conn" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M6.5 9.5l3-3M5 7.5 3.8 8.7a2.3 2.3 0 0 0 3.3 3.3L8.3 10.8M11 8.5l1.2-1.2a2.3 2.3 0 0 0-3.3-3.3L7.7 5.2"/></svg></span>Connections</button>
+        <button type="button" role="tab" id="t-day" aria-controls="p-day" aria-selected="false" tabindex="-1"><span class="ic ic-day" aria-hidden="true"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.2"/><path d="M8 5v3.2l2 1.3"/></svg></span>Time and activity</button>
+        <button type="button" role="tab" id="t-claude" aria-controls="p-claude" aria-selected="false" tabindex="-1"><span class="ic ic-claude" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 2.8v3M8 10.2v3M2.8 8h3M10.2 8h3M4.3 4.3l2.1 2.1M9.6 9.6l2.1 2.1M11.7 4.3 9.6 6.4M6.4 9.6l-2.1 2.1"/></svg></span>Claude</button>
+        <button type="button" role="tab" id="t-rules" aria-controls="p-rules" aria-selected="false" tabindex="-1"><span class="ic ic-rules" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M6 4.5h6.5M6 8h6.5M6 11.5h6.5M3.5 4.5h.01M3.5 8h.01M3.5 11.5h.01"/></svg></span>Rules</button>
+        <button type="button" role="tab" id="t-upd" aria-controls="p-upd" aria-selected="false" tabindex="-1"><span class="ic ic-upd" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 3v7M5 7.5 8 10.5l3-3M3.5 13h9"/></svg></span>Updates</button>
         </div>
-        <p class="hint">Only if Pulsar asks for them. The organization ID is the number at the start of your Productive address (app.productive.io/<b>12345</b>-company/…); your person ID is the number in the address of your own profile.</p>
-        <button type="button" class="btn bordered" id="remove-token">Remove the saved token</button>
-      </section>
-      <section id="gcal">
-        <h3>Google Calendar</h3>
-        <p class="status" id="gcal-status"></p>
-        <p class="hint">Your meetings, in their own column next to your activity. Pulsar reads the events of your main
-          calendar and nothing else; Google asks you to allow it. The access stays on this computer (in the keychain on a Mac).</p>
-        <div class="btnrow"><button type="button" class="btn primary" id="gcal-connect">Connect Google Calendar</button>
-          <button type="button" class="btn bordered" id="gcal-disconnect" hidden>Disconnect</button></div>
-        <p class="hint" id="gcal-link" hidden></p>
-      </section>
-      <section>
-        <h3>Time</h3>
-        <label class="field"><span>Time zone</span><input name="timezone" list="zones" autocomplete="off"></label>
-        <datalist id="zones"></datalist>
-        <p class="hint">Leave it empty to use this computer's time zone.</p>
-        <label class="field"><span>Daily target, hours</span><input name="target_hours" type="number" min="0.5" max="24" step="0.25"></label>
-      </section>
-      <section>
-        <h3>Activity</h3>
-        <label class="field"><span>Personal windows</span><textarea name="personal_patterns" rows="5"></textarea></label>
-        <p class="hint">One word per line. A window whose app, title or site contains one of them counts as personal time, not work.</p>
-        <label class="field"><span>ActivityWatch address</span><input name="activitywatch_url" placeholder="http://localhost:5600"></label>
-        <label class="field"><span>“Likely” column</span>
-          <select name="likely"><option value="auto">Show it when Claude Code sessions are found</option><option value="off">Hide it</option></select></label>
-        <p class="hint" id="likely-hint"></p>
-        <label class="check"><input type="checkbox" name="ask_claude"> “Ask Claude” button in the Likely column</label>
-        <p class="hint" id="ask-claude-hint">It sends what you typed in that day's Claude Code sessions, and the names of the tasks you logged to in the last 30 days, to Claude through your own Claude Code, which may search Productive (read only). About 15 seconds and a little of your Claude usage per day.</p>
-      </section>
-      <section id="updates">
-        <h3>Version and updates</h3>
-        <div class="kv"><span>Version</span><span id="upd-version" class="num"></span></div>
-        <div class="kv"><span>Installed</span><span id="upd-since"></span></div>
-        <div class="kv"><span>Last check</span><span id="upd-checked"></span></div>
-        <details id="changelog"><summary>Changelog</summary><div id="changelog-list"></div></details>
-        <p class="hint">Pulsars are among the most precise clocks in the universe, hence the name.</p>
-        <p class="status" id="update-status"></p>
-        <div class="btnrow"><button type="button" class="btn bordered" id="update-check">Check for updates</button>
-          <button type="button" class="btn primary" id="update-now" hidden>Update</button></div>
-        <p class="hint">Pulsar looks for a new version every few hours and shows the Update button; it installs one only when
-          you click it.</p>
-        <label class="check"><input type="checkbox" id="warp-on"> Warp animation on updates and refresh</label>
-        <p class="hint" id="warp-hint">Option-click the version at the top to see it.</p>
-      </section>
-      <section>
-        <h3>Rules</h3>
-        <p class="hint">A window, page or site that contains these words belongs to that task: it is coloured by project and offered first when you log.</p>
-        <div id="rules-list"></div>
-        <button type="button" class="btn bordered" id="rule-add">Add a rule</button>
-      </section>
+      </nav>
+    <div class="scrollarea">
+      <p class="state" id="settings-nomatch" hidden>No setting matches that.</p>
+      <div role="tabpanel" id="p-conn" aria-labelledby="t-conn">
+        <section data-k="token api key organization person id connect claude code mcp">
+          <h3>Productive</h3>
+          <p class="status" id="pd-status"></p>
+          <label class="field"><span>Connect with</span>
+            <select name="productive_source">
+              <option value="auto">Automatic: my API token, else Claude Code's connection</option>
+              <option value="token">My API token</option>
+              <option value="claude-code">Claude Code's connection</option>
+            </select></label>
+          <label class="field"><span>API token</span><input type="password" name="token" autocomplete="off" spellcheck="false"></label>
+          <p class="hint">In Productive: Settings, then API integrations, then Generate new token, with Read/Write access (read-only shows your time but cannot log it). The token stays on this computer (in the keychain on a Mac) and is never shown again.</p>
+          <div class="row2">
+            <label class="field"><span>Organization ID</span><input name="org_id" inputmode="numeric" placeholder="found automatically"></label>
+            <label class="field"><span>Your person ID</span><input name="person_id" inputmode="numeric" placeholder="found automatically"></label>
+          </div>
+          <p class="hint">Only if Pulsar asks for them. The organization ID is the number at the start of your Productive address (app.productive.io/<b>12345</b>-company/…); your person ID is the number in the address of your own profile.</p>
+          <button type="button" class="btn bordered" id="remove-token">Remove the saved token</button>
+        </section>
+        <section data-k="meetings events google calendar oauth sign in connect disconnect" id="gcal">
+          <h3>Google Calendar</h3>
+          <p class="status" id="gcal-status"></p>
+          <p class="hint">Your meetings, in their own column next to your activity. Pulsar reads the events of your main
+            calendar and nothing else; Google asks you to allow it. The access stays on this computer (in the keychain on a Mac).</p>
+          <div class="btnrow"><button type="button" class="btn primary" id="gcal-connect">Connect Google Calendar</button>
+            <button type="button" class="btn bordered" id="gcal-disconnect" hidden>Disconnect</button></div>
+          <p class="hint" id="gcal-link" hidden></p>
+        </section>
+      </div>
+      <div role="tabpanel" id="p-day" aria-labelledby="t-day" hidden>
+        <section data-k="time zone timezone daily target hours working day">
+          <h3>Time</h3>
+          <label class="field"><span>Time zone</span><input name="timezone" list="zones" autocomplete="off"></label>
+          <datalist id="zones"></datalist>
+          <p class="hint">Leave it empty to use this computer's time zone.</p>
+          <label class="field"><span>Daily target, hours</span><input name="target_hours" type="number" min="0.5" max="24" step="0.25"></label>
+        </section>
+        <section data-k="personal windows activitywatch memtime tracker afk away">
+          <h3>Activity</h3>
+          <label class="field"><span>Personal windows</span><textarea name="personal_patterns" rows="5"></textarea></label>
+          <p class="hint">One word per line. A window whose app, title or site contains one of them counts as personal time, not work.</p>
+          <label class="field"><span>ActivityWatch address</span><input name="activitywatch_url" placeholder="http://localhost:5600"></label>
+        </section>
+      </div>
+      <div role="tabpanel" id="p-claude" aria-labelledby="t-claude" hidden>
+        <section data-k="likely column ask claude sessions sonnet model ai suggestions">
+          <h3>Claude Code</h3>
+          <p class="hint">Pulsar reads your Claude Code sessions on this Mac to show which project each stretch of work went to (the Likely column), and learns from what you log which tasks belong to them. Nothing leaves this Mac unless you use Ask Claude.</p>
+          <label class="field"><span>“Likely” column</span>
+            <select name="likely"><option value="auto">Show it when Claude Code sessions are found</option><option value="off">Hide it</option></select></label>
+          <p class="hint" id="likely-hint"></p>
+          <label class="check"><input type="checkbox" name="ask_claude"> “Ask Claude” button in the Likely column</label>
+          <p class="hint" id="ask-claude-hint">It sends what you typed in that day's Claude Code sessions, and the names of the tasks you logged to in the last 30 days, to Claude through your own Claude Code, which may search Productive (read only). About 15 seconds and a little of your Claude usage per day.</p>
+        </section>
+      </div>
+      <div role="tabpanel" id="p-rules" aria-labelledby="t-rules" hidden>
+        <section data-k="rule rules task match window site words">
+          <h3>Rules</h3>
+          <p class="hint">A window, page or site that contains these words belongs to that task: it is coloured by project and offered first when you log.</p>
+          <div id="rules-list"></div>
+          <button type="button" class="btn bordered" id="rule-add">Add a rule</button>
+        </section>
+      </div>
+      <div role="tabpanel" id="p-upd" aria-labelledby="t-upd" hidden>
+        <section data-k="version update updates changelog release warp animation codename" id="updates">
+          <h3>Version and updates</h3>
+          <div class="kv"><span>Version</span><span id="upd-version" class="num"></span></div>
+          <div class="kv"><span>Installed</span><span id="upd-since"></span></div>
+          <div class="kv"><span>Last check</span><span id="upd-checked"></span></div>
+          <details id="changelog"><summary>Changelog</summary><div id="changelog-list"></div></details>
+          <p class="hint">Pulsars are among the most precise clocks in the universe, hence the name.</p>
+          <p class="status" id="update-status"></p>
+          <div class="btnrow"><button type="button" class="btn bordered" id="update-check">Check for updates</button>
+            <button type="button" class="btn primary" id="update-now" hidden>Update</button></div>
+          <p class="hint">Pulsar looks for a new version every few hours and shows the Update button; it installs one only when
+            you click it.</p>
+          <label class="check"><input type="checkbox" id="warp-on"> Warp animation on updates and refresh</label>
+          <p class="hint" id="warp-hint">Option-click the version at the top to see it.</p>
+        </section>
+      </div>
+    </div>
     </div>
     <p class="msg" id="settings-msg" role="status"></p>
     <div class="df"><button type="button" class="btn bordered" id="settings-cancel">Close</button><button type="submit" class="btn primary" id="settings-save">Save</button></div>

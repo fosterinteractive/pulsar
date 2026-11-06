@@ -49,8 +49,74 @@ $('#warp-on').addEventListener('change', ev => {
   toast(ev.target.checked ? 'The warp is on.' : 'The warp is off.');
 });
 
-function openSettings() {
+/* tabs: Connections, Time and activity, Claude, Rules, Updates. The one last open opens again (a per-browser
+   convenience; storage may be off, so every access is guarded). Arrow keys, Home and End move between them. */
+const TAB_KEY = 'pulsar-settings-tab';
+const settingsTabs = [...document.querySelectorAll('#settings [role="tab"]')];
+function showTab(id, focus = false) {
+  if (!settingsTabs.some(t => t.id === id)) id = 't-conn';
+  for (const t of settingsTabs) {
+    const on = t.id === id;
+    t.setAttribute('aria-selected', String(on)); t.tabIndex = on ? 0 : -1;
+    $('#' + t.getAttribute('aria-controls')).hidden = !on;
+    if (on && focus) t.focus();
+  }
+  $('#settings .scrollarea').scrollTop = 0;
+  try { localStorage.setItem(TAB_KEY, id); } catch { /* storage off: the first tab next time */ }
+}
+/* the tab a field is in, so a message about it can show it */
+const tabOf = el => 't-' + (el.closest('[role="tabpanel"]')?.id || 'p-conn').slice(2);
+for (const t of settingsTabs) t.onclick = () => { clearSearch(); showTab(t.id); };
+$('#settings .tabs').addEventListener('keydown', ev => {
+  const i = settingsTabs.indexOf(document.activeElement);
+  if (i < 0) return;
+  const to = {ArrowDown: i + 1, ArrowUp: i - 1, ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: settingsTabs.length - 1}[ev.key];
+  if (to == null) return;
+  ev.preventDefault();
+  showTab(settingsTabs[(to + settingsTabs.length) % settingsTabs.length].id, true);
+});
+
+/* search: every section whose words (title, labels, hints, choices, and a few more in data-k) contain what was
+   typed, from every category at once; categories with none fade in the sidebar. Escape clears it first. */
+const settingsSearch = $('#settings-search');
+function applySearch() {
+  const q = settingsSearch.value.trim().toLowerCase();
+  const panels = [...document.querySelectorAll('#settings [role="tabpanel"]')];
+  $('#settings .side').classList.toggle('searching', !!q);  // results from every category: no one category is open
+  if (!q) {
+    for (const s of document.querySelectorAll('#settings section')) s.hidden = false;
+    for (const t of settingsTabs) t.classList.remove('dim');
+    $('#settings-nomatch').hidden = true;
+    showTab(settingsTabs.find(t => t.getAttribute('aria-selected') === 'true')?.id);
+    return;
+  }
+  let any = false;
+  for (const panel of panels) {
+    let hits = 0;
+    for (const s of panel.querySelectorAll('section')) {
+      const words = `${s.textContent} ${s.dataset.k || ''} ${[...s.querySelectorAll('[placeholder]')].map(x => x.placeholder).join(' ')}`;
+      s.hidden = !words.toLowerCase().includes(q);
+      hits += !s.hidden;
+    }
+    panel.hidden = !hits;
+    settingsTabs.find(t => t.getAttribute('aria-controls') === panel.id)?.classList.toggle('dim', !hits);
+    any = any || hits > 0;
+  }
+  $('#settings-nomatch').hidden = any;
+  $('#settings .scrollarea').scrollTop = 0;
+}
+function clearSearch() { if (settingsSearch.value) { settingsSearch.value = ''; applySearch(); } }
+settingsSearch.addEventListener('input', applySearch);
+settingsSearch.addEventListener('keydown', ev => {
+  if (ev.key === 'Escape' && settingsSearch.value) { ev.preventDefault(); clearSearch(); }
+});
+
+function openSettings(tab) {
   if (!CONFIG) return;
+  clearSearch();
+  let last = null;
+  try { last = localStorage.getItem(TAB_KEY); } catch { /* storage off */ }
+  showTab(typeof tab === 'string' ? tab : last || 't-conn');
   fillSettings(CONFIG);
   paintWarp();
   /* the connection may have changed since the page loaded (a token renewed or expired): ask again, and refresh only
@@ -77,7 +143,7 @@ async function saveSettings(extra = {}) {
   const th = f.target_hours, v = th.value.trim();
   if (th.validity.badInput || (v !== '' && !(+v >= 0.5 && +v <= 24))) {
     msg.className = 'msg warn'; msg.textContent = 'The daily target is a number of hours from 0.5 to 24, or empty for the default. Nothing was saved.';
-    th.focus(); return;
+    showTab(tabOf(th)); th.focus(); return;
   }
   const body = {
     productive_source: f.productive_source.value, org_id: f.org_id.value.trim(), person_id: f.person_id.value.trim(),
@@ -85,14 +151,16 @@ async function saveSettings(extra = {}) {
     activitywatch_url: f.activitywatch_url.value.trim(), likely: f.likely.value, ask_claude: f.ask_claude.checked, ...extra,
   };
   if (f.token.value.trim()) body.token = f.token.value.trim();
-  btn.disabled = true; msg.className = 'msg'; msg.textContent = 'Saving and checking Productive…';
+  btn.disabled = true; msg.className = 'msg'; msg.textContent = 'Saving…';
   const r = await postJSON('/api/settings', body);
   btn.disabled = false;
   if (r.error) { msg.className = 'msg warn'; msg.textContent = r.error; return; }
   applyConfig(r.config);
   fillSettings(r.config);
-  msg.className = 'msg' + (r.test.ok ? '' : ' warn');
-  msg.textContent = (r.test.ok ? 'Saved. ' : 'Saved, but: ') + r.test.message;
+  // Productive was asked again only if the connection changed; its answer goes to the Productive part too
+  msg.className = 'msg' + (r.test && !r.test.ok ? ' warn' : '');
+  msg.textContent = !r.test ? 'Saved.' : r.test.ok ? `Saved. ${r.test.message}` : `Saved, but Productive: ${r.test.message}`;
+  if (r.test) { const st = $('#pd-status'); st.textContent = r.test.message; st.classList.toggle('warn', !r.test.ok); }
   reloadView();
 }
 
@@ -198,7 +266,7 @@ setInterval(async () => {
 }, 3 * 3600 * 1000);
 $('#ver-chip').onclick = ev => {
   if (ev.altKey) { warp(); return; }  // Option-click: the warp an update plays, to look at
-  openSettings(); $('#updates').scrollIntoView({block: 'start'});
+  openSettings('t-upd');
 };
 $('#rule-add').onclick = () => openRule('');
 $('#rules-list').addEventListener('click', async ev => {
@@ -206,7 +274,7 @@ $('#rules-list').addEventListener('click', async ev => {
   const rules = (CONFIG.rules || []).filter((_, i) => i !== +b.dataset.ruleDel);
   if (await saveRules(rules)) fillSettings(CONFIG);
 });
-document.addEventListener('click', ev => { if (ev.target.closest('[data-open-settings]')) openSettings(); });
+document.addEventListener('click', ev => { if (ev.target.closest('[data-open-settings]')) openSettings('t-conn'); });
 
 /* The changelog: this copy's CHANGELOG.md, read the first time it is opened. Each release folds. */
 $('#changelog').addEventListener('toggle', async ev => {

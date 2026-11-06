@@ -252,6 +252,11 @@ function postJSON(path, body) {
   return callJSON(path, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Pulsar': '1'}, body: JSON.stringify(body)});
 }
 function getJSON(path) { return callJSON(path); }
+/* Claude's mark, next to what Claude suggested (Ask Claude): a small eight-ray spark in Claude's orange. The words for
+   screen readers come with it, so the icon is never the only sign. */
+const CLAUDE_MARK = '<svg class="cl-mark" viewBox="0 0 16 16" aria-hidden="true"><g stroke="currentColor" stroke-width="2" stroke-linecap="round">'
+  + '<path d="M8 2v4M8 10v4M2 8h4M10 8h4M3.8 3.8l2.6 2.6M9.6 9.6l2.6 2.6M12.2 3.8 9.6 6.4M6.4 9.6 3.8 12.2"/></g></svg>'
+  + '<span class="vh">Claude suggests: </span>';
 /* a short note at the bottom after a refresh: what changed in the logged time */
 let toastTimer;
 function toast(text, warn = false) {

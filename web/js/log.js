@@ -64,7 +64,7 @@ function makePicker(listEl, searchEl, onPick) {
       + (g.note ? `<div class="note">${esc(g.note)}</div>` : '')
       + g.tasks.map(t => `<button type="button" class="pk${selected?.taskId === t.taskId ? ' on' : ''}" data-id="${esc(t.taskId)}"
           role="option" aria-selected="${selected?.taskId === t.taskId}"><span class="pk-t">${esc(t.title)}</span>
-          <span class="pk-p">${esc(t.project)}${g.showMin && t.minutes ? ' · ' + dur(t.minutes) + ' here' : ''}${t.why ? ' · ' + esc(t.why) : ''}${taskNote(t)}</span></button>`).join('')).join('')
+          <span class="pk-p">${esc(t.project)}${g.showMin && t.minutes ? ' · ' + dur(t.minutes) + ' here' : ''}${t.why ? ' · ' + (t.claude ? CLAUDE_MARK : '') + esc(t.why) : ''}${taskNote(t)}</span></button>`).join('')).join('')
       || `<div class="note">${esc(empty)}</div>`;
   }
   /* a redraw replaces the buttons: the one that had the focus gets it back */
@@ -129,7 +129,7 @@ logForm.elements.date.addEventListener('change', () => {
 /* lead: a group offered first and picked: {label, tasks}, {label, ids} (the page knows only the tasks' ids), or
    {label, url} (the server works them out, each with why) */
 async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = [], note = '', lead = null} = {}) {
-  if (!CONFIG?.productive.active) { toast('Connect Productive in Settings first.', true); openSettings(); return; }
+  if (!CONFIG?.productive.active) { toast('Connect Productive in Settings first.', true); openSettings('t-conn'); return; }
   const f = logForm.elements;
   start = Math.max(0, Math.min(1435, Math.round(start)));  // inside the day: hm() would wrap 24:00 to 00:00
   minutes = Math.max(1, Math.min(1440 - start, Math.round(minutes)));

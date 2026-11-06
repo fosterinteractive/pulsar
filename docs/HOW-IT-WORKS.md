@@ -273,7 +273,7 @@ says so before you log.
   messages; and the tasks logged to in the last 30 days, with the instruction to prefer them and search Productive
   only when none fits. It has no shell and no files, cannot change Productive, and its session is not kept (so it
   never shows up in Likely). The answer is a task (and two alternatives) with a short reason per row, shown on the
-  Likely card and first in the dialog. About 15 to 60 seconds and $0.10 to $0.25 of the person's usage per day.
+  Likely card and first in the dialog, with Claude's mark next to it. About 15 to 60 seconds and $0.10 to $0.25 of the person's usage per day.
 - **A meeting's task** (`server.meeting_tasks`): first, the task you logged during the earlier meetings of the same
   series (Google's `recurringEventId`) or the same title, each earlier meeting voting for the task that took most of
   it; then your tasks whose names share a word with the meeting's title. Words every meeting has ("sync", "weekly",
@@ -410,7 +410,9 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   reachable (Enter, Space, Escape back to the card).
 - **`log.js`**: the log dialog, the task picker (shared with the rule dialog) and rules.
 - **`meetings.js`**: the Meetings column and the Google part of Settings.
-- **`settings.js`**: Settings, updates and the reminder, the changelog.
+- **`settings.js`**: Settings (a sidebar of categories, each with its own icon, and a search that shows the matching
+  sections of every category; the last category open opens again), updates and the reminder, the changelog. Saving
+  asks Productive again only when the connection changed.
 - **`report.js`**: the report, its charts (SVG, drawn here) and downloads.
 - **`datepick.js`**: the calendar behind every date field (the native fields stay underneath, hidden, so the rest of
   the code still reads `YYYY-MM-DD`).

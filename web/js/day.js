@@ -106,7 +106,7 @@ function likelyTasks(b) {
   const seen = new Set(), learned = [];
   for (const t of rows.flatMap(e => e.learned || [])) if (!seen.has(t.taskId) && seen.add(t.taskId)) learned.push(t);
   const pick = claudePick(b);
-  const claude = (pick?.tasks || []).map((t, i) => ({...t, why: i ? 'Claude, another option' : `Claude: ${pick.why}`}));
+  const claude = (pick?.tasks || []).map((t, i) => ({...t, claude: true, why: i ? 'another option' : pick.why}));
   return {ids: [...new Set(rows.flatMap(e => e.tasks || []))].slice(0, 4), learned: learned.slice(0, 5), claude};
 }
 
@@ -249,7 +249,7 @@ function render() {
       return `<div class="card likely${b.parallel ? ' parallel' : ''}" data-k="likely" data-i="${i}" style="${place(x, ppm, 18)}"
         tabindex="0" role="button" aria-label="${esc(`Likely ${hm(x.s)}–${hm(x.e)}: ${b.project}${b.title ? ', ' + b.title : ''}, ${dur(b.total)}`)}">
         <div class="row"><span class="t">${esc(b.project)}</span><span class="m num">${dur(b.total)}</span></div>
-        ${h > 34 && claudePick(b) ? `<div class="d pick" title="${esc(`Claude: ${claudePick(b).why}`)}">→ ${esc(claudePick(b).tasks[0].title)}</div>`
+        ${h > 34 && claudePick(b) ? `<div class="d pick" title="${esc(`Claude: ${claudePick(b).why}`)}">${CLAUDE_MARK}${esc(claudePick(b).tasks[0].title)}</div>`
           : h > 34 && b.title ? `<div class="d">${esc(b.title)}</div>` : ''}</div>`;
     }).join('') : '<div class="state">No Claude sessions on this day.</div>';
   }
