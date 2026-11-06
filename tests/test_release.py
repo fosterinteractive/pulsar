@@ -1,5 +1,5 @@
 """How a release reaches a Mac: the code Pulsar.app carries is installed only as a release signed it (release_sig.py,
-launcher.sh).
+launcher.sh), and a session dies with its server.
 
 Every key here is a throwaway one made for the test; the launcher runs with a home folder of its own and dialogs
 written to a file (PULSAR_TEST_DIALOGS), and the code it starts is a stand-in that exits at once.
@@ -243,6 +243,31 @@ class LauncherInstallTest(unittest.TestCase):
         self.assertEqual(self.current(), "versions/1.1.0")
         with open(os.path.join(self.root, "versions", "1.1.0", "pulsar", "server.py"), encoding="utf-8") as fh:
             self.assertEqual(fh.read(), "# the server\n")  # copied again from the app, as signed
+
+class SessionLifetimeTest(unittest.TestCase):
+    def test_a_session_is_good_only_for_the_server_that_issued_it(self):
+        token = config.new_session()
+        self.assertTrue(config.valid_session(token))
+        self.assertFalse(os.path.exists(config.SESSIONS_FILE))  # kept nowhere a later server would read it
+        run = subprocess.run([sys.executable, "-E", "-s", "-B", "-c",
+                              "import sys; sys.path.insert(0, sys.argv[1]); from pulsar import config; "
+                              "print(config.valid_session(sys.argv[2]))", REPO, token],
+                             capture_output=True, text=True, timeout=60)
+        self.assertEqual(run.stdout.strip(), "False", run.stderr)  # another server process: no such session
+        config.end_session(token)
+        self.assertFalse(config.valid_session(token))
+
+    def test_start_up_removes_the_sessions_older_versions_kept(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("pulsar_main", os.path.join(REPO, "pulsar.py"))
+        main = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(main)
+        config.ensure_dirs()
+        with open(config.SESSIONS_FILE, "w", encoding="utf-8") as fh:
+            fh.write(json.dumps({"0" * 64: 1.0}))
+        main.tidy()
+        self.assertFalse(os.path.exists(config.SESSIONS_FILE))
+
 
 if __name__ == "__main__":
     unittest.main()

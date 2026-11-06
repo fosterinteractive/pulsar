@@ -7,6 +7,9 @@
 //
 //   - Only Pulsar's own address (http://127.0.0.1:<port>) opens in the window. A link elsewhere that the person
 //     clicks opens in their browser; anything else is refused. Only Pulsar's own page may message the window.
+//   - Every load of the page goes through the launcher: at start, View > Reload, a new sign-in, and the page's own
+//     reload into a new version. The launcher checks that the server on the port holds this user's key before it
+//     gives the address, so the window never loads whatever else may have taken the port while Pulsar restarted.
 //   - Downloads (CSV, the error log) ask where to save; "Print or save as PDF" opens the print dialog.
 //   - Closing the window quits the app, and quitting stops the server this app started (launcher.sh --stop). A
 //     server started some other way, such as python3 pulsar.py in a git checkout, keeps running.
@@ -39,11 +42,12 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
     }
 
     /// Runs the launcher in the background and loads the address it prints. The launcher shows its own dialogs
-    /// when something is wrong (no developer tools, the port taken, a version that does not start).
-    private func start() {
+    /// when something is wrong (no developer tools, the port taken, a version that does not start). `quiet` keeps the
+    /// page in view meanwhile (a reload, or the warp holding over it while Pulsar restarts into a new version).
+    private func start(quiet: Bool = false) {
         guard !starting else { return }
         starting = true
-        showMessage("Starting Pulsar…", button: nil)
+        if !quiet { showMessage("Starting Pulsar…", button: nil) }
         DispatchQueue.global(qos: .userInitiated).async {
             let url = self.runLauncher(["--window"])
             DispatchQueue.main.async {
@@ -223,7 +227,8 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
     @objc private func openSettings() {
         if isPulsar(web.url) { web.evaluateJavaScript("typeof openSettings === 'function' && openSettings()") }
     }
-    @objc private func reload() { if isPulsar(web.url) { web.reload() } else { start() } }
+    /// Through the launcher, never web.reload(): a plain reload loads whatever answers on the port.
+    @objc private func reload() { start(quiet: isPulsar(web.url)) }
     @objc private func zoomReset() { web.pageZoom = 1 }
     @objc private func zoomIn() { web.pageZoom = min(2, web.pageZoom + 0.1) }
     @objc private func zoomOut() { web.pageZoom = max(0.5, web.pageZoom - 0.1) }
@@ -317,7 +322,7 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
         showMessage("Pulsar is not running.", button: "Start Pulsar")
     }
 
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { reload() }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { start() }
 
     // MARK: messages from the page
 
@@ -334,6 +339,7 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
             warp?.to(CGFloat((body["to"] as? NSNumber)?.doubleValue ?? 0), instant: body["instant"] as? Bool ?? false,
                      dark: body["dark"] as? Bool ?? true)
         case "signin", "start": start()   // a new one-time code, from the launcher, as at launch
+        case "reload": start(quiet: true)   // the page saw a new version: in again through the launcher (main.js)
         default: break
         }
     }

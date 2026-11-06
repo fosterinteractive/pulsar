@@ -86,6 +86,10 @@ def tidy() -> None:
     from pulsar import config, logbook, trackers
     logbook.prune()
     trackers.sweep_memtime_copies()  # copies of MemTime's database that a killed or restarted Pulsar left behind
+    try:
+        os.remove(config.SESSIONS_FILE)  # where older versions kept sessions: now they live and die with the server
+    except OSError:
+        pass
     for base in (config.CONFIG_DIR, config.CACHE_DIR):
         for folder, _dirs, files in os.walk(base):
             try:
