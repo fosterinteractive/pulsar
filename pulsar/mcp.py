@@ -184,6 +184,14 @@ def _date_arg(args: dict, cfg: dict) -> str:
     return d
 
 
+def _history_date(date: str) -> str:
+    """The date the "logged lately" lists are read up to: the day before, in the test mode that hides the day's entries
+    (they would give the answer away)."""
+    if not ignore_logged():
+        return date
+    return (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+
+
 def _config() -> dict:
     cfg = fetch({"config": ("/api/config", None)})["config"]
     if cfg.get("error"):
@@ -384,8 +392,8 @@ def plan_entry(e: dict) -> dict:
     if e.get("sent"):
         out["alreadySent"] = e["sent"]
     alts = [task_out(a) for a in e.get("alts") or [] if a.get("taskId")]
-    if alts and not e.get("checked"):  # only where Pulsar is not sure
-        out["alternatives"] = [{"taskId": a["taskId"], "task": a["task"], "project": a["project"]} for a in alts][:2]
+    if alts:  # the next guesses: often the right one when the pick's project does not fit the repository
+        out["alternatives"] = [{"taskId": a["taskId"], "task": a["task"], "project": a["project"]} for a in alts][:3]
     if e.get("serviceProblem"):
         out["serviceProblem"] = _short(e["serviceProblem"], 160)
     return out
@@ -414,7 +422,9 @@ def pulsar_propose(args: dict) -> dict:
         "totals": {k: t.get(k) for k in ("proposed", "checked", "logged", "active", "meetings", "notCovered", "over")},
         "how": ("Pulsar's Log the day: each minute placed once (logged entries, then meetings, then Claude sessions, then "
                 "other work); proposed plus logged never exceeds active time plus meetings. pulsarWouldTick=false means "
-                "Pulsar is not sure (low confidence, no task, no service, agent-only time, a meeting with no call seen)."),
+                "Pulsar is not sure (low confidence, no task, no service, agent-only time, a meeting with no call seen). "
+                "The task is a guess from past logging: check that its project fits the repository the work was in; "
+                "when it does not, an alternative from that client is often the right one. Say which ones you changed."),
         **({"testMode": "planned as if nothing were logged"} if ignore_logged() else {}),
         "warnings": [w for w in (_short(got.get("warning")), _short(got.get("likelyError"))) if w],
     }
@@ -493,7 +503,7 @@ def pulsar_session(args: dict) -> dict:
     mine = [r for r in lk.get("entries") or [] if sid in (r.get("sessions") or [])]
     plan = _plan(date) if mine else {"entries": []}
     covered = covered_minutes(entries)
-    rows, to_log = [], []
+    rows, to_log, shared = [], [], []
     for r in sorted(mine, key=lambda r: float(r["s"])):
         a, b = int(float(r["s"])), int(round(float(r["e"])))
         suggestion = _session_task(r, a, b, plan.get("entries") or [])
@@ -503,14 +513,19 @@ def pulsar_session(args: dict) -> dict:
                      "alreadyLoggedMinutes": sum(1 for m in range(a, min(b, 1440)) if covered[m]),
                      **({"suggested": suggestion} if suggestion else {})})
         for s, e in runs([not covered[m] for m in range(a, min(b, 1440))], least=5):
-            to_log.append({"start": hm(a + s), "minutes": e - s, "project": str(r.get("project") or ""),
-                           **({"taskId": suggestion["taskId"], "task": suggestion.get("task"),
-                               "serviceId": suggestion.get("serviceId")} if suggestion else {})})
+            piece = {"start": hm(a + s), "minutes": e - s, "project": str(r.get("project") or ""),
+                     **({"taskId": suggestion["taskId"], "task": suggestion.get("task"),
+                         "serviceId": suggestion.get("serviceId")} if suggestion else {})}
+            # a stretch another session also had: which one the minutes were for is not known, so it waits for a yes
+            (shared if others else to_log).append(piece)
     return {"date": date, "session": sid, "sessionFrom": var, "title": _session_title(full),
             "rows": rows, "minutes": sum(r["minutes"] for r in rows),
-            "notLoggedYet": to_log,
+            "notLoggedYet": to_log, "sharedNotLogged": shared,
             "note": ("The minutes Pulsar gave this Claude session that day (from the activity tracker and the session's "
-                     "messages). notLoggedYet is ready for pulsar_log; a dry run first, then the person's yes."
+                     "messages). notLoggedYet is ready for pulsar_log; a dry run first, then the person's yes. The "
+                     "suggested task is a guess from past logging: you know what this session did, so when it does not "
+                     "fit, find the right task with pulsar_tasks. sharedNotLogged are stretches another session also "
+                     "had: ask before logging them here."
                      if rows else f"Pulsar has no minutes for this session on {date}. Likely is worked out from the "
                      "activity tracker; a session from another day needs that date."),
             **({"testMode": "planned as if nothing were logged"} if ignore_logged() else {}),
@@ -538,7 +553,8 @@ def pulsar_suggest(args: dict) -> dict:
     a, b = _stretch(args)
     q = {"date": date}
     got = fetch({"entries": ("/api/entries", q), "activity": ("/api/activity", q), "likely": ("/api/proposal", q),
-                 "calendar": ("/api/calendar", q), "repeats": ("/api/repeats", q), "suggest": ("/api/tasks/suggest", q)})
+                 "calendar": ("/api/calendar", q), "repeats": ("/api/repeats", q),
+                 "suggest": ("/api/tasks/suggest", {"date": _history_date(date)})})
     rows = got["likely"].get("entries") or [] if not got["likely"].get("error") else []
     events = got["calendar"].get("events") or []
     sug = got["suggest"] if not got["suggest"].get("error") else {}
@@ -619,7 +635,7 @@ def pulsar_tasks(args: dict) -> dict:
     cfg = _config()
     date = _date_arg(args, cfg)
     query = str(args.get("query") or "").strip()[:80]
-    calls = {"suggest": ("/api/tasks/suggest", {"date": date})}
+    calls = {"suggest": ("/api/tasks/suggest", {"date": _history_date(date)})}
     if len(query) >= 2:
         calls["search"] = ("/api/tasks/search", {"q": query})
     got = fetch(calls)

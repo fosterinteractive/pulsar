@@ -179,6 +179,11 @@ class McpTest(unittest.TestCase):
         self.assertEqual([(r["start"], r["minutes"]) for r in data["rows"]], [("09:00", 60)])
         self.assertEqual(data["notLoggedYet"], [{"start": "09:00", "minutes": 60, "project": "acme-site", "taskId": "11",
                                                  "task": "Build", "serviceId": "21"}])
+        self.day.rows.append({"s": 900, "e": 930, "minutes": 30, "project": "acme-site", "kind": "focused",
+                              "sessions": ["abcdef12", "99999999"]})  # another session had these minutes too
+        data, _ = self.call("pulsar_session", {"date": DATE})
+        self.assertEqual([x["start"] for x in data["notLoggedYet"]], ["09:00"])
+        self.assertEqual([x["start"] for x in data["sharedNotLogged"]], ["15:00"])
         with mock.patch.dict(os.environ, {"PULSAR_MCP_SESSION_ID": "", "CLAUDE_CODE_SESSION_ID": ""}):
             data, err = self.call("pulsar_session", {"date": DATE})
         self.assertTrue(err)

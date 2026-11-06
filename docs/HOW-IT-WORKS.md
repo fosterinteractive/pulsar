@@ -414,6 +414,26 @@ How well they guess, on one person's 105 blocks of work with 60 days of history 
 at that time): the "lately" list alone had it first for 20% of the minutes and in its first five for 43%; learned
 tasks 41% and 65%.
 
+### 5.6 Pulsar in Claude Code (`pulsar/mcp.py`, experimental)
+
+`pulsar.py --mcp [--port 5610]` is an MCP server on stdio (JSON-RPC, standard library) that a Claude Code session
+starts: `claude mcp add pulsar -- /usr/bin/python3 -E -s -B <path>/pulsar.py --mcp`. It talks to the running Pulsar
+over 127.0.0.1 with the key, after the same `/api/whoami` check the launcher makes, so Pulsar must be open.
+
+| Tool | What it gives |
+|---|---|
+| `pulsar_day` | the day in numbers: logged, active stretches with no entry, Likely by project, meetings (times only), repeats |
+| `pulsar_propose` | Log the day's proposal (5.4): start, minutes, task, service, confidence, why, alternatives |
+| `pulsar_session` | the calling session's own minutes (Claude Code gives every MCP server `CLAUDE_CODE_SESSION_ID`; Likely rows carry their sessions' ids), with a task for each and what is not logged yet; stretches another session also had are kept apart |
+| `pulsar_suggest` | the log dialog's task list for one stretch |
+| `pulsar_tasks` | tasks logged to lately (with the service used last), assigned ones, and a Productive search |
+| `pulsar_log` | without `confirm`, a dry run: services resolved, notes checked (`guard_note`), every entry through `POST /api/log` with `dry`, and a confirm code (once, 10 minutes, for exactly those entries); with the code, the entries go through `POST /api/log` one at a time, journalled as a Log the day run (Undo works), stopping at the first that is not logged |
+
+Never returned: window titles, apps, addresses, typed messages, meeting titles, other sessions' titles, notes of
+logged entries, rule words. Returned on purpose: the calling session's own title, and note drafts from the person's
+own commit subjects (as the log dialog offers them). `PULSAR_READ_ONLY` in the MCP's environment refuses a confirmed
+write before anything is sent; the server's own `writes_blocked()` refuses it again.
+
 ## 6. The rest of the day view
 
 - **Where a day opens**: today with the now line in the lower third of the view; another day at the start of its
