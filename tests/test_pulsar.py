@@ -1438,13 +1438,62 @@ class UpdaterTest(unittest.TestCase):
                  mock.patch.object(updater, "public_keys", lambda: (self.pub_pem,)):
                 self.assertEqual(updater.Updater(root=self.root).check()["status"], "failed", bad)
 
-    def test_a_self_test_that_hangs_counts_as_failed(self):
+    def test_a_self_test_that_hangs_says_nothing_about_the_version(self):
         import subprocess
         with mock.patch.object(updater.subprocess, "run", side_effect=subprocess.TimeoutExpired("x", 60)):
-            self.assertFalse(updater.self_test(self.root))
+            self.assertIsNone(updater.self_test(self.root))
+
+    def test_a_self_test_failure_is_tried_once_more_before_it_counts(self):
+        answers = [1, 0]
+        run = lambda *a, **k: mock.Mock(returncode=answers.pop(0), stdout="", stderr="")  # noqa: E731
+        with mock.patch.object(updater.subprocess, "run", run):
+            self.assertTrue(updater.self_test(self.root))   # a slow first answer, then fine
+        answers = [1, 1]
+        with mock.patch.object(updater.subprocess, "run", run):
+            self.assertFalse(updater.self_test(self.root))  # broken twice: broken
+
+    def test_a_release_whose_self_test_could_not_finish_is_not_banned(self):
+        manifest, data = self.release()
+        u = self.make(manifest, data, passes=None)
+        got = u.check(install=True)
+        self.assertEqual(got["status"], "failed")
+        self.assertIn("Try Update again", got["message"])
+        self.assertNotIn("1.1.0", updater.bad_versions(self.root))
+        self.assertFalse(os.path.exists(os.path.join(self.root, "versions", "1.1.0")))
+        self.assertEqual(u.check()["status"], "available")  # offered again
 
     def test_the_same_version_is_not_an_update(self):
         self.assertEqual(self.make({"version": "1.0.0", "url": URL, "sha256": "x"}).check()["status"], "latest")
+
+
+class SelfTestTest(unittest.TestCase):
+    """pulsar.py --self-test, which decides whether an update is installed."""
+
+    def setUp(self):
+        import importlib.util
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pulsar.py")
+        spec = importlib.util.spec_from_file_location("pulsar_main", path)
+        self.main = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.main)
+
+    def test_it_checks_every_script_and_style_of_the_page(self):
+        import glob
+        web = self.main.WEB
+        on_disk = {os.path.relpath(p, web) for p in glob.glob(os.path.join(web, "js", "*.js")) + glob.glob(os.path.join(web, "*.css"))}
+        self.assertEqual(on_disk - set(self.main.page_files()), set())  # datepick.js, logs.js, theme-early.js, flow.*
+
+    def test_a_file_the_page_loads_but_the_release_lacks_fails_it(self):
+        import shutil
+        web = os.path.join(tempfile.mkdtemp(), "web")
+        shutil.copytree(self.main.WEB, web)
+        os.remove(os.path.join(web, "js", "datepick.js"))
+        with mock.patch("sys.stderr") as err:
+            self.assertEqual(self.main.self_test(web), 1)
+        self.assertIn("js/datepick.js", "".join(str(c) for c in err.write.call_args_list))
+
+    def test_it_serves_the_page_on_a_free_port(self):
+        with mock.patch("sys.stdout"):
+            self.assertEqual(self.main.self_test(), 0)
 
 
 def json_bytes(obj):

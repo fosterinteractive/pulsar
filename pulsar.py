@@ -19,35 +19,54 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # its own packag
 from pulsar import __version__  # noqa: E402
 
 
-def self_test() -> int:
-    """Imports every module and checks the page's files: the updater runs this before it trusts a new version."""
-    import os
+WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
+
+
+def page_files(web: str = WEB) -> list:
+    """The page and everything it loads from /static/ (scripts and styles), read from index.html itself, so a file
+    added to the page is checked without anyone remembering to list it here."""
+    import re
+    try:
+        with open(os.path.join(web, "index.html"), encoding="utf-8") as fh:
+            html = fh.read()
+    except (OSError, UnicodeDecodeError):
+        return ["index.html"]
+    return ["index.html"] + list(dict.fromkeys(re.findall(r'(?:src|href)="/static/([^"?#]+)"', html)))
+
+
+def self_test(web: str = WEB) -> int:
+    """Imports every module, checks that the page and every file it loads are there and served, and that the server
+    answers with this version: the updater runs this before it trusts a new version."""
     from pulsar import askclaude, config, dayplan, learn, likely, mcp, names, productive, report, server, sessions, trackers, updater  # noqa: F401
-    web = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
-    need = ["index.html", "style.css", "meetings.css", "logday.css"] + [
-        f"js/{n}.js" for n in ("core", "day", "report", "settings", "meetings", "log", "logday", "main")]
-    missing = [n for n in need if not os.path.exists(os.path.join(web, n))]
+    files = page_files(web)
+    missing = [n for n in files + ["js/core.js", "js/main.js", "style.css"] if not os.path.isfile(os.path.join(web, n))]
     if missing:
-        print("Pulsar self-test: missing " + ", ".join(missing), file=sys.stderr)
+        print("Pulsar self-test: missing " + ", ".join(dict.fromkeys(missing)), file=sys.stderr)
         return 1
-    # serve one request on a free port, as the real server would
+    # serve the page as the real server would, on a free port
     import json
     import urllib.request
     from http.server import ThreadingHTTPServer
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
     try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{httpd.server_address[1]}/api/version", timeout=10) as resp:
+        with urllib.request.urlopen(base + "/api/version", timeout=10) as resp:
             answered = json.loads(resp.read()).get("version")
+        for name in files:
+            with urllib.request.urlopen(base + ("/" if name == "index.html" else "/static/" + name), timeout=10) as resp:
+                if resp.status != 200 or not resp.read():
+                    raise ValueError(f"{name} came back empty")
     except Exception as exc:
-        print(f"Pulsar self-test: the server did not answer: {exc}", file=sys.stderr)
+        print(f"Pulsar self-test: the server did not serve the page: {exc}", file=sys.stderr)
         return 1
     finally:
         httpd.shutdown()
+        httpd.server_close()
     if answered != __version__:
         print(f"Pulsar self-test: the server answered {answered}, not {__version__}", file=sys.stderr)
         return 1
-    print(f"Pulsar {__version__} self-test: OK")
+    print(f"Pulsar {__version__} self-test: OK ({len(files)} page files)")
     return 0
 
 
