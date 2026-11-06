@@ -82,7 +82,7 @@ function makePicker(listEl, searchEl, onPick) {
      the arrow keys move between the search and the tasks */
   searchEl.addEventListener('keydown', ev => {
     const first = listEl.querySelector('.pk');
-    if (ev.key === 'Enter') { ev.preventDefault(); first?.click(); first?.focus(); }
+    if (ev.key === 'Enter') { ev.preventDefault(); first?.click(); listEl.querySelector('.pk.on')?.focus(); }
     if (ev.key === 'ArrowDown' && first) { ev.preventDefault(); first.focus(); }
   });
   listEl.addEventListener('keydown', ev => {
