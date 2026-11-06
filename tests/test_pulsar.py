@@ -462,6 +462,17 @@ class SessionsTest(unittest.TestCase):
         self.assertEqual(sum(e["minutes"] for e in got["entries"]), 11)    # only the editor's minutes
         self.assertEqual(got["logging"], 13)
 
+    def test_a_minute_mostly_spent_logging_is_logging_even_when_shared(self):
+        self.write_session()
+        edit = lambda s, e: {"s": s, "e": e, "app": "Cursor", "title": "Fix the checkout form", "host": "", "url": "", "cat": "work"}  # noqa: E731
+        look = lambda s, e: {"s": s, "e": e, "app": "Pulsar", "title": "Pulsar", "host": "", "url": "", "cat": "work"}  # noqa: E731
+        # minutes 12-17: a few seconds in the editor, then most of the minute in Pulsar; minute 19: a glance at Pulsar
+        items = [edit(9, 12.1), look(12.1, 13.0), edit(13.0, 13.1), look(13.1, 14.0), edit(14.0, 14.2), look(14.2, 15.0),
+                 edit(15.0, 19.0), look(19.0, 19.2), edit(19.2, 22)]
+        got = self.sessions.propose(self.t0, self.t0 + 86400, items, "ActivityWatch", os.path.dirname(self.projects))
+        self.assertEqual(got["logging"], 3)                                 # 12, 13 and 14: mostly Pulsar
+        self.assertEqual(sum(e["minutes"] for e in got["entries"]), 10)    # 9-11 and 15-21; the glance at 19 stays work
+
     def test_without_a_tracker_the_agents_run_time_is_the_work(self):
         self.write_session()
         got = self.sessions.propose(self.t0, self.t0 + 86400, [], "no tracker", os.path.dirname(self.projects))
