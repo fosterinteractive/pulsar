@@ -193,6 +193,21 @@ class LogBodyTest(unittest.TestCase):
             {"date": DATE, "time": "30 min", "started_at": "2026-11-04T23:30:00-05:00",  # late evening: still that day
              "note": "Search keeps every letter", "person": "1", "service": "6", "task": "5"}])
 
+    def test_pieces_around_logged_time_send_one_entry_each(self):
+        start = server.day_bounds(DATE, config.tz(SETTINGS))[0]
+        self.existing = [{"id": "7", "date": DATE, "start": start + 60 * 60, "minutes": 30, "project": "Globex",
+                          "task": "Support"}]
+        body = dict(self.BODY, start="00:00", minutes=160)
+        wire = Wire()
+        with connected("claude-code"), mock.patch.object(productive, "https", wire):
+            pieces = server.api_log(dict(body))["pieces"]  # the overlap answer: nothing sent
+            self.assertEqual(wire.writes(), [])
+            self.assertEqual(server.api_log(dict(body, pieces=pieces))["created"], [{"id": "901"}] * 2)
+        item = {"date": DATE, "note": "Search keeps every letter", "person": "1", "service": "6", "task": "5"}
+        self.assertEqual([t[1]["items"] for t in wire.tools()], [
+            [{**item, "time": "60 min", "started_at": "2026-11-04T00:00:00-05:00"}],
+            [{**item, "time": "70 min", "started_at": "2026-11-04T01:30:00-05:00"}]])
+
     def test_a_journalled_row_sends_the_same_entry(self):
         wire = Wire()
         with connected("claude-code"), mock.patch.object(productive, "https", wire):

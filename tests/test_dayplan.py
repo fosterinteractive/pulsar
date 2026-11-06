@@ -669,6 +669,133 @@ class WriteTest(unittest.TestCase):
         self.assertEqual(self.created[0]["started_at"], "2026-03-08T03:30:00-04:00")
 
 
+class SplitTest(unittest.TestCase):
+    """The log dialog's pieces around time already logged (server.pieces_around, POST /api/log with pieces): only the
+    time asked for less what is logged, checked again on a fresh read, never forced, never journalled."""
+
+    def setUp(self):
+        self.existing, self.created = [], []
+        self.settings = {"timezone": "UTC", "person_id": "1"}
+        self.fail_on = None  # the n-th write raises this
+
+        def create(e, s):
+            if self.fail_on and len(self.created) + 1 == self.fail_on[0]:
+                raise self.fail_on[1]
+            self.created.append(e)
+            i = str(500 + len(self.created))
+            self.existing.append({"id": i, "date": e["date"], "start": datetime.fromisoformat(e["started_at"]).timestamp(),
+                                  "minutes": e["minutes"], "taskId": e["task_id"], "project": "Acme", "task": "T"})
+            if self.after_write:
+                self.after_write()
+            return {"id": i}
+        self.after_write = None
+        for p in (mock.patch.object(config, "CACHE_DIR", tempfile.mkdtemp()),
+                  mock.patch.object(server, "current_settings", lambda: self.settings),
+                  mock.patch.object(server.config, "tz", lambda s: timezone.utc),
+                  mock.patch.object(server.productive, "entries", lambda d0, d1, s: (list(self.existing), None, "token")),
+                  mock.patch.object(server.productive, "create_entry", create),
+                  mock.patch.dict(server._just_logged, clear=True),
+                  mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "", "PULSAR_PREVIEW": ""})):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def logged(self, hhmm, minutes, project="Globex"):
+        h, m = map(int, hhmm.split(":"))
+        self.existing.append({"id": f"9{len(self.existing)}", "date": DATE, "start": T0 + (h * 60 + m) * 60,
+                              "minutes": minutes, "taskId": "77", "project": project, "task": "Support"})
+
+    def body(self, **kw):
+        return {"date": DATE, "start": "00:00", "minutes": 160, "taskId": "5", "serviceId": "6", "note": "QA tests", **kw}
+
+    def test_the_overlap_comes_with_the_time_around_it(self):
+        self.logged("02:30", 16)  # the case that asked for it: 160 minutes from 00:00, 16 logged at 02:30
+        got = server.api_log(self.body())
+        self.assertEqual(([o["start"] for o in got["overlap"]], got["pieces"], got["tooShort"]),
+                         (["02:30"], [{"start": "00:00", "minutes": 150}], 0))  # never past the 160 asked for
+        self.assertEqual(server.api_log(self.body(dry=True))["pieces"], got["pieces"])
+        self.assertEqual(self.created, [])
+        row = server.api_log(self.body(run="ld-2026-11-04-0123abcd", row="r1"))  # Log the day: no pieces offered
+        self.assertEqual((bool(row["overlap"]), "pieces" in row), (True, False))
+
+    def test_boundaries_at_an_entry_go_to_the_grid_and_short_pieces_are_left_out(self):
+        self.logged("01:02", 26)                                   # 01:02-01:28: the pieces end 01:00 and start 01:30
+        self.logged("02:21", 12)                                   # 02:21-02:33: 02:20 to 02:35
+        got = server.api_log(self.body())
+        self.assertEqual(got["pieces"], [{"start": "00:00", "minutes": 60}, {"start": "01:30", "minutes": 50}])
+        self.assertEqual(got["tooShort"], 5)                       # 02:35-02:40
+        self.settings["round_to"] = 15                             # quarter hours, and nothing under 15 minutes
+        got = server.api_log(self.body())
+        self.assertEqual((got["pieces"], got["tooShort"]), ([{"start": "00:00", "minutes": 60},
+                                                             {"start": "01:30", "minutes": 45}], 0))
+        self.settings.pop("round_to")
+        self.existing = []
+        self.logged("00:05", 150)                                  # nearly all of it: nothing worth offering
+        got = server.api_log(self.body())
+        self.assertEqual((got["pieces"], got["tooShort"]), ([], 10))
+
+    def test_the_pieces_are_logged_as_entries_with_the_same_task_service_and_note(self):
+        self.logged("01:00", 30)
+        pieces = server.api_log(self.body())["pieces"]
+        self.assertEqual(pieces, [{"start": "00:00", "minutes": 60}, {"start": "01:30", "minutes": 70}])
+        got = server.api_log(self.body(pieces=pieces))
+        self.assertEqual(got["created"], [{"id": "501"}, {"id": "502"}])
+        self.assertEqual([(e["started_at"][11:16], e["minutes"], e["task_id"], e["service_id"], e["note"]) for e in self.created],
+                         [("00:00", 60, "5", "6", "QA tests"), ("01:30", 70, "5", "6", "QA tests")])
+        self.assertEqual(dayplan.journal()["runs"], [])            # not a Log the day run
+        again = server.api_log(self.body(pieces=pieces))           # a second click: the pieces now overlap them
+        self.assertEqual((again["changed"], again["pieces"]), (True, []))
+        self.assertEqual(len(self.created), 2)
+
+    def test_a_day_that_changed_since_writes_nothing_and_offers_the_new_pieces(self):
+        self.logged("01:00", 30)
+        pieces = server.api_log(self.body())["pieces"]
+        self.logged("02:00", 40)                                   # another tab logged meanwhile
+        got = server.api_log(self.body(pieces=pieces))
+        self.assertEqual(self.created, [])
+        self.assertEqual((got["changed"], [o["start"] for o in got["overlap"]], got["pieces"]),
+                         (True, ["01:00", "02:00"], [{"start": "00:00", "minutes": 60}, {"start": "01:30", "minutes": 30}]))
+
+    def test_a_piece_that_lands_is_never_offered_again(self):
+        self.logged("01:00", 30)
+        pieces = server.api_log(self.body())["pieces"]
+        self.fail_on = (2, productive.ProductiveUnclear("No clear answer"))
+        got = server.api_log(self.body(pieces=pieces))              # the first is written, the second unclear
+        self.assertEqual((got["created"], got["notLogged"], got["unclear"]), ([{"id": "501"}], pieces[1:], True))
+        self.fail_on = None
+        server._just_logged.clear()
+        self.assertEqual(server.api_log(self.body())["pieces"], [{"start": "01:30", "minutes": 70}])  # the rest only
+
+    def test_an_entry_logged_between_two_pieces_stops_the_rest(self):
+        self.logged("01:00", 30)
+        pieces = server.api_log(self.body())["pieces"]
+        self.after_write = lambda: (self.logged("02:00", 10), setattr(self, "after_write", None))
+        got = server.api_log(self.body(pieces=pieces))
+        self.assertEqual((got["created"], got["notLogged"]), ([{"id": "501"}], pieces[1:]))
+        self.assertIn("02:00", got["why"])
+        self.assertEqual(len(self.created), 1)
+
+    def test_a_first_piece_that_fails_is_an_error_as_for_one_entry(self):
+        self.logged("01:00", 30)
+        pieces = server.api_log(self.body())["pieces"]
+        self.fail_on = (1, productive.ProductiveError("Productive refused: the budget is closed."))
+        with self.assertRaisesRegex(productive.ProductiveError, "closed"):
+            server.api_log(self.body(pieces=pieces))
+
+    def test_pieces_are_never_forced_journalled_or_written_read_only(self):
+        self.logged("01:00", 30)
+        pieces = server.api_log(self.body())["pieces"]
+        for extra, why in (({"force": True}, "never forced"), ({"run": "ld-2026-11-04-0123abcd", "row": "r1"}, "one at a time"),
+                           ({"pieces": [{"start": "00:00", "minutes": 10}] * 9}, "1 to 8"), ({"pieces": "00:00"}, "1 to 8")):
+            with self.assertRaisesRegex(ValueError, why):
+                server.api_log(self.body(**{"pieces": pieces, **extra}))
+        with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):
+            with self.assertRaisesRegex(ValueError, "read-only"):
+                server.api_log(self.body(pieces=pieces))
+            dry = server.api_log(self.body(pieces=pieces, dry=True))  # a dry run still works, and says what it would send
+        self.assertEqual([w["started_at"][11:16] for w in dry["wouldWrite"]], ["00:00", "01:30"])
+        self.assertEqual(self.created, [])
+
+
 class AskAgainTest(unittest.TestCase):
     def test_an_empty_answer_is_asked_once_more_and_no_more(self):
         from pulsar import askclaude

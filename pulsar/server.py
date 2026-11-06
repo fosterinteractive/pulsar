@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import threading
@@ -957,6 +958,11 @@ def api_log(body: dict) -> dict:
     a, b = begin.timestamp(), begin.timestamp() + minutes * 60
     if b > day_bounds(date, tz)[1]:
         raise ValueError("An entry cannot run past midnight; log the part after it on the next day.")
+    if body.get("pieces") is not None:  # the dialog: this time, as the pieces around what is logged in it (_log_pieces)
+        if body.get("dry"):
+            return _log_pieces(body, s, date, a, b, task_id, service_id, tz)
+        with _log_lock:
+            return _log_pieces(body, s, date, a, b, task_id, service_id, tz)
     # Log the day sends each row with its run and row names: the journal records it before the write, and refuses a
     # row that run (or any run of that day) already sent, so a restart or a retry never writes it twice
     journal = None
@@ -1151,6 +1157,107 @@ def api_dayplan_journal(q: dict) -> dict:
 
 _log_lock = threading.Lock()
 _just_logged: dict = {}  # (date, start, minutes, task, service) -> when it was written
+MAX_PIECES = 8
+
+
+def _clashes(existing: list, a: float, b: float) -> list:
+    """The entries with a start that [a, b) would overlap (one with no start is on no timeline: nothing to check)."""
+    return sorted((x for x in existing if x.get("start") is not None and x["start"] < b and x["start"] + x["minutes"] * 60 > a),
+                  key=lambda x: x["start"])
+
+
+def _overlap_rows(clashes: list, tz) -> list:
+    return [{"start": datetime.fromtimestamp(x["start"], tz).strftime("%H:%M"), "minutes": x["minutes"],
+             "project": x["project"], "task": x.get("task")} for x in clashes]
+
+
+def pieces_around(a: float, b: float, clashes: list, tz, opts: dict) -> tuple:
+    """The parts of [a, b) no entry in `clashes` covers, offered by the log dialog instead of "Log anyway": the time
+    asked for less the time already logged, never more and never moved. A boundary at an entry goes to Settings' grid
+    (dayplan.opts_for), away from the entry; the start and end the person set stay. A part shorter than the shortest
+    entry Log the day makes is left out. ([{start "HH:MM", minutes}], the minutes left out)"""
+    g, shortest = opts["grid"] or 1, opts["min_entry"]
+
+    def snap(t: float, up: bool) -> int:
+        local = datetime.fromtimestamp(t, tz)
+        m = local.hour * 60 + local.minute + local.second / 60
+        to = (math.ceil(m / g - 1e-9) if up else math.floor(m / g + 1e-9)) * g
+        return int(round(t + (to - m) * 60))
+
+    spans, cur = [], a
+    for x in sorted(clashes, key=lambda x: x["start"]):
+        if x["start"] > cur:
+            spans.append((cur, min(b, snap(x["start"], False))))
+        cur = max(cur, snap(x["start"] + x["minutes"] * 60, True))
+    if cur < b:
+        spans.append((cur, b))
+    pieces, short = [], 0
+    for p, q in spans:
+        minutes = int(round((q - p) / 60))
+        if minutes >= shortest:
+            pieces.append({"start": datetime.fromtimestamp(p, tz).strftime("%H:%M"), "minutes": minutes})
+        elif minutes > 0:
+            short += minutes
+    return pieces, short
+
+
+def _log_pieces(body: dict, s: dict, date: str, a: float, b: float, task_id: str, service_id: str, tz) -> dict:
+    """The log dialog's "Log N entries around it": the time [a, b) the person asked for, as the pieces around the
+    entries already in it, one entry each, with the same task, service and note. The pieces sent must be the ones this
+    fresh read of the day gives: when the day changed since the dialog asked, nothing is written and the new pieces come
+    back. Then each piece goes through the same path as one entry (a fresh read, the overlap check, never forced),
+    under the write lock the caller holds. Not a Log the day run: no journal and no Undo, as for any entry the dialog
+    logs; a piece that lands and an answer that is lost show as an entry in the next check, so it is never offered
+    again."""
+    if body.get("force"):
+        raise ValueError("Pieces around logged time are never forced. Log the whole time anyway, or the pieces.")
+    if body.get("run") is not None or body.get("row") is not None:
+        raise ValueError("Log the day sends its rows one at a time, never as pieces.")
+    sent = body.get("pieces")
+    if not (isinstance(sent, list) and 1 <= len(sent) <= MAX_PIECES and all(isinstance(p, dict) for p in sent)):
+        raise ValueError(f"pieces is a list of 1 to {MAX_PIECES} {{start, minutes}}.")
+    sent = [{"start": str(p.get("start") or ""), "minutes": p.get("minutes")} for p in sent]
+    if not body.get("dry") and config.writes_blocked():
+        raise ValueError(config.writes_blocked())
+    existing, problem, _ = productive.entries(date, date, s)
+    if problem:
+        raise RuntimeError(problem)
+    clashes = _clashes(existing, a, b)
+    pieces, short = pieces_around(a, b, clashes, tz, dayplan.opts_for(s))
+    if pieces != sent:
+        return {"overlap": _overlap_rows(clashes, tz), "pieces": pieces, "tooShort": short, "changed": True}
+    if body.get("dry"):
+        return {"dry": True, "overlap": _overlap_rows(clashes, tz), "wouldWrite": [
+            {"date": date, "started_at": _begin(date, p["start"], tz).isoformat(timespec="seconds"), "minutes": p["minutes"],
+             "task": task_id, "service": service_id} for p in pieces]}
+    created: list = []
+    for p in pieces:
+        begin = _begin(date, p["start"], tz)
+        pa = begin.timestamp()
+        key = (date, p["start"], p["minutes"], task_id, service_id)
+        try:
+            if time.time() - _just_logged.get(key, 0) < 60:
+                raise ValueError("This entry was logged a moment ago. Check the Logged column before logging it again.")
+            got = _log_checked({**body, "force": False}, s, date, begin, p["minutes"], task_id, service_id, tz, pa,
+                               pa + p["minutes"] * 60)
+        except Exception as exc:
+            if not created:
+                raise
+            return {"created": created, "pieces": pieces, "notLogged": pieces[len(created):], "why": str(exc),
+                    "unclear": isinstance(exc, productive.ProductiveUnclear)
+                    or not isinstance(exc, (ValueError, productive.ProductiveError))}
+        if "overlap" in got:  # an entry logged between this piece's read and the one before
+            if not created:
+                return {**got, "pieces": pieces, "changed": True}
+            return {"created": created, "pieces": pieces, "notLogged": pieces[len(created):],
+                    "why": "it would now overlap " + "; ".join(f"{o['start']} {o['project']}" for o in got["overlap"])}
+        _just_logged[key] = time.time()
+        created.append(got["created"])
+    return {"created": created, "pieces": pieces}
+
+
+def _begin(date: str, start: str, tz) -> datetime:
+    return datetime.strptime(f"{date} {start}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
 
 
 def _log_checked(body: dict, s: dict, date: str, begin, minutes: int, task_id: str, service_id: str, tz, a: float,
@@ -1168,17 +1275,18 @@ def _log_checked(body: dict, s: dict, date: str, begin, minutes: int, task_id: s
     if problem:
         note("refused", reason=f"Not sent: {problem}")
         raise RuntimeError(problem)
-    clashes = [x for x in existing if x.get("start") is not None and x["start"] < b and x["start"] + x["minutes"] * 60 > a]
+    clashes = _clashes(existing, a, b)
+    # with an overlap, the pieces around it the dialog offers (pieces_around): never for a Log the day row
+    around = {} if journal or not clashes else dict(zip(("pieces", "tooShort"),
+                                                         pieces_around(a, b, clashes, tz, dayplan.opts_for(s))))
     if body.get("dry"):  # everything up to the write, for tests: nothing reaches Productive
         return {"dry": True, "wouldWrite": {"date": date, "started_at": begin.isoformat(timespec="seconds"), "minutes": minutes,
                                             "task": task_id, "service": service_id},
-                "overlap": [{"start": datetime.fromtimestamp(x["start"], tz).strftime("%H:%M"), "minutes": x["minutes"],
-                             "project": x["project"]} for x in clashes]}
+                "overlap": [{k: o[k] for k in ("start", "minutes", "project")} for o in _overlap_rows(clashes, tz)], **around}
     if clashes and not body.get("force"):
-        overlap = [{"start": datetime.fromtimestamp(x["start"], tz).strftime("%H:%M"), "minutes": x["minutes"],
-                    "project": x["project"], "task": x["task"]} for x in sorted(clashes, key=lambda x: x["start"])]
+        overlap = _overlap_rows(clashes, tz)
         note("refused", reason="Not sent: it would overlap " + "; ".join(f"{o['start']} {o['project']}" for o in overlap))
-        return {"overlap": overlap}
+        return {"overlap": overlap, **around}
     note("sending")
     try:
         created = productive.create_entry({"date": date, "minutes": minutes, "started_at": begin.isoformat(timespec="seconds"),
@@ -1215,6 +1323,8 @@ def key_refusal(path: str, body: dict):
     if path == "/api/quit":
         return None
     if path == "/api/log":
+        if body.get("pieces") is not None:
+            return "Pieces around logged time are logged only from Pulsar's window."
         if body.get("force"):
             return "An entry that overlaps another is written only from Pulsar's window."
         if body.get("run") is None or body.get("row") is None:

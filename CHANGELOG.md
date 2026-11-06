@@ -8,6 +8,7 @@ What each Pulsar release changed, newest first.
 
 ## Unreleased
 - Pulsar in Claude Code: reasons are fixed phrases only, names are cleaned, and no model-written note is returned.
+- Log dialog: time that runs into an entry already logged can be logged around it, as one or more entries.
 
 ## 1.4.0 (2026-11-06)
 - Log the day: Earlier days, to catch up on several days one after another.
