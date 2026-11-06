@@ -105,8 +105,8 @@ yours.
   a pending `state` that a signed-in Settings click created (random, used once, ten minutes), and it can only finish
   that one sign-in.
 - **Writing to Productive** happens in one place (`productive.create_entry`), only from `POST /api/log`, which only
-  the log dialog's button sends. With `PULSAR_READ_ONLY=1` in the environment, every write is refused at the lowest
-  level (`productive.https`). Test servers always run with it.
+  the log dialog's button and the confirm step of Log the day send (section 5.4). With `PULSAR_READ_ONLY=1` in the
+  environment, every write is refused at the lowest level (`productive.https`). Test servers always run with it.
 - **Updates** are signed. See section 9.
 
 ## 4. Where the day comes from
@@ -260,7 +260,64 @@ approval, Productive approves every entry at once and its author can still chang
 it, Productive refuses and the page shows why. With
 `PULSAR_READ_ONLY` every change is refused at the lowest level, like any write.
 
-### 5.3 Where the suggestions come from
+### 5.4 Log the day (`pulsar/dayplan.py`, `web/js/logday.js`)
+
+**Log the day** in the Logged column proposes the whole day at once and opens a review: the Likely column steps
+aside (each row says why instead), the Logged column shows the proposed entries as dashed cards, and the side panel
+becomes the list to review. Nothing is written until the person confirms.
+
+**The plan** (`GET /api/dayplan?date=&source=`, `dayplan.gather` then the pure `dayplan.plan`). It reads the Likely
+rows with their task links, learned tasks and any Ask Claude answer, the activity and away time, the calendar day and
+its history, the repeats, the rules, 60 days of history, and the day's entries. Each minute is placed once, first
+claim wins:
+
+1. entries already logged;
+2. meetings attended: a repeat whose call the tracker saw, a calendar meeting with a call seen, a call with no
+   calendar entry. A repeat and a calendar meeting on the same call are one entry; a Likely row inside a meeting
+   gives it its minutes;
+3. Likely rows at their own time, never on away minutes or time spent logging (Pulsar, Productive);
+4. on free active minutes only: agent-only rows (Claude's agent ran while you did something else), calendar meetings
+   with no call seen, and work outside Claude (it takes the task of the work next to it, never a meeting's).
+
+Pieces of one task in one sitting join, pieces under 10 minutes join a neighbour, boundaries go on a 5-minute grid,
+nothing overlaps an entry already logged, and **proposed plus logged never exceeds active time plus attended
+meetings**: the rest is listed as not placed, never placed. A row's task comes from, in this order: a rule, a task
+link pasted in the session, a ticket key in the title, the tasks logged in the same session, then the same
+repository (votes from the last 60 days, older days counting half every 7 days), the same session earlier that day,
+and task names that share words with the work (your own name does not count). Confidence: high, medium or low, in
+words and a three-bar meter. **Unticked at the start**: low confidence, no task, no service, agent-only time,
+meetings with no call seen. **Notes** are never written from session text: only a meeting's title, your usual note
+for a repeat, or a note Ask Claude drafted for that task, each with "clients may see notes". The **service** is the
+one last used on the task, checked against the services that take time on that date (`bookable_services`). With
+Productive unreadable, nothing is proposed. About 6 seconds for a day the first time, under a second after.
+
+**Ask Claude** (only when it is on in Settings): the review shows the plan at once, then sends the day to Claude
+(every row of ten minutes or more) and fills in the answer as it arrives. Claude's pick replaces only rows the planner
+is not sure of (medium, low), with the planner's guess kept as the first alternative; a row Claude found no task for
+keeps the planner's guess and says so. An empty answer is asked once more. Rows the person changed meanwhile are
+left alone. Haiku did as well as Sonnet here, at a small part of the cost.
+
+**Writing.** The confirm step shows the totals, overlaps, unopened rows marked "check", and active time left
+unlogged; **Dry run** sends every row with `"dry": true` and shows exactly what would be sent. Then the rows go
+through `POST /api/log`, the same path as the log dialog (a fresh read of the day, the overlap check, the write lock),
+strictly one at a time, in time order, each with the run's name (`ld-<date>-<random>`) and the row's. The page stops
+at the first answer that is not "logged" (refused, with the reason, or unknown) and offers to try the rest again.
+
+**The journal** (`~/.cache/pulsar/logday-journal.json`, owner-only). Before each write the server records the row as
+`sending`, then `logged` with the new entry's id, `refused` with the reason, or `unknown` when no clear answer came
+(`productive.ProductiveUnclear`: a network error or an HTTP 5xx after the write was sent). A row that a run of that
+day already sent and that is `sending`, `unknown` or `logged` is refused, so a restart, a second tab or a retry never
+writes it twice. **Undo this run** (asked first) deletes, one at a time through `POST /api/entry/delete` with the
+run's name, only the entries that run created, and only if each is still as it wrote it. Runs older than 31 days are
+dropped.
+
+On one person's 11 fully logged days, planned as if nothing had been logged and compared with what was logged: 46%
+of the minutes needed no change, 42% a different task and 12% a different length; 76% of the proposed minutes had a
+task logged that day, 98% the right service. The rows ticked at the start were 88% right; by confidence, high 92%,
+medium 84%, low 40%. Calendar meetings were the weakest source: their task was rarely the one logged, so most start
+unticked.
+
+### 5.5 Where the suggestions come from
 
 - **Rules** (Settings or the **Rule** button on an Activity window): words in a window's app, title, workspace, site
   or address that mean a task. They colour the Activity blocks and come first when logging that time.
@@ -349,6 +406,7 @@ estimate, and a table of every day. **Download** gives the days or the entries a
 | `~/.cache/pulsar/days/<person>/` | The last copy of each day's entries (120 days). |
 | `~/.cache/pulsar/names.json` | Names of projects, budgets, services, tasks; billing types. |
 | `~/.cache/pulsar/likely-days/` | Past days' Likely rows for learning: times, repository, title hashes. |
+| `~/.cache/pulsar/logday-journal.json` | Log the day: each row a run sent, before it was sent, and what came of it (31 days). |
 | `~/.cache/pulsar/logs/` | The error log, one JSON line per event, 31 days, tokens removed. |
 | `~/Library/Application Support/Pulsar/` | The installed code: `versions/`, `current`, `previous`, `bad-versions`. |
 | `~/Library/Logs/Pulsar.log` | What the launcher and the server printed. |
@@ -417,8 +475,10 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `GET /api/changelog`, `/api/version`, `/api/whoami?nonce=` | Changelog; version (public); proof of the key (public). |
 | `POST /api/session` | Trade a sign-in code for a session token. `POST /api/session/end` signs out. |
 | `POST /api/settings` | Save settings (each field checked). |
-| `POST /api/log` | Log one entry. |
-| `POST /api/entry/update`, `/api/entry/delete` | Change or delete one of your entries (not approved ones). |
+| `POST /api/log` | Log one entry. With `run` and `row`: one row of Log the day, journalled. |
+| `GET /api/dayplan?date=&source=` | Log the day: the day proposed for review. Nothing is written. |
+| `GET /api/dayplan/journal?date=` | Log the day: what each run of that day sent, and what Undo would delete. |
+| `POST /api/entry/update`, `/api/entry/delete` | Change or delete one of your entries. Delete with `run`: only what that Log the day run created. |
 | `POST /api/likely/ask` | Ask Claude (only when switched on). |
 | `POST /api/calendar/connect`, `/disconnect` | Google Calendar. |
 | `POST /api/update/check`, `/install`, `/apply` | Updates. |
@@ -432,7 +492,8 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 - **`day.js`**: `load()` asks for the columns, `render()` draws everything from `state` (the axis, the four columns,
   the rails, the side panels), and one click handler opens popovers and the log dialog. Cards are keyboard
   reachable (Enter, Space, Escape back to the card).
-- **`log.js`**: the log dialog, the task picker (shared with the rule dialog) and rules.
+- **`log.js`**: the log dialog, the task picker (shared with the rule dialog and Log the day) and rules.
+- **`logday.js`** (and `logday.css`): Log the day, its review panel, the confirm step, the run and Undo.
 - **`meetings.js`**: the Meetings column and the Google part of Settings.
 - **`settings.js`**: Settings (a sidebar of categories, each with its own icon, and a search that shows the matching
   sections of every category; the last category open opens again), updates and the reminder, the changelog. Saving
@@ -450,8 +511,9 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 - `python3 -E -s -B -m unittest discover -s tests`: the Python logic on made-up data. No network, no trackers, no
   keychain: tests point `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` at a scratch folder before importing.
 - A test server against real data: `PULSAR_READ_ONLY=1 python3 -E -s -B pulsar.py --port 5698 --no-open`, then
-  `python3 pulsar.py --signin-url --port 5698` prints a one-time address for a browser. Block `**/api/log` in a
-  scripted browser as well.
+  `python3 pulsar.py --signin-url --port 5698` prints a one-time address for a browser. Block `**/api/log` and
+  `**/api/entry/**` in a scripted browser as well. On such a server only, `?ignore_logged=1` in the page's address
+  makes Log the day plan a day as if nothing were logged, to see a whole proposal on a day already logged.
 - The window has test hooks when built with `PULSAR_SWIFT_FLAGS="-D PULSAR_TEST"`: with `PULSAR_TEST_DIR` it saves a
   picture of the page, a download and a PDF, then quits.
 

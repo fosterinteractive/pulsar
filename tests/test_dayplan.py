@@ -150,6 +150,22 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual((unsure["taskId"], unsure["source"], unsure["note"], unsure["noteFrom"]),
                          ("55", "claude", "Fixed the importer.", "claude"))
 
+    def test_when_claude_finds_no_task_the_guess_stays_flagged(self):
+        rows = [row(700, 740, project="other", titles=["New thing"])]
+        ctx = {**self.ctx, "repo": {"other": {"44": 30.0}}, "names": {**self.ctx["names"], "44": {"task": "Guess", "project": "G"}}}
+        p = dayplan.plan(day(items=[work(700, 740)], rows=rows, picks={"700|other": {"tasks": [], "why": ""}}), ctx)
+        [e] = p["entries"]
+        self.assertEqual((e["taskId"], e["claudeNone"]), ("44", True))
+
+    def test_claudes_pick_keeps_the_planners_guess_as_the_alternative(self):
+        rows = [row(700, 740, project="other", titles=["New thing"])]
+        ctx = {**self.ctx, "repo": {"other": {"44": 30.0}}, "names": {**self.ctx["names"], "44": {"task": "Guess", "project": "G"}}}
+        pick = {"tasks": [{"taskId": "55", "title": "From Claude", "project": "Q"}], "why": "the messages"}
+        p = dayplan.plan(day(items=[work(700, 740)], rows=rows, picks={"700|other": pick}), ctx)
+        [e] = p["entries"]
+        self.assertEqual((e["taskId"], e["source"], e["alts"][0]["taskId"]), ("55", "claude", "44"))
+        self.assertTrue(e["alts"][0]["why"].startswith("Pulsar's guess"))
+
     def test_a_repository_never_logged_is_skipped_not_proposed(self):
         ctx = {**self.ctx, "never_logged": {"bot"}}
         p = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, project="bot", titles=["Coins"])]), ctx)
@@ -314,6 +330,30 @@ class WriteTest(unittest.TestCase):
         self.assertEqual(server.api_entry_delete({"id": "501", "date": DATE, "run": self.run}), {"deleted": "501"})
         self.assertEqual(self.deleted, ["501"])
         self.assertEqual([x["id"] for x in dayplan.undo_ids(dayplan.journal(), self.run)], ["502"])
+
+
+class AskAgainTest(unittest.TestCase):
+    def test_an_empty_answer_is_asked_once_more_and_no_more(self):
+        from pulsar import askclaude
+        answers = [{"picks": []}, {"picks": [{"id": 0, "tasks": ["7"], "why": "w"}]}]
+        calls = []
+
+        def fake(cmd, **kw):
+            calls.append(1)
+            got = answers[min(len(calls), len(answers)) - 1]
+            return mock.Mock(stdout=json.dumps({"result": "", "structured_output": got}), stderr="", returncode=0)
+
+        rows = [{"s": 540, "e": 600, "project": "acme", "titles": [], "minutes": 60}]
+        entries = [{"taskId": "7", "task": "Estimations", "project": "P", "minutes": 30, "date": "2026-11-02"}]
+        with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/bin/claude"), \
+                mock.patch.dict(askclaude._cache, clear=True):
+            got = askclaude.ask("2026-11-05", rows, 0, entries, run=fake)
+            self.assertEqual((len(calls), list(got["picks"])), (2, ["540|acme"]))
+            self.assertEqual(askclaude.latest("2026-11-05")["picks"]["540|acme"]["tasks"][0]["taskId"], "7")
+            answers[1] = {"picks": []}
+            calls.clear()
+            got = askclaude.ask("2026-11-06", rows, 0, entries, run=fake)
+        self.assertEqual((len(calls), got["picks"]), (2, {}))
 
 
 class DayplanAPITest(unittest.TestCase):

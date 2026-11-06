@@ -166,6 +166,12 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   (Productive keeps deleted entries in its Recycle Bin). Drag an entry's top or bottom edge to make it start or end
   earlier or later; Pulsar asks before it changes anything. An entry an approver has approved can only be changed
   in Productive by them; Pulsar shows Productive's answer.
+- **Log the day.** **Log the day** in the Logged column proposes the whole day at once, from your activity, Claude
+  sessions, meetings, daily repeats, rules and what you logged before, and lists it in the side panel for review:
+  each entry with its task, service, how sure Pulsar is and why. Unsure entries start unticked; you can change the
+  task, service, start, length and note, or remove an entry. Nothing is written until you confirm; then the entries
+  go to Productive one at a time, stopping at the first one that is refused, and **Undo this run** deletes only what
+  that run wrote. Notes come only from a meeting's title, your usual note for a repeat, or Ask Claude's draft.
 - **Report downloads.** In the Report, **Download** gives the days or the time entries as CSV (for Excel or
   Numbers), or a print view that saves as PDF.
 

@@ -236,9 +236,11 @@ def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, ass
     else:
         task, src, conf, why = None, "none", "low", "no signal: pick the task"
     alts = []
+    claude_none = bool(pick) and not pick.get("tasks") and conf != "high"  # Claude found no task: keep ours, say so
     if pick and pick.get("tasks") and conf != "high":
         first = pick["tasks"][0]
         alts = [(task, src, conf, why)] if task else []
+        alts = [(t, s, c, f"Pulsar's guess: {w}") for t, s, c, w in alts]
         task, src, conf, why = str(first["taskId"]), "claude", "medium", f"Claude: {pick.get('why') or 'its pick'}"
         alts += [(str(t["taskId"]), "claude", "low", "Claude: another option") for t in pick["tasks"][1:]]
     seen = {task}
@@ -247,7 +249,7 @@ def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, ass
         if t and t not in seen:
             seen.add(t)
             alts.append((t, s, c, w))
-    return {"task": task, "source": src, "conf": conf, "why": why,
+    return {"task": task, "source": src, "conf": conf, "why": why, "claudeNone": claude_none,
             "alts": [{"taskId": t, "source": s, "why": w} for t, s, c, w in alts if t and t != task][:3]}
 
 
@@ -414,7 +416,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
         if t:
             known(str(t["taskId"]), t.get("title"), t.get("project"))
             n, of = t.get("n") or 0, t.get("of") or 0
-            conf = "high" if n >= 2 and of and n / of >= 0.5 else "medium" if n else "low"
+            conf = "high" if n >= 3 and n / of >= 0.6 else "medium" if n >= 2 and n / of >= 0.4 else "low"
             why = (f"you logged it during {n} of the last {of} meetings like this" if n else
                    t.get("why") or "a task whose name shares a word with the meeting")
         else:
@@ -473,7 +475,8 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
              "project": r.get("project"), "titles": r.get("titles") or [], "alts": [x["taskId"] for x in ch["alts"]],
              "altWhy": {x["taskId"]: x["why"] for x in ch["alts"]},
              "note": note if note and ch["task"] and str(pick["tasks"][0]["taskId"]) == ch["task"] else "",
-             "noteFrom": "claude" if note and ch["task"] and str(pick["tasks"][0]["taskId"]) == ch["task"] else ""}
+             "noteFrom": "claude" if note and ch["task"] and str(pick["tasks"][0]["taskId"]) == ch["task"] else "",
+             "claudeNone": ch["claudeNone"]}
         span = range(int(r["s"]), min(N, int(math.ceil(r["e"]))))
         claim(c, [x for x in span if not away[x] and not logging_[x] and (work[x] or not agent)])
         if ch["task"] and ch["source"] in ("rule", "link", "session") and ch["conf"] == "high":
@@ -683,7 +686,9 @@ def _entry(m: dict, s: int, e: int, names: dict) -> dict:
             "serviceId": lead.get("service"), "service": "", "note": note or "", "noteFrom": note_from or "",
             "confidence": conf, "confidenceWords": CONF_WORDS[conf], "why": lead.get("why") or "",
             "source": lead.get("source") or "", "kind": kind, "checked": not flags, "flags": flags,
-            "alts": alts[:3], "parts": len(m["parts"])}
+            "alts": alts[:3], "parts": len(m["parts"]),
+            # Ask Claude looked at the work that carries this entry and found no task: the guess stays, flagged
+            "claudeNone": bool(lead.get("claudeNone"))}
 
 
 # ---- the service: the one last used on the task, if it still takes time on that date ------------------------------
