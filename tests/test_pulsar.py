@@ -2430,28 +2430,34 @@ class GuardTest(unittest.TestCase):
         self.assertEqual(self.ask("/api/logs?days=1", headers={"Cookie": f"pulsar_session={token}"})[0], 401)  # no cookies
 
     def test_the_launcher_proves_itself_with_the_key(self):
-        self.assertEqual(self.ask("/api/logs?days=1", headers={"X-Pulsar-Key": config.session_secret()})[0], 200)
+        key = {"X-Pulsar-Key": config.session_secret()}
+        self.assertEqual(self.ask("/api/logs?days=1", headers=key)[0], 403)  # proven, and still no data
         self.assertEqual(self.ask("/api/logs?days=1", headers={"X-Pulsar-Key": "0" * 64})[0], 401)
+        self.assertEqual(self.ask("/api/version", headers=key)[0], 200)
 
-    def test_the_key_alone_may_read_quit_and_log_new_entries_nothing_more(self):
+    def test_the_key_alone_may_quit_and_ask_the_claude_code_tools_nothing_more(self):
         # the key is a file any program of this user can read, a Claude Code session too (server.key_refusal)
         key = {"X-Pulsar-Key": config.session_secret(), "X-Pulsar": "1", "Content-Type": "application/json"}
         page = {**self.token(), "X-Pulsar": "1", "Content-Type": "application/json"}
         post = lambda path, body, h: self.ask(path, "POST", h, json.dumps(body).encode())  # noqa: E731
         for path in ("/api/settings", "/api/entry/update", "/api/entry/delete", "/api/update/check", "/api/update/install",
                      "/api/update/apply", "/api/likely/ask", "/api/likely/note", "/api/calendar/connect",
-                     "/api/calendar/disconnect", "/api/productive/test", "/api/session/end", "/api/client-error"):
+                     "/api/calendar/disconnect", "/api/productive/test", "/api/session/end", "/api/client-error",
+                     "/api/log"):
             status, _, body = post(path, {"preview_writes": True, "id": "1", "date": "2026-11-04", "force": True}, key)
             self.assertEqual(status, 403, path)
             self.assertIn("Pulsar's window", json_load(body)["error"])
         day = {"date": "2026-11-04", "start": "09:00", "minutes": 30, "taskId": "5", "serviceId": "6",
                "run": "ld-2026-11-04-0123456789ab", "row": "mcp-1"}
-        self.assertEqual(post("/api/log", {**day, "force": True}, key)[0], 403)  # never over another entry
-        self.assertEqual(post("/api/log", {k: v for k, v in day.items() if k != "run"}, key)[0], 403)  # outside a run
-        self.assertEqual(post("/api/log", {**day, "pieces": [{"start": "09:00", "minutes": 30}]}, key)[0], 403)  # the dialog's
         with mock.patch.object(server, "api_log", lambda body: {"dry": True}):
-            self.assertEqual(post("/api/log", {**day, "dry": True}, key)[0], 200)  # pulsar_preview and pulsar_log
+            for body in (day, {**day, "dry": True}, {**day, "force": True}):  # not even as pulsar_log once sent it
+                self.assertEqual(post("/api/log", body, key)[0], 403)
             self.assertEqual(post("/api/log", {**day, "force": True}, page)[0], 200)  # the window: as before
+        for path in ("/api/config", "/api/entries?date=2026-11-04", "/api/activity?date=2026-11-04", "/api/changelog"):
+            self.assertEqual(self.ask(path, headers=key)[0], 403, path)  # no reading either
+        with mock.patch.object(server.mcptools, "call", lambda tool, body: (200, {"tool": tool})):
+            status, _, body = post("/api/mcp/pulsar_day", {"args": {}}, key)
+            self.assertEqual((status, json_load(body)), (200, {"tool": "pulsar_day"}))
         with mock.patch.object(server, "api_settings", lambda body: {"ok": True}):
             self.assertEqual(post("/api/settings", {}, page)[0], 200)
 
@@ -2475,7 +2481,10 @@ class GuardTest(unittest.TestCase):
         import hmac
         status, _, body = self.ask("/api/whoami?nonce=0123456789abcdef")
         expected = hmac.new(config.session_secret().encode(), b"0123456789abcdef", hashlib.sha256).hexdigest()
-        self.assertEqual(json_load(body)["proof"], expected)
+        self.assertEqual(json_load(body)["proof"], expected)  # the older form, for older launchers
+        bound = hmac.new(config.session_secret().encode(), f"whoami-v1|{self.port}|0123456789abcdef".encode(),
+                         hashlib.sha256).hexdigest()
+        self.assertEqual(json_load(body)["proof1"], bound)
         self.assertNotIn(config.session_secret().encode(), body)
 
 
