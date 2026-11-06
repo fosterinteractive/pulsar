@@ -24,6 +24,7 @@ import re
 import subprocess
 import tempfile
 import threading
+import time
 import unicodedata
 import urllib.parse
 from datetime import datetime, timedelta
@@ -439,6 +440,7 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
         _cache[sig] = answer
         for old in list(_cache)[:-30]:
             del _cache[old]
+    keep(date, answer)
     return answer
 
 
@@ -515,13 +517,44 @@ def _env() -> dict:
 
 
 def latest(date: str):
-    """The last answer Ask Claude gave for `date` in this run of Pulsar (any model), or None: Log the day uses its
-    picks and notes, never asking Claude by itself."""
+    """The last answer Ask Claude gave for `date` (any model), from this run of Pulsar or kept on disk, or None: the
+    page shows its picks again when the day is opened, and Log the day uses them, never asking Claude by itself."""
     with _lock:
         for sig, answer in reversed(list(_cache.items())):
             if sig[0] == date:
                 return answer
-    return None
+    return kept(date)
+
+
+# Ask Claude's answers, one file per day, so a day keeps its picks and notes across day changes and restarts (asking
+# again costs). Task ids, reasons and drafted notes only; KEEP_DAYS days.
+PICKS_DIR = os.path.join(config.CACHE_DIR, "claude-picks")
+KEEP_DAYS = 60
+
+
+def keep(date: str, answer: dict) -> None:
+    if not answer.get("picks"):
+        return
+    try:
+        os.makedirs(PICKS_DIR, mode=0o700, exist_ok=True)
+        config.write_atomic(os.path.join(PICKS_DIR, f"{date}.json"), json.dumps(
+            {"format": 1, "date": date, "picks": answer["picks"], "when": time.time()}, ensure_ascii=False))
+        oldest = (datetime.now() - timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%d")
+        for name in os.listdir(PICKS_DIR):
+            if name.endswith(".json") and name[:10] < oldest:
+                os.remove(os.path.join(PICKS_DIR, name))
+    except OSError:
+        pass
+
+
+def kept(date: str):
+    try:
+        with open(os.path.join(PICKS_DIR, f"{date}.json"), encoding="utf-8") as fh:
+            doc = json.load(fh)
+        return {"picks": doc["picks"], "kept": True} if doc.get("format") == 1 and isinstance(doc.get("picks"), dict) \
+            else None
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
 
 
 def history_span(date: str) -> tuple:

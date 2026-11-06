@@ -2784,11 +2784,14 @@ class HintsInBackgroundTest(unittest.TestCase):
     first draw, and every other caller still gets them."""
 
     def setUp(self):
+        import shutil
         from pulsar import likely
         self.likely = likely
         for c in (likely._cache, likely._hints):
             c.clear()
             self.addCleanup(c.clear)
+        shutil.rmtree(likely.DAYS_DIR, ignore_errors=True)  # past days kept on disk by an earlier test
+        self.addCleanup(shutil.rmtree, likely.DAYS_DIR, True)
 
     def patched(self, gate, runs):
         def run(*a):
@@ -2919,3 +2922,49 @@ class MissingHourTest(unittest.TestCase):
                "first_message": "", "tasks": []}
         got = dayplan.plan({"items": [work], "rows": [row], "gone": [{"s": 180, "e": 240}]}, dayplan.learn("2026-03-29", [], {}, lambda d: 0))
         self.assertFalse(any(e["s"] < 240 and e["e"] > 180 for e in got["entries"]), got["entries"])
+
+
+class KeptDaysTest(unittest.TestCase):
+    """A past day's Likely column and Ask Claude's answer are kept on disk: opening the day again (or after a restart)
+    shows them at once, without working the day out or asking Claude again."""
+
+    def setUp(self):
+        from pulsar import askclaude, likely
+        self.likely, self.askclaude = likely, askclaude
+        likely._cache.clear()
+        likely._hints.clear()
+        import shutil
+        for d in (likely.DAYS_DIR, askclaude.PICKS_DIR):
+            shutil.rmtree(d, ignore_errors=True)
+            self.addCleanup(shutil.rmtree, d, True)
+
+    def test_a_past_day_is_worked_out_once(self):
+        runs = []
+        proposal = {"entries": [{"s": 600, "e": 660, "minutes": 60, "project": "acme-web", "titles": ["Fix it"]}]}
+
+        def run(date, tz_name, tz=None):
+            runs.append(date)
+            return {**proposal, "entries": [dict(e) for e in proposal["entries"]]}
+        with mock.patch.object(self.likely, "own_script", lambda: True), mock.patch.object(self.likely, "_run", run), \
+                mock.patch.object(self.likely, "_with_tasks", lambda *a, **k: None):
+            first = self.likely.proposal("2026-11-04", "UTC", "2026-11-06", False, config.DEFAULTS)
+            self.likely._cache.clear()  # as after a restart
+            again = self.likely.proposal("2026-11-04", "UTC", "2026-11-06", False, config.DEFAULTS)
+            today = self.likely.proposal("2026-11-06", "UTC", "2026-11-06", False, config.DEFAULTS)
+        self.assertEqual(runs, ["2026-11-04", "2026-11-06"])  # the past day from disk the second time; today not kept
+        self.assertEqual(again["entries"], first["entries"])
+        self.assertFalse(os.path.exists(os.path.join(self.likely.DAYS_DIR, "2026-11-06.json")))
+        self.assertTrue(today["entries"])
+
+    def test_claudes_answer_is_kept_for_the_day(self):
+        self.askclaude._cache.clear()
+        self.assertIsNone(self.askclaude.latest("2026-11-04"))
+        self.askclaude.keep("2026-11-04", {"picks": {"600|acme-web": {"tasks": [{"taskId": "11"}], "why": "x", "note": ""}}})
+        self.askclaude.keep("2026-11-05", {"picks": {}})  # nothing picked: nothing kept
+        got = self.askclaude.latest("2026-11-04")
+        self.assertEqual(list(got["picks"]), ["600|acme-web"])
+        self.assertIsNone(self.askclaude.latest("2026-11-05"))
+        with mock.patch.object(server, "current_settings", lambda: {**config.DEFAULTS, "ask_claude": True, "timezone": "UTC"}):
+            self.assertEqual(list(server.api_likely_picks({"date": "2026-11-04"})["picks"]), ["600|acme-web"])
+        with mock.patch.object(server, "current_settings", lambda: {**config.DEFAULTS, "ask_claude": False}):
+            self.assertEqual(server.api_likely_picks({"date": "2026-11-04"}), {"picks": {}})

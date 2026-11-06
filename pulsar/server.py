@@ -433,6 +433,29 @@ def api_proposal(q: dict) -> dict:
     return result
 
 
+def page_picks(answer: dict, rows: list, t0: float, t1: float, tz) -> dict:
+    """Ask Claude's picks named as the page names its rows: by their start on the clock, on the day the clocks change."""
+    if clock_change(t0, t1, tz) is None:
+        return answer
+    by_start = {pick_key(r["s"], r.get("project")): pick_key(page_span(r, t0, tz)[0], r.get("project")) for r in rows}
+    return {**answer, "picks": {by_start.get(k, k): v for k, v in (answer.get("picks") or {}).items()}}
+
+
+def api_likely_picks(q: dict) -> dict:
+    """Ask Claude's last answer for a day, from this run or kept on disk: the page shows its picks again when the day
+    is opened. Never asks Claude."""
+    s = current_settings()
+    answer = askclaude.latest(q["date"]) if s["ask_claude"] else None
+    if not answer or not answer.get("picks"):
+        return {"picks": {}}
+    tz = config.tz(s)
+    t0, t1 = day_bounds(q["date"], tz)
+    rows = []
+    if clock_change(t0, t1, tz) is not None:
+        rows = likely.proposal(q["date"], config.timezone_name(s), today(tz), False, s, quick=True).get("entries") or []
+    return {"picks": page_picks(answer, rows, t0, t1, tz)["picks"], "kept": bool(answer.get("kept"))}
+
+
 def api_ask_claude(body: dict) -> dict:
     """The Ask Claude button: a task for each Likely row of the day (askclaude.py). Only when switched on in Settings;
     a POST, because it runs Claude and costs the person's usage."""
@@ -460,10 +483,7 @@ def api_ask_claude(body: dict) -> dict:
     try:
         answer = askclaude.ask(date, rows, t0, [r for r in before if r.get("date", "") >= d0],
                                model=s["ask_claude_model"], history=before, tz=tz)
-        if clock_change(t0, t1, tz) is not None:  # the page names its rows by their start on the clock
-            by_start = {pick_key(r["s"], r.get("project")): pick_key(page_span(r, t0, tz)[0], r.get("project")) for r in rows}
-            answer = {**answer, "picks": {by_start.get(k, k): v for k, v in (answer.get("picks") or {}).items()}}
-        return answer
+        return page_picks(answer, rows, t0, t1, tz)
     except askclaude.AskError as exc:
         logbook.record("ask claude", str(exc), kind="warning")
         return {"error": str(exc), "picks": {}, "cost": exc.cost}
@@ -1314,7 +1334,8 @@ class Handler(BaseHTTPRequestHandler):
             routes = {"/api/activity": api_activity, "/api/entries": api_entries, "/api/proposal": api_proposal,
                       "/api/tasks/suggest": api_suggest, "/api/services": api_services, "/api/repeats": api_repeats,
                       "/api/calendar": api_calendar, "/api/meeting-tasks": api_meeting_tasks,
-                      "/api/dayplan": api_dayplan, "/api/dayplan/journal": api_dayplan_journal}
+                      "/api/dayplan": api_dayplan, "/api/dayplan/journal": api_dayplan_journal,
+                      "/api/likely/picks": api_likely_picks}
             if url.path not in routes:
                 return self.send(404, b"not found", "text/plain")
             if not DATE.match(q.get("date", "")):

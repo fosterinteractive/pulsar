@@ -752,6 +752,8 @@ estimate, and a table of every day. A day's bar and its row in the tables open t
 | `~/.cache/pulsar/days/<person>/` | The last copy of each day's entries (120 days). |
 | `~/.cache/pulsar/names.json` | Names of projects, budgets, services, tasks; billing types; how many of a project's recent tasks have an estimate (5.3); when each was read. |
 | `~/.cache/pulsar/likely-days/` | Past days' Likely rows for learning: times, repository, title hashes. |
+| `~/.cache/pulsar/likely-full/` | Past days' Likely columns as the page shows them (rows with session titles and first messages), so a day opened again, or after a restart, shows at once; 31 days; ↻ works a day out again. |
+| `~/.cache/pulsar/claude-picks/` | Ask Claude's last answer per day (task ids, reasons, drafted notes), shown again when the day is opened, never asked again by itself; 60 days. |
 | `~/.cache/pulsar/logday-journal.json` | Log the day: each row a run sent, before it was sent, and what came of it (31 days). |
 | `~/.cache/pulsar/logs/` | The error log, one JSON line per event, 31 days; tokens, keys, OAuth codes, signed addresses and long opaque strings removed. |
 | `~/Library/Application Support/Pulsar/` | The installed code: `versions/`, `current`, `previous`, `bad-versions`. |

@@ -20,6 +20,13 @@ function load({fresh = false, keepScroll = false} = {}) {
       return x;
     }),
     loadMeetings(d, fresh),  // meetings.js
+    // Ask Claude's picks for this day, kept from an earlier ask (this run or on disk): shown again, never asked again
+    CONFIG?.likely?.askClaude && state.claude?.date !== d ? getJSON(`/api/likely/picks?date=${d}`).then(x => {
+      if (d === state.date && x.picks && Object.keys(x.picks).length && state.claude?.date !== d) {
+        state.claude = {date: d, picks: x.picks}; drawSoon();
+      }
+      return x;
+    }) : null,
   ]);
 }
 

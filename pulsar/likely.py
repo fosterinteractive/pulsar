@@ -69,6 +69,10 @@ def proposal(date: str, tz_name: str, today: str, fresh: bool, settings: dict | 
     lock = _locks.setdefault(key, threading.Lock())
     with lock:
         cached = _cache.get(key)  # (when, proposal, whether the day was over when it was worked out)
+        if not cached and not fresh and keep and date < today:  # a past day worked out before: from disk, at once
+            stored = _load_day(date, tz_name)
+            if stored is not None:
+                _cache[key] = cached = (time.time(), stored, True)
         got = cached[1] if cached else None
         if not (cached and not fresh and (cached[2] or (date >= today and time.time() - cached[0] < TODAY_FOR))):
             settings = settings or config.load()
@@ -106,11 +110,48 @@ def _add_hints(key: tuple, result: dict, date: str, settings: dict, done: thread
             now = _cache.get(key)
             if now and now[1] is result:  # not replaced by a newer run meanwhile
                 _cache[key] = (now[0], {**result, "entries": rows}, now[2])
+                if now[2]:  # a day that was over: it will not change, so it is kept on disk too
+                    _save_day(date, key[1], {**result, "entries": rows})
     finally:
         done.set()
 
 
 _publish = threading.Lock()
+
+# Past days' Likely columns, kept on this Mac so a day looked at again (or after a restart) shows at once instead of
+# being worked out again (the script reads every session of the day: seconds). Rows with their session titles and
+# first messages, so only KEEP_DAYS days are kept; ↻ works a day out again.
+DAYS_DIR = os.path.join(config.CACHE_DIR, "likely-full")
+DAYS_FORMAT = 1
+KEEP_DAYS = 31
+
+
+def _day_path(date: str) -> str:
+    return os.path.join(DAYS_DIR, f"{date}.json")
+
+
+def _load_day(date: str, tz_name: str):
+    try:
+        with open(_day_path(date), encoding="utf-8") as fh:
+            doc = json.load(fh)
+        if doc.get("format") == DAYS_FORMAT and doc.get("timezone") == tz_name and isinstance(doc.get("proposal"), dict):
+            return doc["proposal"]
+    except (OSError, ValueError, AttributeError):
+        pass
+    return None
+
+
+def _save_day(date: str, tz_name: str, result: dict) -> None:
+    try:
+        os.makedirs(DAYS_DIR, mode=0o700, exist_ok=True)
+        config.write_atomic(_day_path(date), json.dumps({"format": DAYS_FORMAT, "timezone": tz_name,
+                                                         "proposal": result}, ensure_ascii=False))
+        oldest = (datetime.now() - timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%d")
+        for name in os.listdir(DAYS_DIR):
+            if name.endswith(".json") and name[:10] < oldest:
+                os.remove(os.path.join(DAYS_DIR, name))
+    except OSError:
+        pass  # a copy only: the day is worked out again next time
 
 
 def _with_tasks(result: dict, date: str, settings: dict, commits: bool = True) -> None:

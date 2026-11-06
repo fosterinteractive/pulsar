@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Likely and Ask Claude's picks stay with their day: switching days, or a restart, no longer loses them.
 - Ticket flags: a closed task, no budget on that date, or no estimate, in the log dialog and Log the day.
 - Settings: round entries to 5, 10 or 15 minutes.
 - Log the day: Earlier days, to catch up on several days one after another.
