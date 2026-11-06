@@ -856,7 +856,7 @@ class Run:
         def record(where, message, kind="error", detail=None, once_per=None, **k):
             self.records.append((where, message, kind, detail))
 
-        def proposal(date, tz_name, today, fresh, settings=None, keep=True):
+        def proposal(date, tz_name, today, fresh, settings=None, keep=True, quick=False):
             return {"tracker": "ActivityWatch", "entries": json.loads(json.dumps(
                 [r for r in self.proposal["entries"]]))}
 

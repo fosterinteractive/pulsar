@@ -13,19 +13,23 @@ function load({fresh = false, keepScroll = false} = {}) {
   if (!keepScroll) { state.act = state.likely = state.logged = state.repeats = null; render(); }
   loadRepeats();
   return Promise.all([
-    getJSON(`/api/activity?date=${d}&source=${state.source}`).then(x => { if (act()) { state.act = x; render(); } return x; }),
-    getJSON(`/api/entries?date=${d}`).then(x => { if (logged()) { state.logged = x; render(); loadEstimates(); } return x; }),
-    getJSON(`/api/proposal?date=${d}${fresh ? '&fresh=1' : ''}`).then(x => { if (likely()) { state.likely = x; render(); if (x.learnPending) setTimeout(() => loadLearned(d), 3000); } return x; }),
+    getJSON(`/api/activity?date=${d}&source=${state.source}`).then(x => { if (act()) { state.act = x; drawSoon(); } return x; }),
+    getJSON(`/api/entries?date=${d}`).then(x => { if (logged()) { state.logged = x; drawSoon(); loadEstimates(); } return x; }),
+    getJSON(`/api/proposal?date=${d}&quick=1${fresh ? '&fresh=1' : ''}`).then(x => {
+      if (likely()) { state.likely = x; drawSoon(); if (x.learnPending || x.hintsPending) setTimeout(() => loadLearned(d), 3000); }
+      return x;
+    }),
     loadMeetings(d, fresh),  // meetings.js
   ]);
 }
 
-/* the Likely rows came before your Productive history was read: ask once more for their learned tasks */
+/* the Likely rows came before your Productive history was read, or before their sessions' tasks and commits were
+   (the server works them out after the rows): ask once more for them */
 async function loadLearned(d) {
   if (d !== state.date) return;
   const mine = newest('proposal');
   const x = await getJSON(`/api/proposal?date=${d}&wait=1`);
-  if (mine() && !x.error && !x.disabled) { state.likely = x; render(); }
+  if (mine() && !x.error && !x.disabled) { state.likely = x; drawSoon(); }
 }
 
 /* entries you log at the same time most days (the daily meeting), offered when the tracker saw the call: a hint,
@@ -33,15 +37,15 @@ async function loadLearned(d) {
 async function loadRepeats() {
   const d = state.date, mine = newest('repeats');
   const x = await getJSON(`/api/repeats?date=${d}&source=${state.source}`);
-  if (mine()) { state.repeats = x.repeats || []; render(); }
+  if (mine()) { state.repeats = x.repeats || []; drawSoon(); }
 }
 
 /* each task's estimate and the time everyone logged on it, for the Tasks box */
 async function loadEstimates() {
   const mine = newest('estimates'), ids = [...new Set((state.logged?.entries || []).map(x => x.taskId).filter(Boolean))];
-  if (!ids.length) { state.estimates = {}; render(); return; }
+  if (!ids.length) { state.estimates = {}; drawSoon(); return; }
   const r = await getJSON(`/api/tasks/estimates?ids=${ids.join(',')}`);
-  if (mine()) { state.estimates = r.tasks || {}; state.estimatesError = r.error || ''; render(); }
+  if (mine()) { state.estimates = r.tasks || {}; state.estimatesError = r.error || ''; drawSoon(); }
 }
 async function refreshLogged() {
   const d = state.date, mine = newest('entries');
@@ -239,7 +243,7 @@ function render() {
   const noon = new Date(state.date + 'T12:00:00Z');  // a date it cannot read shows as written, instead of stopping the page
   const label = isNaN(noon) ? String(state.date || '') : new Intl.DateTimeFormat('en-GB', {weekday: 'long', day: 'numeric',
     month: 'long', year: 'numeric', timeZone: 'UTC'}).format(noon);
-  $('#dayname').textContent = label.charAt(0).toUpperCase() + label.slice(1);
+  setText($('#dayname'), label.charAt(0).toUpperCase() + label.slice(1));
   $('#date').value = state.date;
   document.querySelectorAll('#zoom button').forEach(b => b.classList.toggle('on', +b.dataset.v === Z));
   $('#source-select').value = state.source;
@@ -253,18 +257,26 @@ function render() {
     if (m % labelEvery === 0) axis += `<div class="${hour ? 'h' : ''} num" style="top:${m * ppm}px">${m ? hm(m) : ''}</div>`;
     rules += `<div class="rule${hour ? ' h' : ''}" style="top:${m * ppm}px"></div>`;
   }
-  $('#axis').innerHTML = axis;
-  grid.querySelectorAll('.rule,.now').forEach(n => n.remove());
-  grid.insertAdjacentHTML('beforeend', rules);
-  if (state.date === todayLocal()) grid.insertAdjacentHTML('beforeend', `<div class="now" style="top:${nowMin() * ppm}px"></div>`);
+  setHTML($('#axis'), axis);
+  let now = grid.querySelector('.now');
+  if (grid._rules !== rules) {  // the rules change with the zoom and the day's length only
+    grid.querySelectorAll('.rule').forEach(n => n.remove());
+    grid.insertAdjacentHTML('beforeend', rules); grid._rules = rules;
+    now?.remove(); now = null;  // after the rules, so it is drawn over them
+  }
+  if (state.date !== todayLocal()) now?.remove();
+  else {
+    if (!now) { now = document.createElement('div'); now.className = 'now'; grid.append(now); }
+    now.style.top = `${nowMin() * ppm}px`;
+  }
   renderMeetings(ppm);  // meetings.js: the Meetings column, only while Google Calendar is connected
 
   assignHues([...(logged?.entries || []).map(x => x.project), ...(CONFIG?.rules || []).map(r => r.project),
               ...(state.repeats || []).map(r => r.project)]);
   // activity
   const laneAct = $('#lane-act');
-  if (!act) { laneAct.innerHTML = '<div class="state">loading…</div>'; $('#h-act').textContent = '…'; }
-  else if (act.error) { laneAct.innerHTML = `<div class="state err">${esc(act.error)}</div>`; $('#h-act').textContent = 'error'; }
+  if (!act) { setHTML(laneAct, '<div class="state">loading…</div>'); setText($('#h-act'), '…'); }
+  else if (act.error) { setHTML(laneAct, `<div class="state err">${esc(act.error)}</div>`); setText($('#h-act'), 'error'); }
   else {
     blocksCache = activityBlocks(act.items, Z, end);
     const src = act.source === 'aw' ? 'ActivityWatch' : 'MemTime';
@@ -272,7 +284,7 @@ function render() {
     const other = (act.source === 'aw' ? act.minutes?.memtime : act.minutes?.aw) || 0;
     const hint = other === 0 ? ` · ${act.source === 'aw' ? 'MemTime' : 'ActivityWatch'} is empty for this day` : '';
     const problem = (act.problems || {})[act.source] || (!total ? Object.values(act.problems || {})[0] : '');
-    $('#h-act').textContent = problem ? problem : !total && !other ? 'No activity recorded' : `${src} · ${dur(total)}${hint}`;
+    setText($('#h-act'), problem ? problem : !total && !other ? 'No activity recorded' : `${src} · ${dur(total)}${hint}`);
     $('#h-act').classList.toggle('warn', !!problem);
     // away from the computer: a hatched rail on the column's left edge, above the cards (a 30-minute card can hide a
     // 20-minute break), and its length in words where no card covers it. A click logs it (a call away from the desk).
@@ -284,7 +296,7 @@ function render() {
         aria-label="${word} ${hm(x.s)}–${hm(x.e)}, ${len}: log this time"></div>`
         + (h >= 18 && !covered(x.s, x.e) ? `<div class="awaylabel" style="top:${x.s * ppm + 4}px">${word} · ${len}</div>` : '');
     }).join('');
-    laneAct.innerHTML = (blocksCache.length ? blocksCache.map((b, i) => {
+    setHTML(laneAct, (blocksCache.length ? blocksCache.map((b, i) => {
       const x = {s: b.start * Z, e: b.end * Z};
       const byRule = new Map();  // the block belongs to a rule's project when most of its time matches it
       for (const a of b.items) { const r = ruleOf(a.it); if (r) byRule.set(r.project, (byRule.get(r.project) || 0) + a.min); }
@@ -293,34 +305,34 @@ function render() {
       return `<div class="card act ${b.it.cat}${b.rule ? ' ruled' : ''}" data-k="act" data-i="${i}" style="${b.rule ? `--c:${color(b.rule)};` : ''}${place(x, ppm, 18)}"${b.rule ? ` title="${esc(b.rule)}"` : ''}
         tabindex="0" role="button" aria-label="${esc(`Activity ${hm(x.s)}–${hm(x.e)}: ${b.title}, ${dur(b.total)}`)}">
         <div class="row">${icon(b.it.icon, b.it.app)}<span class="t">${esc(b.title)}</span><span class="m num">${dur(b.total)}</span></div></div>`;
-    }).join('') : '<div class="state">No activity on this day.</div>') + awayHTML;
+    }).join('') : '<div class="state">No activity on this day.</div>') + awayHTML);
   }
 
   // likely
   const laneLikely = $('#lane-likely');
-  if (!likely) { laneLikely.innerHTML = '<div class="state">reading Claude sessions…</div>'; $('#h-likely').textContent = '…'; }
-  else if (likely.disabled) { laneLikely.innerHTML = ''; $('#h-likely').textContent = ''; }
-  else if (likely.error) { laneLikely.innerHTML = `<div class="state err">${esc(likely.error)}</div>`; $('#h-likely').textContent = 'error'; }
+  if (!likely) { setHTML(laneLikely, '<div class="state">reading Claude sessions…</div>'); setText($('#h-likely'), '…'); }
+  else if (likely.disabled) { setHTML(laneLikely, ''); setText($('#h-likely'), ''); }
+  else if (likely.error) { setHTML(laneLikely, `<div class="state err">${esc(likely.error)}</div>`); setText($('#h-likely'), 'error'); }
   else {
     likelyCache = likelyBlocks(likely.entries, Z, end);
-    $('#h-likely').textContent = `Claude sessions · ${dur(likely.proposed || 0)}`;
+    setText($('#h-likely'), `Claude sessions · ${dur(likely.proposed || 0)}`);
     const ask = $('#ask-claude');
     ask.hidden = !(CONFIG?.likely?.askClaude && CONFIG.likely.claudeFound && likely.entries.length);
-    laneLikely.innerHTML = likelyCache.length ? likelyCache.map((b, i) => {
+    setHTML(laneLikely, likelyCache.length ? likelyCache.map((b, i) => {
       const x = {s: b.start * Z, e: b.end * Z}, h = (x.e - x.s) * ppm;
       return `<div class="card likely${b.parallel ? ' parallel' : ''}" data-k="likely" data-i="${i}" style="${place(x, ppm, 18)}"
         tabindex="0" role="button" aria-label="${esc(`Likely ${hm(x.s)}–${hm(x.e)}: ${b.project}${b.title ? ', ' + b.title : ''}, ${dur(b.total)}`)}">
         <div class="row"><span class="t">${esc(b.project)}</span><span class="m num">${dur(b.total)}</span></div>
         ${h > 34 && claudePick(b) ? `<div class="d pick" title="${esc(`Claude: ${claudePick(b).why}`)}">${CLAUDE_MARK}${esc(claudePick(b).tasks[0].title)}</div>`
           : h > 34 && b.title ? `<div class="d">${esc(b.title)}</div>` : ''}</div>`;
-    }).join('') : '<div class="state">No Claude sessions on this day.</div>';
+    }).join('') : '<div class="state">No Claude sessions on this day.</div>');
   }
 
   // logged
   const laneLogged = $('#lane-logged');
   let gapMin = 0;
-  if (!logged) { laneLogged.innerHTML = '<div class="state">reading Productive…</div>'; $('#h-logged').textContent = '…'; }
-  else if (logged.error) { laneLogged.innerHTML = `<div class="state err">${esc(logged.error)}${logged.needsSetup ? '<div><button class="btn bordered" data-open-settings>Open Settings</button></div>' : ''}</div>`; $('#h-logged').textContent = 'error'; }
+  if (!logged) { setHTML(laneLogged, '<div class="state">reading Productive…</div>'); setText($('#h-logged'), '…'); }
+  else if (logged.error) { setHTML(laneLogged, `<div class="state err">${esc(logged.error)}${logged.needsSetup ? '<div><button class="btn bordered" data-open-settings>Open Settings</button></div>' : ''}</div>`); setText($('#h-logged'), 'error'); }
   else {
     // a repeat is offered until its task has an entry that day
     const done = new Set(logged.entries.map(x => x.taskId));
@@ -332,10 +344,10 @@ function render() {
     loggedCache = laid.filter(x => !x.repeat && !x.prop); repeatCache = laid.filter(x => x.repeat);
     const sum = logged.entries.reduce((s, x) => s + x.minutes, 0);
     const head = $('#h-logged');
-    head.textContent = logged.warning ? logged.warning : `Productive · ${dur(sum)} · updated ${logged.fetched.split(' ')[1]}`;
+    setText(head, logged.warning ? logged.warning : `Productive · ${dur(sum)} · updated ${logged.fetched.split(' ')[1]}`);
     head.classList.toggle('warn', !!logged.warning);
-    head.previousElementSibling.textContent = ldActive() ? 'Logged and proposed' : 'Logged';
-    if (ldActive() && !logged.warning) head.textContent = ldHead(sum);
+    setText(head.previousElementSibling, ldActive() ? 'Logged and proposed' : 'Logged');
+    if (ldActive() && !logged.warning) setText(head, ldHead(sum));
     let html = loggedCache.map((x, i) => {
       const h = (x.e - x.s) * ppm, lines = Math.max(0, Math.floor((h - 36) / 15));
       const rz = x.s == null ? '' : '<i class="rz rz-t" data-rz="t" title="Drag to change the start"></i><i class="rz rz-b" data-rz="b" title="Drag to change the end"></i>';
@@ -375,7 +387,7 @@ function render() {
       }
     }
     if (review) html += ldCards(ppm, laid.filter(x => x.prop));  // logday.js: the proposed entries, dashed
-    laneLogged.innerHTML = html || '<div class="state">No entries on this day.</div>';
+    setHTML(laneLogged, html || '<div class="state">No entries on this day.</div>');
   }
 
   renderAside(gapMin);
@@ -407,7 +419,7 @@ function renderAside(gapMin) {
   const bill = known.length ? {yes: known.filter(x => x.billable).reduce((s, x) => s + x.minutes, 0),
                                no: known.filter(x => !x.billable).reduce((s, x) => s + x.minutes, 0)} : null;
   const v = x => x == null ? '…' : dur(x);
-  $('#worktime').innerHTML = `<h2>Work time</h2>
+  setHTML($('#worktime'), `<h2>Work time</h2>
     <div class="kv big"><span>Logged</span><span class="num">${v(sum)}</span></div>
     ${bill ? `<div class="kv"><span>Billable</span><span class="num">${dur(bill.yes)}</span></div><div class="kv"><span>Not billable</span><span class="num">${dur(bill.no)}</span></div>` : ''}
     ${sum && sum > (bill ? bill.yes + bill.no : 0) && bill ? `<div class="kv"><span>Billing unknown</span><span class="num">${dur(sum - bill.yes - bill.no)}</span></div>` : ''}
@@ -416,9 +428,9 @@ function renderAside(gapMin) {
     ${logged && act && !logged.error && !act.error ? `<div class="kv gap"><span>Active, not logged</span><span class="num">${dur(gapMin)}</span></div>` : ''}
     ${act?.away?.some(x => !x.off) ? `<div class="kv"><span>Away, breaks</span><span class="num">${dur(act.away.filter(x => !x.off).reduce((s, x) => s + x.e - x.s, 0))}</span></div>` : ''}
     <div class="bar"><i style="width:${Math.min(100, (sum || 0) / TARGET * 100)}%"></i></div>
-    <div class="kv"><span>Daily target</span><span class="num">${dur(TARGET)}</span></div>`;
+    <div class="kv"><span>Daily target</span><span class="num">${dur(TARGET)}</span></div>`);
 
-  if (!logged || logged.error) { $('#projects').innerHTML = `<h2>Total project time</h2><div class="note">${logged ? esc(logged.error) : '…'}</div>`; }
+  if (!logged || logged.error) { setHTML($('#projects'), `<h2>Total project time</h2><div class="note">${logged ? esc(logged.error) : '…'}</div>`); }
   else {
     // project -> budget + service, as MemTime lists them; the tasks go in the row's tooltip
     const byProject = new Map();
@@ -430,7 +442,7 @@ function renderAside(gapMin) {
     }
     const noStart = logged.entries.filter(e => e.s == null);
     const total = logged.entries.reduce((s, x) => s + x.minutes, 0);
-    $('#projects').innerHTML = `<h2>Total project time<span class="total num">${dur(total)}</span></h2>` +
+    setHTML($('#projects'), `<h2>Total project time<span class="total num">${dur(total)}</span></h2>` +
       ([...byProject].sort((a, b) => b[1].min - a[1].min).map(([name, p]) =>
         `<details class="pg" style="--c:${color(name)}" data-p="${esc(name)}"${folded.has(name) ? '' : ' open'}>
           <summary><b>${esc(name)}</b><span class="num">${dur(p.min)}</span></summary>
@@ -438,7 +450,7 @@ function renderAside(gapMin) {
             `<div class="ti" title="${esc([...r.tasks].join('\n'))}"><span>${esc(r.budget)}${r.service ? ` <small>· ${esc(r.service)}</small>` : ''}${r.billable ? `<span class="bill" title="Billable: ${esc(r.billing)}">$</span>` : ''}</span><span class="num">${dur(r.min)}</span></div>`).join('')}
         </details>`
       ).join('') || '<div class="note">Nothing logged.</div>')
-      + (noStart.length ? `<div class="note">No start time: ${noStart.length} (${dur(noStart.reduce((s, x) => s + x.minutes, 0))}), not on the timeline.</div>` : '');
+      + (noStart.length ? `<div class="note">No start time: ${noStart.length} (${dur(noStart.reduce((s, x) => s + x.minutes, 0))}), not on the timeline.</div>` : ''));
   }
 
   const box = $('#tasksbox');
@@ -451,27 +463,27 @@ function renderAside(gapMin) {
   box.hidden = !byTask.size;
   if (byTask.size) {
     const est = state.estimates;
-    box.innerHTML = '<h2>Tasks against estimates</h2>' + (state.estimatesError ? `<div class="note">${esc(state.estimatesError)}</div>` : '') + [...byTask.values()].sort((a, b) => b.today - a.today).map(t => {
+    setHTML(box, '<h2>Tasks against estimates</h2>' + (state.estimatesError ? `<div class="note">${esc(state.estimatesError)}</div>` : '') + [...byTask.values()].sort((a, b) => b.today - a.today).map(t => {
       const line = est ? estimateLine(est[t.taskId]) : null;
       return `<div class="tk"><div class="tk-h"><span class="dot" style="background:${color(t.project)}"></span><b title="${esc(t.project)}">${esc(t.title)}</b><span class="num">${dur(t.today)} today</span></div>
         ${line ? `<div class="tk-l${line.over ? ' over' : ''}">${line.over ? '<span aria-hidden="true">⚠ </span>' : ''}${esc(line.text)}</div>
           ${line.pct != null ? `<div class="bar"><i style="width:${line.pct}%${line.over ? ';background:var(--gap);opacity:1' : ''}"></i></div>` : ''}`
                : `<div class="tk-l">${est ? 'no data from Productive' : 'reading estimates…'}</div>`}</div>`;
-    }).join('') + '<div class="note">Totals include everyone\'s time on the task.</div>';
+    }).join('') + '<div class="note">Totals include everyone\'s time on the task.</div>');
   }
 
-  if (likely?.disabled) { $('#likelybox').innerHTML = ''; }
-  else if (!likely || likely.error) { $('#likelybox').innerHTML = `<h2>Likely, from Claude sessions</h2><div class="note">${likely ? esc(likely.error) : 'reading…'}</div>`; }
+  if (likely?.disabled) { setHTML($('#likelybox'), ''); }
+  else if (!likely || likely.error) { setHTML($('#likelybox'), `<h2>Likely, from Claude sessions</h2><div class="note">${likely ? esc(likely.error) : 'reading…'}</div>`); }
   else {
     const byProject = new Map();
     for (const e of likely.entries) byProject.set(e.project, (byProject.get(e.project) || 0) + e.minutes);
     const unplaced = (likely.unplaced || []).reduce((s, u) => s + u.minutes, 0);
-    $('#likelybox').innerHTML = `<h2>Likely, from Claude sessions</h2>` +
+    setHTML($('#likelybox'), `<h2>Likely, from Claude sessions</h2>` +
       [...byProject].sort((a, b) => b[1] - a[1]).map(([p, m]) => `<div class="kv"><span>${esc(p)}</span><span class="num">${dur(m)}</span></div>`).join('') +
       (unplaced ? `<div class="note">Not in the column: ${dur(unplaced)} of sessions that ran at the same time as other work.</div>` : '') +
       (likely.logging ? `<div class="note">Time logging: ${dur(likely.logging)}, never logged.</div>` : '') +
       (likely.learning ? `<div class="note">Learning your tasks from past days: ${likely.learning.done} of ${likely.learning.of}.</div>` : '') +
-      `<div class="note">Tracker: ${esc(likely.tracker || 'none')}.</div>`;
+      `<div class="note">Tracker: ${esc(likely.tracker || 'none')}.</div>`);
   }
 }
 
@@ -520,7 +532,7 @@ document.addEventListener('click', ev => {
   if (delYes && popEntry) { deleteEntry(popEntry, delYes); return; }
   const rzYes = ev.target.closest('[data-rz-yes]');
   if (rzYes) { saveResize(rzYes, rzYes.dataset.force === '1'); return; }
-  if (ev.target.closest('[data-rz-no]')) { closePop(); render(); return; }
+  if (ev.target.closest('[data-rz-no]')) { closePop(); forgetHTML($('#lane-logged')); render(); return; }
   const ruleBtn = ev.target.closest('[data-rule-text]');
   if (ruleBtn) { pop.classList.remove('on'); openRule(ruleBtn.dataset.ruleText); return; }
   const card = ev.target.closest('.card');
@@ -712,12 +724,13 @@ async function deleteEntry(x, btn) {
   lane.addEventListener('pointerup', ev => {
     if (!drag) return;
     const d = drag; drag = null; justDone = Date.now();
-    if (d.s === d.x.s && d.e === d.x.e) { render(); return; }
+    forgetHTML(lane);  // the card was moved by hand: the next redraw puts it where its entry is
+    if (Math.round(d.s) === Math.round(d.x.s) && Math.round(d.e) === Math.round(d.x.e)) { forgetHTML(lane); render(); return; }
     const r = d.card.getBoundingClientRect();
     // only the edge that moved changes: the other keeps its exact time (an entry's start can hold seconds)
     askResize(d.x, d.s === d.x.s ? null : d.s, Math.round(d.e - d.s), {clientX: r.right - 8, clientY: r.top + 10});
   });
-  lane.addEventListener('pointercancel', () => { if (drag) { drag = null; render(); } });
+  lane.addEventListener('pointercancel', () => { if (drag) { drag = null; forgetHTML(lane); render(); } });
   // the click that ends a drag must not open the card's popover over the question
   lane.addEventListener('click', ev => { if (Date.now() - justDone < 400) { ev.stopPropagation(); ev.preventDefault(); } }, true);
 })();

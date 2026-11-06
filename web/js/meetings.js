@@ -13,7 +13,7 @@ function loadMeetings(d, fresh = false) {
       CONFIG.calendar = {...CONFIG.calendar, connected: false, account: ''};
       if (x.problem) toast(x.problem, true);
     }
-    if (d === state.date) { state.meet = {...x, date: d}; render(); }
+    if (d === state.date) { state.meet = {...x, date: d}; drawSoon(); }
     return x;
   });
 }
@@ -24,11 +24,11 @@ function renderMeetings(ppm) {
   const m = state.meet?.date === state.date ? state.meet : null;
   const lane = $('#lane-meet'), head = $('#h-meet'), allDay = $('#meet-allday');
   head.classList.remove('warn');
-  if (!m) { lane.innerHTML = '<div class="state">reading Google Calendar…</div>'; head.textContent = '…'; allDay.innerHTML = ''; meetCache = []; return; }
-  if (m.error) { lane.innerHTML = `<div class="state err">${esc(m.error)}</div>`; head.textContent = 'error'; allDay.innerHTML = ''; meetCache = []; return; }
+  if (!m) { setHTML(lane, '<div class="state">reading Google Calendar…</div>'); setText(head, '…'); setHTML(allDay, ''); meetCache = []; return; }
+  if (m.error) { setHTML(lane, `<div class="state err">${esc(m.error)}</div>`); setText(head, 'error'); setHTML(allDay, ''); meetCache = []; return; }
   const events = m.events || [];
-  allDay.innerHTML = events.filter(x => x.all_day).map(x =>
-    `<div class="${x.declined ? 'declined' : ''}" title="${esc(`All day: ${x.title || '(no title)'}${x.declined ? ', declined' : ''}`)}">${esc(x.title || '(no title)')}${x.declined ? ' · declined' : ''}</div>`).join('');
+  setHTML(allDay, events.filter(x => x.all_day).map(x =>
+    `<div class="${x.declined ? 'declined' : ''}" title="${esc(`All day: ${x.title || '(no title)'}${x.declined ? ', declined' : ''}`)}">${esc(x.title || '(no title)')}${x.declined ? ' · declined' : ''}</div>`).join(''));
   meetCache = lanes(events.filter(x => !x.all_day).map(x => ({...x})), ppm, 18);
   const going = meetCache.filter(x => !x.declined);
   head.textContent = m.problem || (meetCache.length
@@ -36,13 +36,13 @@ function renderMeetings(ppm) {
     : 'Google Calendar');
   head.classList.toggle('warn', !!m.problem);
   head.title = CONFIG.calendar.account ? `Google Calendar: ${CONFIG.calendar.account}` : 'Google Calendar';
-  lane.innerHTML = meetCache.map((x, i) => {
+  setHTML(lane, meetCache.map((x, i) => {
     const h = (x.e - x.s) * ppm, title = x.title || '(no title)';
     return `<div class="card meet${x.declined ? ' declined' : ''}" data-k="meet" data-i="${i}" style="${place(x, ppm, 18)}"
       tabindex="0" role="button" aria-label="${esc(`Meeting ${hm(x.s)}–${hm(x.e)}: ${title}${x.declined ? ', declined' : ''}`)}">
       <div class="row"><span class="t">${esc(title)}</span>${x.declined ? '<span class="dec">declined</span>' : ''}</div>
       ${h > 34 ? `<div class="d num">${hm(x.s)}–${hm(x.e)}</div>` : ''}</div>`;
-  }).join('') || (events.length ? '' : '<div class="state">No meetings on this day.</div>');
+  }).join('') || (events.length ? '' : '<div class="state">No meetings on this day.</div>'));
 }
 
 /* the same popover as the other cards: when, what, a link to join or open it, and Log this time */

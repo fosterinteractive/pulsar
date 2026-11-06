@@ -11,6 +11,23 @@ let projectHue = new Map();
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
+/* Drawing. The columns come back one by one, each answer used to redraw the whole day: now the answers of one frame
+   are drawn once (drawSoon), nothing is drawn while the warp pulls in (holdDrawing), and a part whose HTML has not
+   changed is left alone (setHTML), so its cards, icons and layout stay as they are. */
+function setHTML(el, html) { if (el && el._html !== html) { el.innerHTML = html; el._html = html; } }
+function setText(el, text) { if (el && el.textContent !== text) el.textContent = text; }
+function forgetHTML(el) { if (el) el._html = undefined; }  // something else changed it (a drag): draw it again
+let drawHeld = false, drawWanted = false, drawFrame = 0;
+function drawSoon() {
+  drawWanted = true;
+  if (drawHeld || drawFrame) return;
+  drawFrame = requestAnimationFrame(() => { drawFrame = 0; if (drawWanted && !drawHeld) { drawWanted = false; render(); } });
+}
+function holdDrawing(on) {
+  drawHeld = on;
+  if (!on && drawWanted) { cancelAnimationFrame(drawFrame); drawFrame = 0; drawWanted = false; render(); }
+}
+
 /* a real calendar day, YYYY-MM-DD, in a sane range: anything else in the address or a date field is ignored */
 function validDate(d) {
   if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
@@ -130,12 +147,17 @@ const W8 = {core: null, anims: [], from: 0, to: 0, t0: 0, dur: 1, afterUpdate: f
    on the graphics card, which holds through a reload); the page only says how far in to go. */
 const NATIVE_WARP = !!(window.PULSAR_NATIVE_WARP && window.webkit?.messageHandlers?.pulsar);
 const warpDark = () => getComputedStyle(document.documentElement).getPropertyValue('--warp-core').trim().startsWith('0');
+/* The window photographs the page before it bends it (50-70 ms in the Pulsar window): a pull from nothing starts that
+   much later than asked, so it is waited for too. Without it the letting go came while the pull was only about 60%
+   of the way in. */
+const SNAPSHOT_MS = 100;
 function nativeWarp(level, instant = false) {
   const from = instant ? level : warpLevel(), dur = instant ? 0 : Math.max(1, 520 * Math.abs(level - from));
-  Object.assign(W8, {from, to: level, t0: performance.now(), dur: Math.max(1, dur), native: level > 0});
+  const shot = !W8.native && level > 0 && !instant ? SNAPSHOT_MS : 0;
+  Object.assign(W8, {from, to: level, t0: performance.now() + shot, dur: Math.max(1, dur), native: level > 0});
   document.documentElement.classList.remove('warp-held');  // the window's picture covers the page from here
   window.webkit.messageHandlers.pulsar.postMessage({action: 'warp', to: level, instant, dark: warpDark()});
-  return new Promise(done => setTimeout(done, level > 0 ? dur : 600));
+  return new Promise(done => setTimeout(done, level > 0 ? dur + shot : 600));
 }
 const WARP_IN_EASE = 'cubic-bezier(.55, 0, .9, .45)';  // slow at first, as gravity pulls
 const pageScale = level => `scale(${1 - .06 * level})`;
@@ -210,12 +232,16 @@ function warpOut(from = 1) {
   Object.assign(W8, {from: 0, to: 0, dur: 1});
   return page.finished.then(() => { if (W8.anims[0] === page) lensEnd(); }).catch(() => {});
 }
-/* the warp for as long as `work` takes (at most maxMs): in, held, out when it is done */
+/* the warp for as long as `work` takes (at most maxMs): in, held, out when it is done. What the data brings while it
+   pulls in is drawn once, when it is all the way in, so the page it lets go of is the new one and nothing redraws
+   while it moves. */
 let warping = null;
 function warpUntil(work, maxMs = 6000) {
   if (calmMotion() || warping) return work;
   const done = Promise.race([Promise.resolve(work).catch(() => {}), new Promise(r => setTimeout(r, maxMs))]);
-  warping = Promise.all([warpTo(1), done]).then(warpRelease).finally(() => { warping = null; });
+  holdDrawing(true);
+  warping = Promise.all([warpTo(1), done]).then(() => holdDrawing(false)).then(warpRelease)
+    .finally(() => { warping = null; holdDrawing(false); });
   return work;
 }
 function warp() { return warpUntil(null, 0); }  // the whole jump in place (an Option-click on the version)

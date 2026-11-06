@@ -388,7 +388,9 @@ def api_proposal(q: dict) -> dict:
     if not likely.enabled(s):
         return {"disabled": True, "entries": []}
     date, tz = q["date"], config.tz(s)
-    result = likely.proposal(date, config.timezone_name(s), today(tz), q.get("fresh") == "1", s)
+    # quick=1, the page's first ask: the rows as soon as there are any, their hints (hintsPending) on the second ask
+    result = likely.proposal(date, config.timezone_name(s), today(tz), q.get("fresh") == "1", s,
+                             quick=q.get("quick") == "1" and q.get("wait") != "1")
     t0, t1 = day_bounds(date, tz)
     if not result.get("error"):  # the tasks you logged in the same session or repository: a hint, never an error
         ps = current_settings()
