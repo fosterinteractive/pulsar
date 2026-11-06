@@ -10,6 +10,9 @@ Writes data/calendar.json: {"days": {date: events_on(...)}, "moments": [{s, e, u
 import json, os, sys
 from datetime import datetime, timedelta
 
+import replay_dir
+
+HERE = replay_dir.folder()  # data/ goes here: required, never inside a git checkout
 assert os.environ.get("PULSAR_READ_ONLY") == "1"
 assert os.environ.get("XDG_CACHE_HOME") and not os.path.realpath(os.environ["XDG_CACHE_HOME"]).startswith(os.path.expanduser("~/."))
 assert not os.environ.get("XDG_CONFIG_HOME")
@@ -56,6 +59,6 @@ for x in items:  # as calendar.history()
                     "title": str(x.get("summary") or "")[:300],
                     "declined": any(isinstance(g, dict) and g.get("self") and g.get("responseStatus") == "declined"
                                     for g in x.get("attendees") or [])})
-out = os.path.join(os.environ.get("PULSAR_REPLAY_DIR") or os.path.dirname(os.path.abspath(__file__)), "data", "calendar.json")
+out = os.path.join(HERE, "data", "calendar.json")
 json.dump({"days": days, "moments": moments}, open(out, "w"), ensure_ascii=False)
 print("events", len(items), "moments", len(moments), "days", len(days), file=sys.stderr)

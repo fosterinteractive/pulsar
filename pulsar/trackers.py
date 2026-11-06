@@ -294,6 +294,17 @@ def clip_to_present(window_events: list, present: list, t0: float, t1: float, cl
     return out
 
 
+def answering(aw_url: str) -> bool:
+    """Whether a tracker can be read now: MemTime's database is there, or ActivityWatch answers."""
+    if os.path.exists(MEMTIME_DB):
+        return True
+    try:
+        http_json(aw_url.rstrip("/") + "/api/0/buckets/", timeout=1.5)
+        return True
+    except Exception:
+        return False
+
+
 def both(t0: float, t1: float, aw_url: str, classify: Classifier) -> dict:
     PROBLEMS.pop("memtime", None)
     return {"aw": activity_aw(aw_url, t0, t1, classify), "memtime": activity_memtime(t0, t1, classify)}

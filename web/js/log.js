@@ -39,8 +39,9 @@ async function saveRules(rules) {
 /* ---------- task picker, shared by the log and rule dialogs ---------- */
 let suggestCache = null;
 async function suggestions(date) {
-  // asked again when the last answer had no assigned tasks because Productive failed (the server tries again after a minute)
-  if (!suggestCache || suggestCache.date !== date || suggestCache.data.assignedError) suggestCache = {date, data: await getJSON(`/api/tasks/suggest?date=${date}`)};
+  // asked again when the last answer lacked your assigned tasks or your last 30 days because Productive failed (the
+  // server tries again after a minute)
+  if (!suggestCache || suggestCache.date !== date || suggestCache.data.assignedError || suggestCache.data.historyError) suggestCache = {date, data: await getJSON(`/api/tasks/suggest?date=${date}`)};
   return suggestCache.data;
 }
 function dedupe(groups) {
@@ -237,7 +238,7 @@ async function fillSuggestions(date, hint, lead = null) {
   logPicker.set(dedupe([
     {label: lead?.label || '', tasks: led},
     {label: 'From your rules, in this time', tasks: ruled, showMin: true},
-    {label: 'You logged to these lately', tasks: (s.recent || []).slice(0, 10)},
+    {label: 'You logged to these lately', tasks: (s.recent || []).slice(0, 10), note: s.historyError || ''},
     {label: 'Assigned to you', tasks: (s.assigned || []).slice(0, 10), note: s.assignedError || ''},
   ]), led[0] || ruled[0] || null);
 }

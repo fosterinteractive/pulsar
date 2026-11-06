@@ -1,7 +1,7 @@
 """Score the replay: Log the day against what was logged, the log dialog's ranks, breakdowns, failure causes and
 correctness checks. Prints a report; writes results.json.
 
-    XDG_CACHE_HOME=... XDG_CONFIG_HOME=... PULSAR_READ_ONLY=1 python3 -E -s -B analyze.py <worktree> [--first D] [--last D]
+    PULSAR_REPLAY_DIR=... XDG_CACHE_HOME=... XDG_CONFIG_HOME=... PULSAR_READ_ONLY=1 python3 -E -s -B analyze.py <worktree> [--first D] [--last D]
 """
 from __future__ import annotations
 

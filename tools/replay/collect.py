@@ -9,6 +9,9 @@ data/day-<date>.json (activity, away, calls, Likely rows with task links). Calen
 import json, os, sys, time
 from datetime import datetime, timedelta
 
+import replay_dir
+
+HERE = replay_dir.folder()  # data/ goes here: required, never inside a git checkout
 assert os.environ.get("PULSAR_READ_ONLY") == "1"
 for v in ("XDG_CACHE_HOME", "XDG_CONFIG_HOME"):
     assert os.environ.get(v) and not os.path.realpath(os.environ[v]).startswith(os.path.expanduser("~/.")), v  # copies, never the real dirs
@@ -16,7 +19,6 @@ sys.path.insert(0, sys.argv[1])
 from pulsar import config, likely, productive, server, sessions  # noqa: E402
 
 assert config.CACHE_DIR.startswith(os.environ["XDG_CACHE_HOME"]) and config.CONFIG_DIR.startswith(os.environ["XDG_CONFIG_HOME"])
-HERE = os.environ.get("PULSAR_REPLAY_DIR") or os.path.dirname(os.path.abspath(__file__))  # data/ and results go here
 OUT = os.path.join(HERE, "data")
 first, last = sys.argv[2], sys.argv[3]
 s = server.current_settings()

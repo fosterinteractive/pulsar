@@ -2034,6 +2034,12 @@ class UpdaterTest(unittest.TestCase):
         with mock.patch.object(updater.subprocess, "run", run):
             self.assertFalse(updater.self_test(self.root))  # broken twice: broken
 
+    def test_a_self_test_whose_own_requests_timed_out_says_nothing_about_the_version(self):
+        for answers in ([updater.UNFINISHED], [1, updater.UNFINISHED]):  # pulsar.py --self-test: "not in time"
+            run = lambda *a, answers=answers, **k: mock.Mock(returncode=answers.pop(0), stdout="", stderr="")  # noqa: E731
+            with mock.patch.object(updater.subprocess, "run", run):
+                self.assertIsNone(updater.self_test(self.root))
+
     def test_a_release_whose_self_test_could_not_finish_is_not_banned(self):
         manifest, data = self.release()
         u = self.make(manifest, data, passes=None)
@@ -2076,6 +2082,17 @@ class SelfTestTest(unittest.TestCase):
     def test_it_serves_the_page_on_a_free_port(self):
         with mock.patch("sys.stdout"):
             self.assertEqual(self.main.self_test(), 0)
+
+    def test_a_request_that_timed_out_is_unfinished_and_an_http_error_fails(self):
+        import socket
+        import urllib.error
+        for late in (socket.timeout("timed out"), urllib.error.URLError(socket.timeout("timed out")), TimeoutError()):
+            with mock.patch("urllib.request.urlopen", side_effect=late), mock.patch("sys.stderr"):
+                self.assertEqual(self.main.self_test(), updater.UNFINISHED, late)
+        broken = urllib.error.HTTPError("http://127.0.0.1/api/version", 500, "Internal Server Error", {}, None)
+        for bad in (broken, ConnectionRefusedError(), ValueError("js/core.js came back empty")):
+            with mock.patch("urllib.request.urlopen", side_effect=bad), mock.patch("sys.stderr"):
+                self.assertEqual(self.main.self_test(), 1, bad)
 
 
 def json_bytes(obj):

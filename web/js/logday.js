@@ -193,6 +193,7 @@ function renderReview() {
   const askLine = LD.asking ? `<p class="rv-ask" role="status">${CLAUDE_MARK.split('<span')[0]}Asking ${model} about the rows Pulsar is unsure of (about 30 seconds). You can review meanwhile.</p>`
     : LD.askNote ? `<p class="rv-ask" role="status">${CLAUDE_MARK.split('<span')[0]}${esc(LD.askNote)}</p>` : '';
   const testNote = p.ignoreLogged ? '<p class="rv-test">Test view: worked out as if nothing were logged this day. Nothing can be written from a read-only test server.</p>' : '';
+  const historyNote = p.historyProblem ? `<p class="rv-test" role="status">${esc(p.historyProblem)}</p>` : '';
   const results = ldResultsBox();
   // the list: logged entries (quiet), time not covered, and the proposals, in time order
   const items = [];
@@ -208,7 +209,7 @@ function renderReview() {
       <div class="rv-sum"><b>${dur(T.minutes)}</b> ticked in ${n} ${n === 1 ? 'entry' : 'entries'} · ${dur(T.billable)} billable · ${dur(T.logged)} logged</div>
       <div class="rv-bar" role="img" aria-label="${esc(`${dur(withThese)} with these, against a target of ${dur(target)}`)}"><i class="lg" style="width:${pct(T.logged)}%"></i><i class="pp" style="width:${pct(T.minutes)}%"></i></div>
       <div class="rv-bl"><span>${dur(withThese)} with these</span><span>target ${dur(target)}</span></div>
-      <div class="rv-iss">${chips}</div>${askLine}${testNote}</div>
+      <div class="rv-iss">${chips}</div>${askLine}${testNote}${historyNote}</div>
     ${results}
     ${empty || `<ul class="rv-list" aria-label="Proposed entries">${items.map(x => x.html).join('')}${skipped}</ul>`}
     <div class="rv-f">${LD.writing

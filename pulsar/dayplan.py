@@ -953,8 +953,12 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False) -> dict
             e["checked"] = False
     if got["likely"].get("error"):
         logbook.record("log the day", f"Likely: {got['likely']['error']}", kind="warning", once_per=600)
+    # without the days before, the plan has no learned tasks and no last-used services: said, not hidden
+    history_note = (f"Your earlier entries could not be read, so the tasks and services here are not learned from "
+                    f"them: {hproblem}") if hproblem else None
     return {**result, "date": date, "ignoreLogged": ignore_logged, "fromCopy": bool(from_copy),
-            "warning": problem if from_copy else None, "likelyError": got["likely"].get("error"),
+            "warning": " ".join(w for w in (problem if from_copy else None, history_note) if w) or None,
+            "historyProblem": history_note, "likelyError": got["likely"].get("error"),
             "calendar": bool(got["cal"].get("connected")), "claude": bool(answer),
             "learning": got["likely"].get("learning")}
 

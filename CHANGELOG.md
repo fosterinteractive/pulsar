@@ -22,6 +22,9 @@ What each Pulsar release changed, newest first.
 - Fixed: one odd line in a Claude session no longer empties Likely for the day.
 - Fixed: copies of MemTime's database no longer pile up in the temporary folder.
 - Fixed: an update whose self-test timed out can be tried again; a late answer no longer replaces a newer one.
+- Fixed: a self-test whose page answered too late no longer counts against the version.
+- Fixed: unreadable recent entries are said, not kept; Ask Claude then does not run.
+- Fixed: a past day seen before ActivityWatch started is learned from again once it runs.
 - The README says what Ask Claude sends to Anthropic, what it costs, and how to remove everything.
 - Pulsar's key only reads, quits and logs new entries; changing or deleting entries, settings and updates need its window.
 - Notes from commits never start a program that a repository's own git settings name.

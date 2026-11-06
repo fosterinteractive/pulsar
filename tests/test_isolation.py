@@ -74,6 +74,39 @@ class IsolationTest(unittest.TestCase):
             os.execv(sys.executable, [sys.executable, "-c", "pass"])
         self.assertEqual(seen, ["os.execv"])
 
+    def test_every_test_module_imports_this_guard_before_anything_else(self):
+        """Run alone (python3 -m unittest tests.test_x), a module is guarded only by its own import of isolation, which
+        must come before it imports Pulsar or does anything: a temporary folder, an environment variable."""
+        import ast
+        import glob
+        here = os.path.dirname(os.path.abspath(__file__))
+        modules = sorted(glob.glob(os.path.join(here, "test_*.py")))
+        self.assertGreater(len(modules), 5)
+
+        def guard(node):
+            return (isinstance(node, ast.Import) and any(a.name == "isolation" for a in node.names)) or \
+                (isinstance(node, ast.ImportFrom) and node.module == "isolation")
+
+        def harmless(node):  # the docstring, the standard library, sys.path.insert(...)
+            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+                return True
+            if isinstance(node, ast.Import):
+                return not any(a.name.split(".")[0] == "pulsar" for a in node.names)
+            if isinstance(node, ast.ImportFrom):
+                return (node.module or "").split(".")[0] not in ("pulsar", "") and node.level == 0
+            return isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) and \
+                ast.unparse(node.value.func) == "sys.path.insert"
+
+        for path in modules:
+            with open(path, encoding="utf-8") as fh:
+                source = fh.read()
+            body = ast.parse(source).body
+            at = next((i for i, node in enumerate(body) if guard(node)), None)
+            name = os.path.basename(path)
+            self.assertIsNotNone(at, f"{name} never imports isolation")
+            early = [ast.get_source_segment(source, n) for n in body[:at] if not harmless(n)]
+            self.assertEqual(early, [], f"{name} does this before importing isolation")
+
     def test_nothing_was_refused_outside_these_tests(self):
         """What a test reached for is listed here as it happens; the run also exits 1 at the end if any."""
         self.assertEqual(isolation.TRIED, [])

@@ -189,6 +189,9 @@ def _bytes_io(data: bytes):
     return io.BytesIO(data)
 
 
+UNFINISHED = 75  # pulsar.py --self-test's exit status when its own requests timed out (EX_TEMPFAIL): says nothing
+
+
 def self_test(copy: str) -> Optional[bool]:
     """Runs the new copy's own test: True when it passes, False when it fails twice in a row (the copy is broken),
     None when it could not finish (a timeout on a busy or sleeping Mac, a process that would not start), which says
@@ -203,6 +206,10 @@ def self_test(copy: str) -> Optional[bool]:
             return None
         if run.returncode == 0:
             return True
+        if run.returncode == UNFINISHED:  # its own requests timed out: the copy may well be fine
+            logbook.record("updater", "The new version's self-test could not finish in time.", kind="warning",
+                           detail=(run.stdout + run.stderr)[-3000:])
+            return None
         logbook.record("updater", f"The new version failed its self-test (exit {run.returncode}, try {attempt} of 2).",
                        detail=(run.stdout + run.stderr)[-3000:])
     return False

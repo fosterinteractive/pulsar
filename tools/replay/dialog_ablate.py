@@ -1,7 +1,7 @@
 """Variants of the log dialog's task order, scored on every logged entry (top-1/3/5 by entries and by minutes).
 Cold (nothing logged that day) and in time order (Log and next: the day's earlier entries logged).
 
-    XDG_CACHE_HOME=... XDG_CONFIG_HOME=... PULSAR_READ_ONLY=1 python3 -E -s -B dialog_ablate.py <worktree> [--first D] [--exclude ...]
+    PULSAR_REPLAY_DIR=... XDG_CACHE_HOME=... XDG_CONFIG_HOME=... PULSAR_READ_ONLY=1 python3 -E -s -B dialog_ablate.py <worktree> [--first D] [--exclude ...]
 """
 from __future__ import annotations
 
