@@ -250,7 +250,10 @@ class McpTest(unittest.TestCase):
 
         def fake(e, s):
             created.append(e)
-            return {"id": str(900 + len(created))}
+            i = str(900 + len(created))  # and the next read of the day has it, as Productive would
+            s0 = int(e["started_at"][11:13]) * 60 + int(e["started_at"][14:16])
+            self.day.entries.append({**entry(s0, e["minutes"], task=e["task_id"], note=e["note"]), "id": i})
+            return {"id": i}
         return mock.patch.object(productive, "create_entry", fake)
 
     ARGS = {"date": DATE, "entries": [{"start": "09:00", "minutes": 60, "taskId": "11"},

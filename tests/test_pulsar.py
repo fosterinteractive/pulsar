@@ -1590,7 +1590,29 @@ class EditEntryTest(unittest.TestCase):
             server.api_entry_update({"id": "1", "date": "2026-11-04", "minutes": 20})
         with self.assertRaises(ValueError):
             server.api_entry_delete({"id": "1", "date": "2026-11-04"})
+        self.existing[0]["note"] = "Someone's newer note"
+        part = {k: v for k, v in self.seen("1").items() if k != "note"}
+        for seen in ({}, part):  # a field left out would never be compared
+            with self.assertRaises(ValueError):
+                server.api_entry_update({"id": "1", "date": "2026-11-04", "seen": seen, "minutes": 20})
+            with self.assertRaises(ValueError):
+                server.api_entry_delete({"id": "1", "date": "2026-11-04", "seen": seen})
         self.assertEqual((self.updated, self.deleted), ([], []))
+
+    def test_a_new_start_on_the_nights_the_clocks_change(self):
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("America/Toronto")
+        second = datetime(2026, 11, 1, 1, 30, tzinfo=tz, fold=1).timestamp()  # 01:30 EST, the second 01:30
+        self.existing[0].update(date="2026-11-01", start=second)
+        seen = {**self.seen("1"), "start": "01:30"}
+        with mock.patch.object(server.config, "tz", lambda s: tz):
+            server.api_entry_update({"id": "1", "date": "2026-11-01", "seen": seen, "start": "01:45"})
+            self.assertEqual(self.updated[-1][1], {"started_at": "2026-11-01T01:45:00-05:00"})  # not an hour earlier
+            self.existing[0].update(date="2026-03-08", start=datetime(2026, 3, 8, 1, 0, tzinfo=tz).timestamp())
+            with self.assertRaisesRegex(ValueError, "does not exist"):  # 02:30 on 8 March: it would be 03:30
+                server.api_entry_update({"id": "1", "date": "2026-03-08", "seen": {**seen, "start": "01:00"},
+                                         "start": "02:30"})
+        self.assertEqual(len(self.updated), 1)
 
     def test_a_start_with_seconds_is_kept_when_only_the_end_moves(self):
         self.existing[0]["start"] += 40  # 10:00:40

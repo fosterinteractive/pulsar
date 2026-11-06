@@ -325,6 +325,28 @@ class PlannerTest(unittest.TestCase):
         p = dayplan.plan(day(items=[work(80, 240)], rows=[row(80, 240)], logged=logged), self.ctx)
         self.assertFalse([e for e in p["entries"] if e["s"] < 210 and e["e"] > 90], p["entries"])
 
+    def test_an_entry_with_no_start_takes_its_tasks_minutes_first_under_the_cap(self):
+        # 8 h active; 2 h of task 111 logged with no start; the same 2 h of 111 in a session, then 6 h of another
+        # task: the cap takes 111's proposal, never the other client's work (it was billed twice)
+        rows = [row(540, 660, project="acme", titles=["Acme"], tasks=["111"]),
+                row(660, 1020, project="beta", titles=["Beta"], tasks=["222"])]
+        p = dayplan.plan(day(items=[work(540, 1020)], rows=rows, logged=[{"s": None, "minutes": 120, "taskId": "111"}]),
+                         self.ctx)
+        self.assertEqual([(e["taskId"], e["minutes"]) for e in p["entries"]], [("222", 360)])
+        self.assertEqual([(u["task"], u["minutes"]) for u in p["unplaced"]], [("111", 120)])
+        self.assertIn("no start", p["unplaced"][0]["why"])
+        self.assertEqual(p["totals"]["over"], 120)
+
+    def test_a_task_with_time_logged_with_no_start_is_proposed_unticked(self):
+        # under the cap (3 h active, 30 minutes logged) its proposal stays, unticked and flagged: it may be the work
+        # already logged
+        rows = [row(540, 600, project="acme", titles=["Acme"], tasks=["111"])]
+        p = dayplan.plan(day(items=[work(540, 720)], rows=rows, logged=[{"s": None, "minutes": 30, "taskId": "111"}]),
+                         self.ctx)
+        [e] = p["entries"]  # the session and the editor time after it
+        self.assertEqual((e["taskId"], e["minutes"], e["checked"], e["untimed"]), ("111", 150, False, 30))
+        self.assertIn("untimed", e["flags"])
+
     def test_time_no_entry_covers_is_reported(self):
         # five minutes in a browser with nothing near them: too short for an entry of their own, so not covered
         p = dayplan.plan(day(items=[work(540, 600), work(800, 805, app="Safari")], rows=[row(540, 600)]), self.ctx)
@@ -349,6 +371,39 @@ class ClockChangeTest(unittest.TestCase):
         self.assertEqual((got["s"], got["e"]), (90, 210))
         covered = mcp.covered_minutes([got])
         self.assertTrue(covered[90] and covered[209] and not covered[210])
+
+
+class GatherClockChangeTest(unittest.TestCase):
+    def test_likely_rows_keep_their_real_length_the_night_the_clocks_skip_an_hour(self):
+        # Toronto, 8 March 2026: two hours of real work from 01:00 EST end at 04:00 EDT. By the clock that is 01:00 to
+        # 04:00, but the row must stay 120 minutes long (it claimed 180, an hour that never was)
+        from zoneinfo import ZoneInfo
+        from pulsar import askclaude, calendar, learn, likely
+        tz, got = ZoneInfo("America/Toronto"), {}
+        s = {"timezone": "America/Toronto", "person_id": "1", "rules": [], "person_name": ""}
+        rows = [{"s": 60, "e": 180, "minutes": 120, "project": "night", "kind": "focused", "titles": ["n"], "tasks": []},
+                {"s": 480, "e": 600, "minutes": 120, "project": "day", "kind": "focused", "titles": ["d"], "tasks": []}]
+
+        def plan(d, ctx):
+            got["rows"] = d["rows"]
+            return {"entries": [], "unplaced": [], "skipped": [], "uncovered": [], "totals": {}}
+        with mock.patch.object(server, "current_settings", lambda: s), \
+                mock.patch.object(dayplan.config, "tz", lambda s: tz), \
+                mock.patch.object(server, "api_activity", lambda q: {"items": [], "away": []}), \
+                mock.patch.object(server, "productive_rows", lambda d0, d1, s: ([], None, "token", False)), \
+                mock.patch.object(server, "history_rows", lambda d, s, days=28: ([], None)), \
+                mock.patch.object(server, "api_repeats", lambda q: {"repeats": []}), \
+                mock.patch.object(server, "api_suggest", lambda q: {"recent": [], "assigned": []}), \
+                mock.patch.object(likely, "enabled", lambda s: True), \
+                mock.patch.object(likely, "proposal", lambda *a, **k: {"entries": [dict(r) for r in rows]}), \
+                mock.patch.object(calendar, "day", lambda d, s, fresh=False: {"events": [], "connected": False}), \
+                mock.patch.object(calendar, "history", lambda f, n, s: []), \
+                mock.patch.object(learn, "_stored", lambda d: None), \
+                mock.patch.object(askclaude, "latest", lambda d: None), \
+                mock.patch.object(dayplan, "plan", plan):
+            dayplan.gather("2026-03-08")
+        self.assertEqual([(r["s"], r["e"]) for r in got["rows"]], [(60, 180), (540, 660)])  # by the clock, real length
+        self.assertEqual([r["pick_s"] for r in got["rows"]], [60, 480])  # Ask Claude's names stay as they were
 
 
 class JournalTest(unittest.TestCase):
@@ -384,6 +439,46 @@ class JournalTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 dayplan.check(run, rowname, DATE, "10:00", 30, "5", "6")
 
+    def test_a_logged_row_stands_only_while_its_entry_is_there(self):
+        dayplan.mark(self.run, DATE, "r1", self.entry, "logged", id="555")
+        dayplan.mark(self.run, DATE, "r2", {**self.entry, "start": "11:00"}, "unknown", reason="timeout")
+        other = "ld-2026-11-04-ffffffff"
+        for present in ({"555"}, None):  # still there, or the day could not be read: refused
+            with self.assertRaises(ValueError):
+                dayplan.check(other, "r1", DATE, "10:00", 30, "5", "6", present)
+        dayplan.check(other, "r1", DATE, "10:00", 30, "5", "6", set())  # deleted by hand: it may be logged again
+        with self.assertRaises(ValueError):  # no answer came: never again, whatever the day shows
+            dayplan.check(other, "r2", DATE, "11:00", 30, "5", "6", set())
+
+    def test_a_journal_that_cannot_be_read_stops_writes_and_is_kept(self):
+        dayplan.mark(self.run, DATE, "r1", self.entry, "unknown", reason="no answer")
+        with open(dayplan.journal_path(), "a") as fh:  # one stray byte
+            fh.write("x")
+        with open(dayplan.journal_path()) as fh:
+            damaged = fh.read()
+        with mock.patch("pulsar.logbook.record") as record:
+            for call in (lambda: dayplan.check("ld-2026-11-04-ffffffff", "r1", DATE, "10:00", 30, "5", "6"),
+                         lambda: dayplan.mark("ld-2026-11-04-ffffffff", DATE, "r9", self.entry, "sending"),
+                         lambda: dayplan.runs_for(DATE)):
+                with self.assertRaises(dayplan.JournalBroken):
+                    call()
+        self.assertEqual(record.call_args.kwargs["kind"], "error")
+        with open(dayplan.journal_path()) as fh:
+            self.assertEqual(fh.read(), damaged)  # never wiped: the runs and their Undo are still in it
+        os.remove(dayplan.journal_path())
+        self.assertEqual(dayplan.journal(), {"runs": []})  # no file: no runs
+
+    def test_runs_are_kept_by_when_they_ran_never_by_the_entrys_date(self):
+        from datetime import date, timedelta
+        today = date.today().isoformat()
+        run = f"ld-{today}-0123abcd"
+        dayplan.mark(run, today, "r1", self.entry, "logged", id="555")
+        later = (date.today() + timedelta(days=40)).isoformat()  # a year mistyped, say
+        dayplan.mark(f"ld-{later}-0123abcd", later, "r1", self.entry, "sending")
+        self.assertEqual([x["id"] for x in dayplan.undo_ids(dayplan.journal(), run)], ["555"])
+        with self.assertRaises(ValueError):
+            dayplan.check(f"ld-{today}-ffffffff", "r1", today, "10:00", 30, "5", "6")
+
     def test_undo_chooses_only_its_own_logged_entries(self):
         other = "ld-2026-11-04-99999999"
         dayplan.mark(self.run, DATE, "r1", self.entry, "logged", id="101")
@@ -406,7 +501,11 @@ class WriteTest(unittest.TestCase):
         def create(e, s):
             self.seen.append([x["status"] for r in dayplan.journal()["runs"] for x in r["rows"]])  # what the disk said
             self.created.append(e)
-            return {"id": str(500 + len(self.created))}
+            i = str(500 + len(self.created))  # and the next read of the day has it, as Productive would
+            self.existing.append({"id": i, "date": e["date"], "start": datetime.fromisoformat(e["started_at"]).timestamp(),
+                                  "minutes": e["minutes"], "taskId": e["task_id"], "serviceId": e["service_id"],
+                                  "project": "P", "task": "T", "personId": "1"})
+            return {"id": i}
 
         self.patches = [mock.patch.object(config, "CACHE_DIR", self.dir),
                         mock.patch.object(server, "current_settings", lambda: {"timezone": "UTC", "person_id": "1"}),
@@ -434,9 +533,11 @@ class WriteTest(unittest.TestCase):
         self.assertEqual(self.seen, [["sending"]])
         self.assertEqual(dayplan.undo_ids(dayplan.journal(), self.run)[0]["id"], "501")
         server._just_logged.clear()
-        with self.assertRaises(ValueError):  # a restart that re-sends the row: refused, not written twice
+        with self.assertRaisesRegex(ValueError, "not sent twice"):  # a restart that re-sends the row: never twice
             server.api_log(self.body(run="ld-2026-11-04-feedbeef", row="r7"))
         self.assertEqual(len(self.created), 1)
+        self.existing.clear()  # deleted by hand in Productive: "logged" no longer stands, so it can be logged again
+        self.assertIn("created", server.api_log(self.body(run="ld-2026-11-04-feedbeef", row="r7")))
 
     def test_an_unclear_answer_is_recorded_as_unknown_and_never_resent(self):
         def unclear(e, s):
@@ -484,11 +585,66 @@ class WriteTest(unittest.TestCase):
                          {"id": "777", "date": DATE, "start": T0 + 720 * 60, "minutes": 30, "taskId": "5", "project": "P", "personId": "1"}]
         with self.assertRaises(ValueError):  # not created by this run
             server.api_entry_delete({"id": "777", "date": DATE, "run": self.run})
-        with self.assertRaises(ValueError):  # changed since (45 minutes now): left alone
-            server.api_entry_delete({"id": "502", "date": DATE, "run": self.run})
+        got = server.api_entry_delete({"id": "502", "date": DATE, "run": self.run})  # changed since: left alone
+        self.assertEqual(got["left"], "502")
+        self.assertIn("changed", got["why"])
         self.assertEqual(server.api_entry_delete({"id": "501", "date": DATE, "run": self.run}), {"deleted": "501"})
         self.assertEqual(self.deleted, ["501"])
-        self.assertEqual([x["id"] for x in dayplan.undo_ids(dayplan.journal(), self.run)], ["502"])
+        self.assertEqual(dayplan.undo_ids(dayplan.journal(), self.run), [])  # 502 is not offered again
+        server._just_logged.clear()
+        with self.assertRaises(ValueError):  # and while it is there, changed, it is not logged twice either
+            server.api_log(self.body(row="r9", start="11:00"))
+
+    def test_undo_carries_on_past_entries_deleted_or_changed_by_hand(self):
+        for i, start in enumerate(("10:00", "11:00", "12:00")):
+            server.api_log(self.body(row=f"r{i}", start=start))           # 501, 502, 503
+        self.existing.pop(0)                                              # 501 deleted by hand
+        self.existing[0]["minutes"] = 45                                  # 502 changed by hand
+        answers = [server.api_entry_delete({"id": x["id"], "date": DATE, "run": self.run})
+                   for x in dayplan.undo_ids(dayplan.journal(), self.run)]  # what the page does: every one, in turn
+        self.assertEqual([a.get("left") or a.get("deleted") for a in answers], ["501", "502", "503"])
+        self.assertIn("not in Productive", answers[0]["why"])
+        self.assertEqual(self.deleted, ["503"])
+        self.assertEqual(dayplan.undo_ids(dayplan.journal(), self.run), [])  # the next Undo is not stuck on 501
+        statuses = {x["id"]: x["status"] for x in dayplan.journal()["runs"][0]["rows"]}
+        self.assertEqual(statuses, {"501": "gone", "502": "changed", "503": "undone"})
+
+    def test_undo_after_productive_refuses_a_delete_can_be_tried_again(self):
+        server.api_log(self.body())                                       # 501
+
+        def refuse(i, s):
+            raise productive.ProductiveError("Productive refused: the entry is approved.")
+        with mock.patch.object(server.productive, "delete_entry", refuse):
+            with self.assertRaisesRegex(productive.ProductiveError, "approved"):
+                server.api_entry_delete({"id": "501", "date": DATE, "run": self.run})
+        self.assertEqual([x["id"] for x in dayplan.undo_ids(dayplan.journal(), self.run)], ["501"])  # still offered
+        self.assertEqual(server.api_entry_delete({"id": "501", "date": DATE, "run": self.run}), {"deleted": "501"})
+        self.assertEqual(self.deleted, ["501"])
+
+    def test_an_entry_written_when_the_journal_fails_after_is_said_as_logged(self):
+        real = dayplan.mark
+
+        def mark(run, date, row, entry, status, **fields):
+            if status == "logged":
+                raise OSError("No space left on device")
+            return real(run, date, row, entry, status, **fields)
+        with mock.patch.object(dayplan, "mark", mark), mock.patch("pulsar.logbook.record"):
+            got = server.api_log(self.body())
+        self.assertEqual(got["created"], {"id": "501"})  # never "not logged": it is in Productive
+        self.assertIn("journal", got["warning"])
+        server._just_logged.clear()
+        with self.assertRaises(ValueError):  # the row stays "sending": never sent again
+            server.api_log(self.body(run="ld-2026-11-04-feedbeef"))
+        self.assertEqual(len(self.created), 1)
+
+    def test_a_start_the_clocks_skip_is_refused(self):
+        from zoneinfo import ZoneInfo
+        with mock.patch.object(server.config, "tz", lambda s: ZoneInfo("America/Toronto")):
+            with self.assertRaisesRegex(ValueError, "does not exist"):  # 02:30 on 8 March would be stored as 03:30
+                server.api_log(self.body(date="2026-03-08", start="02:30", run="ld-2026-03-08-0123abcd"))
+            self.assertIn("created", server.api_log(self.body(date="2026-03-08", start="03:30",
+                                                              run="ld-2026-03-08-0123abcd")))
+        self.assertEqual(self.created[0]["started_at"], "2026-03-08T03:30:00-04:00")
 
 
 class AskAgainTest(unittest.TestCase):
