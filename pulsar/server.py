@@ -301,6 +301,11 @@ def api_proposal(q: dict) -> dict:
         return {"disabled": True, "entries": []}
     date, tz = q["date"], config.tz(s)
     result = likely.proposal(date, config.timezone_name(s), today(tz), q.get("fresh") == "1", s)
+    t0, t1 = day_bounds(date, tz)
+    if not result.get("error") and datetime.fromtimestamp(t0, tz).utcoffset() != datetime.fromtimestamp(t1 - 1, tz).utcoffset():
+        # the clocks change today: rows by the clock, like the activity (a copy, so the cached proposal stays elapsed)
+        result = {**result, "entries": [{**e, "s": round(clock(t0 + e["s"] * 60, t0, tz), 2),
+                                         "e": round(clock(t0 + e["e"] * 60, t0, tz), 2)} for e in result["entries"]]}
     if not result.get("error"):  # the tasks you logged in the same session or repository: a hint, never an error
         ps = current_settings()
         if ps.get("person_id"):
@@ -559,24 +564,31 @@ def api_repeats(q: dict) -> dict:
 
 
 _rows_before: dict = {}
+_rows_lock = threading.Lock()
 
 
 def history_rows(date: str, s: dict, days: int = REPEAT_DAYS) -> tuple:
     """(your entries of the `days` days before `date`, problem), kept an hour: the history the repeats, the meetings
     and the Likely rows learn from."""
-    key = (date, s.get("person_id"), days)
-    kept = _rows_before.get(key)
-    if kept and time.time() - kept[0] < 3600:
-        return kept[1], None
-    d0 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=days)).strftime("%Y-%m-%d")
-    d1 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
-    rows, problem, _, from_copy = productive_rows(d0, d1, s)
-    if problem and not from_copy:
-        return [], problem
-    _rows_before[key] = (time.time(), rows)
-    for old in sorted(_rows_before, key=lambda k: _rows_before[k][0])[:-10]:
-        del _rows_before[old]
-    return rows, None
+    # One read per date covers every caller: the longest history anyone asks for, sliced for the shorter ones (it used
+    # to be three reads, 60 + 28 + 31 days, before the day's own entries could load)
+    span = max(days, learn.LEARN_DAYS)
+    key = (date, s.get("person_id"))
+    first = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=days)).strftime("%Y-%m-%d")
+    with _rows_lock:
+        kept = _rows_before.get(key)
+    if not (kept and time.time() - kept[0] < 3600):
+        d0 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=span)).strftime("%Y-%m-%d")
+        d1 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+        rows, problem, _, from_copy = productive_rows(d0, d1, s)
+        if problem and not from_copy:
+            return [], problem
+        kept = (time.time(), rows)
+        with _rows_lock:
+            _rows_before[key] = kept
+            for old in sorted(_rows_before, key=lambda k: _rows_before[k][0])[:-10]:
+                _rows_before.pop(old, None)
+    return [r for r in kept[1] if r.get("date", "") >= first], None
 
 
 # ---- a meeting's task --------------------------------------------------------------------------------
