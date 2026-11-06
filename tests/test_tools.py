@@ -38,11 +38,16 @@ class ReplayDataTest(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(REPLAY, "data")))
 
     def test_a_folder_inside_a_git_checkout_is_refused(self):
-        for folder in (REPLAY, os.path.join(ROOT, "private")):  # this repository, even where nothing exists yet
+        checkout = tempfile.mkdtemp()
+        os.mkdir(os.path.join(checkout, ".git"))
+        folders = [os.path.join(checkout, "private", "replay")]  # even where nothing exists yet
+        if os.path.exists(os.path.join(ROOT, ".git")):  # this repository itself, a clone or a worktree
+            folders += [REPLAY, os.path.join(ROOT, "private")]
+        for folder in folders:
             got = run("collect.py", folder)
             self.assertNotEqual(got.returncode, 0)
             self.assertIn("inside the git checkout", got.stderr)
-        self.assertFalse(os.path.exists(os.path.join(REPLAY, "data")))
+            self.assertFalse(os.path.exists(os.path.join(folder, "data")), folder)
         self.assertFalse(os.path.exists(os.path.join(ROOT, "private")))
 
     def test_a_private_folder_is_accepted_and_kept_owner_only(self):
