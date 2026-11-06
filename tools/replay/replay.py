@@ -12,6 +12,9 @@ import json, math, os, sys, traceback
 from collections import defaultdict
 from datetime import datetime, timedelta
 
+import replay_dir
+
+HERE = replay_dir.folder()  # data/ and results go here: required, never inside a git checkout
 assert os.environ.get("PULSAR_READ_ONLY") == "1"
 for v in ("XDG_CACHE_HOME", "XDG_CONFIG_HOME"):
     assert os.environ.get(v) and not os.path.realpath(os.environ[v]).startswith(os.path.expanduser("~/.")), v  # copies, never the real dirs
@@ -66,7 +69,6 @@ def save_work_text():
 if _orig_work_text:
     learning.work_text = _work_text_kept
 
-HERE = os.environ.get("PULSAR_REPLAY_DIR") or os.path.dirname(os.path.abspath(__file__))  # data/ and results go here
 DATA = os.path.join(HERE, "data")
 ENT = json.load(open(os.path.join(DATA, "entries.json")))
 ROWS = [r for r in ENT["rows"]]

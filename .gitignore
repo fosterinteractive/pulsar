@@ -13,3 +13,7 @@ package-lock.json
 .pytest_cache/
 .idea/
 .vscode/
+# the replay's private data (real entries, window titles, typed text): it lives in PULSAR_REPLAY_DIR, never here
+tools/replay/data/
+tools/replay/results.json
+tools/replay/var-*.json

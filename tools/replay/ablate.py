@@ -1,6 +1,6 @@
 """Ablations: the same replay with one change to the planner or the dialog at a time.
 
-    XDG_CACHE_HOME=... XDG_CONFIG_HOME=... PULSAR_READ_ONLY=1 python3 -E -s -B ablate.py <worktree> name [name ...]
+    PULSAR_REPLAY_DIR=... XDG_CACHE_HOME=... XDG_CONFIG_HOME=... PULSAR_READ_ONLY=1 python3 -E -s -B ablate.py <worktree> name [name ...]
         [--first D] [--last D] [--exclude D,D]
 """
 from __future__ import annotations
