@@ -218,10 +218,11 @@ def task_out(t: dict, why: str | None = None) -> dict:
 
 
 def safe_why(why: str) -> str:
-    """Pulsar's reasons are made of repository names, counts and durations, except those that quote a meeting's title
-    or Ask Claude's own words: those parts are replaced."""
+    """Pulsar's reasons are made of repository names, counts and durations, except those that quote a meeting's title,
+    a rule's words or Ask Claude's own words: those parts are replaced."""
     why = str(why or "")
     why = re.sub(r";? ?on your calendar as “[^”]*”", "; on your calendar", why)
+    why = re.sub(r"your rule “[^”]*”", "one of your rules", why)
     if "the title says" in why:
         return "a word in the meeting's title is in the task's name"
     if why.startswith("Claude:"):
