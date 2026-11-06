@@ -44,8 +44,10 @@ Without `--publish` it only builds and prints the commands to publish by hand. I
 **What colleagues see.** Each Pulsar checks `releases/latest/download/latest.json` every few hours and shows a newer
 version next to its own; it installs it only when the person clicks **Update** (versions up to 1.0.6 still installed
 by themselves, so they all reach 1.0.7 that way). On the click, `latest.json` must carry a valid signature from a
-release key, the download must match its SHA-256 and pass its self-test (`pulsar.py --self-test`, which starts a
-server and asks it for its version); then Pulsar restarts into it. `latest.json` also lists every version released
+release key, the download must match its SHA-256 and pass its self-test (`pulsar.py --self-test`, which checks every
+file `index.html` loads, starts a server, fetches them and asks it for its version); then Pulsar restarts into it. A
+self-test that fails is run once more; a version that fails twice goes into `bad-versions`, and one whose self-test
+could not finish (a timeout) is left to try again. `latest.json` also lists every version released
 so far (from the git tags): a copy two or more releases behind reminds its person once every two days, until they
 update or skip that release. A copy run from a git checkout only says that a newer version exists.
 
@@ -89,7 +91,7 @@ version already in `__init__.py`.
 versions/1.0.0/  versions/1.1.0/   full copies of the code (pulsar.py, pulsar/, web/, README.md)
 current  -> versions/1.1.0         what runs
 previous -> versions/1.0.0         what ran before
-bad-versions                       versions that failed to start, one per line; never used again
+bad-versions                       versions that failed to start or their self-test twice, one per line; never used again
 ```
 
 The links are relative and switched atomically. The updater keeps `current` and `previous` and removes older
@@ -278,3 +280,8 @@ It never installs or updates anything, and is never zipped or released.
   is not touched), then quit and reopen Pulsar Preview: closing its window stops its server, and opening it runs the
   code as it is now. Page files (`web/`) also reload with ↻; Python changes need the reopen.
 - **Release** only what was tried in Preview: merge it into `main` and run `release.sh` as below.
+- **Remove it:** switch off Claude Code in its Settings first if it is on (that removes `pulsar-preview` from Claude
+  Code), quit it, delete `/Applications/Pulsar Preview.app`, `~/Library/Logs/Pulsar-Preview.log`,
+  `~/Library/WebKit/com.fosterinteractive.pulsar.preview` and `~/Library/Caches/com.fosterinteractive.pulsar.preview`,
+  and run `defaults delete com.fosterinteractive.pulsar.preview`. Its settings, caches and tokens are Pulsar's own:
+  leave them unless Pulsar goes too (README, "Remove Pulsar").

@@ -7,7 +7,9 @@ releasing, see [macos/README.md](../macos/README.md).
 Pulsar is a small local web app. A Python 3.9 server (standard library only) reads your activity tracker, your
 Claude Code sessions, Productive and, if you connect it, Google Calendar. It serves one page, which draws the day and
 the report. On a Mac a thin app shows that page in a window of its own. Nothing runs anywhere but on your computer,
-and nothing is written to Productive unless you click **Log in Productive**.
+except what the Claude Code switch sends to Anthropic when it is on (5.5, 5.7). Nothing is written to Productive
+without a click and a confirmation: logging, changing or deleting an entry, Log the day and its Undo, or `pulsar_log`
+from a Claude Code session after Claude Code asked you.
 
 ## 1. The pieces
 
@@ -73,11 +75,12 @@ sequenceDiagram
    for two minutes, and a wrong guess does not spoil it.
 6. **Stopping.** Closing the window quits the app, and the app runs `launcher.sh --stop`, which stops only a server
    the app itself started. A server started from a git checkout keeps running.
-7. **Self-test.** `pulsar.py --self-test` imports every module, checks the page's files, starts a server on a free
-   port and asks it for its version. The updater runs it on every new version before trusting it.
+7. **Self-test.** `pulsar.py --self-test` imports every module, reads from `index.html` every script and style the
+   page loads and checks each is there, starts a server on a free port, fetches the page and each of those files,
+   and asks it for its version. The updater runs it on every new version before trusting it.
 
 Start-up also tidies old data (`pulsar.py: tidy()`): owner-only permissions on files older versions wrote, copies of
-days older than 120 days removed, error logs older than 31 days removed.
+days older than 120 days removed, error logs older than 31 days removed, MemTime copies a killed Pulsar left removed.
 
 ## 3. Security
 
@@ -134,8 +137,11 @@ Both readers return the same items: `{s, e, app, title, host, url, cat, icon}`, 
   host name the Mac has had (a renamed Mac gets new buckets). A window counts only while the AFK watcher says someone
   was at the keys (`clip_to_present`). When the AFK watcher recorded nothing at all, Pulsar says so instead of
   showing a day with no breaks.
-- **MemTime.** MemTime keeps its database open and writing, so Pulsar reads a private copy, made at most once a
-  minute and deleted on exit. Rows of type `offline` are left out. App names come from MemTime's own table of bundle
+- **MemTime.** MemTime keeps its database open and writing, so Pulsar reads a private copy
+  (`$TMPDIR/pulsar-memtime-*`, tens of MB), made at most once a minute and deleted when the next one is made, before
+  a restart into an update, and on exit. A Pulsar that is killed runs nothing at exit, so every ten minutes at most
+  (and at start-up) any copy older than ten minutes goes, whichever Pulsar made it: a copy serves queries for a minute
+  only, so none that old is still read. Rows of type `offline` are left out. App names come from MemTime's own table of bundle
   ids. Icons are the ones MemTime already saved; nothing is fetched from the internet.
 - **Auto** picks the tracker that saw more of the day. The Activity header can switch.
 - **Personal windows**: a window whose app, title or site contains one of the words in Settings is `personal`. It is
@@ -376,11 +382,18 @@ unticked.
   by two sessions has one repository, which may be the other session's.
   Past days' rows are worked out once in the background and kept in
   `~/.cache/pulsar/likely-days/<date>.json`: times, repository names and a hash of each session title, never the
-  titles or anything typed. Until all 60 days are there, the page says "Learning your tasks… N of 60". The rows do
+  titles or anything typed. Only a day that is over is kept, worked out after it ended: a proposal the page saw
+  while its day was still today is worked out again the next time it is asked for, in memory and for learning
+  (format 2 of these files; a format-1 file could hold a day cut off at the hour it was seen, so they are redone once). Until all 60 days are there, the page says "Learning your tasks… N of 60". The rows do
   not wait for the 60 days of Productive history: while it is read, they come without learned tasks and with
   `learnPending`, and the page asks once more (`wait=1`) a few seconds later.
 - **The clock**: the fi-time-from-activity script writes wall-clock times; they are kept as minutes elapsed since
-  midnight, like the built-in rows, and drawn by the clock.
+  midnight, like the built-in rows, and drawn by the clock. On the two days a year the clocks change, the page gets
+  everything by the clock (`server.clock_spans`): a stretch of activity or away time across the change is cut there
+  and each piece keeps its real length (the autumn hour no longer gives negative minutes, the spring one no longer an
+  hour too many), and a Likely row keeps its start by the clock and its real length (`page_span`). Learning and Ask
+  Claude work on the elapsed rows, as entries are; Ask Claude's picks go back to the page keyed by the start it shows,
+  the times it gives Claude are clock times, and the session note finds its rows by the page's own times.
 - **Ask Claude** (`pulsar/askclaude.py`, off until switched on in Settings): runs the person's own Claude Code once
   for the day:
 
@@ -407,7 +420,15 @@ unticked.
   `structured_output`, is dropped. The log dialog fills the note in with "Drafted by Claude: check it before logging;
   clients may see notes" under it; the line goes when the note is edited, and names the task the note was written
   for when another task is picked. The model is chosen in Settings (Sonnet by
-  default); each name is Claude Code's alias for the latest model of that kind. About 15 to 60 seconds and $0.10 to $0.25 of the person's usage per day.
+  default); each name is Claude Code's alias for the latest model of that kind. About 15 to 60 seconds and $0.10 to
+  $0.25 of the person's usage per day with Sonnet. `--max-budget-usd` caps each run (not each day) at $0.25 for
+  Haiku, $0.75 for Sonnet and $2 for Opus. Answers are kept in memory only (the last 30): asking again after a
+  restart, or once the day's rows changed (a new row, more commits), runs Claude again.
+  **What goes to Anthropic** is exactly the prompt: for each row of ten minutes or more its time (by the clock),
+  repository, up to 3 session titles, up to 15 steps (typed 400, reply 900 characters), up to 10 commit subjects and
+  up to 5 of the person's earlier notes; and up to 150 tasks logged to in the last 30 days (id, title, project,
+  minutes, last day). Plus what Claude reads from Productive while it searches. No window titles, apps, sites or
+  meetings.
 - **A meeting's task** (`server.meeting_tasks`): first, the task you logged during the earlier meetings of the same
   series (Google's `recurringEventId`) or the same title, each earlier meeting voting for the task that took most of
   it; then your tasks whose names share a word with the meeting's title. Words every meeting has ("sync", "weekly",
@@ -578,7 +599,8 @@ sequenceDiagram
   reach everyone's Mac the same hour.
 - **Downloads** come only from `github.com/fosterinteractive/pulsar/releases/download/` (the repository must stay
   public). The zip must match the signed SHA-256, have one top folder, and no path may leave it.
-- **A version that fails** its self-test is marked bad and never tried again; the running copy stays.
+- **A version that fails** its self-test twice in a row is marked bad and never tried again; the running copy stays.
+  A self-test that could not finish (a timeout on a busy or sleeping Mac) marks nothing: the next Update tries again.
 - **The restart** keeps the same arguments and port. The page polls `/api/version`, notices the new version, reloads,
   and lets the warp go once the new data is in.
 - **The window shell** (Pulsar.app itself) does not update this way: a new shell needs a new Pulsar.zip.
@@ -653,8 +675,15 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 
 ## 12. Tests and test servers
 
-- `python3 -E -s -B -m unittest discover -s tests`: the Python logic on made-up data. No network, no trackers, no
-  keychain: tests point `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` at a scratch folder before importing.
+- `python3 -E -s -B -m unittest discover -s tests`: the Python logic on made-up data, the same with and without
+  `PULSAR_READ_ONLY=1`. Every test module imports `tests/isolation.py` first: one scratch folder per run holds `HOME`,
+  `TMPDIR`, `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` (so `~/.claude`, `~/.config/pulsar`, MemTime's database and the
+  installed copy are out of reach) and goes when the run ends, leaving nothing behind; `PULSAR_TESTS_OFFLINE` makes
+  Pulsar itself skip the keychain, Claude Code and the network. Behind that, `security`, `claude`, `osascript`, `open`
+  and `os.exec*` cannot start, no connection leaves the computer, and none reaches a local port the run did not open
+  (not the real Pulsar, a Preview or ActivityWatch). A test that tries fails with `RealWorld`, which `except
+  Exception` cannot swallow, and the run exits 1 listing what was tried (`tests/test_isolation.py`). Tests that write
+  fake Productive, so they pass the same under `PULSAR_READ_ONLY=1`.
 - A test server against real data: `PULSAR_READ_ONLY=1 python3 -E -s -B pulsar.py --port 5698 --no-open`, then
   `python3 pulsar.py --signin-url --port 5698` prints a one-time address for a browser. Block `**/api/log` and
   `**/api/entry/**` in a scripted browser as well. On such a server only, `?ignore_logged=1` in the page's address
@@ -666,6 +695,9 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 ## 13. Known limits
 
 - The REST token path has not been tried against real Productive yet; everyone so far uses Claude Code's connection.
+  Its task filters are checked again on what comes back (open tasks only where asked, the words of a search), so a
+  filter Productive ignored costs suggestions, not wrong ones. The daily target from the organization is read only
+  through Claude Code's connection; with a token it is 8 h unless set in Settings.
 - The app is ad-hoc signed, not with an Apple Developer ID: macOS asks for confirmation on first open (Open Anyway).
 - The reserve release key has not been created yet.
 - ActivityWatch's AFK timeout decides what counts as a break: with 30 minutes, shorter breaks are not seen.
