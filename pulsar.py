@@ -24,8 +24,8 @@ def self_test() -> int:
     import os
     from pulsar import askclaude, config, dayplan, learn, likely, mcp, names, productive, report, server, sessions, trackers, updater  # noqa: F401
     web = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
-    need = ["index.html", "style.css", "meetings.css", "logday.css"] + [
-        f"js/{n}.js" for n in ("core", "day", "report", "settings", "meetings", "log", "logday", "main")]
+    need = ["index.html", "style.css", "meetings.css", "logday.css", "ask.css"] + [
+        f"js/{n}.js" for n in ("core", "day", "report", "settings", "meetings", "log", "logday", "ask", "main")]
     missing = [n for n in need if not os.path.exists(os.path.join(web, n))]
     if missing:
         print("Pulsar self-test: missing " + ", ".join(missing), file=sys.stderr)

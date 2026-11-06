@@ -606,16 +606,17 @@ $('#refresh').onclick = async () => {
 };
 /* Ask Claude: a task for each Likely block of the day, shown on the cards and first when logging one */
 $('#ask-claude').onclick = async () => {
-  const btn = $('#ask-claude'), d = state.date;
-  btn.disabled = true; btn.textContent = 'Asking Claude…';
+  const d = state.date;
+  if (askBusy()) return;  // ask.js: one question at a time, and its working state
+  askStart();
   const r = await postJSON('/api/likely/ask', {date: d});
-  btn.disabled = false; btn.textContent = 'Ask Claude';
-  if (r.error) { toast(r.error, true); return; }
-  if (d !== state.date) return;
+  if (r.error) { askEnd('error'); toast(r.error, true); return; }
+  if (d !== state.date) { askEnd('stale'); return; }
   state.claude = {date: d, picks: r.picks || {}};
   const n = Object.values(state.claude.picks).filter(p => p.tasks?.length).length;
   toast(n ? `Claude picked a task for ${n} ${n === 1 ? 'block' : 'blocks'}. Log one to see them first.` : 'Claude found no task for these blocks.');
   render();
+  askEnd(n ? 'picked' : 'none');
 };
 /* logged time only: one Productive read, the other columns stay as they are */
 $('#refresh-logged').onclick = async () => {

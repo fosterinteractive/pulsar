@@ -1,0 +1,134 @@
+/* Ask Claude while it works (js/ask.js). The button becomes a small pulsar: two beams in the logo's cyan and pink
+   sweep its edge, a soft glow breathes behind it, and Claude's mark flashes each time a beam passes it. A short bloom
+   when the answer comes, a light passing once over the blocks that got a task; on an error it only fades.
+   Only transform and opacity move (the beam turns inside a masked ring), so the graphics card does the work.
+   Reduce motion: a still glow and ring, and the status line. */
+:root {
+  /* the logo's colours as r g b, a little deeper on the light theme so a 1.5 px beam still reads on white */
+  --ask-v: 124 58 237; --ask-c: 8 145 178; --ask-p: 219 39 119;  /* violet ring, cyan beam, pink beam */
+  --ask-ch: 8 145 178; --ask-ph: 219 39 119;                     /* each beam's head */
+  --ask-glow: .3; --ask-glow-v: .26;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ask-v: 167 139 250; --ask-c: 34 211 238; --ask-p: 244 114 182;
+    --ask-ch: 207 250 254; --ask-ph: 252 231 243;
+    --ask-glow: .42; --ask-glow-v: .44;
+  }
+}
+:root[data-theme="dark"] {
+  --ask-v: 167 139 250; --ask-c: 34 211 238; --ask-p: 244 114 182;
+  --ask-ch: 207 250 254; --ask-ph: 252 231 243;
+  --ask-glow: .42; --ask-glow-v: .44;
+}
+
+/* the parts ask.js puts in the button; .colhead span would make every span a muted block, so reset that here */
+#ask-claude span:not(.vh) { overflow: visible; font-size: inherit; color: inherit; }
+#ask-claude .ask-lab { display: inline-grid; vertical-align: top; }
+/* one label goes, then the other comes: never both at once */
+#ask-claude .ask-lab > span { grid-area: 1 / 1; display: inline-flex; align-items: center; justify-content: center;
+  transition: opacity .22s ease .14s, visibility 0s; }
+#ask-claude .ask-busy, #ask-claude.asking .ask-idle { opacity: 0; visibility: hidden; transition: opacity .14s ease, visibility 0s .14s; }
+#ask-claude.asking .ask-busy { opacity: 1; visibility: visible; transition: opacity .22s ease .14s, visibility 0s; }
+/* after an answer the mark's last flash shows first */
+#ask-claude.ask-done .ask-busy { transition: opacity .14s ease .36s, visibility 0s .5s; }
+#ask-claude.ask-done .ask-idle { transition: opacity .22s ease .44s, visibility 0s; }
+#ask-claude .ask-busy > span:not(.vh) { display: inline-flex; align-items: center; }
+#ask-claude .ask-busy .cl-mark { margin-right: 4px; }
+
+/* a narrow column puts the button under the title (style.css); it still holds its own ring and glow */
+@container (max-width: 230px) { .colhead #ask-claude { position: relative; top: auto; right: auto; } }
+
+/* the glow sits behind the button, which is filled with the panel's colour: a halo around it, not a tint inside.
+   The header holds the glow's layer, so the board's own background never covers it. */
+.colhead.likelycol { isolation: isolate; }
+#ask-claude:is(.asking, .ask-done, .ask-stop), #ask-claude:is(.asking, .ask-done, .ask-stop):hover { background: var(--panel); }
+#ask-claude.asking { color: var(--text); border-color: rgb(var(--ask-v) / .3); cursor: progress; }
+
+/* the edge: a ring the width of the border, through which a square of two comet beams turns */
+#ask-claude .ask-ring { position: absolute; inset: -1px; border-radius: 6px; padding: 1.5px; pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
+#ask-claude .ask-beam, #ask-claude .ask-flash { position: absolute; display: block; opacity: 0; }
+#ask-claude .ask-beam { left: 50%; top: 50%; width: 160%; aspect-ratio: 1; transform: translate(-50%, -50%);
+  transition: opacity .5s ease;
+  /* clockwise, so each head leads: a long fading tail, a bright head, then nothing */
+  background: conic-gradient(transparent 0 110deg, rgb(var(--ask-c) / 0) 110deg, rgb(var(--ask-c) / .85) 168deg,
+    rgb(var(--ask-ch)) 176deg, transparent 178deg 290deg, rgb(var(--ask-p) / 0) 290deg, rgb(var(--ask-p) / .85) 348deg,
+    rgb(var(--ask-ph)) 356deg, transparent 358deg); }
+#ask-claude.asking .ask-beam { opacity: 1; }
+#ask-claude:is(.asking, .ask-done, .ask-stop) .ask-beam { animation: ask-turn 3.2s linear infinite; }
+#ask-claude .ask-flash { inset: 0;
+  background: linear-gradient(90deg, rgb(var(--ask-c)), rgb(var(--ask-v)) 50%, rgb(var(--ask-p))); }
+
+/* the glow behind: violet at the heart, cyan and pink to either side, breathing slowly */
+/* every gradient fades out before the element's edge, so the halo has no sides */
+#ask-claude .ask-glow { position: absolute; display: block; inset: -9px -14px; z-index: -1; pointer-events: none; opacity: 0;
+  background: radial-gradient(28% 50% at 28% 50%, rgb(var(--ask-c) / var(--ask-glow)), transparent),
+    radial-gradient(28% 50% at 72% 50%, rgb(var(--ask-p) / var(--ask-glow)), transparent),
+    radial-gradient(closest-side, rgb(var(--ask-v) / var(--ask-glow-v)) 40%, transparent); }
+#ask-claude.asking .ask-glow { animation: ask-glow-in .6s ease-out both, ask-breathe 4.8s ease-in-out .6s infinite; }
+
+/* Claude's mark: still between beams, then a flash and an eighth of a turn as one passes (its eight rays make an
+   eighth of a turn look the same, so the turns add up without a jump). A beam crosses the left edge, where the mark
+   sits, at about 26 % and 76 % of a turn: twice a turn, peaking about halfway through each half. */
+#ask-claude.asking .ask-busy .cl-mark { animation: ask-twinkle 1.6s linear infinite; }
+
+/* the end: a bloom in the logo's colours (an answer with picks), or a quiet fade (none, an error, another day) */
+#ask-claude.ask-done .ask-flash { animation: ask-ring-flash .9s ease-out both; }
+#ask-claude.ask-done .ask-glow { animation: ask-bloom .9s cubic-bezier(.15, .7, .3, 1) both; }
+#ask-claude.ask-done .ask-busy .cl-mark { animation: ask-spark .5s ease-out both; }
+#ask-claude.ask-stop .ask-glow { animation: ask-out .5s ease-out both; }
+
+/* hidden window: nothing turns (ask.js sets this) */
+#ask-claude.ask-paused :is(.ask-beam, .ask-glow, .cl-mark) { animation-play-state: paused !important; }
+
+/* the Likely header says what is going on while it works, in place of its summary: same line, same size */
+.colhead .ask-status { display: none; color: color-mix(in srgb, rgb(var(--ask-v)) 45%, var(--muted)); }
+.likelycol.ask-on #h-likely { display: none; }
+.likelycol.ask-on .ask-status { display: block; }
+
+/* the blocks that got a task: one soft light passes over each, top to bottom, and its mark flashes */
+.card.likely.ask-lit::after { content: ""; position: absolute; inset: 0; pointer-events: none; transform: translateX(-100%);
+  background: linear-gradient(100deg, transparent 28%, rgb(var(--ask-c) / .12) 42%, rgb(var(--ask-v) / .17) 50%,
+    rgb(var(--ask-p) / .11) 58%, transparent 72%);
+  animation: ask-sheen 1.1s cubic-bezier(.4, .1, .3, 1) min(calc(var(--ask-i, 0) * 90ms), 900ms) both; }
+.card.likely.ask-lit .pick .cl-mark { animation: ask-spark .6s ease-out calc(min(calc(var(--ask-i, 0) * 90ms), 900ms) + .35s) both; }
+
+/* the log dialog, while Claude drafts a note (log.js): the same mark, twinkling before the hint */
+#log-note-hint.drafting::before { content: ""; display: inline-block; width: 11px; height: 11px; margin-right: 5px;
+  vertical-align: -1px; background: #c96442; animation: ask-twinkle 1.6s linear infinite;
+  -webkit-mask: var(--ask-mark) center / contain no-repeat; mask: var(--ask-mark) center / contain no-repeat; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) #log-note-hint.drafting::before { background: #e07a52; } }
+:root[data-theme="dark"] #log-note-hint.drafting::before { background: #e07a52; }
+:root { --ask-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cg stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M8 2v4M8 10v4M2 8h4M10 8h4M3.8 3.8l2.6 2.6M9.6 9.6l2.6 2.6M12.2 3.8 9.6 6.4M6.4 9.6 3.8 12.2'/%3E%3C/g%3E%3C/svg%3E"); }
+
+@keyframes ask-turn { to { transform: translate(-50%, -50%) rotate(1turn); } }
+@keyframes ask-glow-in { from { opacity: 0; transform: scale(.85); } to { opacity: .55; transform: scale(.96); } }
+@keyframes ask-breathe { 0%, 100% { opacity: .55; transform: scale(.96); } 50% { opacity: 1; transform: scale(1.04); } }
+@keyframes ask-twinkle {
+  0%, 38% { opacity: .55; transform: scale(.8) rotate(0deg); }
+  52% { opacity: 1; transform: scale(1.12) rotate(28deg); }
+  70% { opacity: .75; transform: scale(.88) rotate(45deg); }
+  100% { opacity: .55; transform: scale(.8) rotate(45deg); }
+}
+@keyframes ask-spark { 0% { opacity: 1; transform: scale(1); } 35% { opacity: 1; transform: scale(1.3) rotate(30deg); } 100% { opacity: 1; transform: scale(1) rotate(45deg); } }
+@keyframes ask-ring-flash { 0% { opacity: 0; } 18% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes ask-bloom { 0% { opacity: .9; transform: scale(1); } 20% { opacity: 1; transform: scale(1.08); } 100% { opacity: 0; transform: scale(1.3); } }
+@keyframes ask-out { from { opacity: .6; } to { opacity: 0; } }
+@keyframes ask-sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@keyframes ask-wash { 0%, 100% { opacity: 0; } 30% { opacity: 1; } }
+
+/* Reduce motion: nothing turns or breathes. A still ring in the logo's colours and a still glow say it is working;
+   the status line says what; the end and the lit blocks only fade. */
+@media (prefers-reduced-motion: reduce) {
+  #ask-claude .ask-beam { display: none; }
+  #ask-claude.asking .ask-flash { opacity: .7; }
+  #ask-claude.asking .ask-glow { animation: none; opacity: .8; }
+  #ask-claude.asking .ask-busy .cl-mark, #log-note-hint.drafting::before { animation: none; }
+  #ask-claude.ask-done .ask-flash { animation: ask-out .5s ease-out both; }
+  #ask-claude.ask-done .ask-glow { animation: ask-out .5s ease-out both; }
+  #ask-claude.ask-done .ask-busy .cl-mark, .card.likely.ask-lit .pick .cl-mark { animation: none; }
+  .card.likely.ask-lit::after { transform: none; background: rgb(var(--ask-v) / .1);
+    animation: ask-wash 1.2s ease-out both; }
+}

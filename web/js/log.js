@@ -155,6 +155,7 @@ function showDraft() {
     : CLAUDE_MARK.split('<span')[0] + esc(
     !sel || sel.taskId === d.taskId ? 'Drafted by Claude: check it before logging; clients may see notes.'
       : `Drafted by Claude for “${d.title}”: check it before logging; clients may see notes.`);
+  $('#log-note-hint').classList.toggle('drafting', !!logDrafting);  // ask.css: Claude's mark twinkles while it drafts
 }
 logForm.elements.note.addEventListener('input', () => { if (logDrafted || logFilled || logDrafting) { logDrafted = null; logFilled = false; logDrafting = 0; showDraft(); } });
 /* after "Log anyway", any change to what would be logged means a new check for overlaps */

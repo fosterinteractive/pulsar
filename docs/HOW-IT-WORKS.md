@@ -639,6 +639,10 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   the week in the header, report days that open the Day view, and where a day opens. `day.js` and `log.js` call it
   at a few places marked "flow.js".
 - **`logday.js`** (and `logday.css`): Log the day, its review panel, the confirm step, the run and Undo.
+- **`ask.js`** (and `ask.css`): Ask Claude while it works. The button turns into a small pulsar (beams sweep its
+  edge, a glow breathes, Claude's mark flashes), the Likely header says what is going on by the time only, and the
+  blocks that got a task are lit once. `day.js` calls `askStart()` and `askEnd()` around the request. CSS on transform
+  and opacity; a still glow with Reduce motion; paused while the window is hidden.
 - **`meetings.js`**: the Meetings column and the Google part of Settings.
 - **`settings.js`**: Settings (a sidebar of categories, each with its own icon, and a search that shows the matching
   sections of every category; the last category open opens again), updates and the reminder, the changelog. Saving
