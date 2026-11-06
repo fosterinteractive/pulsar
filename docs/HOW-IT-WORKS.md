@@ -382,6 +382,15 @@ time logged when the tracker saw nothing (8%).
   instead of 43%, and 44% instead of 51% for sessions that worked in two or more repositories that day). A long
   session moves from task to task over the weeks more than it changes task between repositories, and a row shared
   by two sessions has one repository, which may be the other session's.
+- **A task found by its words** (`learn.text_match`): after the first four learned tasks, the fifth place goes to
+  the task whose name, project and your own notes on it (the 60 days of entries already read) share most words with
+  the row's work: its sessions' titles, what you typed in them during the row (`askclaude.steps`: up to 15 messages
+  of 400 characters) and your commit subjects (Notes from commits). The words are compared as TF-IDF vectors
+  (cosine); common English and Ukrainian words and your own name do not count; a task's score halves every 7 days
+  since you last logged it. With fewer than four votes, more tasks found by words fill the list. The why names up to
+  three shared words. Nothing new is kept on disk: the notes are in memory with the history, and the session text is
+  read when a day is shown (about 3 seconds the first time, under 0.1 s after; a refresh re-reads only the session
+  files that changed, about 1 s for a 300 MB one).
   Past days' rows are worked out once in the background and kept in
   `~/.cache/pulsar/likely-days/<date>.json`: times, repository names and a hash of each session title, never the
   titles or anything typed. Until all 60 days are there, the page says "Learning your tasks… N of 60". The rows do
@@ -443,6 +452,15 @@ learned from the 60 days before it only, the right task being the one logged ove
 it first for 43% of the minutes and in their first five for 57% (39% and 52% before older days counted less). For
 rows whose session worked in two or more repositories that day, 51% and 63% (51% and 60% before). The "lately" list
 alone: 29% and 56%.
+
+With the task found by its words in the fifth place, tuned on the first 15 of those days and checked on the other
+15: the right task was in the first five for 59% of the checked days' minutes instead of 52%. It was first for 38%,
+the same as before, and no group of rows did worse. For rows whose session had no votes, it was in the first five
+for 20% of the minutes instead of 3%. Over all 30 days: 45% first and 66% in the first five. A weighted vote that let
+words outrank votes did better on the 15 days it was tuned on (60% first) but worse on the other 15 (32% first), so
+votes keep the first four places. Claude's replies, git branch names, ticket numbers (ABC-123, #56) and client names
+matched to project names were measured as well. None of them added anything to the words above. A fifth of the
+minutes went to tasks logged for the first time that day: no learning from past days can name those.
 
 ### 5.6 Pulsar in Claude Code (`pulsar/mcp.py`, experimental)
 
