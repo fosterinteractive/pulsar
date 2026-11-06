@@ -307,15 +307,18 @@ class WriteTest(unittest.TestCase):
         self.assertEqual(got["wouldWrite"]["started_at"], "2026-11-04T10:00:00+00:00")
         self.assertEqual((self.created, dayplan.journal()["runs"]), ([], []))
 
-    def test_read_only_refuses_the_write_at_the_lowest_level_and_journals_it(self):
+    def test_read_only_refuses_the_write_before_the_journal(self):
         self.patches[4].stop()
         try:
             with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):
-                with self.assertRaises(productive.ProductiveError):
+                with self.assertRaisesRegex(ValueError, "read-only"):
                     server.api_log(self.body())
+                self.assertIn("wouldWrite", server.api_log(self.body(dry=True)))  # a dry run still works
+                with self.assertRaises(productive.ProductiveError):  # and the lowest level refuses on its own
+                    productive.create_entry({}, {})
         finally:
             self.patches[4].start()
-        self.assertEqual(dayplan.journal()["runs"][0]["rows"][0]["status"], "refused")
+        self.assertEqual(dayplan.journal()["runs"], [])
 
     def test_undo_deletes_only_this_runs_entries_and_only_as_written(self):
         server.api_log(self.body())                                         # 501, 10:00

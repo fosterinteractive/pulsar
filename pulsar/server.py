@@ -901,6 +901,8 @@ def _log_checked(body: dict, s: dict, date: str, begin, minutes: int, task_id: s
         if journal:
             dayplan.mark(journal["run"], date, journal["row"], journal["entry"], status, **fields)
 
+    if not body.get("dry") and config.writes_blocked():  # refused before the journal or the log hears of it
+        raise ValueError(config.writes_blocked())
     existing, problem, _ = productive.entries(date, date, s)
     if problem:
         note("refused", reason=f"Not sent: {problem}")
