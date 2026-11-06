@@ -260,6 +260,8 @@ def _account(summary) -> str:
 
 def disconnect(settings: dict) -> dict:
     """Revoke the token at Google, then forget it here whatever Google said. Preview only forgets (above)."""
+    if config.read_only() and config._keychain():  # a test server shares the keychain and Google client with Pulsar
+        raise ValueError("A read-only run does not disconnect Google Calendar.")
     refresh, told, preview = config.get_google_token(), True, config.is_preview()
     if refresh and not preview:
         got, _ = http("POST", REVOKE_URL, {"token": refresh})

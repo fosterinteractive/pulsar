@@ -516,6 +516,8 @@ def api_report(q: dict) -> dict:
 def api_settings(body: dict) -> dict:
     if not isinstance(body, dict):
         raise ValueError("Settings are a JSON object.")
+    if (body.get("token") or body.get("remove_token")) and config.read_only() and config._keychain():
+        raise ValueError("A read-only run does not change the token saved in the keychain: it is the real Pulsar's too.")
     changes = validate(body)
     token = str(body.get("token") or "").strip()
     if token and not config.TOKEN_RE.match(token):  # check before anything is removed or replaced

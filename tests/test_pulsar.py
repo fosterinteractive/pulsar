@@ -2802,3 +2802,21 @@ class SilentFailureTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReadOnlyKeychainTest(unittest.TestCase):
+    """A read-only test server shares the keychain with the real Pulsar: it never saves or removes a secret there,
+    and never disconnects Google."""
+
+    def test_secrets_and_google_are_left_alone(self):
+        from pulsar import calendar
+        with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}), mock.patch.object(config, "_keychain", lambda: True), \
+                mock.patch.object(config.subprocess, "run", lambda *a, **k: self.fail("the keychain was touched")):
+            with self.assertRaises(config.ReadOnlySecrets):
+                config.delete_token()
+            with self.assertRaises(config.ReadOnlySecrets):
+                config._write_secret("productive", os.path.join(config.CONFIG_DIR, "token"), "abcdefgh", "token")
+            with self.assertRaisesRegex(ValueError, "read-only"):
+                server.api_settings({"remove_token": True})
+            with self.assertRaisesRegex(ValueError, "read-only"):
+                calendar.disconnect(config.load())

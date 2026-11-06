@@ -324,16 +324,16 @@ def _read_token() -> str | None:
 
 
 def set_token(token: str) -> None:
-    _token_cache[2] = False
     token = token.strip()
     if not TOKEN_RE.match(token):
         raise ValueError("That does not look like a Productive token (letters, digits, - and _ only).")
-    _write_secret(KEYCHAIN_ACCOUNT, TOKEN_FILE, token, "token")
+    _write_secret(KEYCHAIN_ACCOUNT, TOKEN_FILE, token, "token")  # refused in a read-only run: the cache stays
+    _token_cache[2] = False
 
 
 def delete_token() -> None:
+    _delete_secret(KEYCHAIN_ACCOUNT, TOKEN_FILE)  # refused in a read-only run: the cache stays
     _token_cache[2] = False
-    _delete_secret(KEYCHAIN_ACCOUNT, TOKEN_FILE)
 
 
 # ---- Google Calendar's refresh token ------------------------------------------------------
@@ -408,7 +408,14 @@ def _read_secret(account: str, path: str, what: str) -> str | None:
         return None
 
 
+class ReadOnlySecrets(RuntimeError):
+    """A read-only run (PULSAR_READ_ONLY) never saves, replaces or removes a secret: a test server shares the keychain
+    with the real Pulsar, so its "Remove the saved token" or Google "Disconnect" would remove the real ones."""
+
+
 def _write_secret(account: str, path: str, value: str, what: str) -> None:
+    if read_only() and _keychain():
+        raise ReadOnlySecrets(f"A read-only run does not save the {what} in the keychain.")
     """`value` must already be checked: it goes inside double quotes on `security -i`'s command line."""
     if _keychain():
         # Through `security -i` on stdin, so the value never shows in the process list.
@@ -425,6 +432,8 @@ def _write_secret(account: str, path: str, value: str, what: str) -> None:
 
 
 def _delete_secret(account: str, path: str) -> None:
+    if read_only() and _keychain():
+        raise ReadOnlySecrets("A read-only run does not remove anything from the keychain.")
     if _keychain():
         subprocess.run(["/usr/bin/security", "delete-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account],
                        capture_output=True, text=True, timeout=15)
