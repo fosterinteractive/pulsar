@@ -535,10 +535,11 @@ def note(date: str, row: dict, t0: float, history: list = (), run=subprocess.run
     if not binary:
         raise AskError("Claude Code was not found on this Mac.")
     os.makedirs(config.CACHE_DIR, exist_ok=True)
-    try:  # no tools, no MCP servers, no settings' hooks: only the text above goes to Claude
+    try:  # no tools, no MCP servers (none named, every MCP tool refused), no settings' hooks: only the text above
         done = run([binary, "-p", "--model", "haiku", "--no-session-persistence", "--output-format", "json",
                     "--json-schema", json.dumps(NOTE_SCHEMA), "--max-budget-usd", "0.1", "--tools", "",
-                    "--permission-mode", "dontAsk", "--strict-mcp-config", "--setting-sources", ""],
+                    "--permission-mode", "dontAsk", "--strict-mcp-config", "--setting-sources", "",
+                    "--disallowedTools", "mcp__*"],
                    input=prompt, capture_output=True, text=True, timeout=90, cwd=config.CACHE_DIR, env=_env())
     except subprocess.TimeoutExpired:
         raise AskError("Claude took too long to draft the note.") from None
@@ -581,9 +582,23 @@ def _own_projects(row: dict, history: list) -> list:
     return [x for x in dict.fromkeys(own) if x]
 
 
+# What `claude -p` gets of Pulsar's environment: a short list, never all of it. Pulsar started from a Claude Code
+# session carries that session's variables (CLAUDECODE, its session id, its messaging socket and token, an
+# ANTHROPIC_BASE_URL); none of them goes on. Kept: the basics, where Claude Code keeps its sign-in (CLAUDE_CONFIG_DIR),
+# a sign-in by key or long-lived token, and a proxy with its certificates.
+ENV_KEEP = ("HOME", "PATH", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE", "TMPDIR", "TZ",
+            "CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN",
+            "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy",
+            "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE")
+
+
 def _env() -> dict:
-    """Claude Code's environment for these runs: Pulsar's, with auto memory off (the module's docstring)."""
-    return {**os.environ, "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
+    """Claude Code's environment for these runs: ENV_KEEP of Pulsar's, auto memory off (the module's docstring), and
+    no claude.ai connectors (Drive, Calendar and the rest are MCP servers too, and --strict-mcp-config names only the
+    servers in its file)."""
+    env = {k: os.environ[k] for k in ENV_KEEP if os.environ.get(k)}
+    env.update(CLAUDE_CODE_DISABLE_AUTO_MEMORY="1", ENABLE_CLAUDEAI_MCP_SERVERS="false")
+    return env
 
 
 def latest(date: str):

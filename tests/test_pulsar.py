@@ -20,6 +20,11 @@ from isolation import SCRATCH as _SCRATCH  # noqa: E402,F401  first: nothing rea
 from pulsar import config, productive, report, server, trackers, updater  # noqa: E402
 
 
+def askclaude_keep():
+    from pulsar import askclaude
+    return askclaude.ENV_KEEP
+
+
 def item(s, e, app="Cursor", title="Task", host="", cat="work"):
     return {"s": s, "e": e, "app": app, "title": title, "host": host, "cat": cat, "icon": None}
 
@@ -970,6 +975,27 @@ class AskClaudeTest(unittest.TestCase):
             seen = {}
             self.ask(out, "2026-10-02" if other else "2026-10-03", claude_json=other, seen=seen)
             self.assertEqual(seen["mcp"]["mcpServers"]["productive"], {"type": "http", "url": "https://mcp.productive.io/mcp"})
+
+    def test_claude_gets_a_short_list_of_pulsars_environment(self):
+        """Pulsar started from a Claude Code session carries that session's variables: its socket and token, its id,
+        an API address. Claude Code gets the basics and its sign-in, nothing else, and no claude.ai connectors."""
+        session = {"CLAUDECODE": "1", "CLAUDE_CODE_SESSION_ID": "s-1", "CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/x.sock",
+                   "CLAUDE_CODE_MESSAGING_TOKEN": "t0ken", "ANTHROPIC_BASE_URL": "http://127.0.0.1:9",
+                   "PULSAR_MCP_SESSION_ID": "p", "SECRET_TOKEN_PROBE": "abc", "GITHUB_TOKEN": "ghp_x",
+                   "CLAUDE_CONFIG_DIR": "/Users/x/.claude-work", "LANG": "en_CA.UTF-8"}
+        seen = {}
+        with mock.patch.dict(os.environ, session):
+            self.ask({"structured_output": {"picks": [{"id": 0, "tasks": ["7"], "why": "w", "note": ""}]}},
+                     "2026-10-12", seen=seen)
+        env = seen["env"]
+        for k in ("CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_MESSAGING_SOCKET", "CLAUDE_CODE_MESSAGING_TOKEN",
+                  "ANTHROPIC_BASE_URL", "PULSAR_MCP_SESSION_ID", "SECRET_TOKEN_PROBE", "GITHUB_TOKEN",
+                  "PULSAR_TESTS_OFFLINE", "XDG_CONFIG_HOME"):
+            self.assertNotIn(k, env)
+        self.assertEqual((env["HOME"], env["PATH"], env["LANG"], env["CLAUDE_CONFIG_DIR"]),
+                         (os.environ["HOME"], os.environ["PATH"], "en_CA.UTF-8", "/Users/x/.claude-work"))
+        self.assertEqual((env["ENABLE_CLAUDEAI_MCP_SERVERS"], env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"]), ("false", "1"))
+        self.assertTrue(set(env) <= set(askclaude_keep()) | {"ENABLE_CLAUDEAI_MCP_SERVERS", "CLAUDE_CODE_DISABLE_AUTO_MEMORY"})
 
     def test_claude_codes_own_errors_are_said(self):
         from pulsar import askclaude

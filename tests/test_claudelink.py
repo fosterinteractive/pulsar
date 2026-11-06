@@ -224,6 +224,8 @@ class SessionNote(unittest.TestCase):
         self.assertEqual(seen["cmd"][seen["cmd"].index("--model") + 1], "haiku")
         self.assertEqual(seen["cmd"][seen["cmd"].index("--setting-sources") + 1], "")  # no CLAUDE.md
         self.assertEqual(seen["env"].get("CLAUDE_CODE_DISABLE_AUTO_MEMORY"), "1")  # and no MEMORY.md
+        self.assertEqual(seen["cmd"][seen["cmd"].index("--disallowedTools") + 1], "mcp__*")  # no MCP tool at all
+        self.assertEqual(seen["env"].get("ENABLE_CLAUDEAI_MCP_SERVERS"), "false")  # nor a claude.ai connector
         self.assertIn("Quiz saves", seen["input"])
 
         def leaky(cmd, **kw):
