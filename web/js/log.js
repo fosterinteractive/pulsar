@@ -432,20 +432,20 @@ $('#log-new').onclick = () => {
 /* drag in the Logged column to log that stretch */
 (function dragToLog() {
   const lane = $('#lane-logged');
-  let start = null, sel = null;
+  let start = null, sel = null, y0 = 0;
   const DAY_END = 1440;  // in clock minutes; an entry cannot run past midnight
-  const at = ev => Math.max(0, Math.min(DAY_END, Math.round((ev.clientY - lane.getBoundingClientRect().top) / ppmOf(state.zoom) / 5) * 5));
+  const MOVED = 4;        // pixels: less is a click that slipped, not a drag
+  const at = ev => Math.max(0, Math.min(DAY_END, Math.round((ev.clientY - lane.getBoundingClientRect().top) / ppmOf(state.zoom))));
   lane.addEventListener('pointerdown', ev => {
     if (ev.button !== 0 || ev.target !== lane) return;
-    start = at(ev);
+    start = at(ev); y0 = ev.clientY;
     sel = document.createElement('div'); sel.className = 'sel'; lane.append(sel);
     lane.setPointerCapture(ev.pointerId); move(ev);
   });
   function move(ev) {
     if (start == null) return;
-    const m = at(ev), ppm = ppmOf(state.zoom);
-    let a = Math.min(start, m), b = Math.max(start, m);
-    if (b > a && b - a < 5) { b = Math.min(DAY_END, a + 5); a = b - 5; }
+    const m = Math.abs(ev.clientY - y0) < MOVED ? start : at(ev), ppm = ppmOf(state.zoom);
+    const a = Math.min(start, m), b = Math.max(start, m);
     Object.assign(sel.style, {top: a * ppm + 'px', height: Math.max(2, (b - a) * ppm) + 'px'});
     sel.dataset.a = a; sel.dataset.b = b;
     sel.textContent = b > a ? `${hm(a)}–${hm(b)} · ${dur(b - a)}` : '';
@@ -455,7 +455,7 @@ $('#log-new').onclick = () => {
     if (start == null) return;
     const a = +sel.dataset.a, b = +sel.dataset.b;
     sel.remove(); start = null;
-    if (b - a >= 5 && a >= 0 && b <= DAY_END) logStretch(a, b);  // day.js
+    if (b - a >= 1 && a >= 0 && b <= DAY_END) logStretch(a, b);  // day.js
   });
   lane.addEventListener('pointercancel', () => { if (start == null) return; sel.remove(); start = null; });
 })();

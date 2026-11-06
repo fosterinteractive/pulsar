@@ -535,8 +535,8 @@ A logged entry's popover has **Edit** (the log dialog, in its own day: task, ser
 `https://app.productive.io/<org id>-<name>/tasks/<id>`). Productive's API gives the organization's id but not the
 name part of that address, so it is taken from links in the person's own Claude sessions
 (`sessions.productive_address`, the newest first, only links whose id is the organization's, only while the Likely
-column may read the sessions); with none seen, there is no link rather than a guessed one. Its top and bottom edges can be dragged in 5-minute
-steps; on release Pulsar asks "Change this entry?" before writing. `POST /api/entry/update` and `/api/entry/delete`
+column may read the sessions); with none seen, there is no link rather than a guessed one. Its top and bottom edges can be dragged in 1-minute
+steps (a drag in the empty column picks a stretch in 1-minute steps too); on release Pulsar asks "Change this entry?" before writing. `POST /api/entry/update` and `/api/entry/delete`
 read the day afresh and refuse an entry that is no longer there. They show overlaps first (Change anyway), take the
 same write lock as logging, and accept `"dry": true`. Both need `seen`, the entry as the page showed it with every
 field (start, minutes, task, service, note): one left out would never be compared. A new start in the hour the clocks

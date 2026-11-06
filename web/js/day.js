@@ -745,7 +745,7 @@ async function deleteEntry(x, btn) {
   toast(`Deleted ${dur(x.minutes)} of ${x.task || x.project}.`);
   refreshLogged();
 }
-/* drag the top or bottom edge of a logged card: 5-minute steps, the card follows, then "Change to …?" */
+/* drag the top or bottom edge of a logged card: 1-minute steps, the card follows, then "Change to …?" */
 (function resizeEntries() {
   const lane = $('#lane-logged');
   let drag = null, justDone = 0;
@@ -758,8 +758,8 @@ async function deleteEntry(x, btn) {
   });
   lane.addEventListener('pointermove', ev => {
     if (!drag) return;
-    const ppm = ppmOf(state.zoom), m = Math.round((ev.clientY - lane.getBoundingClientRect().top) / ppm / 5) * 5;
-    if (drag.edge === 't') drag.s = Math.max(0, Math.min(drag.e - 5, m)); else drag.e = Math.min(1440, Math.max(drag.s + 5, m));
+    const ppm = ppmOf(state.zoom), m = Math.round((ev.clientY - lane.getBoundingClientRect().top) / ppm);
+    if (drag.edge === 't') drag.s = Math.max(0, Math.min(drag.e - 1, m)); else drag.e = Math.min(1440, Math.max(drag.s + 1, m));
     drag.card.style.top = (drag.s * ppm + 1) + 'px'; drag.card.style.height = Math.max((drag.e - drag.s) * ppm - 2, 18) + 'px';
     drag.card.title = `${hm(drag.s)}–${hm(drag.e)} · ${dur(drag.e - drag.s)}`;
   });
