@@ -290,7 +290,8 @@ neither app's saves drop the other's settings. It never installs or updates anyt
   code as it is now. Page files (`web/`) also reload with ↻; Python changes need the reopen.
 - **Release** only what was tried in Preview: merge it into `main` and run `release.sh` as below.
 - **Remove it:** switch off Claude Code in its Settings first if it is on (that removes `pulsar-preview` from Claude
-  Code), quit it, delete `/Applications/Pulsar Preview.app`, `~/Library/Logs/Pulsar-Preview.log`,
-  `~/Library/WebKit/com.fosterinteractive.pulsar.preview` and `~/Library/Caches/com.fosterinteractive.pulsar.preview`,
-  and run `defaults delete com.fosterinteractive.pulsar.preview`. Its settings, caches and tokens are Pulsar's own:
-  leave them unless Pulsar goes too (README, "Remove Pulsar").
+  Code), quit it, delete `/Applications/Pulsar Preview.app`, `~/.config/pulsar-preview`, `~/.cache/pulsar-preview`,
+  `~/Library/Logs/Pulsar-Preview.log`, `~/Library/WebKit/com.fosterinteractive.pulsar.preview` and
+  `~/Library/Caches/com.fosterinteractive.pulsar.preview`, run `defaults delete com.fosterinteractive.pulsar.preview`,
+  and remove its keychain items (`security delete-generic-password -s pulsar-preview -a productive`, and
+  `-a google-calendar`). Pulsar's own folders and items stay. A checkout older than `PULSAR_INSTANCE` used Pulsar's.

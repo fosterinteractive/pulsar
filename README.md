@@ -244,8 +244,8 @@ If Pulsar does not open at all, send `~/Library/Logs/Pulsar.log` instead: in Fin
 | The window's own data (its sign-in, theme, size) | `~/Library/WebKit/com.fosterinteractive.pulsar/`, `~/Library/Caches/com.fosterinteractive.pulsar/`, `~/Library/Preferences/com.fosterinteractive.pulsar.plist` |
 
 Pulsar Preview, if you have it, keeps the same things under its own names: `/Applications/Pulsar Preview.app`,
-`~/Library/Logs/Pulsar-Preview.log`, and `com.fosterinteractive.pulsar.preview` in place of
-`com.fosterinteractive.pulsar`; it shares the settings, caches and keychain items above.
+`~/.config/pulsar-preview`, `~/.cache/pulsar-preview`, `~/Library/Logs/Pulsar-Preview.log`, the keychain service
+`pulsar-preview`, and `com.fosterinteractive.pulsar.preview` in place of `com.fosterinteractive.pulsar`.
 
 Nothing is kept anywhere else, and nothing leaves your Mac except what Pulsar asks Productive, Google Calendar (when
 you connect it) and GitHub (for updates), and, with Claude Code switched on, what goes to Anthropic (see **Claude
@@ -265,16 +265,16 @@ Code** above).
    ```bash
    rm -rf ~/Library/Application\ Support/Pulsar ~/.config/pulsar ~/.cache/pulsar ~/Library/Logs/Pulsar.log \
      ~/Library/WebKit/com.fosterinteractive.pulsar ~/Library/Caches/com.fosterinteractive.pulsar \
-     ~/Library/Logs/Pulsar-Preview.log ~/Library/WebKit/com.fosterinteractive.pulsar.preview \
-     ~/Library/Caches/com.fosterinteractive.pulsar.preview
+     ~/.config/pulsar-preview ~/.cache/pulsar-preview ~/Library/Logs/Pulsar-Preview.log \
+     ~/Library/WebKit/com.fosterinteractive.pulsar.preview ~/Library/Caches/com.fosterinteractive.pulsar.preview
    defaults delete com.fosterinteractive.pulsar
    defaults delete com.fosterinteractive.pulsar.preview
-   security delete-generic-password -s pulsar -a productive
-   security delete-generic-password -s pulsar -a google-calendar
+   for s in pulsar pulsar-preview; do for a in productive google-calendar; do
+     security delete-generic-password -s $s -a $a; done; done
    ```
 
-   The last two lines remove your Productive token and Google Calendar access from the keychain; each says the item
-   could not be found if you never saved one (the same for a `defaults` line without Pulsar Preview).
+   The last lines remove your Productive token and Google Calendar access from the keychain; each says the item
+   could not be found if you never saved one (the same for anything of Pulsar Preview you never had).
 5. The token still works in Productive until you revoke it there: **Settings → API integrations**, delete the token
    you made for Pulsar. If you connected Google Calendar, also remove Pulsar at
    [myaccount.google.com/connections](https://myaccount.google.com/connections) (Disconnect in Settings does both).
