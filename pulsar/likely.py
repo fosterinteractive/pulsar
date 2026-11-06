@@ -14,12 +14,13 @@ import sys
 import tempfile
 import threading
 import time
+from datetime import datetime, timedelta
 
 from . import config
 
 SCRIPT = os.path.expanduser("~/.claude/skills/fi-time-from-activity/scripts/activity_blocks.py")
 SESSIONS = os.path.expanduser("~/.claude/projects")
-_cache: dict = {}
+_cache = config.Newest(16)  # (date, time zone) -> (when, proposal): the days looked at lately
 
 
 def available() -> bool:
@@ -40,13 +41,24 @@ def hm_min(s: str) -> int:
     return int(h) * 60 + int(m)
 
 
+def elapsed(date: str, tz, clock_min: int) -> int:
+    """Minutes on the clock since midnight -> minutes elapsed since midnight. The two differ only after the clocks
+    change; the script writes the clock, the rest of Pulsar keeps elapsed minutes and the page turns them back."""
+    if tz is None:
+        return clock_min
+    day = datetime.strptime(date, "%Y-%m-%d")
+    t0 = day.replace(tzinfo=tz).timestamp()
+    return round(((day + timedelta(minutes=clock_min)).replace(tzinfo=tz).timestamp() - t0) / 60)
+
+
 _locks: dict = {}
 TODAY_FOR = 180  # seconds a proposal for today is reused: the script reads every session of the day (~3 s)
 
 
-def proposal(date: str, tz_name: str, today: str, fresh: bool, settings: dict | None = None) -> dict:
+def proposal(date: str, tz_name: str, today: str, fresh: bool, settings: dict | None = None, keep: bool = True) -> dict:
     """The proposal for a day: past days once, today again after three minutes (or on ↻). One run per day at a time;
-    a request that arrives while it runs waits for it instead of starting another."""
+    a request that arrives while it runs waits for it instead of starting another. keep=False (learning's 60 past
+    days, which it stores on disk) leaves the days in memory, the ones the page shows, where they are."""
     key = (date, tz_name)
     lock = _locks.setdefault(key, threading.Lock())
     with lock:
@@ -54,17 +66,17 @@ def proposal(date: str, tz_name: str, today: str, fresh: bool, settings: dict | 
         if cached and not fresh and (date < today or time.time() - cached[0] < TODAY_FOR):
             return cached[1]
         settings = settings or config.load()
-        result = _run(date, tz_name) if own_script() else _built_in(date, settings)
+        result = _run(date, tz_name, config.tz(settings)) if own_script() else _built_in(date, settings)
         if not result.get("error"):
             _with_tasks(result, date, settings)
-            _cache[key] = (time.time(), result)
+            if keep:
+                _cache[key] = (time.time(), result)
         return result
 
 
 def _with_tasks(result: dict, date: str, settings: dict) -> None:
     """The Productive tasks linked in each row's sessions, for the log dialog to offer first. A hint only: if the
     sessions cannot be read, the rows stay as they are."""
-    from datetime import datetime
     from . import sessions
     try:
         t0 = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=config.tz(settings)).timestamp()
@@ -76,7 +88,6 @@ def _with_tasks(result: dict, date: str, settings: dict) -> None:
 
 def _built_in(date: str, settings: dict) -> dict:
     """sessions.py on the day's activity from the tracker that saw more of it."""
-    from datetime import datetime, timedelta
     from . import sessions, trackers
     if not available():
         return {"error": "No Claude Code sessions on this computer.", "entries": []}
@@ -90,7 +101,7 @@ def _built_in(date: str, settings: dict) -> dict:
     return sessions.propose(t0, t1, found.get(source) or [], names.get(source, source) if found.get(source) else "no tracker")
 
 
-def _run(date: str, tz_name: str) -> dict:
+def _run(date: str, tz_name: str, tz=None) -> dict:
     if not own_script():
         return {"error": "The fi-time-from-activity skill is not installed.", "entries": []}
     os.makedirs(config.CACHE_DIR, exist_ok=True)
@@ -116,7 +127,8 @@ def _run(date: str, tz_name: str) -> dict:
         if e.get("minutes", 0) < 1:
             continue
         s, en = hm_min(e["start"]), hm_min(e["end"])
-        rows.append({"s": s, "e": en if en >= s else en + 1440, "minutes": e["minutes"], "project": e["project"],
+        en = en if en >= s else en + 1440
+        rows.append({"s": elapsed(date, tz, s), "e": elapsed(date, tz, en), "minutes": e["minutes"], "project": e["project"],
                      "kind": e["kind"], "titles": e.get("titles", []), "messages": e.get("messages", 0),
                      "first_message": e.get("first_message", "")})
     return {"tracker": data.get("tracker"), "working": data.get("working"), "proposed": data.get("proposed"),

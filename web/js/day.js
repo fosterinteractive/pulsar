@@ -6,9 +6,16 @@ function load({fresh = false, keepScroll = false} = {}) {
   return Promise.all([
     getJSON(`/api/activity?date=${d}&source=${state.source}`).then(x => { if (d === state.date) { state.act = x; render(); } return x; }),
     getJSON(`/api/entries?date=${d}`).then(x => { if (d === state.date) { state.logged = x; render(); loadEstimates(); } return x; }),
-    getJSON(`/api/proposal?date=${d}${fresh ? '&fresh=1' : ''}`).then(x => { if (d === state.date) { state.likely = x; render(); } return x; }),
+    getJSON(`/api/proposal?date=${d}${fresh ? '&fresh=1' : ''}`).then(x => { if (d === state.date) { state.likely = x; render(); if (x.learnPending) setTimeout(() => loadLearned(d), 3000); } return x; }),
     loadMeetings(d, fresh),  // meetings.js
   ]);
+}
+
+/* the Likely rows came before your Productive history was read: ask once more for their learned tasks */
+async function loadLearned(d) {
+  if (d !== state.date) return;
+  const x = await getJSON(`/api/proposal?date=${d}&wait=1`);
+  if (d === state.date && !x.error && !x.disabled) { state.likely = x; render(); }
 }
 
 /* entries you log at the same time most days (the daily meeting), offered when the tracker saw the call: a hint,
@@ -24,7 +31,7 @@ async function loadEstimates() {
   const d = state.date, ids = [...new Set((state.logged?.entries || []).map(x => x.taskId).filter(Boolean))];
   if (!ids.length) { state.estimates = {}; render(); return; }
   const r = await getJSON(`/api/tasks/estimates?ids=${ids.join(',')}`);
-  if (d === state.date) { state.estimates = r.tasks || {}; render(); }
+  if (d === state.date) { state.estimates = r.tasks || {}; state.estimatesError = r.error || ''; render(); }
 }
 async function refreshLogged() {
   const d = state.date;
@@ -418,7 +425,7 @@ function renderAside(gapMin) {
   box.hidden = !byTask.size;
   if (byTask.size) {
     const est = state.estimates;
-    box.innerHTML = '<h2>Tasks against estimates</h2>' + [...byTask.values()].sort((a, b) => b.today - a.today).map(t => {
+    box.innerHTML = '<h2>Tasks against estimates</h2>' + (state.estimatesError ? `<div class="note">${esc(state.estimatesError)}</div>` : '') + [...byTask.values()].sort((a, b) => b.today - a.today).map(t => {
       const line = est ? estimateLine(est[t.taskId]) : null;
       return `<div class="tk"><div class="tk-h"><span class="dot" style="background:${color(t.project)}"></span><b title="${esc(t.project)}">${esc(t.title)}</b><span class="num">${dur(t.today)} today</span></div>
         ${line ? `<div class="tk-l${line.over ? ' over' : ''}">${line.over ? '<span aria-hidden="true">⚠ </span>' : ''}${esc(line.text)}</div>

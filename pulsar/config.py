@@ -81,6 +81,22 @@ def write_atomic(path: str, text: str) -> None:
         raise
 
 
+class Newest(dict):
+    """A dict that keeps only the `size` keys set most recently (setting a key again makes it newest): the caches
+    kept in memory, so a server left running for weeks stops growing."""
+
+    def __init__(self, size: int):
+        super().__init__()
+        self.size, self._lock = size, threading.Lock()
+
+    def __setitem__(self, key, value) -> None:
+        with self._lock:
+            super().pop(key, None)
+            super().__setitem__(key, value)
+            while len(self) > self.size:
+                super().pop(next(iter(self)))
+
+
 def ensure_dirs() -> None:
     os.makedirs(CONFIG_DIR, exist_ok=True)
     os.makedirs(CACHE_DIR, exist_ok=True)
@@ -306,12 +322,27 @@ def delete_google_token() -> None:
 
 # ---- the keychain, or a private file -----------------------------------------------------
 
+_keychain_stuck_at = [0.0]  # when the keychain last did not answer
+KEYCHAIN_STUCK = ("The macOS keychain did not answer when Pulsar asked for your Productive connection (it may be "
+                  "locked, or waiting on a dialog). Pulsar asks again in a minute.")
+
+
+def keychain_timed_out() -> None:
+    _keychain_stuck_at[0] = time.time()
+
+
+def keychain_stuck() -> bool:
+    """The keychain timed out in the last two minutes: a missing token may only be one it could not give."""
+    return time.time() - _keychain_stuck_at[0] < 120
+
+
 def _read_secret(account: str, path: str, what: str) -> str | None:
     if _keychain():
         try:
             run = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", KEYCHAIN_SERVICE, "-a", account,
                                   "-w"], capture_output=True, text=True, timeout=15)
         except subprocess.TimeoutExpired:  # a keychain waiting on a dialog nobody sees: say so, do not break the page
+            keychain_timed_out()
             from . import logbook
             logbook.record("keychain", f"The keychain did not answer within 15 s for the {what}.", kind="warning")
             return None

@@ -12,6 +12,7 @@ project, budget, billable (True/False/None), billing (the service's billing type
 
 from __future__ import annotations
 
+import contextlib
 import http.client
 import json
 import os
@@ -24,6 +25,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zlib
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Callable, Optional, Tuple
@@ -45,9 +47,22 @@ class ProductiveUnclear(ProductiveError):
     """A write whose answer never came, or could not be read: it may or may not have happened. Never retried."""
 
 
-# ---- names that never change: a task's project, a service's budget -------------------------
+class TokenRefused(ProductiveError):
+    """Productive said no to the token itself (HTTP 401): nothing else will work until it is renewed."""
+
+
+# ---- names that rarely change: a task's project, a service's budget and billing type -------------
+
+NAME_AGE = 7 * 86400  # a name or billing type is read again after a week: projects and budgets get renamed
+HIDDEN_AGE = 86400    # a billing type this role could not see ("0") is asked again after a day
+
 
 class Names:
+    """Project and budget names, each service's budget and billing type, in names.json with when each was read (the
+    "_at" key, which older versions keep as it is). A stale one is still shown, and read again on the next request that
+    needs it. Entries an older version kept have no time: they get one spread over the period, so they are refreshed
+    a few at a time, never all on the first day."""
+
     def __init__(self, path: str = NAMES_FILE):
         self.path, self.lock = path, threading.Lock()
         try:
@@ -55,16 +70,44 @@ class Names:
                 self.data = json.load(fh)
         except (OSError, ValueError):
             self.data = {}
+        if not isinstance(self.data, dict):
+            self.data = {}
+        at = self.data.pop("_at", None)
+        self.at = {k: v for k, v in at.items() if isinstance(v, (int, float))} if isinstance(at, dict) else {}
+        now, untimed = time.time(), [k for k in self.data if k not in self.at]
+        for k in untimed:
+            self.at[k] = now - zlib.crc32(k.encode("utf-8")) % self.max_age(k)
+        if untimed:
+            self._write()
+
+    def max_age(self, key: str) -> int:
+        return HIDDEN_AGE if key.startswith("billing:") and self.data.get(key) == "0" else NAME_AGE
 
     def get(self, key: str):
         return self.data.get(key)
 
-    def set_many(self, pairs: dict) -> None:
+    def fresh(self, key: str) -> bool:
+        """Known, and read recently enough to trust."""
+        return key in self.data and time.time() - self.at.get(key, 0) < self.max_age(key)
+
+    def set_many(self, pairs: dict, at: Optional[float] = None) -> None:
+        """Remember these, read now (or at `at`: a failed re-read keeps the old value and asks again later)."""
         if not pairs:
             return
         with self.lock:
             self.data.update(pairs)
-            config.write_atomic(self.path, json.dumps(self.data, ensure_ascii=False))
+            self.at.update(dict.fromkeys(pairs, time.time() if at is None else at))
+            self._write()
+
+    def keep_for_now(self, keys) -> None:
+        """A re-read failed: keep the old values and ask again in a day, not on every request."""
+        self.set_many({k: self.data[k] for k in keys if k in self.data}, at=time.time() - NAME_AGE + HIDDEN_AGE)
+
+    def _write(self) -> None:
+        try:
+            config.write_atomic(self.path, json.dumps({**self.data, "_at": self.at}, ensure_ascii=False))
+        except OSError:
+            pass  # a cache: the names are still in memory
 
 
 _shared: Optional[Names] = None
@@ -269,8 +312,7 @@ def rest_entries(d0: str, d1: str, token: str, org: str, person: str, names: Nam
                     "minutes": int(_attr(d, "time") or 0), "note": strip_html(_attr(d, "note") or ""),
                     "approved": bool(_attr(d, "approved_at")) or _attr(d, "approved") is True,
                     "task": _attr(task, "title") or "", "service": _attr(service, "name") or "",
-                    "project": project or names.get(f"tasks:{task_id}") or "",
-                    "budget": budget or names.get(f"services:{service_id}") or "",
+                    "project": project or "", "budget": budget or "",
                     **billable_of(_attr(service, "billing_type")),
                     "_task": task_id, "_service": service_id})
     names.set_many(learned)
@@ -279,9 +321,12 @@ def rest_entries(d0: str, d1: str, token: str, org: str, person: str, names: Nam
 
 
 def _fill_rest_names(rows: list, token: str, org: str, names: Names, get: Get) -> None:
-    """Project and budget names the list answer left out, one lookup per task or service, remembered."""
-    todo = sorted({("tasks", r["_task"]) for r in rows if r["_task"] and not r["project"]} |
-                  {("services", r["_service"]) for r in rows if r["_service"] and not r["budget"]})
+    """Project and budget names the list answer left out: from the cache while fresh, else one lookup per task or
+    service, remembered."""
+    todo = sorted({("tasks", r["_task"]) for r in rows
+                   if r["_task"] and not r["project"] and not names.fresh(f"tasks:{r['_task']}")} |
+                  {("services", r["_service"]) for r in rows
+                   if r["_service"] and not r["budget"] and not names.fresh(f"services:{r['_service']}")})
 
     def one(ref):
         kind, rid = ref
@@ -293,8 +338,9 @@ def _fill_rest_names(rows: list, token: str, org: str, names: Names, get: Get) -
         return ref, _attr(_index(doc).get(("projects" if kind == "tasks" else "deals", rel)), "name") or ""
 
     with ThreadPoolExecutor(6) as pool:
-        got = {f"{k}:{i}": n for (k, i), n in pool.map(one, todo) if n is not None}
-    names.set_many(got)
+        answers = [(f"{k}:{i}", n) for (k, i), n in pool.map(one, todo)]
+    names.set_many({ref: n for ref, n in answers if n is not None})
+    names.keep_for_now(ref for ref, n in answers if n is None)
     for r in rows:
         r["project"] = r["project"] or names.get(f"tasks:{r['_task']}") or "(no project)"
         r["budget"] = r["budget"] or names.get(f"services:{r['_service']}") or ""
@@ -336,6 +382,7 @@ def _claude_code_token() -> tuple:
         run = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
                              capture_output=True, text=True, timeout=15)
     except subprocess.TimeoutExpired:
+        config.keychain_timed_out()
         return None, "The keychain did not answer when Pulsar asked for Claude Code's Productive connection.", False, False, ""
     try:
         servers = json.loads(run.stdout).get("mcpOAuth", {})
@@ -405,6 +452,16 @@ WRITE_TOOLS = {"create_resource", "update_resource", "delete_resource", "perform
 
 
 _mcp_slots = threading.BoundedSemaphore(4)  # Productive's MCP endpoint hangs up when asked too much at once
+_bulk_slots = threading.BoundedSemaphore(2)  # secondary reads take two of them at most, so the day's own never waits
+
+
+def _gated(bulk: bool, fn):
+    """fn, run in a slot for secondary reads when `bulk` (weeks of history, the Tasks box's estimates): together they
+    hold at most two of the four MCP slots, and the day's entries and the log dialog always find one free."""
+    def run(*a):
+        with _bulk_slots if bulk else contextlib.nullcontext():
+            return fn(*a)
+    return run
 
 
 def mcp_text(tool: str, args: dict, token: str) -> str:
@@ -416,7 +473,9 @@ def mcp_text(tool: str, args: dict, token: str) -> str:
                             timeout=60, write=tool in WRITE_TOOLS)
     if status == 401:
         _cc_cache[0] = 0.0  # read the keychain again next time: Claude Code may have renewed it meanwhile
-        raise ProductiveError("Productive refused Claude Code's token (HTTP 401); it may have just expired.")
+        raise TokenRefused("Productive refused Claude Code's token (HTTP 401): it has expired or was revoked. Pulsar "
+                           "reads the renewed one on the next try; if this stays, run /mcp in Claude Code and reconnect "
+                           "Productive.")
     if status != 200:
         if tool in WRITE_TOOLS and status >= 500:  # a server error after a write was sent: it may have happened
             raise ProductiveUnclear(f"Productive answered HTTP {status}, so the change may or may not have happened.")
@@ -511,21 +570,22 @@ def minutes_of(s) -> float:
     return sign * ((float(h.group(1)) * 60 if h else 0) + (float(m.group(1)) if m else 0))
 
 
-def mcp_entries(d0: str, d1: str, token: str, person: str, names: Names) -> list:
+def mcp_entries(d0: str, d1: str, token: str, person: str, names: Names, bulk: bool = False) -> list:
+    """bulk: a long read in the background (weeks of history), which leaves room for the day's own reads."""
     first, last = datetime.strptime(d0, "%Y-%m-%d"), datetime.strptime(d1, "%Y-%m-%d")
     dates = [(first + timedelta(days=i)).strftime("%Y-%m-%d") for i in range((last - first).days + 1)]
     # three days per query, four at a time: each answer fits one page, and a month takes seconds
     chunks = [(dates[i], dates[min(i + 2, len(dates) - 1)]) for i in range(0, len(dates), 3)]
     with ThreadPoolExecutor(4) as pool:
-        parts = list(pool.map(lambda c: _mcp_rows([{"field": "date", "operator": "gt_eq", "value": c[0]},
-                                                    {"field": "date", "operator": "lt_eq", "value": c[1]}],
-                                                   person, token), chunks))
+        parts = list(pool.map(_gated(bulk, lambda c: _mcp_rows([{"field": "date", "operator": "gt_eq", "value": c[0]},
+                                                                {"field": "date", "operator": "lt_eq", "value": c[1]}],
+                                                               person, token)), chunks))
     rows = [r for part, _ in parts for r in part]
     included = {k: v for _, inc in parts for k, v in inc.items()}
 
-    # names, and each service's budget id (to tell whether it is billable), each looked up once
+    # names, and each service's budget id (to tell whether it is billable): looked up when unknown or a week old
     todo = sorted({r[k] for r in rows for k in ("task", "service") if r.get(k) and (
-        names.get(r[k]) is None or (k == "service" and names.get("deal:" + r[k]) is None))})
+        not names.fresh(r[k]) or (k == "service" and not names.fresh("deal:" + r[k])))})
 
     def one(ref: str):
         kind, rid = ref.split(":")
@@ -538,15 +598,18 @@ def mcp_entries(d0: str, d1: str, token: str, person: str, names: Names) -> list
         deal = ((d.get("item") or {}).get("fields") or {}).get("deal") or {}
         return ref, name, (str(deal["id"]) if kind == "services" and isinstance(deal, dict) and deal.get("id") else None)
 
-    learned = {}
+    learned, failed = {}, []
     with ThreadPoolExecutor(6) as pool:
-        for ref, name, deal in pool.map(one, todo):
+        for ref, name, deal in pool.map(_gated(bulk, one), todo):
             if name is not None:
                 learned[ref] = name
+            else:
+                failed += [ref, "deal:" + ref]
             if deal:
                 learned["deal:" + ref] = deal
     names.set_many(learned)
-    _mcp_billing(sorted({r["service"] for r in rows if r.get("service")}), token, names)
+    names.keep_for_now(failed)
+    _mcp_billing(sorted({r["service"] for r in rows if r.get("service")}), token, names, bulk)
     out = []
     for r in rows:
         task, service = included.get(r.get("task") or "", {}), included.get(r.get("service") or "", {})
@@ -570,10 +633,11 @@ def billable_of(billing_type) -> dict:
     return {"billable": None if bt not in BILLING else bt != "3", "billing": BILLING.get(bt, "")}
 
 
-def _mcp_billing(services: list, token: str, names: Names) -> None:
+def _mcp_billing(services: list, token: str, names: Names, bulk: bool = False) -> None:
     """Each service's billing type. Productive hides the field from some roles but still filters on it, so
-    the services of the budgets in use are listed once per billing type, and what comes back is remembered."""
-    unknown = [r for r in services if names.get("billing:" + r) is None]
+    the services of the budgets in use are listed once per billing type, and what comes back is remembered: read
+    again after a week, and after a day for a service found in no list (hidden from this role, "0")."""
+    unknown = [r for r in services if not names.fresh("billing:" + r)]
     deals = sorted({names.get("deal:" + r) for r in unknown if names.get("deal:" + r)})
     if not deals:
         return
@@ -596,12 +660,12 @@ def _mcp_billing(services: list, token: str, names: Names) -> None:
     found: dict = {}
     try:
         with ThreadPoolExecutor(4) as pool:
-            for bt, ids in pool.map(listing, jobs):
+            for bt, ids in pool.map(_gated(bulk, listing), jobs):
                 found.update({f"billing:services:{i}": bt for i in ids})
     except Exception:
         return  # try again next time
     for r in unknown:
-        found.setdefault("billing:" + r, "0")  # in none of the lists: not visible to this role, do not ask again
+        found.setdefault("billing:" + r, "0")  # in none of the lists: not visible to this role; asked again in a day
     names.set_many(found)
 
 
@@ -614,7 +678,8 @@ def connection(settings: dict) -> dict:
     if token:
         return {"kind": "token", "token": token}
     if want == "token":
-        return {"kind": None, "problem": "No Productive token saved yet: add one in Settings."}
+        return {"kind": None, "problem": config.KEYCHAIN_STUCK if config.keychain_stuck() else
+                "No Productive token saved yet: add one in Settings."}
     cc, problem, connected = claude_code_token()
     if cc:
         return {"kind": "claude-code", "token": cc}
@@ -622,6 +687,8 @@ def connection(settings: dict) -> dict:
         return {"kind": None, "problem": problem}
     if connected:  # say what went wrong with the connection in use, and the way out of it
         return {"kind": None, "problem": problem + " An API token in Settings does not expire."}
+    if config.keychain_stuck():  # not "add a token": there may be one the keychain did not give
+        return {"kind": None, "problem": config.KEYCHAIN_STUCK}
     return {"kind": None, "problem": "Productive is not connected: add your API token in Settings."}
 
 
@@ -637,8 +704,9 @@ def identify(settings: dict, conn: dict) -> dict:
     return {}
 
 
-def entries(d0: str, d1: str, settings: dict, names: Optional[Names] = None) -> Tuple[list, Optional[str], Optional[str]]:
-    """(rows, problem, source). Never raises: a problem comes back as text for the page."""
+def entries(d0: str, d1: str, settings: dict, names: Optional[Names] = None,
+            bulk: bool = False) -> Tuple[list, Optional[str], Optional[str]]:
+    """(rows, problem, source). Never raises: a problem comes back as text for the page. bulk: see mcp_entries."""
     conn = connection(settings)
     if not conn["kind"]:
         return [], conn["problem"], None
@@ -648,7 +716,7 @@ def entries(d0: str, d1: str, settings: dict, names: Optional[Names] = None) -> 
             rows = rest_entries(d0, d1, conn["token"], settings.get("org_id"), settings.get("person_id"), names)
         else:
             person = settings.get("person_id") or mcp_detect(conn["token"]).get("person_id")
-            rows = mcp_entries(d0, d1, conn["token"], person, names)
+            rows = mcp_entries(d0, d1, conn["token"], person, names, bulk)
     except ProductiveError as exc:
         return [], str(exc), conn["kind"]
     except Exception as exc:  # network and the like
@@ -681,11 +749,14 @@ def _task_from_mcp(item: dict, included: list) -> dict:
 TASK_FIELDS = ["title", "task_number", "initial_estimate", "worked_time", "remaining_time", "project.name", "service"]
 
 
-_task_cache: dict = {}  # task id -> (time, details)
+_task_cache = config.Newest(300)  # task id -> (time, details)
 
 
-def task_details(ids: list, settings: dict) -> dict:
-    """Each task's estimate, time worked by everyone, and what is left, as Productive has them (cached 5 minutes)."""
+def task_details(ids: list, settings: dict, reasons: Optional[dict] = None) -> dict:
+    """Each task's estimate, time worked by everyone, and what is left, as Productive has them (cached 5 minutes).
+    When none could be given because of the connection (the token refused or expired, Productive unreachable or down),
+    it raises ProductiveError saying so, rather than answer as if the tasks did not exist. `reasons`, if given,
+    gets the reason for each task that could not be read."""
     conn = _need(settings)
     now = time.time()
     found = {t: d for t, (at, d) in list(_task_cache.items()) if t in ids and now - at < 300}
@@ -695,30 +766,52 @@ def task_details(ids: list, settings: dict) -> dict:
         got = _one(tid)
         return got if got[1] is not None else _one(tid)  # one retry: a busy moment should not drop a task
 
-    def _one(tid: str):
+    def _one(tid: str) -> tuple:
+        """(id, details or None, why not, whether the connection is the reason)"""
         try:
             if conn["kind"] == "token":
                 status, doc = rest_get(f"/tasks/{int(tid)}", {"include": "project"}, conn["token"], settings.get("org_id"))
+                if status == 401:
+                    return tid, None, ("Productive refused the API token (HTTP 401): it has expired or was revoked. "
+                                       "Check it in Settings."), True
                 if status != 200 or not isinstance(doc, dict):
-                    return tid, None
+                    down = status == 0 or status == 429 or status >= 500
+                    return tid, None, (f"Productive could not be asked ({why(status, doc)})" if down else
+                                       f"HTTP {status}: deleted, or not visible to you"), down
                 d = doc.get("data") or {}
                 proj = _index(doc).get(("projects", _rel(d, "project") or ""))
                 return tid, {"taskId": tid, "title": _attr(d, "title") or "", "number": str(_attr(d, "task_number") or ""),
                              "project": _attr(proj, "name") or "", "projectId": _rel(d, "project") or "",
                              "serviceId": _rel(d, "service") or "",
                              "estimate": _attr(d, "initial_estimate"), "worked": _attr(d, "worked_time"),
-                             "remaining": _attr(d, "remaining_time")}
+                             "remaining": _attr(d, "remaining_time")}, "", False
             d = parse_mcp(mcp_text("load_resource", {"resource_type": "tasks", "id": tid, "include_fields": TASK_FIELDS}, conn["token"]))
             item = d.get("item") or {}
-            return tid, (_task_from_mcp(item, d.get("included") or []) if item.get("id") else None)
-        except Exception:
-            return tid, None
+            if not item.get("id"):
+                return tid, None, "deleted, or not visible to you", False
+            return tid, _task_from_mcp(item, d.get("included") or []), "", False
+        except TokenRefused as exc:
+            return tid, None, str(exc), True
+        except (OSError, http.client.HTTPException) as exc:
+            return tid, None, f"Productive could not be reached ({network_reason(exc)})", True
+        except ProductiveError as exc:  # "Productive answered HTTP 503" is Productive down; a refusal is about the task
+            return tid, None, str(exc), str(exc).startswith("Productive answered HTTP 5")
+        except Exception as exc:
+            return tid, None, f"{type(exc).__name__}: {exc}", False
 
-    with ThreadPoolExecutor(6) as pool:
-        for tid, t in pool.map(one, todo):
+    failed = {}
+    with ThreadPoolExecutor(6) as pool:  # several tasks: the Tasks box, which can wait; one: the log dialog, which cannot
+        for tid, t, problem, connection_problem in pool.map(_gated(len(todo) > 1 and conn["kind"] != "token", one), todo):
             if t:
                 _task_cache[tid] = (now, t)
                 found[tid] = t
+            else:
+                failed[tid] = (problem, connection_problem)
+    if reasons is not None:
+        reasons.update({tid: problem for tid, (problem, _) in failed.items()})
+    blocking = [problem for problem, connection_problem in failed.values() if connection_problem]
+    if not found and blocking:  # nothing to show, and the connection is why: say so
+        raise ProductiveError(blocking[0])
     return found
 
 
@@ -806,9 +899,11 @@ def search_tasks(q: str, settings: dict) -> list:
 def bookable_services(task_id: str, date: str, settings: dict, names: Optional[Names] = None) -> dict:
     """The services of the task's project that take time on that date (a budget that has ended does not)."""
     conn = _need(settings)
-    task = task_details([task_id], settings).get(task_id)
+    reasons: dict = {}
+    task = task_details([task_id], settings, reasons).get(task_id)  # raises when the connection is the reason
     if not task or not task.get("projectId"):
-        raise ProductiveError("Productive did not return that task.")
+        reason = reasons.get(task_id) or ("it has no project" if task else "")
+        raise ProductiveError("Productive did not return that task" + (f" ({reason})." if reason else "."))
     names = names or shared_names()
     if conn["kind"] == "token":
         status, doc = rest_get("/services", {"filter[project_id]": task["projectId"], "filter[bookable_date]": date,

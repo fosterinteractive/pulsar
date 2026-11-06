@@ -21,16 +21,31 @@ from . import __version__, config
 LOG_DIR = os.path.join(config.CACHE_DIR, "logs")
 KEEP_DAYS = 31
 _lock = threading.Lock()
-_last: dict = {}  # (where, message) -> time, so one problem repeated by every request is logged once a minute
+_last = config.Newest(200)  # (where, message) -> time, so one problem repeated by every request is logged once a minute
+_VALUE = r"[^\s\"'&,;}<>]+"
+_B64 = r"[A-Za-z0-9_\-]"
 SECRET = re.compile(
-    r"(?i)(bearer\s+|x-auth-token[\"']?\s*[:=]\s*[\"']?|[\"']?(?:access_?|refresh_?)?token[\"']?\s*[:=]\s*[\"']?"
-    r"|[?&](?:sig|signature|key|token)=)[^\s\"'&,}]+"
-    r"|\b(gh[pousr]_|sk-)[A-Za-z0-9_]{10,}")
+    # a label, then its value: the label stays, the value goes
+    r"(?i:(bearer\s+|x-auth-token[\"']?\s*[:=]\s*[\"']?"
+    r"|[\"']?\b(?:access_?|refresh_?|id_?)?token[\"']?\s*[:=]\s*[\"']?"
+    r"|[\"']?\b(?:client_?secret|code_?verifier|api_?key|password)[\"']?\s*[:=]\s*[\"']?"
+    r"|[?&](?:x-amz-)?(?:sig|signature|key|token|credential|security-token)="
+    r"|\bx-amz-(?:signature|credential|security-token)=)" + _VALUE + ")" +
+    # an OAuth code: in an address or a form (code=…&…), never "exit code=1"
+    r"|(?i:((?:^|[?&\s\"'])code=)(?=[^\s\"'&,;}<>]*\d)[^\s\"'&,;}<>]{8,})"
+    # keys that say what they are, and JSON web tokens
+    r"|\b(?:gh[pousr]_|sk-ant-|sk-)[A-Za-z0-9_\-]{10,}"
+    r"|\beyJ" + _B64 + r"{10,}\." + _B64 + r"{10,}\." + _B64 + r"*"
+    # anything else long and opaque: 40 or more base64url characters, upper and lower case and digits, standing alone
+    # (not part of a word, a path, a file or a dotted name)
+    r"|(?<![\w\-/\\.])(?=" + _B64 + r"*[A-Z])(?=" + _B64 + r"*[a-z])(?=" + _B64 + r"*\d)" + _B64 + r"{40,}={0,2}"
+    r"(?![\w\-/\\]|\.\w)")
 
 
 def scrub(text: str) -> str:
-    """Remove anything that looks like a credential: tokens, keys, signatures, very long opaque strings."""
-    return SECRET.sub(lambda m: (m.group(1) or "") + "[removed]", str(text or ""))
+    """Remove anything that looks like a credential: tokens, keys, signatures, OAuth codes, very long opaque strings.
+    Normal words, paths and identifiers stay."""
+    return SECRET.sub(lambda m: (m.group(1) or m.group(2) or "") + "[removed]", str(text or ""))
 
 
 def record(where: str, message: str, kind: str = "error", detail: str = "", once_per: int = 60) -> None:

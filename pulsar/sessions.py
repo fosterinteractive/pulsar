@@ -23,6 +23,8 @@ import re
 import time
 from datetime import datetime
 
+from .config import Newest
+
 HOME = os.path.expanduser("~")
 PROJECTS_DIR = os.path.join(HOME, ".claude", "projects")
 AWAY = 30  # minutes without a sign of work that end a sitting
@@ -101,7 +103,7 @@ def tool_paths(r: dict) -> list:
     return found
 
 
-_repo_of: dict = {}
+_repo_of = Newest(5000)  # folder -> its repository (None outside one)
 
 
 def project_of_path(path: str) -> str | None:
@@ -263,16 +265,24 @@ def propose(t0: float, t1: float, items: list, tracker: str, projects_dir: str =
     m = lambda t: int((t - t0) // 60)  # noqa: E731 - a moment as the day's minute
 
     focus: list = [None] * n
-    logging_at = [False] * n
+    logging_s, work_s = [0.0] * n, [0.0] * n  # seconds of each minute in Pulsar or Productive, and in any work window
     for it in items:
         if it.get("cat") != "work":
             continue  # personal windows (Settings > Personal windows) and away time go to no session
         is_logging = any(LOGGING.search(str(it.get(k) or "")) for k in ("app", "host", "url"))
         for x in range(max(0, int(it["s"])), min(n, int(-(-it["e"] // 1)))):
+            seconds = (min(it["e"], x + 1) - max(it["s"], x)) * 60
+            work_s[x] += seconds
             if is_logging:
-                logging_at[x] = True
+                logging_s[x] += seconds
             else:
                 focus[x] = it
+    # a minute that went mostly to logging is logging, even when another window shared it (a look at Pulsar between
+    # two edits): it goes to no session
+    logging_at = [logging_s[x] > 0 and 2 * logging_s[x] >= work_s[x] for x in range(n)]
+    for x in range(n):
+        if logging_at[x]:
+            focus[x] = None
     present = [f is not None for f in focus]
     run_at: list = [[] for _ in range(n)]
     acts = []  # (minute, session) of every message and every end of an agent's run

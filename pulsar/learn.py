@@ -67,7 +67,7 @@ def warm(date: str, settings: dict) -> None:
             _state.update(done=LEARN_DAYS - len(todo), of=LEARN_DAYS)
             os.makedirs(DIR, mode=0o700, exist_ok=True)
             for d in todo:
-                got = likely.proposal(d, config.timezone_name(settings), "9999-12-31", False, settings)
+                got = likely.proposal(d, config.timezone_name(settings), "9999-12-31", False, settings, keep=False)
                 if not got.get("error"):
                     config.write_atomic(_path(d), json.dumps({"format": FORMAT, "rows": rows_of(got)}))
                 _state["done"] += 1
