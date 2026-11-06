@@ -55,13 +55,22 @@ def calib(res):
 def main(a, b):
     A, B = load(a), load(b)
     sa, sb = A["summary"], B["summary"]
-    for k in ("no_change", "rec_time", "prec_time", "top1", "top5", "seq_top1", "seq_top5"):
+    for k in ("no_change", "rec_time", "prec_time", "top1", "top5", "seq_top1", "seq_top5", "plan_top1m", "plan_top4m"):
         print(f"{k:10s} {100 * sa[k]:5.1f} -> {100 * sb[k]:5.1f}")
     Ma, Mb = sum(d["M"] for d in A["days"]), sum(d["M"] for d in B["days"])
     print(f"right amount {Ma} -> {Mb} min ({100 * Ma / sa['Q']:.1f}% -> {100 * Mb / sb['Q']:.1f}%)")
     night = "proposed minutes in Off stretches (nights)"
     na, nb = (sum(d["checks"].get(night, 0) for d in X["days"]) for X in (A, B))
     print(f"right time {sum(d['right_time'] for d in A['days'])} -> {sum(d['right_time'] for d in B['days'])} min | nights {na} -> {nb}")
+    def new(res):
+        T = [t for d in res["days"] for t in d["truth"] if t["s"] is not None and not t["known"]]
+        m = sum(t["minutes"] for t in T) or 1
+        top = lambda k, key: sum(t["minutes"] for t in T if t.get(key) and t[key] <= k)  # noqa: E731
+        return (sum(t["right_time"] for t in T), m, top(1, "dialog_rank"), top(5, "dialog_rank"), top(1, "seq_rank"),
+                top(5, "seq_rank"))
+    xa, xb = new(A), new(B)
+    print(f"new tasks ({xa[1]} min): Log the day right time {xa[0]} -> {xb[0]} min | dialog top1/top5 by minutes "
+          f"{xa[2]}/{xa[3]} -> {xb[2]}/{xb[3]} | in time order {xa[4]}/{xa[5]} -> {xb[4]}/{xb[5]}")
     ca, cb = calib(A), calib(B)
     for c in ca:
         print(f"{c:7s} {ca[c][0]:5d} min {ca[c][1]:4.1f}%/{ca[c][2]:4.1f}% -> {cb[c][0]:5d} min {cb[c][1]:4.1f}%/{cb[c][2]:4.1f}%")

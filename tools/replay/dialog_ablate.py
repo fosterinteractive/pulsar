@@ -50,8 +50,8 @@ def orders(out, r, before, mode):
     date, day, ex = out["date"], out["day"], out["ex"]
     if mode == "seq":
         recent, assigned = R.suggest_lists_with(date, before, R.ASSIGNED)
-        rows = [dict(x) for x in out["doc"]["rows"]]
-        R.learning.annotate({"entries": rows}, date, R.S, ex["hist60"], before, R.TZ)
+        rows = R.with_commits(date, [dict(x) for x in out["doc"]["rows"]])
+        R.learning.annotate({"entries": rows}, date, R.S, ex["hist60"], before, R.TZ, pool=R.POOL)
         done = {x["taskId"] for x in before}
         ex = {**ex, "recent": recent, "assigned": assigned, "reps": [p for p in ex["reps"] if str(p["taskId"]) not in done]}
     else:

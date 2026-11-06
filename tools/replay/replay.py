@@ -37,37 +37,47 @@ def _entry_with_span(m, s, e, names):  # the merged piece's real first and last 
 
 dayplan._entry = _entry_with_span
 
-# the words of a row's work (session titles, what was typed, commits) do not depend on what is logged: read each once
-# and keep them in data/worktext.json (private: it holds typed text), so a replay reads the session files once
-_WT_PATH = None
-_WT: dict = {}
-_orig_work_text = getattr(learning, "work_text", None)
+# each row's steps (what was typed, Claude's last words) and commit subjects come from data/evidence-<date>.json
+# (collect_evidence.py), read once there; a day without that file reads the session files as Pulsar does
+_EVIDENCE: dict = {}
+_orig_work_steps = getattr(learning, "work_steps", None)
+POOL = None  # productive.recent_tasks as read once (data/tasks.json); None: no new tasks offered (switch per run)
 
 
-def _work_text_kept(entry, t0, projects_dir=None):
-    global _WT_PATH
-    if _WT_PATH is None:
-        _WT_PATH = os.path.join(DATA, "worktext.json")
+def evidence(date: str) -> dict:
+    if date not in _EVIDENCE:
         try:
-            _WT.update(json.load(open(_WT_PATH, encoding="utf-8")))
+            got = json.load(open(os.path.join(DATA, f"evidence-{date}.json"), encoding="utf-8"))
         except (OSError, ValueError):
-            pass
-    k = f"{t0}|{entry['s']}|{entry['e']}|{'/'.join(entry.get('titles') or [])}|{'/'.join(entry.get('commits') or [])}"
-    if k not in _WT:
-        _WT[k] = _orig_work_text(entry, t0, projects_dir)
-        _WT["__dirty"] = 1
-    return _WT[k]
+            got = None
+        _EVIDENCE[date] = None if got is None else {(round(x["s"], 2), round(x["e"], 2)): x for x in got}
+    return _EVIDENCE[date]
 
 
-def save_work_text():
-    if _WT.pop("__dirty", None) and _WT_PATH:
-        fd = os.open(_WT_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(_WT, fh, ensure_ascii=False)
+def _work_steps_kept(entry, t0, projects_dir=None):
+    date = datetime.fromtimestamp(t0 + 43200, TZ).strftime("%Y-%m-%d")
+    ev = evidence(date)
+    if ev is not None:
+        x = ev.get((round(entry.get("pick_s", entry["s"]), 2), round(entry["e"], 2)))
+        return (x or {}).get("steps") or []
+    return _orig_work_steps(entry, t0, projects_dir)
 
 
-if _orig_work_text:
-    learning.work_text = _work_text_kept
+def with_commits(date: str, rows: list) -> list:
+    ev = evidence(date) or {}
+    for r in rows:
+        x = ev.get((round(r.get("pick_s", r["s"]), 2), round(r["e"], 2)))
+        if x and x.get("commits"):
+            r["commits"] = x["commits"]
+    return rows
+
+
+def save_work_text():  # kept for the tools that call it
+    pass
+
+
+if _orig_work_steps:
+    learning.work_steps = _work_steps_kept
 
 DATA = os.path.join(HERE, "data")
 ENT = json.load(open(os.path.join(DATA, "entries.json")))
@@ -130,8 +140,8 @@ def build(date: str, doc: dict, opts: dict) -> tuple:
         m["tasks"] = server.meeting_tasks(m, past, hist28, offered, SKIP)
     patterns = server.repeating(hist28, TZ, date)
     reps = server.repeat_suggestions(patterns, items, datetime.strptime(date, "%Y-%m-%d").weekday())
-    rows = [dict(r) for r in doc["rows"]]
-    learning.annotate({"entries": rows}, date, S, hist60, [], TZ)
+    rows = with_commits(date, [dict(r) for r in doc["rows"]])
+    learning.annotate({"entries": rows}, date, S, hist60, [], TZ, pool=POOL)
     days = {d: learning._stored(d) for d in learning._days_before(date)}
     ctx = dayplan.learn(date, hist60, {d: r for d, r in days.items() if r}, t0_of, person=PERSON)
     day = {"items": items, "away": doc["activity"]["away"], "rows": rows, "logged": [],
@@ -273,8 +283,8 @@ def dialog_sequential(out: dict) -> dict:
     for k, (i, r) in enumerate(timed):
         before = [x for _, x in timed[:k]]
         recent, assigned = suggest_lists_with(date, before, ASSIGNED)
-        rows = [dict(x) for x in out["doc"]["rows"]]
-        learning.annotate({"entries": rows}, date, S, ex["hist60"], before, TZ)
+        rows = with_commits(date, [dict(x) for x in out["doc"]["rows"]])
+        learning.annotate({"entries": rows}, date, S, ex["hist60"], before, TZ, pool=POOL)
         done = {x["taskId"] for x in before}
         ex2 = {**ex, "recent": recent, "assigned": assigned, "reps": [p for p in ex["reps"] if str(p["taskId"]) not in done]}
         res[i] = dialog(r["s"], r["e"], {**day, "rows": rows}, ex2, likely_blocks(rows))
