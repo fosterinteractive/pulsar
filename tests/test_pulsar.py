@@ -1193,7 +1193,7 @@ class ClaudeNoteTest(unittest.TestCase):
         s = {**config.DEFAULTS, "timezone": "UTC", "likely": "on", "ask_claude": True, "person_id": "9"}
         seen = []
 
-        def note(date, row, t0, history, tz=None):
+        def note(date, row, t0, history, tz=None, model=None):
             seen.append(row)
             return {"note": "Runs report.", "why": ""}
         with mock.patch.object(server, "current_settings", lambda: dict(s)), \
@@ -2417,7 +2417,7 @@ class ClockChangeLengthTest(unittest.TestCase):
             seen["asked"] = [askclaude.clock_at(t0, r["s"], kw.get("tz")) for r in given]
             return {"picks": {f"{r['s']}|p": {"tasks": [{"taskId": "1"}]} for r in given}}
 
-        def note(date, row, t0, history, tz=None):
+        def note(date, row, t0, history, tz=None, model=None):
             seen["note"] = (row["s"], row["e"], askclaude.clock_at(t0, row["s"], tz))
             return {"note": "x", "why": ""}
         with mock.patch.object(server.config, "load", lambda: dict(self.s)), \

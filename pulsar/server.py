@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, askclaude, calendar, claudelink, config, dayplan, flags, learn, likely, logbook, mcptools, newtask, productive, ranges, report, sessions, trackers, updater, names
+from . import __version__, askclaude, calendar, claudelink, claudeuses, config, dayplan, flags, learn, likely, logbook, mcptools, newtask, productive, ranges, report, sessions, trackers, updater, names
 from .mcp import whoami_proof
 
 UPDATER = updater.Updater()
@@ -191,12 +191,13 @@ def public_config(s: dict) -> dict:
         "update": {**UPDATER.public(), "skip": s["update_skip"], "asked": s["update_asked"]},
         "errors24h": sum(1 for e in logbook.read(1) if e["kind"] == "error"),
         "likely": {"setting": s["likely"], "available": likely.available(), "enabled": likely.enabled(s),
-                   "askClaude": s["ask_claude"], "askClaudeModel": s["ask_claude_model"], "claudeFound": askclaude.available(),
+                   "askClaude": s["ask_claude"], "askClaudeModel": claudeuses.model("ask", s), "claudeFound": askclaude.available(),
                    "askProductive": s["claude_ask_productive"], "link": claudelink.status(PORT[0], s)},
         "productive": {"source": s["productive_source"], "active": conn["kind"], "problem": conn.get("problem"),
                        "keychainStuck": config.keychain_stuck(),
                        "tokenSaved": bool(config.get_token()), "orgId": s["org_id"], "orgName": s["org_name"],
                        "personId": s["person_id"], "personName": s["person_name"], "web": productive_address(s)},
+        "claude": {"uses": claudeuses.public(s)},  # everything Pulsar asks Claude, with each model (Settings > Claude)
         "calendar": calendar.status(s),  # configured, connected, account: never a token
         "preview": ({**PREVIEW, "writes": bool(s["preview_writes"])} if config.is_preview() else None),
         "writesBlocked": config.writes_blocked(),  # why nothing may be written now (read-only, Preview), or None
@@ -254,9 +255,13 @@ def validate(body: dict) -> dict:
             raise ValueError("claude_ask_productive is true or false")
         out["claude_ask_productive"] = body["claude_ask_productive"]
     if "ask_claude_model" in body:
-        if body["ask_claude_model"] not in askclaude.MODELS:
+        if body["ask_claude_model"] not in claudeuses.MODELS:
             raise ValueError("The model is sonnet, haiku or opus.")
         out["ask_claude_model"] = body["ask_claude_model"]
+    if "claude_models" in body:  # one model per use (claudeuses.py); an unknown use or name keeps the default
+        out["claude_models"] = claudeuses.clean(body["claude_models"])
+        # Ask Claude's own key in step: an older Pulsar reads it, and the old choice never shows through the default
+        out["ask_claude_model"] = claudeuses.model("ask", {"claude_models": out["claude_models"]})
     if "round_to" in body:
         v = body["round_to"]
         if isinstance(v, str) and v.strip().isdigit():
@@ -503,7 +508,7 @@ def api_ask_claude(body: dict) -> dict:
     t0, t1 = day_bounds(date, tz)
     try:
         answer = askclaude.ask(date, rows, t0, [r for r in before if r.get("date", "") >= d0],
-                               model=s["ask_claude_model"], history=before, tz=tz)
+                               model=claudeuses.model("ask", s), history=before, tz=tz)
         return page_picks(answer, rows, t0, t1, tz)
     except askclaude.AskError as exc:
         logbook.record("ask claude", str(exc), kind="warning")
@@ -512,7 +517,8 @@ def api_ask_claude(body: dict) -> dict:
 
 def api_likely_note(body: dict) -> dict:
     """The log dialog's note for a Likely block, or for a stretch picked another way (the yellow rail, a drag): from
-    the sessions and commits of the project's Likely rows that overlap s to e, whole rows (askclaude.note, Haiku).
+    the sessions and commits of the project's Likely rows that overlap s to e, whole rows (askclaude.note, the model
+    chosen for "note", Haiku by default).
     Only when the Claude Code switch is on; a POST, because it runs Claude."""
     s = current_settings()
     date, project = str(body.get("date") or ""), str(body.get("project") or "")
@@ -541,7 +547,7 @@ def api_likely_note(body: dict) -> dict:
            "commits": [c for r in sorted(rows, key=lambda r: r["s"]) for c in r.get("commits") or []],
            "learned": lead.get("learned") or [], "tasks": lead.get("tasks") or []}
     try:
-        return askclaude.note(date, row, t0, [] if problem else before, tz=tz)
+        return askclaude.note(date, row, t0, [] if problem else before, tz=tz, model=claudeuses.model("note", s))
     except askclaude.AskError as exc:
         logbook.record("ask claude", str(exc), kind="warning")
         return {"note": "", "error": str(exc)}
@@ -1013,8 +1019,8 @@ def _work_rows(date: str, a: float, b: float, s: dict, tz) -> tuple:
 
 def api_task_draft(body: dict) -> dict:
     """A title and description for a new task, from the work done in that time (newtask.py): made on this Mac, or with
-    "claude": true (the Claude Code switch on) by Haiku. A POST, because Claude may run. `meeting` (the page sends it
-    only when the time was a meeting) is used when no work was seen."""
+    "claude": true (the Claude Code switch on) by Claude, with the model chosen for "task". A POST, because Claude may
+    run. `meeting` (the page sends it only when the time was a meeting) is used when no work was seen."""
     s = current_settings()
     date = str(body.get("date") or "")
     if not DATE.match(date):
@@ -1034,7 +1040,7 @@ def api_task_draft(body: dict) -> dict:
     before, problem = history_rows(date, s, days=learn.LEARN_DAYS)
     try:
         return newtask.claude_draft(date, rows, day_bounds(date, tz)[0], [] if problem else before,
-                                    str(body.get("projectName") or "")[:200], tz=tz)
+                                    str(body.get("projectName") or "")[:200], tz=tz, model=claudeuses.model("task", s))
     except askclaude.AskError as exc:
         logbook.record("ask claude", str(exc), kind="warning")
         return {"title": "", "description": "", "error": str(exc)}
