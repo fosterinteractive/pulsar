@@ -54,6 +54,9 @@ BLOCKED = -1
 EDITORS = re.compile(r"^(Cursor|Code|Visual Studio Code|Terminal|iTerm2|Warp|Claude)$", re.I)
 # time spent logging time (Pulsar, Productive): never proposed, never given to a session (sessions.LOGGING)
 LOGGING = re.compile(r"^Pulsar$|app\.productive\.io|(127\.0\.0\.1|localhost):56\d\d", re.I)
+# ...except in Pulsar's own repository: there the Pulsar window is the work itself, testing what was just built
+# (2026-11-06: 76 minutes of testing Pulsar were dropped as logging time)
+OWN_REPO = re.compile(r"^pulsar(-preview)?$", re.I)
 WORD = re.compile(r"[^\W_]{3,}")
 TICKET = re.compile(r"\b[A-Z][A-Z0-9]{1,9}-\d{1,5}\b")
 GENERIC = {"the", "and", "for", "with", "drupal", "site", "website", "issues", "issue", "fix", "update", "kb-dev",
@@ -481,7 +484,8 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
              "note": note, "noteFrom": note_from if note else "",
              "claudeNone": ch["claudeNone"]}
         span = range(int(r["s"]), min(N, int(math.ceil(r["e"]))))
-        claim(c, [x for x in span if not away[x] and not logging_[x] and (work[x] or not agent)])
+        own = bool(OWN_REPO.match(r.get("project") or ""))
+        claim(c, [x for x in span if not away[x] and (own or not logging_[x]) and (work[x] or not agent)])
         if ch["task"] and ch["source"] in ("rule", "link", "session") and ch["conf"] == "high":
             for k in _keys(r):
                 sameday.setdefault(k, ch["task"])

@@ -123,6 +123,13 @@ class PlannerTest(unittest.TestCase):
         [e] = p["entries"]
         self.assertEqual((e["taskId"], e["note"], e["checked"]), (None, "", False))
 
+    def test_the_pulsar_window_is_work_only_in_pulsars_own_repository(self):
+        items = [work(600, 640, app="Pulsar")]
+        p = dayplan.plan(day(items=items, rows=[row(600, 640, project="pulsar")]), self.ctx)
+        self.assertEqual(sum(e["minutes"] for e in p["entries"]), 40)  # testing Pulsar while building it
+        p = dayplan.plan(day(items=items, rows=[row(600, 640, project="tua-trent")]), self.ctx)
+        self.assertEqual(sum(e["minutes"] for e in p["entries"]), 0)  # anywhere else it is time spent logging
+
     def test_away_time_agent_only_time_and_time_spent_logging_are_never_ticked(self):
         items = [work(540, 570), work(585, 600), work(600, 620, app="Pulsar"), work(620, 640, app="Safari", host="app.productive.io")]
         p = dayplan.plan(day(items=items, away=[{"s": 570, "e": 585}],
