@@ -23,6 +23,11 @@ function fillSettings(c) {
   f.likely.value = c.likely.setting === 'off' ? 'off' : 'auto';
   f.likely.disabled = !c.likely.available;
   $('#likely-hint').textContent = c.likely.available ? '' : 'Shows when Claude Code sessions are on this computer.';
+  $('#preview-sec').hidden = !c.preview;
+  if (c.preview) {
+    f.preview_writes.checked = !!c.preview.writes;
+    $('#preview-status').textContent = `Branch ${c.preview.branch} at ${c.preview.commit}${c.preview.changed ? ' (with changes not committed)' : ''}: ${c.preview.subject}`;
+  }
   f.ask_claude.checked = !!c.likely.askClaude;
   f.ask_claude.disabled = !c.likely.available || !c.likely.claudeFound;
   f.ask_claude_model.value = c.likely.askClaudeModel || 'sonnet';
@@ -151,7 +156,7 @@ async function saveSettings(extra = {}) {
     productive_source: f.productive_source.value, org_id: f.org_id.value.trim(), person_id: f.person_id.value.trim(),
     timezone: f.timezone.value.trim(), target_hours: f.target_hours.value.trim(), personal_patterns: f.personal_patterns.value,
     activitywatch_url: f.activitywatch_url.value.trim(), likely: f.likely.value, ask_claude: f.ask_claude.checked,
-    ask_claude_model: f.ask_claude_model.value, ...extra,
+    ask_claude_model: f.ask_claude_model.value, ...(CONFIG?.preview ? {preview_writes: f.preview_writes.checked} : {}), ...extra,
   };
   if (f.token.value.trim()) body.token = f.token.value.trim();
   btn.disabled = true; msg.className = 'msg'; msg.textContent = 'Saving…';

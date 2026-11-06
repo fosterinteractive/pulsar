@@ -104,8 +104,8 @@ def https(method: str, url: str, body: Optional[bytes] = None, headers: Optional
     u = urllib.parse.urlsplit(url)
     if u.scheme != "https" or not u.hostname:
         raise ProductiveError("Refusing a non-HTTPS address.")
-    if write and os.environ.get("PULSAR_READ_ONLY"):  # every write goes through here, whatever asked for it
-        raise ProductiveError("Pulsar runs read-only (PULSAR_READ_ONLY): nothing was written.")
+    if write and config.writes_blocked():  # every write goes through here, whatever asked for it
+        raise ProductiveError(config.writes_blocked())
     path = (u.path or "/") + (f"?{u.query}" if u.query else "")
     tries = 1 if write else 3
     for attempt in range(tries):
@@ -829,8 +829,8 @@ def bookable_services(task_id: str, date: str, settings: dict, names: Optional[N
 
 
 def _write_conn(settings: dict) -> dict:
-    if os.environ.get("PULSAR_READ_ONLY"):  # tests and demos: nothing may reach Productive
-        raise ProductiveError("Pulsar runs read-only (PULSAR_READ_ONLY): nothing was written.")
+    if config.writes_blocked():  # tests, demos, and a preview not allowed to write: nothing may reach Productive
+        raise ProductiveError(config.writes_blocked())
     return _need(settings)
 
 
@@ -899,8 +899,8 @@ def delete_entry(entry_id: str, settings: dict) -> None:
 
 def create_entry(entry: dict, settings: dict) -> dict:
     """Writes one time entry, as the person in Settings. Called only from an explicit click in the page."""
-    if os.environ.get("PULSAR_READ_ONLY"):  # tests and demos: nothing may reach Productive
-        raise ProductiveError("Pulsar runs read-only (PULSAR_READ_ONLY): nothing was written.")
+    if config.writes_blocked():  # tests, demos, and a preview not allowed to write: nothing may reach Productive
+        raise ProductiveError(config.writes_blocked())
     conn = _need(settings)
     if not str(settings.get("person_id") or "").isdigit():
         raise ProductiveError("Pulsar does not know your Productive person ID yet, so nothing was written. Open "

@@ -24,7 +24,7 @@
       </g>
       <circle class="p-glow" cx="16" cy="16" r="9" fill="url(#pGlow)"/>
       <circle cx="16" cy="16" r="2.8" fill="#ffffff" stroke="#7c3aed" stroke-width="1"/>
-    </svg><h1>Pulsar</h1></a><button type="button" class="ver" id="ver-chip" title="Version and updates"></button></span>
+    </svg><h1>Pulsar</h1></a><button type="button" class="ver" id="ver-chip" title="Version and updates"></button><span class="preview-chip" id="preview-chip" hidden></span></span>
   <span class="seg" id="view"><button data-v="day">Day</button><button data-v="report">Report</button></span>
   <span class="sub dayonly" id="dayname"></span>
   <span class="spacer"></span>
@@ -177,6 +177,12 @@
         </section>
       </div>
       <div role="tabpanel" id="p-upd" aria-labelledby="t-upd" hidden>
+        <section id="preview-sec" data-k="preview branch test before release writes" hidden>
+          <h3>Preview</h3>
+          <p class="status" id="preview-status"></p>
+          <label class="check"><input type="checkbox" name="preview_writes"> Allow this preview to write to Productive</label>
+          <p class="hint">Off by default: you can try everything, and logging, changing and deleting entries stop before Productive. Switch it on to test writing for real, then off again.</p>
+        </section>
         <section data-k="version update updates changelog release warp animation codename" id="updates">
           <h3>Version and updates</h3>
           <div class="kv"><span>Version</span><span id="upd-version" class="num"></span></div>

@@ -9,6 +9,15 @@ function applyConfig(c) {
   const errs = c.errors24h || 0;
   $('#open-logs').classList.toggle('has-errors', errs > 0);
   $('#open-logs').title = errs ? `${errs} error${errs === 1 ? '' : 's'} in the last 24 hours` : 'Error log';
+  // Pulsar Preview: which code this is, at all times, so nobody mistakes it for the release
+  const pv = c.preview, chip = $('#preview-chip');
+  chip.hidden = !pv;
+  if (pv) {
+    chip.textContent = `Preview · ${pv.branch || '?'} · ${pv.commit || '?'}${pv.changed ? ' +' : ''}`;
+    chip.title = `Pulsar Preview runs the code of branch ${pv.branch} (${pv.commit}${pv.changed ? ', with changes not committed' : ''}): ${pv.subject}. `
+      + (pv.writes ? 'It WRITES to Productive (allowed in Settings).' : 'It does not write to Productive.');
+    chip.classList.toggle('writes', !!pv.writes);
+  }
 }
 
 function setView(v) {

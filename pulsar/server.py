@@ -24,6 +24,22 @@ from . import __version__, askclaude, calendar, config, learn, likely, logbook, 
 
 UPDATER = updater.Updater()
 
+
+def _preview_info() -> dict:
+    """Pulsar Preview: which branch and commit this copy runs, read once at start, for the chip at the top."""
+    import subprocess
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    def git(*args):
+        try:
+            return subprocess.run(["git", "-C", here, *args], capture_output=True, text=True, timeout=5).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return ""
+    return {"branch": git("rev-parse", "--abbrev-ref", "HEAD"), "commit": git("rev-parse", "--short", "HEAD"),
+            "subject": git("log", "-1", "--format=%s")[:120], "changed": bool(git("status", "--porcelain"))}
+
+
+PREVIEW = _preview_info() if os.environ.get("PULSAR_PREVIEW") else None
+
 WEB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
 TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
          ".js": "text/javascript; charset=utf-8", ".png": "image/png", ".svg": "image/svg+xml"}
@@ -108,6 +124,7 @@ def public_config(s: dict) -> dict:
                        "tokenSaved": bool(config.get_token()), "orgId": s["org_id"], "orgName": s["org_name"],
                        "personId": s["person_id"], "personName": s["person_name"]},
         "calendar": calendar.status(s),  # configured, connected, account: never a token
+        "preview": ({**PREVIEW, "writes": bool(s["preview_writes"])} if config.is_preview() else None),
     }
 
 
@@ -149,6 +166,10 @@ def validate(body: dict) -> dict:
         if body["likely"] not in ("auto", "on", "off"):
             raise ValueError("likely is auto, on or off")
         out["likely"] = body["likely"]
+    if "preview_writes" in body:
+        if not isinstance(body["preview_writes"], bool):
+            raise ValueError("preview_writes is true or false")
+        out["preview_writes"] = body["preview_writes"]
     if "ask_claude" in body:
         if not isinstance(body["ask_claude"], bool):
             raise ValueError("ask_claude is true or false")

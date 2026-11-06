@@ -980,6 +980,24 @@ class CreateEntryTest(unittest.TestCase):
                 productive.mcp_text("create_resource", {}, "t")
 
 
+class PreviewTest(unittest.TestCase):
+    """Pulsar Preview writes nothing to Productive until its own setting allows it."""
+
+    def test_a_preview_writes_only_when_allowed(self):
+        with mock.patch.dict(os.environ, {"PULSAR_PREVIEW": "1"}), mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("PULSAR_READ_ONLY", None)
+            with mock.patch.object(config, "load", lambda: {"preview_writes": False}):
+                self.assertIn("Preview", config.writes_blocked())
+                with self.assertRaises(productive.ProductiveError):
+                    productive.create_entry({}, {"person_id": "1"})
+                with self.assertRaises(productive.ProductiveError):
+                    productive.https("POST", "https://api.productive.io/api/v2/time_entries", b"{}", {}, write=True)
+            with mock.patch.object(config, "load", lambda: {"preview_writes": True}):
+                self.assertIsNone(config.writes_blocked())
+        with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):
+            self.assertIn("read-only", config.writes_blocked())  # tests and demos stay read-only, preview or not
+
+
 class EditEntryTest(unittest.TestCase):
     """Changing and deleting your own entries: fresh read, approved ones refused, overlaps first, dry runs."""
 

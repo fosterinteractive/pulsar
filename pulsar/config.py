@@ -43,7 +43,23 @@ DEFAULTS = {
     "update_asked": 0,           # when the reminder last showed, in seconds
     "rules": [],                 # [{match, taskId, title, project}]: activity containing `match` belongs to that task
     "calendar_account": "",      # the Google account whose calendar is connected (its email), shown in Settings
+    "preview_writes": False,     # Pulsar Preview only: may it write to Productive (off by default)
 }
+
+
+def is_preview() -> bool:
+    """Running as Pulsar Preview (macos/build_app.sh with PULSAR_PREVIEW_DIR): code from a branch, before a release."""
+    return bool(os.environ.get("PULSAR_PREVIEW"))
+
+
+def writes_blocked():
+    """Why nothing may be written to Productive right now, or None: a test run, or a preview not allowed to."""
+    if os.environ.get("PULSAR_READ_ONLY"):
+        return "Pulsar runs read-only (PULSAR_READ_ONLY): nothing was written."
+    if is_preview() and not load().get("preview_writes"):
+        return ("Pulsar Preview does not write to Productive, so nothing was written. To test writing, allow it in "
+                "Settings > Updates > Preview.")
+    return None
 _lock = threading.Lock()
 
 

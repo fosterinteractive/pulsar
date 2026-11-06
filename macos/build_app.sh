@@ -17,7 +17,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MACOS="$ROOT/macos"
 DIST="$ROOT/dist"
-APP="$DIST/Pulsar.app"
+# PULSAR_PREVIEW_DIR=<a git checkout> builds "Pulsar Preview.app" instead: it runs that checkout's code as it is, on its
+# own port (5620) and log, beside Pulsar, to try a branch before it is released (macos/README.md, "Preview").
+PREVIEW_DIR="${PULSAR_PREVIEW_DIR:-}"
+NAME="Pulsar"; BUNDLE_ID="com.fosterinteractive.pulsar"
+if [ -n "$PREVIEW_DIR" ]; then
+  [ -f "$PREVIEW_DIR/pulsar.py" ] || { echo "No pulsar.py in $PREVIEW_DIR" >&2; exit 1; }
+  NAME="Pulsar Preview"; BUNDLE_ID="com.fosterinteractive.pulsar.preview"
+fi
+APP="$DIST/$NAME.app"
 
 VERSION="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' "$ROOT/pulsar/__init__.py")"
 [ -n "$VERSION" ] || { echo "No __version__ in pulsar/__init__.py" >&2; exit 1; }
@@ -34,8 +42,9 @@ fi
 
 command -v swiftc >/dev/null || { echo "swiftc not found: install Apple's developer tools (xcode-select --install)" >&2; exit 1; }
 
-echo "Building Pulsar.app $VERSION"
-rm -rf "$APP" "$DIST/Pulsar.zip"
+echo "Building $NAME.app $VERSION"
+rm -rf "$APP"
+[ -n "$PREVIEW_DIR" ] || rm -f "$DIST/Pulsar.zip"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/app"
 
 # The window, one binary for both kinds of Mac. macOS 12 is the oldest it runs on; Swift's runtime is part of macOS.
@@ -52,9 +61,9 @@ cat >"$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>Pulsar</string>
-  <key>CFBundleDisplayName</key><string>Pulsar</string>
-  <key>CFBundleIdentifier</key><string>com.fosterinteractive.pulsar</string>
+  <key>CFBundleName</key><string>$NAME</string>
+  <key>CFBundleDisplayName</key><string>$NAME</string>
+  <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleExecutable</key><string>Pulsar</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
@@ -74,6 +83,7 @@ plutil -lint "$APP/Contents/Info.plist" >/dev/null
 cp "$MACOS/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 cp "$MACOS/launcher.sh" "$APP/Contents/Resources/launcher.sh"
 chmod 755 "$APP/Contents/MacOS/Pulsar" "$APP/Contents/Resources/launcher.sh"
+[ -n "$PREVIEW_DIR" ] && printf '%s\n' "$PREVIEW_DIR" >"$APP/Contents/Resources/preview-dir"
 
 RES="$APP/Contents/Resources/app"
 cp "$ROOT/pulsar.py" "$ROOT/README.md" "$ROOT/CHANGELOG.md" "$RES/"
@@ -93,6 +103,10 @@ xattr -cr "$APP"
 codesign --force --deep -s - "$APP"
 codesign --verify --deep --strict "$APP"
 
+if [ -n "$PREVIEW_DIR" ]; then  # never zipped or released: it is for the person who builds it
+  echo "Done: $APP (runs $PREVIEW_DIR on port 5620; copy it to Applications to keep it)"
+  exit 0
+fi
 ditto -c -k --keepParent "$APP" "$DIST/Pulsar.zip"
 
 # A build is not an install: keep this copy out of Spotlight and the Apps list, so the Mac shows one Pulsar,

@@ -39,6 +39,15 @@ LOG="$HOME/Library/Logs/Pulsar.log"
 PY=/usr/bin/python3
 MODE="${1:-}"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pulsar"   # the server's session key and sign-in code live here
+# Pulsar Preview (build_app.sh with PULSAR_PREVIEW_DIR): runs the code of a git checkout as it is, on its own port and
+# log, never installs or updates anything, and does not write to Productive unless allowed in its Settings.
+PREVIEW_DIR=""
+if [ -f "$CONTENTS/Resources/preview-dir" ]; then
+  PREVIEW_DIR="$(/usr/bin/head -1 "$CONTENTS/Resources/preview-dir")"
+  PORT="${PULSAR_PORT:-5620}"
+  URL="http://127.0.0.1:${PORT}/"
+  LOG="$HOME/Library/Logs/Pulsar-Preview.log"
+fi
 
 log() {
   /bin/mkdir -p "$(dirname "$LOG")"
@@ -164,7 +173,8 @@ real_of() {
 started_by_app() {
   local cmd
   cmd="$(/bin/ps -o command= -p "$1" 2>/dev/null)"
-  [[ "$cmd" == *"/Library/Application Support/Pulsar/versions/"* || "$cmd" == *"/Contents/Resources/app/pulsar.py"* ]]
+  [[ "$cmd" == *"/Library/Application Support/Pulsar/versions/"* || "$cmd" == *"/Contents/Resources/app/pulsar.py"* ]] ||
+    { [ -n "$PREVIEW_DIR" ] && [[ "$cmd" == *"$PREVIEW_DIR/pulsar.py"* ]]; }
 }
 
 # Starts the copy in folder $1 in the background and waits for it to answer. Returns 1 if it stops or
@@ -216,6 +226,20 @@ if ! "$PY" -c 'import sys; sys.exit(sys.version_info < (3, 9))' >/dev/null 2>&1;
 
 Update them in System Settings > General > Software Update, then open Pulsar again." "OK" >/dev/null
   exit 1
+fi
+
+# Pulsar Preview: the checkout as it is. Already running: open it. Otherwise start it (closing the window stops it,
+# so opening it again always runs the code as it is now).
+if [ -n "$PREVIEW_DIR" ]; then
+  [ -f "$PREVIEW_DIR/pulsar.py" ] || fail_dialog "Pulsar Preview found no code at $PREVIEW_DIR."
+  pid="$(listener_pid)"
+  if [ -n "$pid" ]; then
+    is_ours && { open_page; exit 0; }
+    fail_dialog "Pulsar Preview could not start: another program is using port $PORT."
+  fi
+  export PULSAR_PREVIEW=1
+  start_server "$PREVIEW_DIR" && { open_page; exit 0; }
+  fail_dialog "Pulsar Preview could not start. Its log is ~/Library/Logs/Pulsar-Preview.log."
 fi
 
 # 2. Install or upgrade from the app's own copy.
