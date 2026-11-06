@@ -101,9 +101,9 @@ yours.
   Claude Code session too (in bypass mode it needs no prompt to `cat` it). So on its own it opens only what its two
   holders need: every GET (reading), `POST /api/quit` (the launcher), and `POST /api/log` as `pulsar_log` sends it:
   inside a Log the day run (`run` and `row`, so the entry is journalled, never sent twice, listed with Undo) and never
-  with `force`, so the overlap check always holds. Everything else is refused with 403 and needs the page's session:
-  changing or deleting an entry, settings (the token, `preview_writes`, the Claude Code switch), updates, Ask Claude,
-  the session note, Google Calendar, Productive's test.
+  with `force` or `pieces` (the dialog's, 5.1), so the overlap check always holds. Everything else is refused with
+  403 and needs the page's session: changing or deleting an entry, settings (the token, `preview_writes`, the Claude
+  Code switch), updates, Ask Claude, the session note, Google Calendar, Productive's test.
 - **What a program of the person's can still do.** This is not a wall between the person's own programs and Pulsar,
   and nothing on one account can be. Such a program can log new entries with the key as above (a Claude Code session
   in bypass mode or with a prompt injection can therefore log time without the `pulsar_log` prompt); it can write a
@@ -294,6 +294,21 @@ The minutes of a block (a stretch of the rail, an Activity, Likely or meeting bl
 an entry already logged that day, they are rounded down instead, and a block shorter than one step that would still
 run into it keeps its own minutes. Minutes typed in the dialog, and an entry being changed, are never rounded.
 
+**Around time already logged.** When the overlap check (5.2) finds entries inside the time asked for, the answer also
+has the pieces around them (`server.pieces_around`): the time asked for less the time logged, never more and never
+moved. A boundary at an entry goes to Settings' grid, away from the entry; the start and end in the dialog stay; a
+piece shorter than Log the day's shortest entry (`dayplan.opts_for`: 10 minutes, 15 with quarter hours) is left out,
+and its minutes are said. The message lists them ("Around it: 00:00–02:30 (2 h 30 min)"), the main button becomes
+**Log 2 h 30 min around it** or **Log 2 entries around it**, and **Log anyway** stays, second. Any change to the date,
+start, minutes, task or service asks again. The pieces go in one request, each one an entry with the same task,
+service and note (5.2); Log and next goes on after the last one. Like any entry the dialog logs, they are not a Log
+the day run: no journal and no Undo (delete one from its card). The case that asked for it, 5 Nov: a Likely block at
+00:00 for 160 minutes, with 16 minutes of another task logged at 02:30, becomes one entry, 00:00–02:30. On one
+person's 34 fully logged days (21 September to 4 November 2026, zoom 30), up to 38% of Likely blocks (114 of 301) and
+37% of Activity blocks (177 of 473) ran into another task's entry logged that day ("up to": some of those entries
+were logged after the block). Around it, one piece of 10 minutes or more was left for 71% and 84% of them, two or
+three for 17% and 11%, none for 12% and 6%.
+
 **Notes from commits** (`commits.py`). For each Likely row the page shows (not the 60 past days learning reads), the
 repositories its Claude sessions worked in during the row (the session's folder and the paths its tools named), kept
 when their name matches the row's project ("Acme" and acme-web, "claude-rules / skills" and claude-rules).
@@ -316,8 +331,14 @@ shows them. It is offered for new entries in the day on screen only. Clicks to l
 ### 5.2 Writing (`POST /api/log`)
 
 1. The day is read again from Productive: someone (or another tab) may have logged since.
-2. An entry that would overlap another one is not written; the dialog shows the overlap and turns the button into
-   **Log anyway**.
+2. An entry that would overlap another one is not written; the dialog shows the overlap, and the pieces around it
+   when there are any (5.1), else turns the button into **Log anyway**. With `"pieces"` (the dialog's pieces, sent
+   with the `start` and `minutes` they came from), the server reads the day again and writes nothing unless that read
+   gives the same pieces: when the day changed since, the new overlap and pieces come back (`"changed": true`). Then
+   each piece goes through steps 1 to 4 as its own entry, never forced; when one is refused after others were
+   written, the answer lists what was logged and what was not (`notLogged`, `why`), and the next check offers only
+   what is still free, so a piece is never logged twice. Pieces are never forced, never part of a Log the day run,
+   and never sent with the key alone (section 3).
 3. One write at a time (a lock), and the same entry sent twice within a minute is refused.
 4. `create_entry` writes it as the person in Settings, with its start time. `"dry": true` does everything except the
    write (tests).

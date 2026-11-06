@@ -165,10 +165,34 @@ function showDraft() {
   $('#log-note-hint').classList.toggle('drafting', !!logDrafting);  // ask.css: Claude's mark twinkles while it drafts
 }
 logForm.elements.note.addEventListener('input', () => { if (logDrafted || logFilled || logDrafting) { logDrafted = null; logFilled = false; logDrafting = 0; showDraft(); } });
-/* after "Log anyway", any change to what would be logged means a new check for overlaps */
+/* after an overlap ("Log anyway", or the pieces around it), any change to what would be logged means a new check */
 function resetForce() {
-  if (!logForce) return;
-  logForce = false; $('#log-save').textContent = logEdit ? 'Save changes' : 'Log in Productive'; setLogMsg('');
+  if (!logForce && !logSplit) return;
+  logForce = false; logSplit = null; $('#log-anyway').hidden = true;
+  $('#log-save').textContent = logEdit ? 'Save changes' : 'Log in Productive'; setLogMsg('');
+}
+/* the time asked for, less what is logged in it (server.pieces_around): the main button logs those pieces, one entry
+   each with the same task, service and note; Log anyway stays, second */
+let logSplit = null;  // {pieces: [{start, minutes}], tooShort}
+const pieceText = p => `${p.start}–${hm(+p.start.slice(0, 2) * 60 + +p.start.slice(3) + p.minutes)} (${dur(p.minutes)})`;
+const andList = xs => xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
+/* the entries in the way: each one, or from three on their span and projects */
+function overlapText(os) {
+  if (os.length < 3) return os.map(o => `${o.start} ${dur(o.minutes)} ${o.project}`).join('; ');
+  const a = Math.min(...os.map(o => +o.start.slice(0, 2) * 60 + +o.start.slice(3)));
+  const b = Math.max(...os.map(o => +o.start.slice(0, 2) * 60 + +o.start.slice(3) + o.minutes));
+  return `${os.length} entries from ${hm(a)} to ${hm(b)} (${dur(os.reduce((t, o) => t + o.minutes, 0))}): ${[...new Set(os.map(o => o.project))].join(', ')}`;
+}
+function showOverlap(r) {
+  const them = r.overlap.length === 1 ? 'it' : 'them', pieces = !logEdit && r.pieces?.length ? r.pieces : null;
+  logForce = !pieces; logSplit = pieces ? {pieces, tooShort: r.tooShort || 0} : null;
+  $('#log-anyway').hidden = !pieces;
+  $('#log-save').textContent = logEdit ? 'Save anyway' : !pieces ? 'Log anyway'
+    : pieces.length === 1 ? `Log ${dur(pieces[0].minutes)} around ${them}` : `Log ${pieces.length} entries around ${them}`;
+  setLogMsg((r.changed ? 'The day changed since you looked. ' : '')
+    + `This overlaps ${overlapText(r.overlap)}.`
+    + (pieces ? ` Around ${them}: ${andList(pieces.map(pieceText))}` + (r.tooShort ? `; ${dur(r.tooShort)} more is too short to log.` : '.')
+       : r.tooShort ? ` The ${dur(r.tooShort)} around ${them} is too short to log on its own.` : ''), true);
 }
 for (const name of ['date', 'start', 'minutes', 'service'])
   for (const type of ['input', 'change']) logForm.elements[name].addEventListener(type, resetForce);
@@ -203,7 +227,8 @@ async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = 
   logDrafted = drafted?.note && drafted.note === note ? drafted : null;
   logFilled = !edit && !logDrafted && !!f.note.value.trim();
   f.service.innerHTML = '<option value="">Pick a task first</option>'; f.service.disabled = true;
-  logForce = false; setLogMsg(''); $('#log-save').textContent = edit ? 'Save changes' : 'Log in Productive';
+  logForce = false; logSplit = null; $('#log-anyway').hidden = true;
+  setLogMsg(''); $('#log-save').textContent = edit ? 'Save changes' : 'Log in Productive';
   noStartHint(date); showFlags(null);
   prepareNext(date, edit); showTaskLink(null);  // flow.js
   logDlg.showModal();
@@ -306,6 +331,7 @@ async function loadServices(task) {
 logForm.addEventListener('submit', async ev => {
   ev.preventDefault();
   const f = logForm.elements, task = logPicker.selected, andNext = ev.submitter?.id === 'log-next';
+  const anyway = ev.submitter?.id === 'log-anyway', pieces = !logEdit && !anyway ? logSplit?.pieces : null;
   if (!task) return setLogMsg('Pick a task.', true);
   if (!f.service.value) return setLogMsg('Pick a service.', true);
   const mins = Number(f.minutes.value);
@@ -316,26 +342,42 @@ logForm.addEventListener('submit', async ev => {
   f.minutes.removeAttribute('aria-invalid');
   if (!startHHMM(f.start.value)) { f.start.setAttribute('aria-invalid', 'true'); f.start.focus(); return setLogMsg('Write the start as HH:MM, 24-hour: 09:30 or 14:05.', true); }
   f.start.value = startHHMM(f.start.value);
-  const btn = $('#log-save'); btn.disabled = $('#log-next').disabled = true; setLogMsg(logEdit ? 'Checking the day, then saving…' : 'Checking the day, then logging…');
+  const btn = $('#log-save'), btns = [btn, $('#log-next'), $('#log-anyway')], had = document.activeElement;
+  btns.forEach(b => { b.disabled = true; }); setLogMsg(logEdit ? 'Checking the day, then saving…' : 'Checking the day, then logging…');
   const r = logEdit
     ? await postJSON('/api/entry/update', {id: logEdit.id, date: f.date.value, seen: logEdit.seen, force: logForce, ...editChanges(task)})
     : await postJSON('/api/log', {date: f.date.value, start: f.start.value, minutes: +f.minutes.value, taskId: task.taskId,
-                                  serviceId: f.service.value, note: f.note.value.trim(), force: logForce});
-  btn.disabled = $('#log-next').disabled = false;
+                                  serviceId: f.service.value, note: f.note.value.trim(), force: logForce || anyway,
+                                  ...(pieces ? {pieces} : {})});
+  btns.forEach(b => { b.disabled = false; });
+  if (btns.includes(had) && !logDlg.contains(document.activeElement)) had.focus();  // a disabled button lost it
   if (r.error) {  // the next try checks overlaps again: the failed write may have landed
-    logForce = false; btn.textContent = logEdit ? 'Save changes' : 'Log in Productive';
+    resetForce();
     if (f.date.value === state.date) refreshLogged();
     return setLogMsg(r.error, true);
   }
-  if (r.overlap) {
-    logForce = true; btn.textContent = logEdit ? 'Save anyway' : 'Log anyway';
-    return setLogMsg('This overlaps ' + r.overlap.map(o => `${o.start} ${dur(o.minutes)} ${o.project}`).join('; ') + '.', true);
+  if (r.overlap) return showOverlap(r);
+  if (r.notLogged) {  // some pieces were logged, then one was not: the next try offers only what is still free
+    resetForce();
+    r.created.forEach((_, i) => afterLog(f.date.value, r.pieces[i].start, r.pieces[i].minutes, '', false));
+    if (f.date.value === state.date) refreshLogged();
+    return setLogMsg(`Logged ${r.created.length} of ${r.pieces.length} entries: ${andList(r.pieces.slice(0, r.created.length).map(pieceText))}. `
+      + `The rest was not logged: ${r.why}${r.unclear ? ' Pulsar did not hear back, so check the Logged column first.' : ''} `
+      + 'Log again to see what is still free.', true);
   }
   logDlg.close(); suggestCache = null;
   if (r.unchanged) return toast('Nothing to change: the entry is already like this.');
-  const said = logEdit ? `Changed: ${f.start.value}, ${dur(+f.minutes.value)}, ${task.title}.` : `Logged ${dur(+f.minutes.value)} to ${task.title}.`;
+  const done = Array.isArray(r.created) ? r.pieces : [{start: f.start.value, minutes: +f.minutes.value}];
+  const total = done.reduce((t, p) => t + p.minutes, 0);
+  const said = logEdit ? `Changed: ${f.start.value}, ${dur(+f.minutes.value)}, ${task.title}.`
+    : pieces?.length === 1 ? `Logged ${dur(total)} to ${task.title}, ${pieceText(done[0]).split(' (')[0]}, around the time already logged.`
+    : pieces ? `Logged ${dur(total)} to ${task.title} as ${done.length} entries around the time already logged: ${andList(done.map(pieceText))}.`
+    : `Logged ${dur(total)} to ${task.title}.`;
   if (f.date.value === state.date) refreshLogged();
-  if (!logEdit && afterLog(f.date.value, f.start.value, +f.minutes.value, said, andNext)) return;  // flow.js: Log and next
+  // flow.js: Log and next goes on after the last piece; each one is left out of the next stretches
+  done.slice(0, -1).forEach(p => afterLog(f.date.value, p.start, p.minutes, said, false));
+  const last = done[done.length - 1];
+  if (!logEdit && afterLog(f.date.value, last.start, last.minutes, said, andNext)) return;
   toast(said);
 });
 /* Edit sends only what was changed in the dialog, so an untouched start, note or service stays exactly as Productive

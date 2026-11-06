@@ -1,7 +1,9 @@
 /* flow.js: Log and next, links to Productive, the first-run checklist, the week in the header, report days */
 
-/* Log and next sits between Cancel and the main button; the main one stays first in the form, so Enter logs */
-#logdlg .df #log-save { order: 1; }
+/* Log and next sits between Cancel and the main button; the main one stays first in the form, so Enter logs. With
+   pieces around time already logged, Log anyway comes before them both (it is last in the form, never Enter's) */
+#logdlg .df #log-next { order: 1; }
+#logdlg .df #log-save { order: 2; }
 .field span .tasklink { margin-left: 8px; font-size: 11.5px; color: var(--accent); text-decoration: none; }
 .field span .tasklink:hover { text-decoration: underline; }
 .field input[aria-invalid="true"] { border-color: var(--gap); box-shadow: 0 0 0 1px var(--gap); }

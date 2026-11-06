@@ -2416,6 +2416,7 @@ class GuardTest(unittest.TestCase):
                "run": "ld-2026-11-04-0123456789ab", "row": "mcp-1"}
         self.assertEqual(post("/api/log", {**day, "force": True}, key)[0], 403)  # never over another entry
         self.assertEqual(post("/api/log", {k: v for k, v in day.items() if k != "run"}, key)[0], 403)  # outside a run
+        self.assertEqual(post("/api/log", {**day, "pieces": [{"start": "09:00", "minutes": 30}]}, key)[0], 403)  # the dialog's
         with mock.patch.object(server, "api_log", lambda body: {"dry": True}):
             self.assertEqual(post("/api/log", {**day, "dry": True}, key)[0], 200)  # pulsar_preview and pulsar_log
             self.assertEqual(post("/api/log", {**day, "force": True}, page)[0], 200)  # the window: as before
