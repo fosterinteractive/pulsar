@@ -23,6 +23,8 @@ function fillSettings(c) {
   f.likely.value = c.likely.setting === 'off' ? 'off' : 'auto';
   f.likely.disabled = !c.likely.available;
   $('#likely-hint').textContent = c.likely.available ? '' : 'Shows when Claude Code sessions are on this computer.';
+  f.ask_claude.checked = !!c.likely.askClaude;
+  f.ask_claude.disabled = !c.likely.available || !c.likely.claudeFound;
   $('#remove-token').hidden = !p.tokenSaved;
   paintUpdate(c.update);
   paintCalendar(c);  // meetings.js
@@ -80,7 +82,7 @@ async function saveSettings(extra = {}) {
   const body = {
     productive_source: f.productive_source.value, org_id: f.org_id.value.trim(), person_id: f.person_id.value.trim(),
     timezone: f.timezone.value.trim(), target_hours: f.target_hours.value.trim(), personal_patterns: f.personal_patterns.value,
-    activitywatch_url: f.activitywatch_url.value.trim(), likely: f.likely.value, ...extra,
+    activitywatch_url: f.activitywatch_url.value.trim(), likely: f.likely.value, ask_claude: f.ask_claude.checked, ...extra,
   };
   if (f.token.value.trim()) body.token = f.token.value.trim();
   btn.disabled = true; msg.className = 'msg'; msg.textContent = 'Saving and checking Productive…';

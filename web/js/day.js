@@ -91,10 +91,23 @@ function activityBlocks(items, Z, end) {
 const busiest = m => [...m].sort((x, y) => y[1] - x[1])[0]?.[0];
 const topWindow = a => ({...a.it, title: busiest(a.titles) ?? a.it.title, url: busiest(a.urls) || ''});
 
-/* the Productive tasks linked in a Likely block's sessions, from its longest rows first */
+/* Claude's answer for a Likely block (the Ask Claude button): the pick of its longest row that has one */
+function claudePick(b) {
+  const picks = state.claude?.date === state.date ? state.claude.picks : null;
+  if (!picks || !b) return null;
+  const rows = [...(b.entries || [])].filter(e => e.project === b.project).sort((p, q) => q.minutes - p.minutes);
+  return rows.map(e => picks[`${e.s}|${e.project}`]).find(p => p?.tasks?.length) || null;
+}
+
+/* for a Likely block, from its longest rows first: the Productive tasks linked in its sessions (ids), and the tasks
+   learned from your logging in the same session or repository (with why) */
 function likelyTasks(b) {
-  return [...new Set([...(b?.entries || [])].filter(e => e.project === b.project).sort((p, q) => q.minutes - p.minutes)
-    .flatMap(e => e.tasks || []))].slice(0, 4);
+  const rows = [...(b?.entries || [])].filter(e => e.project === b.project).sort((p, q) => q.minutes - p.minutes);
+  const seen = new Set(), learned = [];
+  for (const t of rows.flatMap(e => e.learned || [])) if (!seen.has(t.taskId) && seen.add(t.taskId)) learned.push(t);
+  const pick = claudePick(b);
+  const claude = (pick?.tasks || []).map((t, i) => ({...t, why: i ? 'Claude, another option' : `Claude: ${pick.why}`}));
+  return {ids: [...new Set(rows.flatMap(e => e.tasks || []))].slice(0, 4), learned: learned.slice(0, 5), claude};
 }
 
 /* the proposal, by slot too: the project with most minutes in a slot, equal neighbours joined */
@@ -229,12 +242,15 @@ function render() {
   else {
     likelyCache = likelyBlocks(likely.entries, Z, end);
     $('#h-likely').textContent = `Claude sessions · ${dur(likely.proposed || 0)}`;
+    const ask = $('#ask-claude');
+    ask.hidden = !(CONFIG?.likely?.askClaude && CONFIG.likely.claudeFound && likely.entries.length);
     laneLikely.innerHTML = likelyCache.length ? likelyCache.map((b, i) => {
       const x = {s: b.start * Z, e: b.end * Z}, h = (x.e - x.s) * ppm;
       return `<div class="card likely${b.parallel ? ' parallel' : ''}" data-k="likely" data-i="${i}" style="${place(x, ppm, 18)}"
         tabindex="0" role="button" aria-label="${esc(`Likely ${hm(x.s)}–${hm(x.e)}: ${b.project}${b.title ? ', ' + b.title : ''}, ${dur(b.total)}`)}">
         <div class="row"><span class="t">${esc(b.project)}</span><span class="m num">${dur(b.total)}</span></div>
-        ${h > 34 && b.title ? `<div class="d">${esc(b.title)}</div>` : ''}</div>`;
+        ${h > 34 && claudePick(b) ? `<div class="d pick" title="${esc(`Claude: ${claudePick(b).why}`)}">→ ${esc(claudePick(b).tasks[0].title)}</div>`
+          : h > 34 && b.title ? `<div class="d">${esc(b.title)}</div>` : ''}</div>`;
     }).join('') : '<div class="state">No Claude sessions on this day.</div>';
   }
 
@@ -383,6 +399,7 @@ function renderAside(gapMin) {
       [...byProject].sort((a, b) => b[1] - a[1]).map(([p, m]) => `<div class="kv"><span>${esc(p)}</span><span class="num">${dur(m)}</span></div>`).join('') +
       (unplaced ? `<div class="note">Parallel time that did not fit: ${dur(unplaced)}.</div>` : '') +
       (likely.logging ? `<div class="note">Time logging: ${dur(likely.logging)}, never logged.</div>` : '') +
+      (likely.learning ? `<div class="note">Learning your tasks from past days: ${likely.learning.done} of ${likely.learning.of}.</div>` : '') +
       `<div class="note">Tracker: ${esc(likely.tracker || 'none')}.</div>`;
   }
 }
@@ -401,13 +418,15 @@ document.addEventListener('click', ev => {
   const logBtn = ev.target.closest('[data-log-a], .gaprail, .awayband');
   if (logBtn) {
     const a = +(logBtn.dataset.logA ?? logBtn.dataset.a), b = +(logBtn.dataset.logB ?? logBtn.dataset.b);
-    const linked = logBtn.dataset.likely != null ? likelyTasks(likelyCache[+logBtn.dataset.likely]) : [];
+    const linked = logBtn.dataset.likely != null ? likelyTasks(likelyCache[+logBtn.dataset.likely]) : {ids: [], learned: [], claude: []};
     const meet = logBtn.dataset.meet != null ? meetCache[+logBtn.dataset.meet] : null;
     pop.classList.remove('on');
     openLog({start: a, minutes: b - a, hint: rulesInRange(a, b), note: meet?.title || '',
              lead: meet ? {label: 'For this meeting', url: `/api/meeting-tasks?date=${state.date}&uid=${
                              encodeURIComponent(meet.uid || '')}&title=${encodeURIComponent(meet.title || '')}`}
-                 : linked.length ? {label: 'Linked in the Claude session', ids: linked} : null});
+                 : linked.ids.length || linked.learned.length || linked.claude.length
+                   ? {label: 'For this work', ids: linked.ids, idsWhy: 'linked in the Claude session',
+                      tasks: [...linked.claude, ...linked.learned]} : null});
     return;
   }
   const ruleBtn = ev.target.closest('[data-rule-text]');
@@ -499,6 +518,19 @@ $('#refresh').onclick = async () => {
   if (d !== state.date) return;
   const c = loggedChange(before, logged);
   toast(c.warn ? c.text : `Everything updated. Logs: ${c.text}`, c.warn);
+};
+/* Ask Claude: a task for each Likely block of the day, shown on the cards and first when logging one */
+$('#ask-claude').onclick = async () => {
+  const btn = $('#ask-claude'), d = state.date;
+  btn.disabled = true; btn.textContent = 'Asking Claude…';
+  const r = await postJSON('/api/likely/ask', {date: d});
+  btn.disabled = false; btn.textContent = 'Ask Claude';
+  if (r.error) { toast(r.error, true); return; }
+  if (d !== state.date) return;
+  state.claude = {date: d, picks: r.picks || {}};
+  const n = Object.values(state.claude.picks).filter(p => p.tasks?.length).length;
+  toast(n ? `Claude picked a task for ${n} ${n === 1 ? 'block' : 'blocks'}. Log one to see them first.` : 'Claude found no task for these blocks.');
+  render();
 };
 /* logged time only: one Productive read, the other columns stay as they are */
 $('#refresh-logged').onclick = async () => {

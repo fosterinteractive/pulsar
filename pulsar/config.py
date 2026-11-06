@@ -35,6 +35,7 @@ DEFAULTS = {
     "personal_patterns": ["Telegram", "WhatsApp", "YouTube", "Netflix", "Instagram", "Facebook", "TikTok", "Reddit"],
     "activitywatch_url": "http://localhost:5600",
     "likely": "auto",            # auto | on | off: the column built from Claude Code sessions
+    "ask_claude": False,         # the "Ask Claude" button in the Likely column (sends what you typed to Claude)
     "productive_source": "auto",  # auto | token | claude-code
     "org_id": "", "org_name": "", "person_id": "", "person_name": "", "person_day_hours": None,
     "update_skip": "",           # a release the person chose to skip in the reminder

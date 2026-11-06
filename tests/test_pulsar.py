@@ -570,6 +570,69 @@ class RepeatsTest(unittest.TestCase):
         self.assertEqual([server.is_call(x) for x in no], [False] * 4)
 
 
+class LearnTest(unittest.TestCase):
+    """The Likely rows learn their task from your logging: the same Claude session first, then the same repository."""
+
+    def test_the_session_comes_before_the_repository(self):
+        from pulsar import learn
+        t0 = lambda d: datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()  # noqa: E731
+        k1, k2 = learn.key("Fix the checkout form"), learn.key("Release notes")
+        days = {"2026-11-02": [{"k": [k1], "p": "acme-site", "s": 600, "e": 660},
+                               {"k": [k2], "p": "acme-site", "s": 700, "e": 790}],
+                "2026-11-03": [{"k": [k2], "p": "acme-site", "s": 600, "e": 640}]}
+        entries = [{"date": "2026-11-02", "start": t0("2026-11-02") + 600 * 60, "minutes": 60, "taskId": "1",
+                    "task": "Checkout bugs", "project": "Acme"},
+                   {"date": "2026-11-02", "start": t0("2026-11-02") + 700 * 60, "minutes": 90, "taskId": "2",
+                    "task": "Releases", "project": "Acme"},
+                   {"date": "2026-11-03", "start": t0("2026-11-03") + 600 * 60, "minutes": 40, "taskId": "2",
+                    "task": "Releases", "project": "Acme"}]
+        sess, repo = learn.votes(days, entries, t0)
+        names = {r["taskId"]: r for r in entries}
+        same_session = learn.suggest({"k": [k1], "p": "acme-site"}, sess, repo, names)
+        self.assertEqual([(t["taskId"], t["why"]) for t in same_session],
+                         [("1", "logged while in this Claude session: 1 h 0 min"), ("2", "logged while in acme-site: 2 h 10 min")])
+        new_session = learn.suggest({"k": [learn.key("Something new")], "p": "acme-site"}, sess, repo, names)
+        self.assertEqual([t["taskId"] for t in new_session], ["2", "1"])     # the repository's, most minutes first
+        self.assertEqual(learn.suggest({"k": [], "p": "elsewhere"}, sess, repo, names), [])
+        self.assertEqual(learn.key("tiny"), "")                               # titles too short to tell sessions apart
+
+
+class AskClaudeTest(unittest.TestCase):
+    """The Ask Claude button: what Claude Code is run with, and how its answer becomes picks."""
+
+    def test_claude_runs_read_only_and_its_picks_are_named(self):
+        import json as _json
+        from pulsar import askclaude
+        seen = {}
+
+        def fake_run(cmd, **kw):
+            seen["cmd"], seen["input"] = cmd, kw["input"]
+            answer = 'Here you go. {"picks": [{"id": 0, "tasks": ["7", "99"], "why": "estimate work"}, {"id": 5, "tasks": ["7"]}]}'
+            return mock.Mock(stdout=_json.dumps({"result": answer, "total_cost_usd": 0.12}), stderr="", returncode=0)
+
+        rows = [{"s": 600, "e": 660, "project": "acme-site", "titles": [], "minutes": 60}]
+        entries = [{"taskId": "7", "task": "Estimations", "project": "Proposals", "minutes": 30, "date": "2026-11-02"}]
+        with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/bin/claude"), \
+                mock.patch.object(askclaude.productive, "task_details", lambda ids, s: {"99": {"title": "Found", "project": "P"}}), \
+                mock.patch.object(askclaude.config, "load", lambda: {}):
+            got = askclaude.ask("2026-11-03", rows, 0, entries, run=fake_run)
+        cmd = seen["cmd"]
+        self.assertIn("--no-session-persistence", cmd)                   # never shows up in Likely itself
+        self.assertEqual(cmd[cmd.index("--tools") + 1], "")              # no shell, no files
+        self.assertNotIn("create_resource", cmd[cmd.index("--allowedTools") + 1])
+        self.assertIn("mcp__productive__create_resource", cmd[cmd.index("--disallowedTools") + 1])
+        self.assertIn('"Estimations"', seen["input"])
+        self.assertEqual(got["picks"], {"600|acme-site": {"tasks": [{"taskId": "7", "title": "Estimations", "project": "Proposals"},
+                                                                     {"taskId": "99", "title": "Found", "project": "P"}],
+                                                           "why": "estimate work"}})
+
+    def test_a_short_day_asks_nothing(self):
+        from pulsar import askclaude
+        got = askclaude.ask("2026-11-03", [{"s": 600, "e": 605, "project": "x", "titles": []}], 0, [],
+                            run=lambda *a, **k: self.fail("Claude must not run"))
+        self.assertEqual(got["picks"], {})
+
+
 class AwayTest(unittest.TestCase):
     def test_gaps_of_five_minutes_or_more_between_activity_are_away(self):
         items = [item(540, 600), item(603, 640, app="Slack"), item(650, 700), item(690, 720), item(800, 810, cat="personal")]

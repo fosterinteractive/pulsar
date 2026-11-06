@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, calendar, config, likely, logbook, productive, report, trackers, updater, names
+from . import __version__, askclaude, calendar, config, learn, likely, logbook, productive, report, trackers, updater, names
 
 UPDATER = updater.Updater()
 
@@ -102,7 +102,8 @@ def public_config(s: dict) -> dict:
         "personalPatterns": s["personal_patterns"], "activitywatchUrl": s["activitywatch_url"], "rules": s["rules"],
         "update": {**UPDATER.public(), "skip": s["update_skip"], "asked": s["update_asked"]},
         "errors24h": sum(1 for e in logbook.read(1) if e["kind"] == "error"),
-        "likely": {"setting": s["likely"], "available": likely.available(), "enabled": likely.enabled(s)},
+        "likely": {"setting": s["likely"], "available": likely.available(), "enabled": likely.enabled(s),
+                   "askClaude": s["ask_claude"], "claudeFound": askclaude.available()},
         "productive": {"source": s["productive_source"], "active": conn["kind"], "problem": conn.get("problem"),
                        "tokenSaved": bool(config.get_token()), "orgId": s["org_id"], "orgName": s["org_name"],
                        "personId": s["person_id"], "personName": s["person_name"]},
@@ -148,6 +149,10 @@ def validate(body: dict) -> dict:
         if body["likely"] not in ("auto", "on", "off"):
             raise ValueError("likely is auto, on or off")
         out["likely"] = body["likely"]
+    if "ask_claude" in body:
+        if not isinstance(body["ask_claude"], bool):
+            raise ValueError("ask_claude is true or false")
+        out["ask_claude"] = body["ask_claude"]
     if "productive_source" in body:
         if body["productive_source"] not in ("auto", "token", "claude-code"):
             raise ValueError("The Productive source is auto, token or claude-code")
@@ -290,7 +295,37 @@ def api_proposal(q: dict) -> dict:
     s = config.load()
     if not likely.enabled(s):
         return {"disabled": True, "entries": []}
-    return likely.proposal(q["date"], config.timezone_name(s), today(config.tz(s)), q.get("fresh") == "1", s)
+    date, tz = q["date"], config.tz(s)
+    result = likely.proposal(date, config.timezone_name(s), today(tz), q.get("fresh") == "1", s)
+    if not result.get("error"):  # the tasks you logged in the same session or repository: a hint, never an error
+        ps = current_settings()
+        if ps.get("person_id"):
+            before, _ = history_rows(date, ps, days=learn.LEARN_DAYS)
+            same_day, problem, _, _ = productive_rows(date, date, ps)
+            learn.annotate(result, date, s, before, [] if problem else same_day, tz)
+    return result
+
+
+def api_ask_claude(body: dict) -> dict:
+    """The Ask Claude button: a task for each Likely row of the day (askclaude.py). Only when switched on in Settings;
+    a POST, because it runs Claude and costs the person's usage."""
+    s = current_settings()
+    date = str(body.get("date") or "")
+    if not DATE.match(date):
+        raise ValueError("date=YYYY-MM-DD")
+    if not s["ask_claude"]:
+        raise ValueError("Ask Claude is off. Switch it on in Settings first.")
+    tz = config.tz(s)
+    proposal = likely.proposal(date, config.timezone_name(s), today(tz), False, s)
+    if proposal.get("error"):
+        raise ValueError(proposal["error"])
+    d0, d1 = askclaude.history_span(date)
+    before, problem, _, _ = productive_rows(d0, d1, s)
+    try:
+        return askclaude.ask(date, proposal.get("entries") or [], day_bounds(date, tz)[0], [] if problem else before)
+    except askclaude.AskError as exc:
+        logbook.record("ask claude", str(exc), kind="warning")
+        return {"error": str(exc), "picks": {}}
 
 
 def api_report(q: dict) -> dict:
@@ -518,14 +553,14 @@ def api_repeats(q: dict) -> dict:
 _rows_before: dict = {}
 
 
-def history_rows(date: str, s: dict) -> tuple:
-    """(your entries of the REPEAT_DAYS days before `date`, problem), kept an hour: the history the repeats and the
-    meetings learn from."""
-    key = (date, s.get("person_id"))
+def history_rows(date: str, s: dict, days: int = REPEAT_DAYS) -> tuple:
+    """(your entries of the `days` days before `date`, problem), kept an hour: the history the repeats, the meetings
+    and the Likely rows learn from."""
+    key = (date, s.get("person_id"), days)
     kept = _rows_before.get(key)
     if kept and time.time() - kept[0] < 3600:
         return kept[1], None
-    d0 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=REPEAT_DAYS)).strftime("%Y-%m-%d")
+    d0 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=days)).strftime("%Y-%m-%d")
     d1 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
     rows, problem, _, from_copy = productive_rows(d0, d1, s)
     if problem and not from_copy:
@@ -849,6 +884,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True})
             if urlparse(self.path).path == "/api/log":
                 return self.send_json(api_log(body))
+            if urlparse(self.path).path == "/api/likely/ask":
+                return self.send_json(api_ask_claude(body))
             if urlparse(self.path).path == "/api/calendar/connect":
                 url = calendar.start(self.server.server_address[1])
                 try:

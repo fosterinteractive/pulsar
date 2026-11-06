@@ -53,7 +53,8 @@
       <div class="colhead"><b>Activity</b><span id="h-act">…</span>
         <select id="source-select" class="mini-select" aria-label="Activity source" title="Which tracker to show">
           <option value="auto">Auto</option><option value="aw">ActivityWatch</option><option value="memtime">MemTime</option></select></div>
-      <div class="colhead likelycol"><b>Likely</b><span id="h-likely">…</span></div>
+      <div class="colhead likelycol"><b>Likely</b><span id="h-likely">…</span>
+        <button class="btn mini2 bordered" id="ask-claude" hidden title="Ask Claude which task each block belongs to">Ask Claude</button></div>
       <div class="colhead"><b>Logged</b><span id="h-logged">…</span>
         <button class="btn mini2 bordered" id="log-new" title="Log time in Productive (or drag in this column)">+ Log</button>
         <button class="btn icon mini" id="refresh-logged" title="Refresh logged time from Productive" aria-label="Refresh logged time">↻</button></div>
@@ -136,6 +137,8 @@
         <label class="field"><span>“Likely” column</span>
           <select name="likely"><option value="auto">Show it when Claude Code sessions are found</option><option value="off">Hide it</option></select></label>
         <p class="hint" id="likely-hint"></p>
+        <label class="check"><input type="checkbox" name="ask_claude"> “Ask Claude” button in the Likely column</label>
+        <p class="hint" id="ask-claude-hint">It sends what you typed in that day's Claude Code sessions, and the names of the tasks you logged to in the last 30 days, to Claude through your own Claude Code, which may search Productive (read only). About 15 seconds and a little of your Claude usage per day.</p>
       </section>
       <section id="updates">
         <h3>Version and updates</h3>

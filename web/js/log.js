@@ -152,7 +152,8 @@ async function fillSuggestions(date, hint, lead = null) {
   if (seq !== suggestSeq || !logDlg.open || logForm.elements.date.value !== date) return;
   const known = t => ({...((s.recent || []).find(x => x.taskId === t.taskId) || {}), ...t});
   const ruled = hint.map(h => ({...known(h), minutes: Math.round(h.minutes)}));
-  const led = (lead?.tasks || found?.tasks || (lead?.ids || []).map(id => named?.tasks?.[id]).filter(t => t?.title)).map(known);
+  const led = [...(lead?.ids || []).map(id => named?.tasks?.[id]).filter(t => t?.title).map(t => ({...t, why: t.why || lead.idsWhy || ''})),
+               ...(lead?.tasks || []), ...(found?.tasks || [])].map(known);
   logPicker.set(dedupe([
     {label: lead?.label || '', tasks: led},
     {label: 'From your rules, in this time', tasks: ruled, showMin: true},

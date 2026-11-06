@@ -139,8 +139,15 @@ Settings are saved in `~/.config/pulsar/settings.json`; names and copies of fetc
   only) and shows, minute by minute, which session you were most likely working in: the one whose title your editor
   showed, else one that was running, else the one you used last in that sitting. Each block is named after the git
   repository the session's files are in. Meetings and your personal windows go to no session. Nothing is sent
-  anywhere, and it never logs anything by itself. If you pasted a Productive task link into that session in the three
-  hours before, **Log this time** offers that task first.
+  anywhere, and it never logs anything by itself. **Log this time** on a block offers first: a Productive task you
+  pasted into that session in the three hours before; the tasks you logged while in the same Claude session, then in
+  the same repository, over the last 60 days (worked out once in the background; only times, repository names and a
+  hash of each session title are kept, in `~/.cache/pulsar/likely-days/`).
+- **Ask Claude (optional, off by default).** Switch it on in **Settings → Activity**, and the Likely column gets an
+  **Ask Claude** button: it gives your own Claude Code what you typed in that day's sessions and the tasks you logged
+  to in the last 30 days, lets it search Productive (read only; tools that change anything are refused), and shows its
+  task on each block and first when you log one. About 15 to 60 seconds and a little of your Claude usage per day;
+  nothing is written anywhere.
 - **The daily meeting, ready to log.** An entry you log at the same time on most days (a daily scrum) is noticed from
   your last four weeks in Productive. When the tracker sees a call near that time (Zoom, Meet, Teams, a Slack huddle),
   the Logged column shows it as a dashed card with the task, the usual note and the call's length. One click opens it
