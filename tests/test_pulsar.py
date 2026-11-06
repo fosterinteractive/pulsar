@@ -1980,6 +1980,11 @@ def sign(key, data):
 URL = "https://github.com/fosterinteractive/pulsar/releases/download/v1.1.0/pulsar-1.1.0.zip"
 
 
+def expires_in(days):
+    """latest.json's `expires`, as release.sh writes it, `days` from now (negative: already past)."""
+    return datetime.fromtimestamp(time.time() + days * 86400, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 @unittest.skipUnless(os.path.exists("/usr/bin/openssl"), "needs openssl")
 class UpdaterTest(unittest.TestCase):
     def setUp(self):
@@ -1992,6 +1997,8 @@ class UpdaterTest(unittest.TestCase):
 
     def make(self, manifest, zip_bytes=b"", passes=True, signed_by=None, signature=None):
         u = updater.Updater(root=self.root)
+        if isinstance(manifest, dict) and "expires" not in manifest:  # as release.sh writes it: good for 60 days
+            manifest = {**manifest, "expires": expires_in(60)}
         raw = json_bytes(manifest)
         sig = signature if signature is not None else sign(signed_by or self.key, raw)
 
@@ -2164,6 +2171,39 @@ class UpdaterTest(unittest.TestCase):
         self.assertNotIn("1.1.0", updater.bad_versions(self.root))
         self.assertFalse(os.path.exists(os.path.join(self.root, "versions", "1.1.0")))
         self.assertEqual(u.check()["status"], "available")  # offered again
+
+    def test_an_expired_or_undated_description_is_ignored_and_nothing_is_fetched(self):
+        from pulsar import logbook
+        for expires, said in ((expires_in(-1), "expired on"), (None, "no valid expiry"), ("2027-13-45T00:00:00Z", "no valid expiry"),
+                              ("in a while", "no valid expiry")):
+            manifest, data = self.release(expires=expires, versions=["1.1.0"])
+            u = self.make(manifest, data)
+            seen = []
+            with mock.patch.object(updater, "unpack", lambda *a: self.fail("downloaded from an expired description")), \
+                 mock.patch.object(logbook, "record", lambda *a, **k: seen.append(k.get("kind"))):
+                state = u.check(install=True)
+            self.assertEqual(state["status"], "expired", expires)
+            self.assertIn(said, state["message"])
+            self.assertIsNone(state["latest"])        # nothing in it believed: not even the version it names
+            self.assertEqual(seen, ["warning"])        # a warning in the log, not an error
+            self.assertFalse(os.path.exists(os.path.join(self.root, "versions", "1.1.0")))
+            for p in self.patches:
+                p.stop()
+
+    def test_the_expiry_is_signed_with_the_rest(self):
+        manifest, data = self.release(expires=expires_in(-1))
+        old = sign(self.key, json_bytes(manifest))      # an old description, signed when it was fresh
+        manifest["expires"] = expires_in(30)              # and its date moved on by whoever serves it again
+        state = self.make(manifest, data, signature=old).check(install=True)
+        self.assertEqual(state["status"], "failed")
+        self.assertIn("not signed", state["message"])
+
+    def test_an_expiry_holds_to_the_second(self):
+        until = datetime(2027, 1, 6, 12, 0, 0, tzinfo=timezone.utc).timestamp()
+        manifest = {"expires": "2027-01-06T12:00:00Z"}
+        self.assertEqual(updater.manifest_problem(manifest, now=until - 1), "")
+        self.assertEqual(updater.manifest_problem(manifest, now=until), "")
+        self.assertIn("expired on 06 Jan 2027", updater.manifest_problem(manifest, now=until + 1))
 
     def test_the_same_version_is_not_an_update(self):
         self.assertEqual(self.make({"version": "1.0.0", "url": URL, "sha256": "x"}).check()["status"], "latest")

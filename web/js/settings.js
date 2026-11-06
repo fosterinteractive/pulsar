@@ -220,7 +220,7 @@ function paintUpdate(u) {
   $('#upd-checked').textContent = u.checked || 'not yet';
   const st = $('#update-status');
   st.textContent = u.message || (u.installed ? 'Up to date as far as Pulsar knows.' : 'This copy runs from source, so it does not update itself.');
-  st.classList.toggle('warn', u.status === 'failed');
+  st.classList.toggle('warn', u.status === 'failed' || u.status === 'expired');
   const now = $('#update-now');
   now.hidden = !offer;
   now.textContent = u.status === 'ready' ? `Restart into ${u.latest}` : `Update to ${u.latest}`;

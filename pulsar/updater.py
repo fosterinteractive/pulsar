@@ -5,11 +5,11 @@ The installed layout (the Mac launcher creates it), under ~/Library/Application 
     current, previous   relative symlinks into versions/
     bad-versions        versions that failed to start, or failed their self-test twice; never used again
 A release is `pulsar-<version>.zip` (one top folder `pulsar-<version>/`), `latest.json`
-({version, url, sha256, notes, published, versions}) and `latest.json.sig`: an ECDSA P-256 signature of
+({version, url, sha256, notes, published, expires, versions}) and `latest.json.sig`: an ECDSA P-256 signature of
 latest.json made with the release key, which only the maintainer holds (see macos/README.md). The keys' public halves
 are in release_sig.PUBLIC_KEYS; a manifest that does not verify against one of them is ignored, so nobody else can
-ship code to installed copies, even with write access to the repository.
-A newer version is downloaded, its checksum checked,
+ship code to installed copies, even with write access to the repository, and one past its `expires` is ignored too,
+so an old one served again cannot hold copies back for ever. A newer version is downloaded, its checksum checked,
 unpacked next to the others and asked to test itself (`pulsar.py --self-test`); only then does `current` move to it,
 and the server restarts into it when the person clicks to.
 A copy run from a git checkout only says that a newer version exists.
@@ -30,6 +30,7 @@ import time
 import urllib.error
 import urllib.request
 import zipfile
+from datetime import datetime, timezone
 from typing import Callable, Optional
 
 from . import __version__, config
@@ -44,6 +45,7 @@ VERSION_RE = re.compile(r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}")  # always used wi
 MAX_UNPACKED = 60 * 1024 * 1024
 # Releases are signed with the keys in release_sig.PUBLIC_KEYS; the same module checks the code a Pulsar.app carries
 # before the launcher installs it, so both use one copy of the keys and one check.
+MANIFEST_DAYS = 60  # how long a signed latest.json is believed (its "expires", set by release.sh)
 
 
 def overrides_allowed() -> bool:
@@ -58,6 +60,21 @@ def public_keys() -> tuple:
         with open(path, encoding="utf-8") as fh:
             return (fh.read(),)
     return PUBLIC_KEYS
+
+
+def manifest_problem(manifest: dict, now: Optional[float] = None) -> str:
+    """'' while a signed latest.json may be believed; otherwise why not. Its `expires` (UTC, signed with the rest)
+    keeps an old latest.json, served again in place of a newer one, from holding installed copies at an old release,
+    or offering one, for more than MANIFEST_DAYS: the next release brings a fresh one."""
+    raw = manifest.get("expires")
+    try:
+        until = datetime.strptime(str(raw), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return "The latest release's description has no valid expiry date, so it was ignored; nothing was changed."
+    if (time.time() if now is None else now) > until.timestamp():
+        return (f"The latest release's description expired on {until.strftime('%d %b %Y')}, so it was ignored; "
+                f"Pulsar {__version__} keeps running. A new release brings updates back.")
+    return ""
 
 
 def vtuple(v: str) -> tuple:
@@ -239,6 +256,11 @@ class Updater:
                 manifest = None
             if not isinstance(manifest, dict):
                 return self._set("failed", "The update server sent something that is not a release description.")
+            expired = manifest_problem(manifest)
+            if expired:  # nothing in it is believed; a warning, not an error: no release for a while is no fault
+                from . import logbook
+                logbook.record("updater", expired, kind="warning", once_per=86400)
+                return self._set("expired", expired)
             latest = str(manifest.get("version") or "")
             if not VERSION_RE.fullmatch(latest):
                 return self._set("failed", "The update server sent a version Pulsar does not understand; nothing was changed.")

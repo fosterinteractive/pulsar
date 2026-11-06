@@ -8,7 +8,7 @@
 # in CHANGELOG.md, and failing tests.
 # Then it sets __version__ and builds, in dist/:
 #   release/pulsar-<version>.zip   the code, one top folder pulsar-<version>/ (what the in-app updater downloads)
-#   release/latest.json            {version, url, sha256, notes, published, versions}, signed (.sig)
+#   release/latest.json            {version, url, sha256, notes, published, expires, versions}, signed (.sig)
 #   Pulsar.zip                     the whole app, for new installs, its code signed too (build_app.sh)
 # With --publish it shows what it will do, asks, commits the version change, pushes the branch and runs
 # gh release create v<version> with the four files on fosterinteractive/pulsar.
@@ -123,12 +123,18 @@ SHA="$(shasum -a 256 "$ZIP" | cut -d' ' -f1)"
 git fetch -q --tags origin 2>/dev/null || true
 VERSIONS="$( { git tag -l 'v*' | sed 's/^v//'; echo "$VERSION"; } | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -u -t. -k1,1n -k2,2n -k3,3n | paste -sd, -)"
 URL="https://github.com/$REPO/releases/download/v$VERSION/pulsar-$VERSION.zip"
-python3 - "$OUT/latest.json" "$VERSION" "$URL" "$SHA" "$NOTES" "$(date +%Y-%m-%d)" "$VERSIONS" <<'PY'
+# expires: installed copies ignore this latest.json after MANIFEST_DAYS (pulsar/updater.py), so an old one served again
+# cannot hold them back for ever. The next release writes a fresh one; release at least that often.
+python3 -E -s - "$ROOT" "$OUT/latest.json" "$VERSION" "$URL" "$SHA" "$NOTES" "$(date +%Y-%m-%d)" "$VERSIONS" <<'PY'
 import json, sys
-path, version, url, sha, notes, published, versions = sys.argv[1:]
+from datetime import datetime, timedelta, timezone
+sys.path.insert(0, sys.argv[1])
+from pulsar import updater
+path, version, url, sha, notes, published, versions = sys.argv[2:]
+expires = (datetime.now(timezone.utc) + timedelta(days=updater.MANIFEST_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
 with open(path, "w", encoding="utf-8") as fh:
     json.dump({"version": version, "url": url, "sha256": sha, "notes": notes, "published": published,
-               "versions": [v for v in versions.split(",") if v]}, fh, ensure_ascii=False, indent=2)
+               "expires": expires, "versions": [v for v in versions.split(",") if v]}, fh, ensure_ascii=False, indent=2)
     fh.write("\n")
 PY
 
@@ -140,11 +146,12 @@ KEY="${PULSAR_SIGNING_KEY:-$HOME/.config/pulsar-release/update-signing-key.pem}"
 # The signature must pass the very check installed copies run, against PUBLIC_KEYS as Python reads them: a key that
 # is not listed, or listed in a form openssl cannot load, is caught here and not on everyone's Mac.
 python3 -E -s - "$ROOT" "$OUT/latest.json" "$OUT/latest.json.sig" <<'PY' || die "installed copies would refuse this release: its key is not one of PUBLIC_KEYS in pulsar/release_sig.py (or one of them cannot be read)"
-import sys
+import json, sys
 sys.path.insert(0, sys.argv[1])
 from pulsar import updater
 data, sig = open(sys.argv[2], "rb").read(), open(sys.argv[3], "rb").read()
-sys.exit(0 if any(updater.verify(data, sig, key) for key in updater.PUBLIC_KEYS) else 1)
+signed = any(updater.verify(data, sig, key) for key in updater.PUBLIC_KEYS)
+sys.exit(0 if signed and not updater.manifest_problem(json.loads(data)) else 1)
 PY
 
 # The app, with the code it carries described and signed with the same key: its launcher installs that code only
