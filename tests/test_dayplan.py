@@ -126,7 +126,7 @@ class PlannerTest(unittest.TestCase):
         items = [work(600, 640, app="Pulsar")]
         p = dayplan.plan(day(items=items, rows=[row(600, 640, project="pulsar")]), self.ctx)
         self.assertEqual(sum(e["minutes"] for e in p["entries"]), 40)  # testing Pulsar while building it
-        p = dayplan.plan(day(items=items, rows=[row(600, 640, project="tua-trent")]), self.ctx)
+        p = dayplan.plan(day(items=items, rows=[row(600, 640, project="client-site")]), self.ctx)
         self.assertEqual(sum(e["minutes"] for e in p["entries"]), 0)  # anywhere else it is time spent logging
 
     def test_away_time_agent_only_time_and_time_spent_logging_are_never_ticked(self):
@@ -233,13 +233,13 @@ class PlannerTest(unittest.TestCase):
         # replay, 3 Nov: a session that did one client's database upgrade the day before gave that task to the next
         # day's work for other clients
         key = dayplan.title_key("Fix the importer")
-        names = {"M": {"task": "Database upgrade", "project": "Munk"}, "P": {"task": "Pharmacy support", "project": "Pharmacy"}}
-        ctx = {**self.ctx, "sess": {key: {"M": 120.0}}, "repo": {"pharmacy": {"P": 300.0}}, "names": names}
-        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, project="pharmacy")]), ctx)["entries"]
+        names = {"M": {"task": "Database upgrade", "project": "Globex"}, "P": {"task": "Initech support", "project": "Initech"}}
+        ctx = {**self.ctx, "sess": {key: {"M": 120.0}}, "repo": {"initech": {"P": 300.0}}, "names": names}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, project="initech")]), ctx)["entries"]
         self.assertEqual((e["taskId"], e["source"]), ("P", "repo"))
         # a repository with too little history says nothing: the session's task stays
-        ctx = {**ctx, "repo": {"pharmacy": {"P": 30.0}}}
-        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, project="pharmacy")]), ctx)["entries"]
+        ctx = {**ctx, "repo": {"initech": {"P": 30.0}}}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, project="initech")]), ctx)["entries"]
         self.assertEqual((e["taskId"], e["source"]), ("M", "session"))
 
     def test_common_words_never_match_a_task_name(self):

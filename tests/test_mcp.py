@@ -538,7 +538,7 @@ class McpTest(unittest.TestCase):
     # ---- a session title standing in for a repository never leaves --------------------------------------
 
     def test_session_titles_never_leave_as_repositories(self):
-        title1, title2 = "Munk home page carousel", "IMPORTANT! Pricing talk with Bob about the Acme renewal plan"
+        title1, title2 = "Globex home page carousel", "IMPORTANT! Pricing talk with Bob about the Acme renewal plan"
         cut2 = "Pricing talk with Bob about the Acme ren"  # the skill script's fallback: no IMPORTANT!, 40 characters
         past = "Secret title of a session last week"
         self.day.rows += [

@@ -565,10 +565,10 @@ class TaskLinksTest(SessionsTest):
 
     def test_the_organizations_address_comes_from_links_seen_never_made_up(self):
         root = os.path.dirname(self.projects)
-        self.assertEqual(self.sessions.productive_address("60023", root), "")      # no session yet: no address
+        self.assertEqual(self.sessions.productive_address("12345", root), "")      # no session yet: no address
         with open(os.path.join(self.projects, "old.jsonl"), "w") as fh:
-            fh.write('{"t": "see https://app.productive.io/1-acme/tasks/5 and https://app.productive.io/60023-foster-interactive/tasks/7"}\n')
-        self.assertEqual(self.sessions.productive_address("60023", root), "https://app.productive.io/60023-foster-interactive")
+            fh.write('{"t": "see https://app.productive.io/1-acme/tasks/5 and https://app.productive.io/12345-foster-interactive/tasks/7"}\n')
+        self.assertEqual(self.sessions.productive_address("12345", root), "https://app.productive.io/12345-foster-interactive")
         self.assertEqual(self.sessions.productive_address("1", root), "https://app.productive.io/1-acme")
         self.assertEqual(self.sessions.productive_address("999", root), "")         # another organization: never guessed
         self.assertEqual(self.sessions.productive_address("", root), "")
@@ -1117,9 +1117,9 @@ class MeetingTasksTest(unittest.TestCase):
 
     def test_names_and_words_every_meeting_has_do_not_match(self):
         offered = [{"taskId": "1", "title": "Estimations - Nick", "project": "FI-PR"},
-                   {"taskId": "2", "title": "Inovia Internal Meetings", "project": "Inovia - Ongoing Support"},
-                   {"taskId": "3", "title": "Team and Company page revisions", "project": "Inovia - Ongoing Support"}]
-        got = server.meeting_tasks({"uid": "x", "title": "Nick <> Inovia weekly sync"}, [], [], offered, skip={"nick"})
+                   {"taskId": "2", "title": "Acme Internal Meetings", "project": "Acme - Ongoing Support"},
+                   {"taskId": "3", "title": "Team and Company page revisions", "project": "Acme - Ongoing Support"}]
+        got = server.meeting_tasks({"uid": "x", "title": "Nick <> Acme weekly sync"}, [], [], offered, skip={"nick"})
         self.assertEqual([t["taskId"] for t in got], ["2", "3"])   # the one about meetings first
         self.assertEqual(server.meeting_tasks({"uid": "y", "title": "Weekly team sync"}, [], [], offered, skip={"nick"}), [])
 
@@ -2503,18 +2503,18 @@ class ScrubTest(unittest.TestCase):
         ("GET /?code=abcdefabcdefabcdefabcdefabcdefab HTTP/1.1", "GET /?code=[removed] HTTP/1.1"),
     ]
     KEEP = [
-        "/Users/nick/.claude/projects/-Users-nick-Sites-tua-trent/09cccb5f-9d87-4b3e-b524-2dad39b09fc2.jsonl",
+        "/Users/someone/.claude/projects/-Users-someone-Sites-client-site/0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d.jsonl",
         "/var/folders/xx/T/pulsar-memtime-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
-        'File "/Users/nick/Library/Application Support/Pulsar/versions/1.0.4/pulsar/server.py", line 303, in api_proposal',
+        'File "/Users/someone/Library/Application Support/Pulsar/versions/1.0.4/pulsar/server.py", line 303, in api_proposal',
         "test_a_write_and_a_timeout_are_never_tried_twice_and_more_words",
         "PULSAR_READ_ONLY_IS_SET_SO_NOTHING_WAS_WRITTEN_TO_PRODUCTIVE",
         "pulsar.server.api_proposal_and_a_very_long_dotted_Name1234567890abc",
         "the command failed with exit code=1 (returncode=2); code=ECONNREFUSED",
-        "commit 3503708c1f4e2b6a9d0e8f7a6b5c4d3e2f1a0b9c on branch nick-dev",
+        "commit 3503708c1f4e2b6a9d0e8f7a6b5c4d3e2f1a0b9c on branch dev",
         "Productive did not give the time entries (HTTP 503). Showing the copy saved 05.11 21:40.",
         "https://app.productive.io/1234-foster/tasks/5678?filter=open",
         "ValueError: date=YYYY-MM-DD",
-        "see /Users/nick/a//b and https://x.org/1//y",
+        "see /Users/someone/a//b and https://x.org/1//y",
         "?code=short&x=1",
     ]
 

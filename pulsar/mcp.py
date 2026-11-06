@@ -466,7 +466,7 @@ def _caller_repo() -> str | None:
 
 
 def _same_repo(a: str, b: str | None) -> bool:
-    """Loosely, as commits.matches: the names contain one another ("Inovia" and inovia-web-ast)."""
+    """Loosely, as commits.matches: the names contain one another ("Acme" and acme-web)."""
     a, b = (re.sub(r"[^a-z0-9]", "", (x or "").split(" / ")[0].lower()) for x in (a, b))
     return len(a) >= 3 and len(b) >= 3 and (a in b or b in a)
 

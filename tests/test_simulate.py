@@ -57,7 +57,7 @@ TASKS = {
     "201": ("API sync [BETA-12]", "Beta", "beta-app"),
     "301": ("Pulsar development", "FI Internal", "pulsar"),
     "401": ("Skills upkeep", "FI Internal", "claude-rules"),
-    "501": ("Inovia commands", "Inovia - Ongoing Support", "inovia-web-ast"),
+    "501": ("Acme commands", "Acme - Ongoing Support", "acme-web"),
     "701": ("[FIP-72] Scrum - Nick Example", "FI-PM", None),
     "702": ("Client review meetings", "Acme", None),
     "703": ("Internal meetings", "FI-PM", None),
@@ -69,13 +69,13 @@ REPOS = {"acme-site": ("checkouts/repo", "git@github.com:acme/acme-site.git"),
          "pulsar": ("pulsar", "git@github.com:fosterinteractive/pulsar.git"),
          "claude-rules": ("claude-rules", "git@github.com:fosterinteractive/claude-rules.git"),
          "bot": ("bot", None),
-         "inovia-web-ast": ("inovia/web", "git@github.com:inovia/inovia-web-ast.git")}
+         "acme-web": ("acme/web", "git@github.com:acme/acme-web.git")}
 TOPICS = {"acme-site": ["Fix the checkout form", "Hero video encode", "Acme cart totals"],
           "beta-app": ["Beta API sync BETA-12", "Beta webhook retries"],
           "pulsar": ["Pulsar log the day", "Pulsar simulated days"],
           "claude-rules": ["Skill upkeep for rules", "Rules plugin release"],
           "bot": ["Coins bot userscript"],
-          "inovia-web-ast": ["Inovia content commands", "Inovia team page"]}
+          "acme-web": ["Acme content commands", "Acme team page"]}
 REPO_ROOT = os.path.join(_SCRATCH, "repos")
 
 

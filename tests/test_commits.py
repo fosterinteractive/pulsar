@@ -45,9 +45,9 @@ class Note(unittest.TestCase):
         self.assertEqual(commits.clean(found), ["Fix the event time zone", "Search keeps every letter"])
 
     def test_matches_names_either_way(self):
-        self.assertTrue(commits.matches("Inovia", "/x/inovia-web-ast"))
+        self.assertTrue(commits.matches("Acme", "/x/acme-web"))
         self.assertTrue(commits.matches("claude-rules / skills", "/x/claude-rules"))
-        self.assertFalse(commits.matches("tua-trent", "/x/pulsar"))
+        self.assertFalse(commits.matches("client-site", "/x/pulsar"))
         self.assertFalse(commits.matches("", "/x/pulsar"))
 
 
@@ -55,7 +55,7 @@ class Note(unittest.TestCase):
 class Attach(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="pulsar-commits-")
-        self.repo = os.path.join(self.dir, "Sites", "trent-site")
+        self.repo = os.path.join(self.dir, "Sites", "event-site")
         os.makedirs(self.repo)
         self.git("init", "-q")
         self.git("config", "user.email", "me@example.com")
@@ -89,9 +89,9 @@ class Attach(unittest.TestCase):
         self.commit("Someone else's work", 9 * 60 + 45, email="other@example.com")
         self.commit("Too early", 7 * 60)
         self.session("Fix the event time zone", [(9 * 60, "fix it"), (10 * 60 + 30, "and the quiz")])
-        rows = [{"s": 9 * 60, "e": 10 * 60, "project": "trent-site", "titles": ["Fix the event time zone"]},
-                {"s": 10 * 60 + 30, "e": 11 * 60, "project": "trent-site", "titles": ["Fix the event time zone"]},
-                {"s": 12 * 60, "e": 12 * 60 + 3, "project": "trent-site", "titles": ["Fix the event time zone"]}]
+        rows = [{"s": 9 * 60, "e": 10 * 60, "project": "event-site", "titles": ["Fix the event time zone"]},
+                {"s": 10 * 60 + 30, "e": 11 * 60, "project": "event-site", "titles": ["Fix the event time zone"]},
+                {"s": 12 * 60, "e": 12 * 60 + 3, "project": "event-site", "titles": ["Fix the event time zone"]}]
         commits.attach(rows, T0, projects_dir=self.projects)
         self.assertEqual(rows[0]["commits"], ["Event pages show the right time zone"])
         self.assertEqual(rows[1]["commits"], ["Quiz results save again"])
@@ -151,7 +151,7 @@ class Attach(unittest.TestCase):
 
     def test_no_git_no_commits(self):
         self.session("Fix the event time zone", [(9 * 60, "fix it")])
-        rows = [{"s": 9 * 60, "e": 10 * 60, "project": "trent-site", "titles": ["Fix the event time zone"]}]
+        rows = [{"s": 9 * 60, "e": 10 * 60, "project": "event-site", "titles": ["Fix the event time zone"]}]
         saved = commits._git.get("path")
         commits._git["path"] = None
         try:

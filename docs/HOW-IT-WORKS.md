@@ -290,7 +290,7 @@ clients may see notes"; a note Ask Claude drafted comes first. The picked task h
 
 **Notes from commits** (`commits.py`). For each Likely row the page shows (not the 60 past days learning reads), the
 repositories its Claude sessions worked in during the row (the session's folder and the paths its tools named), kept
-when their name matches the row's project ("Inovia" and inovia-web-ast, "claude-rules / skills" and claude-rules).
+when their name matches the row's project ("Acme" and acme-web, "claude-rules / skills" and claude-rules).
 In each, `git log --all --no-merges` since the day before, keeping your commits (the repository's `user.email`) from
 five minutes before the row to ten minutes after it; a commit goes to one row only, the one it was made in, else the
 nearest. Merges, version bumps, changelog, WIP and fixup commits are skipped, and so is any subject `guard_note`

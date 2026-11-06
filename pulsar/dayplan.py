@@ -209,7 +209,7 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
                 for t, m in (ctx["sess"].get(k) or {}).items():
                     v[t] += m
             tot = sum(v.values()) or 1
-            # a session's task never carries over to another client's repository (3 Nov: a session that did Munk's
+            # a session's task never carries over to another client's repository (a session that did one client's
             # database upgrade the day before gave that task to other clients' work); the share counts every vote
             v = {t: m for t, m in v.items() if fits(ctx, row.get("project"), t) is not False}
             if v:

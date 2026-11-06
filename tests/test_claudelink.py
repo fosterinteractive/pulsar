@@ -214,7 +214,7 @@ class SessionNote(unittest.TestCase):
             seen["cmd"], seen["input"], seen["env"] = cmd, kw["input"], kw.get("env") or {}
             out = {"structured_output": {"note": "Event pages show the right time zone again."}, "total_cost_usd": 0.002}
             return mock.Mock(stdout=json.dumps(out), stderr="", returncode=0)
-        row = {"s": 595, "e": 730, "project": "trent", "titles": ["Fix the event time zone"], "commits": ["Quiz saves"]}
+        row = {"s": 595, "e": 730, "project": "eventsite", "titles": ["Fix the event time zone"], "commits": ["Quiz saves"]}
         with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/x/claude"), \
                 mock.patch.object(askclaude, "steps", lambda *a, **k: [{"typed": "fix", "reply": "Done."}]):
             got = askclaude.note("2026-11-04", row, T0, [], run=run)
@@ -236,7 +236,7 @@ class SessionNote(unittest.TestCase):
         self.assertIn("file path", got["why"])
 
     def test_nothing_to_go_on_asks_nobody(self):
-        row = {"s": 1000, "e": 1010, "project": "trent", "titles": ["Fix the event time zone"]}
+        row = {"s": 1000, "e": 1010, "project": "eventsite", "titles": ["Fix the event time zone"]}
         got = askclaude.note("2026-11-04", row, T0, [], run=lambda *a, **k: self.fail("Claude was asked"))
         self.assertEqual(got["note"], "")
 

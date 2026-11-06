@@ -72,7 +72,7 @@ def _norm(s: str) -> str:
 
 
 def matches(project: str, root: str) -> bool:
-    """A repository is the row's when their names contain one another ("Inovia" and inovia-web-ast,
+    """A repository is the row's when their names contain one another ("Acme" and acme-web,
     "claude-rules / skills" and claude-rules)."""
     p = _norm((project or "").split(" / ")[0])
     if len(p) < 3:
