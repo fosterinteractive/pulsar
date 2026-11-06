@@ -51,6 +51,8 @@ DEFAULTS = {
     "calendar_account": "",      # the Google account whose calendar is connected (its email), shown in Settings
     "preview_writes": False,     # Pulsar Preview only: may it write to Productive (off by default)
     "claude_rules_added": [],    # the "ask" rules Pulsar added to Claude Code's settings (claudelink.py), to take back
+    "claude_denies_added": [],   # the "deny" rules it added there (Pulsar's folders), to take back the same way
+    "claude_ask_productive": False,  # "Ask before any Claude Code session changes Productive": adds ask rules for it
     "round_to": 5,               # 5 | 10 | 15 minutes: Log the day's grid and shortest entry, the log dialog's minutes
 }
 
@@ -146,7 +148,7 @@ def _fits(key: str, value) -> bool:
         return value in ("auto", "token", "claude-code")
     if key == "round_to":
         return not isinstance(value, bool) and value in ROUNDING
-    if key in ("personal_patterns", "claude_rules_added"):
+    if key in ("personal_patterns", "claude_rules_added", "claude_denies_added"):
         return isinstance(value, list) and all(isinstance(p, str) for p in value)
     return type(value) is type(DEFAULTS[key])
 
@@ -172,7 +174,7 @@ def _keep_copy(text: str, why: str) -> None:
 # Claude Code's connection), permission to write, and the Claude Code switch (Ask Claude sends session text to
 # Anthropic and costs money, so it starts off in Preview until switched on there; the ask rules are Pulsar's own).
 SEED_SKIP = ("update_skip", "update_asked", "calendar_account", "productive_source", "preview_writes",
-             "ask_claude", "ask_claude_model", "claude_rules_added")
+             "ask_claude", "ask_claude_model", "claude_rules_added", "claude_denies_added", "claude_ask_productive")
 
 
 def _seed_preview() -> bool:

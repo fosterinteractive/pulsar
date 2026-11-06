@@ -191,7 +191,7 @@ def public_config(s: dict) -> dict:
         "errors24h": sum(1 for e in logbook.read(1) if e["kind"] == "error"),
         "likely": {"setting": s["likely"], "available": likely.available(), "enabled": likely.enabled(s),
                    "askClaude": s["ask_claude"], "askClaudeModel": s["ask_claude_model"], "claudeFound": askclaude.available(),
-                   "link": claudelink.status(PORT[0])},
+                   "askProductive": s["claude_ask_productive"], "link": claudelink.status(PORT[0], s)},
         "productive": {"source": s["productive_source"], "active": conn["kind"], "problem": conn.get("problem"),
                        "keychainStuck": config.keychain_stuck(),
                        "tokenSaved": bool(config.get_token()), "orgId": s["org_id"], "orgName": s["org_name"],
@@ -248,6 +248,10 @@ def validate(body: dict) -> dict:
         if not isinstance(body["ask_claude"], bool):
             raise ValueError("ask_claude is true or false")
         out["ask_claude"] = body["ask_claude"]
+    if "claude_ask_productive" in body:
+        if not isinstance(body["claude_ask_productive"], bool):
+            raise ValueError("claude_ask_productive is true or false")
+        out["claude_ask_productive"] = body["claude_ask_productive"]
     if "ask_claude_model" in body:
         if body["ask_claude_model"] not in askclaude.MODELS:
             raise ValueError("The model is sonnet, haiku or opus.")
@@ -581,11 +585,15 @@ def api_settings(body: dict) -> dict:
     # the Claude Code switch (claudelink.py): Pulsar adds itself to Claude Code, or takes back what it added; on
     # "relink", it adds itself again (moved, or removed by hand)
     link = None
-    if ("ask_claude" in changes and changes["ask_claude"] != before["ask_claude"]) or (body.get("relink") and s["ask_claude"]):
+    changed = lambda k: k in changes and changes[k] != before[k]  # noqa: E731
+    if changed("ask_claude") or (s["ask_claude"] and (body.get("relink") or changed("claude_ask_productive"))):
         link = claudelink.connect(PORT[0], s) if s["ask_claude"] else claudelink.disconnect(s)
-        config.update({"claude_rules_added": link["rulesAdded"]})
+        config.update({"claude_rules_added": link["rulesAdded"], "claude_denies_added": link["deniesAdded"]})
         if not link["ok"]:
             logbook.record("claude code", link["message"], kind="warning")
+    tidied = claudelink.tidy(current_settings())  # the Productive ask rules go unless chosen (claudelink.tidy)
+    if tidied:
+        config.update({"claude_rules_added": tidied["rulesAdded"]})
     s = current_settings()
     # Productive is asked again only when the connection changed: saving a rule or a time zone needs no test
     return {"config": public_config(s), "test": test_productive(s) if connection else None, "link": link}
@@ -1633,6 +1641,7 @@ def serve(port: int) -> ThreadingHTTPServer:
     PORT[0] = port
     config.ensure_dirs()
     config.session_secret()  # created before anyone needs it (the launcher reads it)
+    claudelink.tidy_saved()  # Pulsar 1.2's Productive ask rules go, unless chosen in Settings (claudelink.tidy)
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     UPDATER.start()
     return httpd

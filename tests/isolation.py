@@ -30,6 +30,7 @@ tempfile.tempdir = os.path.join(SCRATCH, "tmp")
 os.environ.update(TMPDIR=tempfile.tempdir, HOME=os.path.join(SCRATCH, "home"),
                   XDG_CONFIG_HOME=os.path.join(SCRATCH, "config"), XDG_CACHE_HOME=os.path.join(SCRATCH, "cache"),
                   PULSAR_TESTS_OFFLINE="1")  # Pulsar's own switch (config.tests_offline): no keychain, network or Claude
+os.environ.pop("CLAUDE_CONFIG_DIR", None)  # Claude Code's own folder, when moved: claudelink would read and write it
 if "pulsar" in sys.modules:  # its paths are read once, at import: too late to move them
     raise RuntimeError("tests/isolation.py must be imported before anything from pulsar/")
 
