@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from isolation import SCRATCH as _SCRATCH  # noqa: E402,F401  first: nothing real is reachable (isolation.py)
 
-from pulsar import config, dayplan, mcp, productive, server  # noqa: E402
+from pulsar import config, dayplan, mcp, mcptools, productive, server  # noqa: E402
 import test_mcp  # noqa: E402  its made-up day (FakeDay); a module, so its tests are not collected twice here
 
 SETTINGS = {"timezone": "America/Toronto", "person_id": "1", "org_id": "2"}  # every id differs, so a swap shows
@@ -287,7 +287,8 @@ class PulsarLogBodyTest(unittest.TestCase):
                 "PULSAR_PREVIEW": "", "PULSAR_MCP_IGNORE_LOGGED": ""}), connected("claude-code")]:
             p.start()
             self.addCleanup(p.stop)
-        mcp._pending.clear()
+        mcptools._pending.clear()
+        mcptools._calls.clear()
         server._just_logged.clear()
         if os.path.exists(dayplan.journal_path()):
             os.remove(dayplan.journal_path())

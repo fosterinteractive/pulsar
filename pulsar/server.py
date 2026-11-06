@@ -21,7 +21,8 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, askclaude, calendar, claudelink, config, dayplan, flags, learn, likely, logbook, newtask, productive, ranges, report, sessions, trackers, updater, names
+from . import __version__, askclaude, calendar, claudelink, config, dayplan, flags, learn, likely, logbook, mcptools, newtask, productive, ranges, report, sessions, trackers, updater, names
+from .mcp import whoami_proof
 
 UPDATER = updater.Updater()
 
@@ -388,9 +389,24 @@ def api_entries(q: dict) -> dict:
         end = None if start is None else max(round(start + x["minutes"], 2),
                                              round(clock(x["start"] + x["minutes"] * 60, t0, tz), 2))
         out.append({**{k: v for k, v in x.items() if k not in ("start", "date")}, "s": start, "e": end})
+    mine = from_claude_code(date)
+    for x in out:
+        if str(x.get("id") or "") in mine:
+            x["fromClaudeCode"] = True
     out.sort(key=lambda x: (x["s"] is None, x["s"] or 0))
     return {"entries": out, "source": source, "fetched": None if from_copy else datetime.now(tz).strftime("%d.%m %H:%M"),
             "warning": problem, "needsSetup": bool(problem) and source is None}
+
+
+def from_claude_code(date: str) -> set:
+    """The ids of the day's entries Pulsar in Claude Code wrote (the Log the day journal marks its runs), for the page
+    to say so."""
+    try:
+        runs = dayplan.runs_for(date)
+    except ValueError:  # a journal that cannot be read: the page says so elsewhere
+        return set()
+    return {str(x.get("id")) for r in runs for x in r.get("rows") or []
+            if x.get("via") == mcptools.VIA and x.get("status") == "logged" and x.get("id")}
 
 
 def api_calendar(q: dict) -> dict:
@@ -1074,9 +1090,10 @@ def api_services(q: dict) -> dict:
     return got
 
 
-def api_log(body: dict) -> dict:
-    """One time entry, written only from a click in the page. Re-reads the day first: other sessions log too,
-    and an entry on top of another one is shown to you before anything is written."""
+def api_log(body: dict, via: str = "") -> dict:
+    """One time entry, written from a click in the page, or from Pulsar in Claude Code (mcptools.pulsar_log, which
+    passes via="claude-code": its rows say so in the journal). Re-reads the day first: other sessions log too, and an
+    entry on top of another one is shown to you before anything is written."""
     s = current_settings()
     date, start = str(body.get("date") or ""), str(body.get("start") or "")
     minutes, task_id, service_id = body.get("minutes"), str(body.get("taskId") or ""), str(body.get("serviceId") or "")
@@ -1103,7 +1120,8 @@ def api_log(body: dict) -> dict:
     journal = None
     if body.get("run") is not None or body.get("row") is not None:
         journal = {"run": str(body.get("run") or ""), "row": str(body.get("row") or ""),
-                   "entry": {"start": start, "minutes": minutes, "taskId": task_id, "serviceId": service_id}}
+                   "entry": {"start": start, "minutes": minutes, "taskId": task_id, "serviceId": service_id},
+                   **({"via": via} if via else {})}
     if body.get("dry"):
         return _log_checked(body, s, date, begin, minutes, task_id, service_id, tz, a, b, journal)
     key = (date, start, minutes, task_id, service_id)
@@ -1435,7 +1453,8 @@ def _log_checked(body: dict, s: dict, date: str, begin, minutes: int, task_id: s
                  b: float, journal: dict | None = None) -> dict:
     def note(status, **fields):  # a Log the day row: its state in the journal, on disk before the next step
         if journal and not body.get("dry"):
-            dayplan.mark(journal["run"], date, journal["row"], journal["entry"], status, **fields)
+            dayplan.mark(journal["run"], date, journal["row"], journal["entry"], status,
+                         **({"via": journal["via"]} if journal.get("via") else {}), **fields)
 
     if not body.get("dry") and config.writes_blocked():  # refused before the journal or the log hears of it
         raise ValueError(config.writes_blocked())
@@ -1485,23 +1504,24 @@ def _log_checked(body: dict, s: dict, date: str, begin, minutes: int, task_id: s
 
 # ---- HTTP --------------------------------------------------------------------------------------------
 
-def key_refusal(path: str, body: dict):
+KEY_ONLY = ("This needs Pulsar's window: the key alone may only check that this is your Pulsar, quit Pulsar and "
+            "answer Pulsar's tools in Claude Code.")
+
+
+def key_refusal(path: str, body: dict = None):
     """Why a POST made with the key alone (no page session) is refused, or None. The key is a file any program of this
     user can read, a Claude Code session included, so it opens only what its two holders need: the launcher quits
-    Pulsar, and Pulsar in Claude Code (mcp.py) logs new entries through the Log the day journal, with the overlap
-    check. Never `force`, and nothing else: no change or delete of an entry, no settings, no update, no Ask Claude.
-    A program of this user can still do more by other means (HOW-IT-WORKS.md, Security); this closes the plain curl."""
-    if path == "/api/quit":
+    Pulsar, and Pulsar in Claude Code (mcp.py) asks the server-side tools (POST /api/mcp/<tool>, mcptools.py), whose
+    answers are already cut down and whose only write is pulsar_preview's code with pulsar_log. Nothing else: no read
+    of the day as the page sees it, no POST /api/log, no change or delete of an entry, no settings, no update, no Ask
+    Claude. A program of this user can still do more by other means (HOW-IT-WORKS.md, Security); this closes the
+    plain curl."""
+    if path == "/api/quit" or MCP_ROUTE.fullmatch(path):
         return None
-    if path == "/api/log":
-        if body.get("pieces") is not None:
-            return "Pieces around logged time are logged only from Pulsar's window."
-        if body.get("force"):
-            return "An entry that overlaps another is written only from Pulsar's window."
-        if body.get("run") is None or body.get("row") is None:
-            return "Without Pulsar's window, an entry is logged only as part of a run Log the day can list and undo."
-        return None
-    return "This needs Pulsar's window: the key may only read, quit Pulsar and log new entries from Claude Code."
+    return KEY_ONLY
+
+
+MCP_ROUTE = re.compile(r"/api/mcp/([a-z_]{1,40})")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1549,8 +1569,8 @@ class Handler(BaseHTTPRequestHandler):
         return config.valid_session(self.headers.get("X-Pulsar-Session") or "")
 
     def signed_in(self) -> bool:
-        """The page, or the key itself: the launcher and Pulsar in Claude Code (mcp.py). The key alone may do less on a
-        POST (key_refusal)."""
+        """The page, or the key itself: the launcher and Pulsar in Claude Code (mcp.py). The key alone opens only what
+        key_refusal lets through, and no GET but the public ones."""
         return self.page() or config.is_key(self.headers.get("X-Pulsar-Key") or "")
 
     def do_GET(self):
@@ -1567,12 +1587,20 @@ class Handler(BaseHTTPRequestHandler):
             nonce = q.get("nonce", "")
             if not re.fullmatch(r"[0-9a-f]{16,64}", nonce):
                 return self.send_json({"error": "nonce"}, 400)
-            proof = hmac.new(config.session_secret().encode(), nonce.encode(), hashlib.sha256).hexdigest()
-            return self.send_json({"proof": proof})
+            key = config.session_secret()
+            # proof1 is bound to the port this server listens on: a program on another port that passes the question
+            # on to this Pulsar gets an answer for the wrong port (mcp.whoami_proof). proof, the older form, stays for
+            # the launchers of Pulsar.app 1.4.0 and earlier, which check a server that updated itself since.
+            return self.send_json({"proof": hmac.new(key.encode(), nonce.encode(), hashlib.sha256).hexdigest(),
+                                   "proof1": whoami_proof(key, self.server.server_address[1], nonce)})
         if url.path not in PUBLIC and not url.path.startswith("/static/") and not self.signed_in():
             if url.path.startswith("/icon/"):
                 return self.send(401, b"", "image/png")
             return self.send_json({"error": SIGN_IN, "signIn": True}, 401)
+        if url.path not in PUBLIC and not url.path.startswith("/static/") and not self.page():  # the key alone
+            if url.path.startswith("/icon/"):
+                return self.send(403, b"", "image/png")
+            return self.send_json({"error": KEY_ONLY}, 403)
         try:
             if url.path in ("/", "/index.html"):
                 return self.file(os.path.join(WEB, "index.html"))
@@ -1664,6 +1692,11 @@ class Handler(BaseHTTPRequestHandler):
             refused = None if self.page() else key_refusal(path, body)
             if refused:
                 return self.send_json({"error": refused}, 403)
+            tool = MCP_ROUTE.fullmatch(path)
+            if tool:  # Pulsar in Claude Code: the tool's answer, computed here (mcptools.py), ASCII only
+                code, answer = mcptools.call(tool.group(1), body)
+                return self.send(code, json.dumps(answer, ensure_ascii=True).encode("ascii"),
+                                 "application/json; charset=utf-8")
             if urlparse(self.path).path == "/api/settings":
                 return self.send_json(api_settings(body))
             if urlparse(self.path).path == "/api/session/end":  # sign this browser out

@@ -39,7 +39,7 @@ from isolation import SCRATCH as _RUN  # noqa: E402,F401  first: nothing real is
 
 _SCRATCH = tempfile.mkdtemp(prefix="pulsar-sim-")  # inside the run's own scratch folder, removed with it
 
-from pulsar import (askclaude, calendar, commits, config, dayplan, learn, likely, logbook, mcp,  # noqa: E402
+from pulsar import (askclaude, calendar, commits, config, dayplan, learn, likely, logbook, mcp, mcptools,  # noqa: E402
                     productive, server, sessions, trackers)
 
 QUICK_SEEDS = 200           # days in the default run (well under 20 seconds)
@@ -865,7 +865,7 @@ class Run:
                 [r for r in self.proposal["entries"]]))}
 
         for cache in (server._rows_before, server._reading, server._repeats, server._recent, server._just_logged,
-                      likely._cache, dayplan._services, mcp._pending):
+                      likely._cache, dayplan._services, mcptools._pending, mcptools._calls):
             cache.clear()
         if os.path.exists(dayplan.journal_path()):
             os.remove(dayplan.journal_path())
@@ -891,8 +891,8 @@ class Run:
             mock.patch.object(calendar, "history", lambda first, n, s: list(d.past_events)),
             mock.patch.object(askclaude, "latest", lambda date: {"picks": d.picks} if d.picks else None),
             mock.patch.object(logbook, "record", record),
-            mock.patch.object(mcp, "PROJECTS", self.folder),
-            mock.patch.object(mcp, "_today", lambda tz_name: d.date),  # the made-up day is today (later days are refused)
+            mock.patch.object(mcptools, "PROJECTS", self.folder),
+            mock.patch.object(mcptools, "_today", lambda tz_name: d.date),  # the made-up day is today (later days are refused)
             mock.patch.dict(os.environ, env),
         ]
         with contextlib.ExitStack() as stack:
@@ -1010,7 +1010,8 @@ class Run:
         if not err or self.created:
             self.fail("mcp: pulsar_log wrote while writes are blocked")
         before = list(self.created)
-        with mock.patch.object(config, "writes_blocked", lambda: None):  # https and the network stay refused
+        with mock.patch.object(config, "writes_blocked", lambda: None), \
+                mock.patch.object(mcp, "_read_only", lambda: False):  # https and the network stay refused
             got, err = self.call("pulsar_log", {"code": code, "summary": summary})
             again, err2 = self.call("pulsar_log", {"code": code, "summary": summary})
         if err:

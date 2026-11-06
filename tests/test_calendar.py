@@ -362,8 +362,8 @@ class ServerTest(Isolated):
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
         self.port = self.httpd.server_address[1]
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
-        self.key = {"X-Pulsar-Key": config.session_secret()}  # reads
-        self.page = {"X-Pulsar-Session": config.new_session()}  # changes: the key alone may not (server.key_refusal)
+        self.key = {"X-Pulsar-Key": config.session_secret()}  # the key alone: no reads, no changes
+        self.page = {"X-Pulsar-Session": config.new_session()}  # the page: reads and changes (server.key_refusal)
 
     def tearDown(self):
         self.httpd.shutdown()
@@ -435,21 +435,21 @@ class ServerTest(Isolated):
         self.connect()
         self.google.default_events = (200, {"summary": "ada@example.com", "items": [
             timed("Standup", "2026-11-05T09:30:00-05:00", "2026-11-05T10:00:00-05:00")]})
-        status, _, body = self.ask("/api/calendar?date=2026-11-05", headers=self.key)
+        status, _, body = self.ask("/api/calendar?date=2026-11-05", headers=self.page)
         got = json.loads(body)
         self.assertEqual((status, got["connected"], [(x["title"], x["s"]) for x in got["events"]]),
                          (200, True, [("Standup", 570)]))
-        self.ask("/api/calendar?date=2026-11-05", headers=self.key)
-        self.ask("/api/calendar?date=2026-11-05&fresh=1", headers=self.key)
+        self.ask("/api/calendar?date=2026-11-05", headers=self.page)
+        self.ask("/api/calendar?date=2026-11-05&fresh=1", headers=self.page)
         self.assertEqual(len(self.google.to(calendar.EVENTS_URL)), 2)  # kept once, then asked again on ↻
-        self.assertEqual(self.ask("/api/calendar?date=2026-02-30", headers=self.key)[0], 400)
-        _, _, body = self.ask("/api/config", headers=self.key)
+        self.assertEqual(self.ask("/api/calendar?date=2026-02-30", headers=self.page)[0], 400)
+        _, _, body = self.ask("/api/config", headers=self.page)
         self.assertEqual(json.loads(body)["calendar"], {"configured": True, "connected": True, "account": "ada@example.com"})
         self.assertNotIn(b"made-up-refresh", body)
         status, _, body = self.ask("/api/calendar/disconnect", "POST",
                                    {**self.page, "X-Pulsar": "1", "Content-Type": "application/json"}, b"{}")
         self.assertEqual((status, json.loads(body)["calendar"]["connected"]), (200, False))
-        self.assertEqual(json.loads(self.ask("/api/calendar/status", headers=self.key)[2])["connected"], False)
+        self.assertEqual(json.loads(self.ask("/api/calendar/status", headers=self.page)[2])["connected"], False)
 
 
 if __name__ == "__main__":

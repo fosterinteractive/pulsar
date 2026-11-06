@@ -393,7 +393,7 @@ function render() {
       const h = (x.e - x.s) * ppm, lines = Math.max(0, Math.floor((h - 36) / 15));
       const rz = x.s == null ? '' : '<i class="rz rz-t" data-rz="t" title="Drag to change the start"></i><i class="rz rz-b" data-rz="b" title="Drag to change the end"></i>';
       return `<div class="card logged" data-k="logged" data-i="${i}" style="--c:${color(x.project)};${place(x, ppm, 18)}"
-        tabindex="0" role="button" aria-label="${esc(`Logged ${hm(x.s)}–${hm(x.e)}: ${x.project}${x.task ? ', ' + x.task : ''}, ${dur(x.minutes)}`)}">
+        tabindex="0" role="button" aria-label="${esc(`Logged ${hm(x.s)}–${hm(x.e)}${x.fromClaudeCode ? ' from Claude Code' : ''}: ${x.project}${x.task ? ', ' + x.task : ''}, ${dur(x.minutes)}`)}"${x.fromClaudeCode ? ' title="Logged from Claude Code (Pulsar in Claude Code)"' : ''}>
         <div class="row"><span class="t">${esc(x.project)}</span>${x.billable ? `<span class="bill" title="Billable${x.billing ? ': ' + esc(x.billing) : ''}">$</span>` : ''}<span class="m num">${dur(x.minutes)}</span></div>
         ${h > 34 ? `<div class="d">${esc(x.task)}</div>` : ''}
         ${lines ? `<div class="n" style="-webkit-line-clamp:${lines}">${esc(x.note)}</div>` : ''}${rz}</div>`;
@@ -610,7 +610,7 @@ document.addEventListener('click', ev => {
   } else {
     const x = loggedCache[i];
     popEntry = x;
-    openPop(`<h3>${esc(x.project)}</h3><div class="sub">${hm(x.s)}–${hm(x.e)} · ${dur(x.minutes)}${x.approved ? ' · approved' : ''}</div>
+    openPop(`<h3>${esc(x.project)}</h3><div class="sub">${hm(x.s)}–${hm(x.e)} · ${dur(x.minutes)}${x.approved ? ' · approved' : ''}${x.fromClaudeCode ? ' · from Claude Code' : ''}</div>
       <p>${esc(x.note)}</p>
       <dl><dt>Task</dt><dd>${esc(x.task)}</dd><dt>Budget</dt><dd>${esc(x.budget)}</dd><dt>Service</dt><dd>${esc(x.service)}</dd><dt>Billable</dt><dd>${x.billable == null ? 'Unknown' : x.billable ? 'Yes' : 'No'}${x.billing ? ' · ' + esc(x.billing) : ''}</dd></dl>
       <div class="btnrow"><button class="btn bordered sm" data-edit>Edit</button><button class="btn bordered sm" data-del>Delete</button>${

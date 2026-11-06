@@ -132,11 +132,13 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
 - **Only you can use your Pulsar.** It listens on 127.0.0.1 only. Its data and actions need a session key that only
   your account can read (`~/.config/pulsar/secret`); the app signs its window in when it opens. Other
   websites, other accounts on the Mac and containers (Docker, DDEV) get nothing. Programs you run yourself are
-  another matter, a Claude Code session included: they can read that key. With the key alone Pulsar only shows
-  data, quits, and logs new entries the way Pulsar in Claude Code does (never over another entry, each one listed
-  in Log the day with Undo); changing or deleting an entry, settings and updates need Pulsar's window. A program
+  another matter, a Claude Code session included: they can read that key. With the key alone Pulsar only answers
+  Pulsar in Claude Code's tools (the same cut-down answers, never window titles, meetings or notes) and quits; its one
+  write is a previewed new entry, never over another one, shown as "from Claude Code" in the Logged column. Reading
+  the day as the page shows it, changing or deleting an entry, settings and updates need Pulsar's window. A program
   set on it could still get further (for example by signing a window in itself), so treat a session in bypass mode
-  as able to log time. If the window says it is not
+  as able to log time, and see "Claude Code: recommended settings" in [How it works](docs/HOW-IT-WORKS.md#3-security).
+  If the window says it is not
   signed in, click **Sign in**. To use Pulsar in a browser too while it runs, run
   `/usr/bin/python3 ~/Library/Application\ Support/Pulsar/current/pulsar.py --signin-url` (from a git checkout:
   `python3 pulsar.py --signin-url`) and open the address it prints within two minutes; it works once.

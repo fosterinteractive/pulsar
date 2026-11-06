@@ -109,17 +109,30 @@ open_page() {
 }
 
 # True when the Pulsar on PORT holds this user's session key: it answers a random challenge with an HMAC that only
-# the key's holder can compute. Another account's Pulsar, or anything else on the port, fails.
+# the key's holder can compute, bound to PORT ("whoami-v1|<port>|<nonce>"), so a program on PORT that passes the
+# question on to this user's Pulsar on another port gets an answer for the wrong port. Another account's Pulsar, or
+# anything else on the port, fails. A Pulsar of 1.4.0 or older answers only the older form (no port in it): that
+# answer counts only from a listener this user's own process holds, running pulsar.py, as during an update from one;
+# lsof does not show another account's process, and a program of this user could read the key anyway.
 is_ours() {
-  local nonce proof expected
+  local nonce answer proof proof1 want1 want0 pid
   [ -r "$CONFIG_DIR/secret" ] || return 1
   nonce="$(/usr/bin/openssl rand -hex 16)"
-  proof="$(/usr/bin/curl -sf -m 2 "${URL}api/whoami?nonce=$nonce" 2>/dev/null \
-    | /usr/bin/grep -o '"proof": *"[0-9a-f]*"' | /usr/bin/sed 's/.*"\([0-9a-f]*\)"$/\1/')"
-  expected="$("$PY" -c 'import hashlib, hmac, sys
+  answer="$(/usr/bin/curl -sf -m 2 "${URL}api/whoami?nonce=$nonce" 2>/dev/null)"
+  proof1="$(printf '%s' "$answer" | /usr/bin/grep -o '"proof1": *"[0-9a-f]*"' | /usr/bin/sed 's/.*"\([0-9a-f]*\)"$/\1/')"
+  proof="$(printf '%s' "$answer" | /usr/bin/grep -o '"proof": *"[0-9a-f]*"' | /usr/bin/sed 's/.*"\([0-9a-f]*\)"$/\1/')"
+  read -r want1 want0 <<<"$("$PY" -c 'import hashlib, hmac, sys
 key = open(sys.argv[1]).read().strip().encode()
-print(hmac.new(key, sys.argv[2].encode(), hashlib.sha256).hexdigest())' "$CONFIG_DIR/secret" "$nonce" 2>/dev/null)"
-  [ -n "$proof" ] && [ "$proof" = "$expected" ]
+print(hmac.new(key, ("whoami-v1|%d|%s" % (int(sys.argv[2]), sys.argv[3])).encode(), hashlib.sha256).hexdigest(),
+      hmac.new(key, sys.argv[3].encode(), hashlib.sha256).hexdigest())' "$CONFIG_DIR/secret" "$PORT" "$nonce" 2>/dev/null)"
+  [ -n "$want1" ] || return 1
+  if [ -n "$proof1" ]; then
+    [ "$proof1" = "$want1" ]
+    return
+  fi
+  pid="$(/usr/sbin/lsof -nP -t -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | /usr/bin/head -1)"
+  [ -n "$pid" ] && [[ "$(/bin/ps -o command= -p "$pid" 2>/dev/null)" == *pulsar.py* ]] &&
+    [ -n "$proof" ] && [ "$proof" = "$want0" ]
 }
 
 # POST /api/quit with this user's key in a header, passed on stdin so it never shows in a process list.
