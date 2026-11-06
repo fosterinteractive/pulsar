@@ -283,7 +283,8 @@ dialog#settings::backdrop { background: rgba(0,0,0,.35); }
 #settings .ic-claude { background: linear-gradient(#e48a63, #c96442); }
 #settings .ic-rules { background: linear-gradient(#4cd168, #26a843); }
 #settings .ic-upd { background: linear-gradient(#a3a9b3, #737985); }
-#settings #settings-nomatch { padding: 24px 0; }
+/* a block in the empty pane: .state is the lanes' class, absolute, which drew it over the search field */
+#settings #settings-nomatch { position: static; padding: 24px 0; }
 @media (max-width: 640px) {  /* a phone-width window: the categories become a row above the settings */
   #settings .sbody { flex-direction: column; }
   #settings .side { width: auto; border-right: 0; border-bottom: 1px solid var(--line); padding: 8px; }
