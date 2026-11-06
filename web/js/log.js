@@ -109,7 +109,16 @@ function makePicker(listEl, searchEl, onPick) {
 const logDlg = $('#logdlg'), logForm = $('#log-form');
 let logForce = false;
 const setLogMsg = (text, warn = false) => { const m = $('#log-msg'); m.textContent = text; m.className = 'msg' + (warn ? ' warn' : ''); };
-const logPicker = makePicker($('#log-tasks'), logForm.elements.q, t => { resetForce(); loadServices(t); });
+const logPicker = makePicker($('#log-tasks'), logForm.elements.q, t => { resetForce(); loadServices(t); showDraft(); });
+/* a note Claude drafted (Ask Claude, then Log on a Likely block): {note, taskId, title} until the person edits it */
+let logDrafted = null;
+function showDraft() {
+  const d = logDrafted, sel = logPicker.selected;
+  $('#log-note-hint').innerHTML = !d ? '' : CLAUDE_MARK.split('<span')[0] + esc(
+    !sel || sel.taskId === d.taskId ? 'Drafted by Claude: check it before logging; clients may see notes.'
+      : `Drafted by Claude for “${d.title}”: check it before logging; clients may see notes.`);
+}
+logForm.elements.note.addEventListener('input', () => { if (logDrafted) { logDrafted = null; showDraft(); } });
 /* after "Log anyway", any change to what would be logged means a new check for overlaps */
 function resetForce() {
   if (!logForce) return;
@@ -127,17 +136,19 @@ logForm.elements.date.addEventListener('change', () => {
 });
 
 /* lead: a group offered first and picked: {label, tasks}, {label, ids} (the page knows only the tasks' ids), or
-   {label, url} (the server works them out, each with why) */
-async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = [], note = '', lead = null} = {}) {
+   {label, url} (the server works them out, each with why). drafted: Claude's note {note, taskId, title}, when `note` is it */
+async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = [], note = '', lead = null, drafted = null} = {}) {
   if (!CONFIG?.productive.active) { toast('Connect Productive in Settings first.', true); openSettings('t-conn'); return; }
   const f = logForm.elements;
   start = Math.max(0, Math.min(1435, Math.round(start)));  // inside the day: hm() would wrap 24:00 to 00:00
   minutes = Math.max(1, Math.min(1440 - start, Math.round(minutes)));
   f.date.value = date; f.start.value = hm(start); f.minutes.value = minutes; f.note.value = note || '';
+  logDrafted = drafted?.note && drafted.note === note ? drafted : null;
   f.service.innerHTML = '<option value="">Pick a task first</option>'; f.service.disabled = true;
   logForce = false; setLogMsg(''); $('#log-save').textContent = 'Log in Productive';
   logDlg.showModal();
   logPicker.loading();
+  showDraft();
   fillSuggestions(date, hint, lead);
 }
 

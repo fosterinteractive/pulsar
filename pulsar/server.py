@@ -328,11 +328,16 @@ def api_ask_claude(body: dict) -> dict:
     proposal = likely.proposal(date, config.timezone_name(s), today(tz), False, s)
     if proposal.get("error"):
         raise ValueError(proposal["error"])
-    d0, d1 = askclaude.history_span(date)
-    before, problem, _, _ = productive_rows(d0, d1, s)
+    d0, _ = askclaude.history_span(date)
+    before, problem = history_rows(date, s, days=learn.LEARN_DAYS)  # one read, kept an hour, shared with Likely
+    # each row's likely tasks (learned from the days before, never from this day's own entries): whose notes Claude
+    # sees as examples of how this person writes them. A copy, so the cached proposal stays as it is.
+    rows = [dict(e) for e in proposal.get("entries") or []]
+    if not problem:
+        learn.annotate({**proposal, "entries": rows}, date, s, before, [], tz)
     try:
-        return askclaude.ask(date, proposal.get("entries") or [], day_bounds(date, tz)[0], [] if problem else before,
-                             model=s["ask_claude_model"])
+        return askclaude.ask(date, rows, day_bounds(date, tz)[0], [r for r in before if r.get("date", "") >= d0],
+                             model=s["ask_claude_model"], history=before)
     except askclaude.AskError as exc:
         logbook.record("ask claude", str(exc), kind="warning")
         return {"error": str(exc), "picks": {}}

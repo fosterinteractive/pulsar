@@ -99,15 +99,16 @@ function claudePick(b) {
   return rows.map(e => picks[`${e.s}|${e.project}`]).find(p => p?.tasks?.length) || null;
 }
 
-/* for a Likely block, from its longest rows first: the Productive tasks linked in its sessions (ids), and the tasks
-   learned from your logging in the same session or repository (with why) */
+/* for a Likely block, from its longest rows first: the Productive tasks linked in its sessions (ids), the tasks
+   learned from your logging in the same session or repository (with why), and Claude's pick with its drafted note */
 function likelyTasks(b) {
   const rows = [...(b?.entries || [])].filter(e => e.project === b.project).sort((p, q) => q.minutes - p.minutes);
   const seen = new Set(), learned = [];
   for (const t of rows.flatMap(e => e.learned || [])) if (!seen.has(t.taskId) && seen.add(t.taskId)) learned.push(t);
   const pick = claudePick(b);
   const claude = (pick?.tasks || []).map((t, i) => ({...t, claude: true, why: i ? 'another option' : pick.why}));
-  return {ids: [...new Set(rows.flatMap(e => e.tasks || []))].slice(0, 4), learned: learned.slice(0, 5), claude};
+  const draft = pick?.note && pick.tasks[0] ? {note: pick.note, taskId: pick.tasks[0].taskId, title: pick.tasks[0].title} : null;
+  return {ids: [...new Set(rows.flatMap(e => e.tasks || []))].slice(0, 4), learned: learned.slice(0, 5), claude, draft};
 }
 
 /* the proposal, by slot too: the project with most minutes in a slot, equal neighbours joined */
@@ -418,10 +419,11 @@ document.addEventListener('click', ev => {
   const logBtn = ev.target.closest('[data-log-a], .gaprail, .awayband');
   if (logBtn) {
     const a = +(logBtn.dataset.logA ?? logBtn.dataset.a), b = +(logBtn.dataset.logB ?? logBtn.dataset.b);
-    const linked = logBtn.dataset.likely != null ? likelyTasks(likelyCache[+logBtn.dataset.likely]) : {ids: [], learned: [], claude: []};
+    const linked = logBtn.dataset.likely != null ? likelyTasks(likelyCache[+logBtn.dataset.likely]) : {ids: [], learned: [], claude: [], draft: null};
     const meet = logBtn.dataset.meet != null ? meetCache[+logBtn.dataset.meet] : null;
     pop.classList.remove('on');
-    openLog({start: a, minutes: b - a, hint: rulesInRange(a, b), note: meet?.title || '',
+    openLog({start: a, minutes: b - a, hint: rulesInRange(a, b), note: meet?.title || linked.draft?.note || '',
+             drafted: meet ? null : linked.draft,
              lead: meet ? {label: 'For this meeting', url: `/api/meeting-tasks?date=${state.date}&uid=${
                              encodeURIComponent(meet.uid || '')}&title=${encodeURIComponent(meet.title || '')}`}
                  : linked.ids.length || linked.learned.length || linked.claude.length
