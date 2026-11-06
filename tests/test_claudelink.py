@@ -139,6 +139,44 @@ class Link(unittest.TestCase):
             self.assertTrue(claudelink.connect(5620, {})["ok"])
         self.assertTrue(self.calls)
 
+    def test_pulsar_log_gets_an_ask_rule_too(self):
+        # a fallback to the mark on pulsar_log (mcp.py), which is not a documented part of Claude Code
+        got = claudelink.connect(5610, {})
+        self.assertTrue({"mcp__pulsar__pulsar_log", "mcp__pulsar-preview__pulsar_log"} <= set(got["rulesAdded"]))
+        self.assertTrue({"mcp__pulsar__pulsar_log", "mcp__pulsar-preview__pulsar_log"} <= set(self.read()["permissions"]["ask"]))
+
+    def test_a_pulsar_entry_the_person_made_is_left_alone(self):
+        theirs = {"type": "stdio", "command": "python3", "args": ["/src/pulsar.py", "--mcp"], "env": {"PULSAR_READ_ONLY": "1"}}
+        with open(self.claude_json, "w") as fh:
+            json.dump({"mcpServers": {"pulsar": theirs}}, fh)
+        got = claudelink.connect(5610, {})
+        self.assertFalse(got["ok"])
+        self.assertIn("did not add", got["message"])
+        self.assertEqual(self.calls, [])  # neither removed nor replaced
+        self.assertEqual(claudelink.registered(), theirs)
+        claudelink.disconnect({"claude_rules_added": got["rulesAdded"]})
+        self.assertEqual(self.calls, [])  # and not removed when switched off either
+
+    def test_an_unreadable_server_list_keeps_the_rules(self):
+        with mock.patch.dict(os.environ, {"PULSAR_PREVIEW": "1"}):
+            claudelink.connect(5620, {})  # Preview is in Claude Code and uses the rules
+        got = claudelink.connect(5610, {"claude_rules_added": claudelink.rules()})
+        with open(self.claude_json, "w") as fh:
+            fh.write("{broken")
+        with mock.patch.object(claudelink, "_run", lambda args: (self.calls.append(args), (True, ""))[1]):
+            off = claudelink.disconnect({"claude_rules_added": got["rulesAdded"]})
+        self.assertFalse(off["ok"])
+        self.assertIn("could not be read", off["message"])
+        self.assertEqual(off["rulesAdded"], got["rulesAdded"])
+        self.assertIn(["mcp", "remove", "pulsar", "-s", "user"], self.calls)  # Claude Code's own command still asked
+        self.assertTrue(all(r in self.read()["permissions"]["ask"] for r in claudelink.rules()))
+
+    def test_the_settings_file_keeps_its_permissions(self):
+        self.write({"env": {"A": "1"}})
+        os.chmod(self.settings, 0o644)
+        claudelink.connect(5610, {})
+        self.assertEqual(os.stat(self.settings).st_mode & 0o777, 0o644)
+
     def test_installed_copy_is_started_through_current(self):
         fake = os.path.join(claudelink.INSTALL, "versions", "9.9.9", "pulsar")
         with mock.patch.object(claudelink.os.path, "abspath", lambda p: os.path.join(fake, "claudelink.py")), \
@@ -173,7 +211,7 @@ class SessionNote(unittest.TestCase):
         seen = {}
 
         def run(cmd, **kw):
-            seen["cmd"], seen["input"] = cmd, kw["input"]
+            seen["cmd"], seen["input"], seen["env"] = cmd, kw["input"], kw.get("env") or {}
             out = {"structured_output": {"note": "Event pages show the right time zone again."}, "total_cost_usd": 0.002}
             return mock.Mock(stdout=json.dumps(out), stderr="", returncode=0)
         row = {"s": 595, "e": 730, "project": "trent", "titles": ["Fix the event time zone"], "commits": ["Quiz saves"]}
@@ -184,6 +222,8 @@ class SessionNote(unittest.TestCase):
         for flag in ("--strict-mcp-config", "--no-session-persistence", "dontAsk"):
             self.assertIn(flag, seen["cmd"])
         self.assertEqual(seen["cmd"][seen["cmd"].index("--model") + 1], "haiku")
+        self.assertEqual(seen["cmd"][seen["cmd"].index("--setting-sources") + 1], "")  # no CLAUDE.md
+        self.assertEqual(seen["env"].get("CLAUDE_CODE_DISABLE_AUTO_MEMORY"), "1")  # and no MEMORY.md
         self.assertIn("Quiz saves", seen["input"])
 
         def leaky(cmd, **kw):
