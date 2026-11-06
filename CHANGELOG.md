@@ -6,36 +6,12 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
-## Unreleased
+## 1.3.0 (2026-11-06)
 - Log the day: the whole day proposed for review, written one entry at a time, with Undo.
-- Edit, delete and resize logged entries; only what changed is sent, and approval is left to Productive.
-- Log and next, a first-run checklist, the week at the top, and Open in Productive on tasks.
-- One Claude Code switch in Settings > Claude: Ask Claude, notes from the session, logging from a session.
-- Pulsar in Claude Code (pulsar.py --mcp): what is not logged, logged after you confirm.
-- Note drafts from your commits and sessions, checked on your Mac before you see them.
-- Ask Claude reaches only Productive, and says when its spending limit stopped it.
-- Learned tasks: recent logging counts more; a task can be found by its words.
-- Pulsar Preview: a branch's code beside Pulsar, with its own settings, writing off by default.
-- The keychain not answering is said as such.
-- Fixed: yesterday's Likely column no longer stops at the hour you last looked at it.
-- Fixed: the day the clocks change adds up, and Ask Claude's picks show on it.
-- Fixed: one odd line in a Claude session no longer empties Likely for the day.
-- Fixed: copies of MemTime's database no longer pile up in the temporary folder.
-- Fixed: an update whose self-test timed out can be tried again; a late answer no longer replaces a newer one.
-- Fixed: a self-test whose page answered too late no longer counts against the version.
-- Fixed: unreadable recent entries are said, not kept; Ask Claude then does not run.
-- Fixed: a past day seen before ActivityWatch started is learned from again once it runs.
-- The README says what Ask Claude sends to Anthropic, what it costs, and how to remove everything.
-- Pulsar's key only reads, quits and logs new entries; changing or deleting entries, settings and updates need its window.
-- Notes from commits never start a program that a repository's own git settings name.
-- Ask Claude leaves out Claude Code's auto memory; Claude Code asks before Pulsar logs, by an ask rule too.
-- Pulsar in Claude Code returns no past notes and no note drafted for another repository.
-- Pulsar Preview starts with Claude Code off, and its Disconnect leaves Pulsar's Google Calendar connected.
-- Fixed: Log the day writes exactly what you confirmed, even when Claude's answer arrives late.
-- Fixed: an entry with no start time is shown in Log the day, and its task is not proposed again ticked.
-- Fixed: Undo goes on past an entry deleted or changed by hand; a deleted entry can be logged again.
-- Fixed: a damaged Log the day journal stops writes instead of being emptied.
-- Fixed: in Claude Code, a write with no clear answer says "not known", never "not logged".
+- Edit, delete and resize logged entries.
+- Pulsar in Claude Code (MCP): ask a session what is not logged, or to log it; it asks before each write.
+- One Claude Code switch in Settings; notes drafted from your commits and sessions.
+- Better task suggestions, a safer Ask Claude, and many fixes.
 
 ## 1.2.1 (2026-11-06)
 - Settings: categories with icons, and a search.
