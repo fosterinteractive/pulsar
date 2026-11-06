@@ -410,7 +410,9 @@ time logged when the tracker saw nothing (8%).
   `~/.cache/pulsar/likely-days/<date>.json`: times, repository names and a hash of each session title, never the
   titles or anything typed. Only a day that is over is kept, worked out after it ended: a proposal the page saw
   while its day was still today is worked out again the next time it is asked for, in memory and for learning
-  (format 2 of these files; a format-1 file could hold a day cut off at the hour it was seen, so they are redone once). Until all 60 days are there, the page says "Learning your tasks… N of 60". The rows do
+  (format 2 of these files; a format-1 file could hold a day cut off at the hour it was seen, so they are redone once).
+  A day worked out while no tracker answered (ActivityWatch not up yet at login) is marked `blind` and worked out
+  again once ActivityWatch answers or MemTime's database is there. Until all 60 days are there, the page says "Learning your tasks… N of 60". The rows do
   not wait for the 60 days of Productive history: while it is read, they come without learned tasks and with
   `learnPending`, and the page asks once more (`wait=1`) a few seconds later. Nor do they wait for their hints, the
   tasks linked in their sessions and the commits made during them (every session of the day read and git run: 1.5
@@ -440,7 +442,8 @@ time logged when the tracker saw nothing (8%).
   after the run; the entry is copied as Claude Code has it, so its sign-in still applies (the subscription login is
   kept too). An answer Claude Code marks `is_error` (the spending limit, not signed in) is said in words, with what
   was spent; tasks Claude found by searching that Productive could not name just then come with a warning, and that
-  answer is not kept, so asking again tries again.
+  answer is not kept, so asking again tries again. When your earlier entries cannot be read from Productive, Claude
+  is not asked at all: it would pick from none of your tasks, and its answer would be kept.
 
   It gets, for each row of ten minutes or more, the time, the repository, the session titles, up to 15 steps of the
   work (what was typed and Claude's reply at the end of each, `askclaude.steps()`, 5.7) and up to 10 of your commit
@@ -752,7 +755,13 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   and `os.exec*` cannot start, no connection leaves the computer, and none reaches a local port the run did not open
   (not the real Pulsar, a Preview or ActivityWatch). A test that tries fails with `RealWorld`, which `except
   Exception` cannot swallow, and the run exits 1 listing what was tried (`tests/test_isolation.py`). Tests that write
-  fake Productive, so they pass the same under `PULSAR_READ_ONLY=1`.
+  fake Productive, so they pass the same under `PULSAR_READ_ONLY=1`. `test_isolation.py` also fails when a test
+  module does anything before importing `isolation`, so each one is guarded when run alone too. The writes are
+  checked by the whole request that reaches Productive's fake wire, REST and MCP, from `POST /api/log`, Undo and
+  `pulsar_log` down (`tests/test_payloads.py`).
+- `tools/replay/` (Log the day replayed on real days) refuses to run without `PULSAR_REPLAY_DIR`, a private folder
+  outside any git checkout: it keeps real entries, window titles, meetings and typed text there. `.gitignore`
+  covers `tools/replay/data/` and its results too.
 - A test server against real data: `PULSAR_READ_ONLY=1 python3 -E -s -B pulsar.py --port 5698 --no-open`, then
   `python3 pulsar.py --signin-url --port 5698` prints a one-time address for a browser. Block `**/api/log` and
   `**/api/entry/**` in a scripted browser as well. On such a server only, `?ignore_logged=1` in the page's address
@@ -780,3 +789,8 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   check of `POST /api/log` still refuses one that would clash with an entry in the second.
 - Learned tasks and Ask Claude guess; on one person's days they were right often but not always. They only ever
   suggest.
+- When your last 30 days cannot be read, the log dialog, Log the day and `pulsar_tasks` say so, and the failed read
+  is kept a minute, not ten or sixty. `pulsar_preview` then still picks the task's own service, as for a task never
+  logged before: its summary names the service and budget the person approves.
+- A self-test whose own requests time out exits 75, which this updater does not count against a version. An
+  installed 1.2.x updater still counts it as a failure, so updating from those versions keeps the old risk.
