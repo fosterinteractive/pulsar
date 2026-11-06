@@ -39,7 +39,8 @@ async function saveRules(rules) {
 /* ---------- task picker, shared by the log and rule dialogs ---------- */
 let suggestCache = null;
 async function suggestions(date) {
-  // asked again when the last answer had no assigned tasks because Productive failed (the server tries again after a minute)
+  // asked again when the last answer lacked your assigned tasks or your last 30 days because Productive failed (the
+  // server tries again after a minute)
   if (!suggestCache || suggestCache.date !== date || suggestCache.data.assignedError || suggestCache.data.historyError) suggestCache = {date, data: await getJSON(`/api/tasks/suggest?date=${date}`)};
   return suggestCache.data;
 }
