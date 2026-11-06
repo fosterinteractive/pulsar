@@ -488,6 +488,8 @@ final class NativeWarp {
     private var snapping = false
     private var queued: (CGFloat, Bool, Bool)?
     private var safety: DispatchWorkItem?
+    private var pullEnds: CFTimeInterval = 0  // when the pull in is all the way in
+    private var letGo = false                 // the page let go before the pull was in: let go once it is
     private let inEase = CAMediaTimingFunction(controlPoints: 0.55, 0, 0.9, 0.45)  // slow at first, as gravity pulls
     private let outEase = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
 
@@ -495,6 +497,7 @@ final class NativeWarp {
 
     func to(_ target: CGFloat, instant: Bool, dark: Bool) {
         if target <= 0 { release(); return }
+        letGo = false
         guard overlay == nil else { pull(to: target, instant: instant); return }
         if snapping { queued = (target, instant, dark); return }
         snapping = true
@@ -508,6 +511,7 @@ final class NativeWarp {
             let (t, i, _) = self.queued ?? (target, instant, dark)
             self.queued = nil
             self.pull(to: t, instant: i)
+            if self.letGo { self.release() }  // the page let go while the picture was being taken
         }
     }
 
@@ -562,6 +566,7 @@ final class NativeWarp {
         guard let pic = picture, let ring = core else { return }
         let from = level, duration = instant ? 0 : max(0.01, 0.52 * Double(abs(target - from)))
         level = target
+        pullEnds = CACurrentMediaTime() + duration
         animate(pic, "filters.hole.inputRadius", from: holeRadius(from), to: holeRadius(target), duration, inEase)
         animate(pic, "transform.scale", from: 1 - 0.06 * from, to: 1 - 0.06 * target, duration, inEase)
         animate(ring, "opacity", from: min(1, 1.4 * from), to: min(1, 1.4 * target), duration, inEase)
@@ -578,8 +583,21 @@ final class NativeWarp {
         DispatchQueue.main.asyncAfter(deadline: .now() + 10, execute: item)
     }
 
-    /// let go: the lens closes, the picture springs just past its size and back and fades into the live page
+    /// let go: the lens closes, the picture springs just past its size and back and fades into the live page. The
+    /// page times its warp from when it asks; the picture is taken first, so a letting go can come before the pull
+    /// is in (it came at about 60% of it): then it waits for it, and one during the picture waits for the pull.
     func release() {
+        if snapping { letGo = true; return }
+        let wait = pullEnds - CACurrentMediaTime()
+        if overlay != nil && wait > 0.01 {
+            letGo = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + wait) { [weak self] in
+                guard let self = self, self.letGo else { return }  // a newer pull took over meanwhile
+                self.release()
+            }
+            return
+        }
+        letGo = false
         safety?.cancel()
         guard let view = overlay, let pic = picture, let ring = core else { queued = nil; return }
         let from = level, root = view.layer!

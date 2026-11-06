@@ -87,8 +87,8 @@ function renderChecklist() {
                   act.source === 'aw' ? link('Open ActivityWatch', aw) : '']);
   }
   el.hidden = !items.length;
-  el.innerHTML = items.length ? `<h2>Before Pulsar can fill your day</h2>` + items.map(([what, why, action]) =>
-    `<div class="ck"><span class="ck-dot" aria-hidden="true"></span><div class="ck-t"><b>${esc(what)}</b><span>${esc(why)}</span></div>${action}</div>`).join('') : '';
+  setHTML(el, items.length ? `<h2>Before Pulsar can fill your day</h2>` + items.map(([what, why, action]) =>
+    `<div class="ck"><span class="ck-dot" aria-hidden="true"></span><div class="ck-t"><b>${esc(what)}</b><span>${esc(why)}</span></div>${action}</div>`).join('') : '');
 }
 $('#checklist').addEventListener('click', ev => { const b = ev.target.closest('[data-ck]'); if (b) openSettings(b.dataset.ck); });
 
@@ -119,8 +119,8 @@ function renderWeek() {
   const sum = k => days.reduce((s, d) => s + d[k], 0);
   btn.dataset.label = mon === mondayOf(todayLocal()) ? 'This week' : `Week of ${dayLabel(mon, {day: 'numeric', month: 'short'})}`;
   const L = hours1(sum('logged')), A = hours1(sum('active'));
-  btn.innerHTML = `<span class="wl-long">${esc(btn.dataset.label)}: ${L} logged of ${A} active</span>`
-    + `<span class="wl-short">${esc(btn.dataset.label === 'This week' ? 'Week' : btn.dataset.label)}: ${L} of ${A}</span>`;
+  setHTML(btn, `<span class="wl-long">${esc(btn.dataset.label)}: ${L} logged of ${A} active</span>`
+    + `<span class="wl-short">${esc(btn.dataset.label === 'This week' ? 'Week' : btn.dataset.label)}: ${L} of ${A}</span>`);
   btn.title = `${btn.dataset.label}, Monday to Friday: ${L} logged of ${A} active. Click for each day.`;
 }
 $('#weekline').addEventListener('click', ev => {

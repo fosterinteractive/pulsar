@@ -55,23 +55,61 @@ _locks: dict = {}
 TODAY_FOR = 180  # seconds a proposal for today is reused: the script reads every session of the day (~3 s)
 
 
-def proposal(date: str, tz_name: str, today: str, fresh: bool, settings: dict | None = None, keep: bool = True) -> dict:
+def proposal(date: str, tz_name: str, today: str, fresh: bool, settings: dict | None = None, keep: bool = True,
+             quick: bool = False) -> dict:
     """The proposal for a day: past days once, today again after three minutes (or on ↻). One run per day at a time;
     a request that arrives while it runs waits for it instead of starting another. keep=False (learning's 60 past
-    days, which it stores on disk) leaves the days in memory, the ones the page shows, where they are."""
+    days, which it stores on disk) leaves the days in memory, the ones the page shows, where they are.
+
+    The rows' hints (the tasks linked in their sessions and the commits made during them: reading every session of
+    the day and running git, a second or more) are added in the background. quick=True (the page's first ask) gets
+    the rows without waiting for them, marked hintsPending; every other caller waits for them."""
     key = (date, tz_name)
     lock = _locks.setdefault(key, threading.Lock())
     with lock:
         cached = _cache.get(key)
-        if cached and not fresh and (date < today or time.time() - cached[0] < TODAY_FOR):
-            return cached[1]
-        settings = settings or config.load()
-        result = _run(date, tz_name, config.tz(settings)) if own_script() else _built_in(date, settings)
-        if not result.get("error"):
-            _with_tasks(result, date, settings, keep)
-            if keep:
-                _cache[key] = (time.time(), result)
-        return result
+        got = cached[1] if cached else None
+        if not (cached and not fresh and (date < today or time.time() - cached[0] < TODAY_FOR)):
+            settings = settings or config.load()
+            result = _run(date, tz_name, config.tz(settings)) if own_script() else _built_in(date, settings)
+            if result.get("error"):
+                return result
+            if not keep:  # learning's past days: the task links only, nothing kept
+                _with_tasks(result, date, settings, False)
+                return result
+            done, got = threading.Event(), result
+            _cache[key], _hints[key] = (time.time(), result), done
+            threading.Thread(target=_add_hints, args=(key, result, date, settings, done), daemon=True,
+                             name="pulsar-hints").start()
+    while True:  # the hints of the newest run (a ↻ meanwhile starts another)
+        done = _hints.get(key)
+        if not done or done.is_set():
+            break
+        if quick:
+            return {**(_cache.get(key) or (0, got))[1], "hintsPending": True}
+        if not done.wait(60):
+            break
+    return (_cache.get(key) or (0, got))[1]
+
+
+_hints = config.Newest(16)  # (date, time zone) -> set once the cached proposal carries its hints
+
+
+def _add_hints(key: tuple, result: dict, date: str, settings: dict, done: threading.Event) -> None:
+    """The hints for a proposal just worked out, on a copy of its rows: the copy takes its place in the cache, so a
+    proposal already handed out is never changed by them."""
+    try:
+        rows = [dict(e) for e in result.get("entries") or []]
+        _with_tasks({**result, "entries": rows}, date, settings, True)
+        with _publish:
+            now = _cache.get(key)
+            if now and now[1] is result:  # not replaced by a newer run meanwhile
+                _cache[key] = (now[0], {**result, "entries": rows})
+    finally:
+        done.set()
+
+
+_publish = threading.Lock()
 
 
 def _with_tasks(result: dict, date: str, settings: dict, commits: bool = True) -> None:

@@ -378,7 +378,11 @@ unticked.
   `~/.cache/pulsar/likely-days/<date>.json`: times, repository names and a hash of each session title, never the
   titles or anything typed. Until all 60 days are there, the page says "Learning your tasks… N of 60". The rows do
   not wait for the 60 days of Productive history: while it is read, they come without learned tasks and with
-  `learnPending`, and the page asks once more (`wait=1`) a few seconds later.
+  `learnPending`, and the page asks once more (`wait=1`) a few seconds later. Nor do they wait for their hints, the
+  tasks linked in their sessions and the commits made during them (every session of the day read and git run: 1.5
+  to 4.5 seconds, measured on two days): the page's first ask (`quick=1`) gets the rows with `hintsPending` while
+  they are worked out in the background, and its second ask gets them. Every other caller (Ask Claude, Log the day,
+  `pulsar --mcp`) waits for them.
 - **The clock**: the fi-time-from-activity script writes wall-clock times; they are kept as minutes elapsed since
   midnight, like the built-in rows, and drawn by the clock.
 - **Ask Claude** (`pulsar/askclaude.py`, off until switched on in Settings): runs the person's own Claude Code once
@@ -523,7 +527,10 @@ question) and cannot tell when inside it the work happened.
   only Productive. Today refreshes by itself once an hour while the page is visible.
 - **The warp**: the update and the refresh play a short gravitational-lens animation. In the window it is native
   (a snapshot of the page bent by Core Image's hole distortion, animated by Core Animation on the graphics card); in a
-  browser it is a CSS version. It is off with Reduce motion, or in Settings.
+  browser it is a CSS version. It is off with Reduce motion, or in Settings. Taking the snapshot comes first (50 to 70
+  ms), so the page waits that much more before it lets go, and the window lets go only once the pull is all the way
+  in (it used to let go at about 60% of it). The data that comes back while the warp pulls in is drawn once, when it
+  is all the way in, so the page it lets go of is the new one.
 
 ## 7. The report (`pulsar/report.py`, `web/js/report.js`)
 
@@ -605,7 +612,7 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `GET /api/config` | Settings for the page, the connection's state (with `productive.web`, the organization's address for task links, or ''), update state, calendar state. Never a token. |
 | `GET /api/activity?date=&source=` | Tracker items and away time. |
 | `GET /api/entries?date=` | Productive entries. |
-| `GET /api/proposal?date=[&fresh=1][&wait=1]` | Likely rows, with task links and learned tasks (`learnPending` while the history is read; `wait=1` waits for it). |
+| `GET /api/proposal?date=[&fresh=1][&quick=1][&wait=1]` | Likely rows, with task links, commits and learned tasks (`quick=1`: `hintsPending` while the links and commits are worked out; `learnPending` while the history is read; `wait=1` waits for both). |
 | `GET /api/calendar?date=[&fresh=1]` | Meetings. `GET /api/calendar/status` while signing in. |
 | `GET /api/repeats?date=&source=` | Repeats seen today. |
 | `GET /api/meeting-tasks?date=&uid=&title=` | A meeting's tasks. |
@@ -632,7 +639,9 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   requests (`getJSON`, `postJSON` add the headers; a 401 shows **Sign in**), formatting, the theme, the toast, the
   warp, and `todayLocal()` built from date parts (a locale's date format broke macOS 14 once).
 - **`day.js`**: `load()` asks for the columns, `render()` draws everything from `state` (the axis, the four columns,
-  the rails, the side panels), and one click handler opens popovers and the log dialog. Cards are keyboard
+  the rails, the side panels), and one click handler opens popovers and the log dialog. The answers draw through
+  `drawSoon()` (core.js): the ones of the same frame once, none while the warp pulls in, and `setHTML` leaves a part
+  whose HTML did not change as it is, so its cards and icons are not rebuilt. Cards are keyboard
   reachable (Enter, Space, Escape back to the card).
 - **`log.js`**: the log dialog, the task picker (shared with the rule dialog and Log the day) and rules.
 - **`flow.js`** (and `flow.css`): Log and next, the start as `HH:MM`, links to Productive, the first-run checklist,

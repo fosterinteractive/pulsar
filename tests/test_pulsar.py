@@ -1841,6 +1841,73 @@ class LearnPendingTest(unittest.TestCase):
             self.assertEqual(most[0], slots, bulk)                  # 60 days: two at a time in the background
 
 
+
+class HintsInBackgroundTest(unittest.TestCase):
+    """The Likely rows go out as soon as the script has them. The tasks linked in their sessions and the commits made
+    during them (every session of the day read, git run: a second or more) follow, so they never hold up the page's
+    first draw, and every other caller still gets them."""
+
+    def setUp(self):
+        from pulsar import likely
+        self.likely = likely
+        for c in (likely._cache, likely._hints):
+            c.clear()
+            self.addCleanup(c.clear)
+
+    def patched(self, gate, runs):
+        def run(*a):
+            runs.append(1)
+            return {"entries": [{"s": 600, "e": 660, "minutes": 60, "project": "p", "run": len(runs)}]}
+
+        def hints(result, date, settings, commits):
+            gate.wait(5)
+            for e in result["entries"]:
+                e["commits"] = ["Fix it"]
+        return mock.patch.multiple(self.likely, own_script=lambda: True, _run=run, _with_tasks=hints)
+
+    def ask(self, **k):
+        return self.likely.proposal("2026-11-04", "UTC", "2026-11-06", k.pop("fresh", False), dict(config.DEFAULTS), **k)
+
+    def test_the_first_ask_does_not_wait_for_the_hints_and_the_second_gets_them(self):
+        import threading
+        gate, runs = threading.Event(), []
+        with self.patched(gate, runs):
+            began = time.time()
+            first = self.ask(quick=True)
+            self.assertLess(time.time() - began, 1)                  # not held up by the hints
+            self.assertTrue(first["hintsPending"])
+            self.assertTrue(self.ask(quick=True)["hintsPending"])    # still being worked out: no second run
+            gate.set()
+            done = self.ask()                                        # the page's second ask, Ask Claude, Log the day
+            later = self.ask(quick=True)
+        self.assertEqual(len(runs), 1)
+        self.assertNotIn("hintsPending", done)
+        self.assertEqual(done["entries"][0]["commits"], ["Fix it"])
+        self.assertEqual(later["entries"][0]["commits"], ["Fix it"])
+        self.assertNotIn("commits", first["entries"][0])            # what was handed out never changes
+
+    def test_the_hints_of_an_older_run_never_replace_a_newer_one(self):
+        import threading
+        gate, runs = threading.Event(), []
+        with self.patched(gate, runs):
+            self.ask(quick=True)
+            self.ask(quick=True, fresh=True)                         # the ↻ while the first hints are worked out
+            gate.set()
+            done = self.ask()
+        self.assertEqual(done["entries"][0]["run"], 2)
+        self.assertEqual(done["entries"][0]["commits"], ["Fix it"])
+
+    def test_only_the_pages_first_ask_is_quick(self):
+        asked = []
+        s = {**config.DEFAULTS, "likely": "on"}
+        with mock.patch.object(server.config, "load", lambda: dict(s)), \
+             mock.patch.object(server, "current_settings", lambda: dict(s)), \
+             mock.patch.object(server.likely, "enabled", lambda s: True), \
+             mock.patch.object(server.likely, "proposal", lambda *a, **k: asked.append(k.get("quick")) or {"entries": []}):
+            for q in ({"quick": "1"}, {"quick": "1", "wait": "1"}, {"wait": "1"}, {}):
+                server.api_proposal({"date": "2026-11-04", **q})
+        self.assertEqual(asked, [True, False, False, False])
+
 class SilentFailureTest(unittest.TestCase):
     def test_assigned_tasks_that_fail_are_logged_and_said(self):
         seen = []

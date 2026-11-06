@@ -341,7 +341,9 @@ def api_proposal(q: dict) -> dict:
     if not likely.enabled(s):
         return {"disabled": True, "entries": []}
     date, tz = q["date"], config.tz(s)
-    result = likely.proposal(date, config.timezone_name(s), today(tz), q.get("fresh") == "1", s)
+    # quick=1, the page's first ask: the rows as soon as there are any, their hints (hintsPending) on the second ask
+    result = likely.proposal(date, config.timezone_name(s), today(tz), q.get("fresh") == "1", s,
+                             quick=q.get("quick") == "1" and q.get("wait") != "1")
     t0, t1 = day_bounds(date, tz)
     if not result.get("error") and datetime.fromtimestamp(t0, tz).utcoffset() != datetime.fromtimestamp(t1 - 1, tz).utcoffset():
         # the clocks change today: rows by the clock, like the activity (a copy, so the cached proposal stays elapsed)
