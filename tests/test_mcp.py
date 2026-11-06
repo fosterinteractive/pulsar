@@ -20,7 +20,9 @@ os.environ["PULSAR_TESTS_OFFLINE"] = "1"  # nothing reaches Productive, Google, 
 os.environ.setdefault("XDG_CONFIG_HOME", os.path.join(_SCRATCH, "config"))
 os.environ.setdefault("XDG_CACHE_HOME", os.path.join(_SCRATCH, "cache"))
 
-from pulsar import __version__, config, dayplan, logbook, mcp, productive, server  # noqa: E402
+from pulsar import __version__, config, dayplan, learn, likely, logbook, mcp, productive, server  # noqa: E402
+
+REAL_API_PROPOSAL = server.api_proposal  # before FakeDay replaces it
 
 DATE = "2026-11-04"
 SECRET_WORDS = ["Inbox – client@example.com", "Re: salary review", "fix the SECRET-TOKEN-123 thing",
@@ -116,7 +118,7 @@ class McpTest(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
         env = mock.patch.dict(os.environ, {"PULSAR_MCP_SESSION_ID": "abcdef12", "PULSAR_READ_ONLY": "",
-                                           "CLAUDE_PROJECT_DIR": "", "PULSAR_PREVIEW": ""})
+                                           "CLAUDE_PROJECT_DIR": "", "PULSAR_PREVIEW": "", "PULSAR_MCP_IGNORE_LOGGED": ""})
         env.start()
         self.addCleanup(env.stop)
         mcp._pending.clear()
@@ -417,6 +419,102 @@ class McpTest(unittest.TestCase):
         self.day.preview = {"writes": True}
         status, _ = self.call("pulsar_status", {})
         self.assertFalse(status["writesBlocked"])
+
+    # ---- the test switch: a day already logged, planned blind -------------------------------------------
+
+    def test_test_switch_hides_the_day_everywhere(self):
+        asked, on_logged = [], {"date": DATE, "entries": [{"start": "10:00", "minutes": 30, "taskId": "11"}]}
+        self.day.rows[0]["learned"] = [{"taskId": "11", "title": "Build", "project": "Acme", "why": "logged in this session"}]
+        with mock.patch.object(server, "api_proposal", lambda q: asked.append(dict(q)) or {"entries": self.day.rows}):
+            with mock.patch.dict(os.environ, {"PULSAR_MCP_IGNORE_LOGGED": "1"}):  # not read-only: every tool refuses
+                for name, args in (("pulsar_day", {"date": DATE}), ("pulsar_propose", {"date": DATE}),
+                                   ("pulsar_preview", on_logged)):
+                    got, err = self.call(name, args)
+                    self.assertTrue(err, name)
+                    self.assertIn("read-only", got["error"])
+            with mock.patch.dict(os.environ, {"PULSAR_MCP_IGNORE_LOGGED": "1", "PULSAR_READ_ONLY": "1"}):
+                for name, args in (("pulsar_day", {"date": DATE}), ("pulsar_propose", {"date": DATE}),
+                                   ("pulsar_session", {"date": DATE}),
+                                   ("pulsar_suggest", {"date": DATE, "start": "09:00", "minutes": 30})):
+                    asked.clear()
+                    got, err = self.call(name, args)
+                    self.assertFalse(err, got)
+                    self.assertTrue(asked and all(q.get("ignore_logged") == "1" for q in asked), (name, asked))
+                    self.assertNotIn(SECRET_WORDS[6], json.dumps(got))
+                day, _ = self.call("pulsar_day", {"date": DATE})
+                self.assertEqual((day["totals"]["loggedMinutes"], day["logged"]), (0, []))
+                # 10:00-10:30 is logged for real: the blind dry run does not show it
+                dry, err = self.call("pulsar_preview", on_logged)
+                self.assertFalse(err, dry)
+                self.assertTrue(dry["code"])
+                self.assertNotIn("overlap", json.dumps(dry))
+        dry, _ = self.call("pulsar_preview", on_logged)
+        self.assertIn("overlap", dry["entries"][0]["problem"])  # without the switch it still does
+        self.assertIsNone(dry["code"])
+
+    def test_likely_learns_blind_only_on_a_read_only_server(self):
+        seen = []
+        row = {"s": 540, "e": 600, "minutes": 60, "project": "acme-site", "kind": "focused", "titles": [], "sessions": []}
+        with mock.patch.object(likely, "enabled", lambda s: True), \
+                mock.patch.object(likely, "proposal", lambda *a, **k: {"entries": [dict(row)], "tracker": "aw"}), \
+                mock.patch.object(server, "history_ready", lambda d, s: True), \
+                mock.patch.object(server, "history_rows", lambda d, s, days=0: ([], "")), \
+                mock.patch.object(server, "productive_rows", lambda d0, d1, s: (self.day.entries, "", None, None)), \
+                mock.patch.object(learn, "annotate", lambda p, d, s, before, today, tz: seen.append(list(today))):
+            REAL_API_PROPOSAL({"date": DATE})
+            self.assertEqual(len(seen[-1]), 1)  # normally the day's own entries teach the rows after them
+            with self.assertRaises(ValueError):
+                REAL_API_PROPOSAL({"date": DATE, "ignore_logged": "1"})
+            with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):
+                REAL_API_PROPOSAL({"date": DATE, "ignore_logged": "1"})
+            self.assertEqual(seen[-1], [])
+
+    # ---- a session title standing in for a repository never leaves --------------------------------------
+
+    def test_session_titles_never_leave_as_repositories(self):
+        title1, title2 = "Munk home page carousel", "IMPORTANT! Pricing talk with Bob about the Acme renewal plan"
+        cut2 = "Pricing talk with Bob about the Acme ren"  # the skill script's fallback: no IMPORTANT!, 40 characters
+        past = "Secret title of a session last week"
+        self.day.rows += [
+            {"s": 800, "e": 860, "minutes": 60, "project": title1, "kind": "focused", "titles": [title1],
+             "sessions": ["abcdef12"], "learned": [{"taskId": "11", "title": "Build", "project": "Acme",
+                                                    "why": f"logged while in {past}: 2 h 5 min"}]},
+            {"s": 870, "e": 900, "minutes": 30, "project": cut2, "kind": "focused", "titles": [title2],
+             "sessions": ["abcdef12"]},
+            {"s": 905, "e": 925, "minutes": 20, "project": "Claude Code", "kind": "focused", "titles": [],
+             "sessions": ["abcdef12"]}]
+        self.day.plan["entries"] += [plan_row(800, 860, repo=title1, why=f"you logged it while in {title1} (58%)"),
+                                     plan_row(870, 900, repo=cut2, why=f"logged while in {past}: 2 h 5 min"),
+                                     plan_row(905, 925, repo="Claude Code", why="you logged it while in acme-site (40%)")]
+        self.day.plan["unplaced"] = [{"minutes": 10, "task": None, "project": title1,
+                                      "why": f"{title1}: you never log this repository"}]
+        outs = {}
+        for name, args in (("pulsar_day", {"date": DATE}), ("pulsar_propose", {"date": DATE}),
+                           ("pulsar_session", {"date": DATE}),
+                           ("pulsar_suggest", {"date": DATE, "start": "13:20", "minutes": 60})):
+            data, err = self.call(name, args)
+            self.assertFalse(err, data)
+            outs[name] = data
+            text = json.dumps(data, ensure_ascii=False)
+            for w in (title1, "Pricing talk", past) + tuple(SECRET_WORDS):
+                self.assertNotIn(w, text, f"{name} leaks {w!r}")
+        repos = [e["repository"] for e in outs["pulsar_propose"]["proposed"]]
+        self.assertEqual(repos[0], "acme-site")  # a real repository still says its name
+        self.assertEqual(set(repos[2:]), {""})
+        self.assertIn("acme-site", outs["pulsar_propose"]["proposed"][4]["why"])
+        self.assertIn("other work", outs["pulsar_propose"]["proposed"][3]["why"])
+        self.assertEqual({r["project"] for r in outs["pulsar_session"]["rows"]}, {"acme-site", ""})
+        self.assertNotIn("Claude Code", {r["project"] for r in outs["pulsar_day"]["likely"]})
+
+    # ---- logging waits for the person's yes ----------------------------------------------------------------
+
+    def test_log_waits_for_a_yes_in_a_new_message(self):
+        dry, _ = self.call("pulsar_preview", self.ARGS)
+        log = next(t for t in mcp.TOOLS if t["name"] == "pulsar_log")
+        for text in (mcp.INSTRUCTIONS, log["description"], dry["next"]):
+            self.assertIn("new message", text)
+            self.assertIn("same turn", text)
+        self.assertTrue(log["_meta"]["anthropic/requiresUserInteraction"])
 
 
 if __name__ == "__main__":

@@ -18,8 +18,9 @@ Tools (all read only, except pulsar_log):
                                        the prompt shows Pulsar's words. Refused in any other app (they ignore the mark).
 
 What it never returns: window titles, apps, sites or addresses, typed messages, meeting titles, the titles of other
-Claude sessions, notes of logged entries, rule words. Every answer is built field by field from an allow-list; nothing
-from Pulsar is passed through as is. The calling session's own title is returned by pulsar_session (it is that session).
+Claude sessions (also where one stands in for a repository: Places), notes of logged entries, rule words. Every answer
+is built field by field from an allow-list; nothing from Pulsar is passed through as is. The calling session's own
+title is returned by pulsar_session (it is that session).
 
 How it reaches Pulsar: 127.0.0.1 only, no proxy, no redirects. Before it shows the key (~/.config/pulsar/secret, as
 X-Pulsar-Key) it checks /api/whoami the way the launcher does, so a program that is not this user's Pulsar never sees
@@ -162,8 +163,20 @@ def overlap(a: float, b: float, s: float, e: float) -> float:
 
 
 def ignore_logged() -> bool:
-    """Test switch: plan a day as if nothing were logged (the server accepts it only when it is read-only)."""
-    return bool(os.environ.get("PULSAR_MCP_IGNORE_LOGGED"))
+    """Test switch: every tool sees the day as if nothing were logged, to measure a proposal on a day already logged.
+    Only on a read-only run: PULSAR_READ_ONLY here too (the server checks its own), else every tool refuses, so a
+    test never runs half blind."""
+    if not os.environ.get("PULSAR_MCP_IGNORE_LOGGED"):
+        return False
+    if not config.read_only():
+        raise ToolError("PULSAR_MCP_IGNORE_LOGGED is a test switch for read-only runs only: set PULSAR_READ_ONLY=1 in "
+                        "this MCP server's environment and run Pulsar read-only.")
+    return True
+
+
+def _likely_q(q: dict) -> dict:
+    """The Likely column's query. In the test switch, its learned tasks must not see the day's own entries."""
+    return {**q, **({"ignore_logged": "1"} if ignore_logged() else {})}
 
 
 def _today(tz_name: str) -> str:
@@ -229,6 +242,52 @@ def safe_why(why: str) -> str:
     return why[:140]
 
 
+# Where no file a session touched was in a repository, sessions.py and the fi-time-from-activity script name the work
+# after the session's title (cut to 40 characters; the script first drops a leading "IMPORTANT!"), then "Claude Code"
+# or "unknown". Such a name is another session's words, not a repository: it never leaves.
+NAMELESS = {"claude code", "unknown"}
+
+
+def _title_names(rows: list) -> set:
+    """The project names in the day's Likely rows that are a session title standing in for a repository."""
+    cuts = set()
+    for r in rows:
+        for t in r.get("titles") or []:
+            t = str(t or "")
+            cuts.update({t.strip()[:40], re.sub(r"^important!\s*", "", t, flags=re.I).strip()[:40],
+                         re.sub(r"^important!\s*", "", t.strip(), flags=re.I).strip()[:40]})
+    cuts.discard("")
+    return {p for p in (str(r.get("project") or "") for r in rows) if p and (p in cuts or p.strip().lower() in NAMELESS)}
+
+
+class Places:
+    """The repositories a day's answers may name: those of its Likely rows, minus session titles standing in for one
+    (above). Every repository and every reason that names one goes through here."""
+
+    def __init__(self, rows: list):
+        self.hidden = _title_names(rows)
+        self.known = {str(r.get("project") or "") for r in rows} - self.hidden - {""}
+
+    def repo(self, name) -> str:
+        name = str(name or "")
+        return name if name in self.known else ""
+
+    def why(self, text) -> str:
+        """Pulsar's reason, with a place it names kept only when it is one of the day's repositories: a learned task's
+        reason can name a past day's, which may have been a session title."""
+        text = str(text or "")
+
+        def keep(m):
+            name = m.group(2)
+            return m.group(1) + (name if name in self.known or name == "this Claude session" else "other work") + m.group(3)
+        text = re.sub(r"(logged (?:it )?while in )(.+?)( \(\d+%\)|: \d|$)", keep, text)
+        text = re.sub(r"^(.+?)(: you never log this repository)",
+                      lambda m: (m.group(1) if m.group(1) in self.known else "this work") + m.group(2), text)
+        for name in sorted(self.hidden, key=len, reverse=True):
+            text = text.replace(name, "other work")
+        return safe_why(text)
+
+
 def entry_out(x: dict) -> dict:
     return {"start": hm(x.get("s")), "end": hm(x.get("e")), "minutes": mins(x.get("minutes")),
             "project": str(x.get("project") or ""), "task": str(x.get("task") or ""), "taskId": x.get("taskId"),
@@ -290,7 +349,7 @@ def pulsar_day(args: dict) -> dict:
     cfg = _config()
     date = _date_arg(args, cfg)
     q = {"date": date}
-    got = fetch({"entries": ("/api/entries", q), "activity": ("/api/activity", q), "likely": ("/api/proposal", q),
+    got = fetch({"entries": ("/api/entries", q), "activity": ("/api/activity", q), "likely": ("/api/proposal", _likely_q(q)),
                  "calendar": ("/api/calendar", q), "repeats": ("/api/repeats", q)})
     warnings: list = []
     act, lk, cal, rep = (got[k] for k in ("activity", "likely", "calendar", "repeats"))
@@ -305,6 +364,7 @@ def pulsar_day(args: dict) -> dict:
     if cal.get("problem"):
         warnings.append("Meetings: " + _short(cal["problem"]))
     me = _session_ids()[0]
+    places = Places(rows)
 
     logged = sum(mins(x["minutes"]) for x in entries)
     known = [x for x in entries if x.get("billable") is not None]
@@ -320,7 +380,8 @@ def pulsar_day(args: dict) -> dict:
         for r in rows:
             o = overlap(a, b, float(r["s"]), float(r["e"]))
             if o > 0:
-                cover[r.get("project") or ""] = cover.get(r.get("project") or "", 0) + o
+                p = places.repo(r.get("project"))
+                cover[p] = cover.get(p, 0) + o
         return [{"project": p, "minutes": mins(m)} for p, m in sorted(cover.items(), key=lambda kv: -kv[1]) if mins(m)][:4]
 
     def in_meeting(a, b):
@@ -336,15 +397,15 @@ def pulsar_day(args: dict) -> dict:
     # same tasks repeat: a busy day was 48 KB, over Claude Code's 10k-token warning)
     likely_rows, by_project = [], {}
     for r in rows:
-        p = by_project.setdefault(str(r.get("project") or ""), {"project": str(r.get("project") or ""), "minutes": 0,
-                                                                "learned": []})
+        name = places.repo(r.get("project"))
+        p = by_project.setdefault(name, {"project": name, "minutes": 0, "learned": []})
         p["minutes"] += mins(r["minutes"])
         for t in r.get("learned") or []:
             if len(p["learned"]) < 3 and t.get("taskId") not in {x["taskId"] for x in p["learned"]}:
-                p["learned"].append(task_out(t, safe_why(t.get("why"))))
+                p["learned"].append(task_out(t, places.why(t.get("why"))))
         if mins(r["minutes"]) < 5:
             continue
-        row = {"start": hm(r["s"]), "end": hm(r["e"]), "minutes": mins(r["minutes"]), "project": str(r.get("project") or ""),
+        row = {"start": hm(r["s"]), "end": hm(r["e"]), "minutes": mins(r["minutes"]), "project": name,
                "kind": str(r.get("kind") or "")}
         if r.get("tasks"):
             row["linkedTaskIds"] = [str(t) for t in r["tasks"]][:4]
@@ -397,14 +458,14 @@ def _same_repo(a: str, b: str | None) -> bool:
     return len(a) >= 3 and len(b) >= 3 and (a in b or b in a)
 
 
-def plan_entry(e: dict) -> dict:
+def plan_entry(e: dict, places: Places) -> dict:
     out = {"start": hm(e["s"]), "end": hm(e["e"]), "minutes": mins(e["minutes"]),
            "taskId": str(e.get("taskId") or "") or None, "task": str(e.get("title") or ""),
-           "project": str(e.get("project") or ""), "repository": str(e.get("repo") or ""),
+           "project": str(e.get("project") or ""), "repository": places.repo(e.get("repo")),
            "serviceId": str(e.get("serviceId") or "") or None, "service": str(e.get("service") or ""),
            "billable": e.get("billable"),
            "confidence": e.get("confidence"), "pulsarWouldTick": bool(e.get("checked")),
-           "why": safe_why(e.get("why")), "flags": [f for f in e.get("flags") or [] if isinstance(f, str)]}
+           "why": places.why(e.get("why")), "flags": [f for f in e.get("flags") or [] if isinstance(f, str)]}
     if e.get("meeting"):
         out["meeting"] = True
     # commit subjects only from the calling session's own repository: another repository's are another project's words
@@ -421,24 +482,33 @@ def plan_entry(e: dict) -> dict:
     return out
 
 
-def _plan(date: str) -> dict:
+def _plan(date: str, rows: list | None = None) -> tuple:
+    """(Log the day's plan, the day's Places). The plan names repositories from the Likely rows; without the rows
+    given, they are read too, at the same time, to tell repositories from session titles."""
     params = {"date": date, **({"ignore_logged": "1"} if ignore_logged() else {})}
-    got = fetch({"plan": ("/api/dayplan", params)})["plan"]
-    if got.get("error") and not got.get("entries"):
-        raise ToolError(f"Pulsar could not plan {date}: {_short(got['error'])}")
-    return got
+    calls = {"plan": ("/api/dayplan", params)}
+    if rows is None:
+        calls["likely"] = ("/api/proposal", _likely_q({"date": date}))
+    got = fetch(calls)
+    plan = got["plan"]
+    if plan.get("error") and not plan.get("entries"):
+        raise ToolError(f"Pulsar could not plan {date}: {_short(plan['error'])}")
+    if rows is None:
+        lk = got["likely"]
+        rows = [] if lk.get("error") or lk.get("disabled") else lk.get("entries") or []
+    return plan, Places(rows)
 
 
 def pulsar_propose(args: dict) -> dict:
     cfg = _config()
     date = _date_arg(args, cfg)
-    got = _plan(date)
+    got, places = _plan(date)
     t = got.get("totals") or {}
     return {
         "date": date, "timezone": cfg.get("timezone"),
-        "proposed": [plan_entry(e) for e in got.get("entries") or []],
-        "notPlaced": [{"minutes": mins(u.get("minutes")), "taskId": u.get("task"), "project": str(u.get("project") or ""),
-                       "why": safe_why(u.get("why"))} for u in got.get("unplaced") or []],
+        "proposed": [plan_entry(e, places) for e in got.get("entries") or []],
+        "notPlaced": [{"minutes": mins(u.get("minutes")), "taskId": u.get("task"), "project": places.repo(u.get("project")),
+                       "why": places.why(u.get("why"))} for u in got.get("unplaced") or []],
         "activeNotCovered": [{"start": hm(u["s"]), "end": hm(u["e"]), "minutes": mins(u["minutes"])}
                              for u in got.get("uncovered") or []],
         "totals": {k: t.get(k) for k in ("proposed", "checked", "logged", "active", "meetings", "notCovered", "over")},
@@ -488,21 +558,21 @@ def _session_title(full_id: str) -> str:
     return title[:120]
 
 
-def _session_task(row: dict, a: int, b: int, plan: list):
+def _session_task(row: dict, a: int, b: int, plan: list, places: Places):
     """The task for one of the session's stretches: Log the day's entry over it in the same repository; else the task
     learned for the row (logged before in this session or repository); else the entry over it, whatever its work."""
     with_task = [e for e in plan if e.get("taskId") and overlap(a, b, e["s"], e["e"]) > 0]
     same = [e for e in with_task if (e.get("repo") or "") == (row.get("project") or "")]
     keys = ("taskId", "task", "project", "serviceId", "service", "billable", "confidence", "why", "noteDraft", "noteFrom")
     if same:
-        p = plan_entry(max(same, key=lambda e: overlap(a, b, e["s"], e["e"])))
+        p = plan_entry(max(same, key=lambda e: overlap(a, b, e["s"], e["e"])), places)
         return {k: p.get(k) for k in keys if p.get(k) not in (None, "")}
     learned = [t for t in row.get("learned") or [] if t.get("taskId")]
     if learned:
-        return {**task_out(learned[0], safe_why(learned[0].get("why"))), "confidence": "low",
+        return {**task_out(learned[0], places.why(learned[0].get("why"))), "confidence": "low",
                 "alternatives": [task_out(t) for t in learned[1:3]]}
     if with_task:
-        p = plan_entry(max(with_task, key=lambda e: overlap(a, b, e["s"], e["e"])))
+        p = plan_entry(max(with_task, key=lambda e: overlap(a, b, e["s"], e["e"])), places)
         return {**{k: p.get(k) for k in keys if p.get(k) not in (None, "")}, "confidence": "low",
                 "why": "the entry Log the day proposes over this time, for other work"}
     return None
@@ -516,26 +586,27 @@ def pulsar_session(args: dict) -> dict:
     cfg = _config()
     date = _date_arg(args, cfg)
     q = {"date": date, **({"fresh": "1"} if date == _today(cfg.get("timezone") or "") else {})}
-    got = fetch({"likely": ("/api/proposal", {**q, "wait": "1"}), "entries": ("/api/entries", {"date": date})})
+    got = fetch({"likely": ("/api/proposal", _likely_q({**q, "wait": "1"})), "entries": ("/api/entries", {"date": date})})
     warnings: list = []
     lk = got["likely"]
     if lk.get("error") or lk.get("disabled"):
         raise ToolError("Pulsar's Likely column is " + ("switched off." if lk.get("disabled") else _short(lk["error"])))
     entries = _entries(got["entries"], warnings)
     mine = [r for r in lk.get("entries") or [] if sid in (r.get("sessions") or [])]
-    plan = _plan(date) if mine else {"entries": []}
+    places = Places(lk.get("entries") or [])
+    plan = _plan(date, lk.get("entries") or [])[0] if mine else {"entries": []}
     covered = covered_minutes(entries)
     rows, to_log, shared = [], [], []
     for r in sorted(mine, key=lambda r: float(r["s"])):
         a, b = int(float(r["s"])), int(round(float(r["e"])))
-        suggestion = _session_task(r, a, b, plan.get("entries") or [])
+        suggestion = _session_task(r, a, b, plan.get("entries") or [], places)
         others = [x for x in r.get("sessions") or [] if x != sid]
-        rows.append({"start": hm(a), "end": hm(b), "minutes": mins(r["minutes"]), "project": str(r.get("project") or ""),
+        rows.append({"start": hm(a), "end": hm(b), "minutes": mins(r["minutes"]), "project": places.repo(r.get("project")),
                      "kind": str(r.get("kind") or ""), "withOtherSessions": len(others),
                      "alreadyLoggedMinutes": sum(1 for m in range(a, min(b, 1440)) if covered[m]),
                      **({"suggested": suggestion} if suggestion else {})})
         for s, e in runs([not covered[m] for m in range(a, min(b, 1440))], least=5):
-            piece = {"start": hm(a + s), "minutes": e - s, "project": str(r.get("project") or ""),
+            piece = {"start": hm(a + s), "minutes": e - s, "project": places.repo(r.get("project")),
                      **({"taskId": suggestion["taskId"], "task": suggestion.get("task"),
                          "serviceId": suggestion.get("serviceId")} if suggestion else {})}
             # a stretch another session also had: which one the minutes were for is not known, so it waits for a yes
@@ -574,10 +645,11 @@ def pulsar_suggest(args: dict) -> dict:
     date = _date_arg(args, cfg)
     a, b = _stretch(args)
     q = {"date": date}
-    got = fetch({"entries": ("/api/entries", q), "activity": ("/api/activity", q), "likely": ("/api/proposal", q),
+    got = fetch({"entries": ("/api/entries", q), "activity": ("/api/activity", q), "likely": ("/api/proposal", _likely_q(q)),
                  "calendar": ("/api/calendar", q), "repeats": ("/api/repeats", q),
                  "suggest": ("/api/tasks/suggest", {"date": _history_date(date)})})
     rows = got["likely"].get("entries") or [] if not got["likely"].get("error") else []
+    places = Places(rows)
     events = got["calendar"].get("events") or []
     sug = got["suggest"] if not got["suggest"].get("error") else {}
     recent = sug.get("recent") or []
@@ -602,15 +674,15 @@ def pulsar_suggest(args: dict) -> dict:
         for t in (t for r in mine for t in r.get("learned") or []):
             if t.get("taskId") not in seen:
                 seen.add(t.get("taskId"))
-                lead.append(task_out(enrich(t), safe_why(t.get("why"))))
-        lead_label = f"For this work ({project})" if lead else None
+                lead.append(task_out(enrich(t), places.why(t.get("why"))))
+        lead_label = (f"For this work ({places.repo(project)})" if places.repo(project) else "For this work") if lead else None
     if not lead:
         best = max(((ev, overlap(a, b, float(ev["s"]), float(ev["e"]))) for ev in events
                     if not ev.get("declined") and not ev.get("all_day")), key=lambda p: p[1], default=None)
         if best and best[1] >= (b - a) / 2:
             ev = best[0]  # its title goes to Pulsar on this Mac, to match earlier meetings; it is never returned
             mt = fetch({"m": ("/api/meeting-tasks", {"date": date, "uid": ev.get("uid") or "", "title": ev.get("title") or ""})})["m"]
-            lead = [task_out(enrich(t), safe_why(t.get("why"))) for t in mt.get("tasks") or []]
+            lead = [task_out(enrich(t), places.why(t.get("why"))) for t in mt.get("tasks") or []]
             lead_label = "For the meeting" if lead else None
 
     usual = [task_out(enrich(x), f"logged at about {hm(x.get('at'))} on {x.get('days')} of the last 28 days")
@@ -727,7 +799,7 @@ def _resolve_services(date: str, entries: list) -> dict:
     dialog does). Also the task's name, project, service name, budget and billable, for the preview."""
     from .dayplan import pick_service
     tasks = sorted({e["taskId"] for e in entries})
-    calls = {"suggest": ("/api/tasks/suggest", {"date": date})}
+    calls = {"suggest": ("/api/tasks/suggest", {"date": _history_date(date)})}  # the service used last, before the day
     calls.update({f"svc:{t}": ("/api/services", {"task": t, "date": date}) for t in tasks})
     got = fetch(calls)
     recent = {t.get("taskId"): t for t in (got["suggest"].get("recent") or [])}
@@ -809,7 +881,7 @@ def pulsar_preview(args: dict) -> dict:
                                     "dry": True})
             if got.get("error"):
                 found.append(_short(got["error"]))
-            elif got.get("overlap"):
+            elif got.get("overlap") and not ignore_logged():  # the test switch's day has no entries: never show the real ones
                 found.append("it would overlap an entry already logged: " + "; ".join(
                     f"{o.get('start')} {o.get('minutes')} min {o.get('project')}" for o in got["overlap"]))
         previews.append(_preview(e, {"problem": "; ".join(found)} if found else None))
@@ -826,9 +898,11 @@ def pulsar_preview(args: dict) -> dict:
             _pending.pop(min(_pending, key=lambda k: _pending[k]["until"]))
         _pending[code] = {"date": date, "run": run, "entries": entries, "summary": summary, "until": now + CONFIRM_FOR}
     return {**out, "code": code, "summary": summary,
-            "next": ("Show the person the summary as it is. To log it, call pulsar_log with this code and this summary, "
-                     "unchanged: Claude Code shows it to the person and asks them first, and nothing is written if they "
-                     "say no. The code works once, for 10 minutes. Notes may be shown to clients.")}
+            "next": ("Show the person this summary as it is and ask whether to log it, then stop and wait for their answer. "
+                     "Call pulsar_log only after they say yes in a new message, with this code and this summary unchanged; "
+                     "never in the same turn as this preview, unless they already said yes to exactly this summary. Claude "
+                     "Code also asks them before pulsar_log runs, and nothing is written if they say no. The code works "
+                     "once, for 10 minutes. Notes may be shown to clients.")}
 
 
 def pulsar_log(args: dict, client: str = "") -> dict:
@@ -969,17 +1043,20 @@ TOOLS = [
                      "notes (clients may see them), and runs every entry through Pulsar's own dry run (overlaps with "
                      "logged entries, the Log the day journal). Returns each entry with any problem and, when there is "
                      "none, a code and a summary: Pulsar's own words for exactly what would be written, one line per "
-                     "entry. Show the person the summary as it is, then call pulsar_log."),
+                     "entry. Show the person the summary as it is and wait for their yes, in a new message, before "
+                     "pulsar_log."),
      "inputSchema": {"type": "object", "required": ["date", "entries"], "additionalProperties": False,
                      "properties": {"date": DATE_SCHEMA,
                                     "entries": {"type": "array", "minItems": 1, "maxItems": MOST_ENTRIES, "items": ENTRY_SCHEMA}}},
      "annotations": {"title": "Pulsar: preview time entries", **READ}},
     {"name": "pulsar_log", "title": "Pulsar: log time",
-     "description": ("Step 2: writes to Productive, through Pulsar, the entries a pulsar_preview code holds (a fresh "
+     "description": ("Step 2, only after the person has read pulsar_preview's summary and said yes to it in a new "
+                     "message: never call it in the same turn as the preview, unless they already said yes to exactly that "
+                     "summary. Writes to Productive, through Pulsar, the entries a pulsar_preview code holds (a fresh "
                      "read of the day, the overlap check, the write lock and the journal, so Log the day can undo them). "
                      "Give the code and the preview's summary unchanged: Claude Code shows the summary to the person and "
-                     "asks them before this runs, every time; if they say no, nothing is written. Works only in Claude "
-                     "Code. The code works once, for 10 minutes."),
+                     "asks them again before this runs, every time; if they say no, nothing is written. Works only in "
+                     "Claude Code. The code works once, for 10 minutes."),
      "inputSchema": {"type": "object", "required": ["code", "summary"], "additionalProperties": False,
                      "properties": {"code": {"type": "string", "description": "The code pulsar_preview returned"},
                                     "summary": {"type": "string", "description": "The summary pulsar_preview returned, "
@@ -1003,9 +1080,11 @@ WITH_CLIENT = ("pulsar_status", "pulsar_log")  # they answer differently by app
 INSTRUCTIONS = ("Pulsar shows the person's working day on this Mac against their Productive time entries. Every tool "
                 "needs Pulsar open; pulsar_status says whether it is, and the date and time. To answer what is not "
                 "logged, or to propose entries: pulsar_propose. For the calling session: pulsar_session. To log: "
-                "pulsar_preview (it writes nothing), show the person its summary as it is, then pulsar_log with the "
-                "code and that summary unchanged; Claude Code asks the person before every write. Never write a note "
-                "the person would not; clients may see notes.")
+                "pulsar_preview (it writes nothing), show the person its summary as it is, ask, and stop. Call "
+                "pulsar_log, with the code and that summary unchanged, only after the person says yes in a new message; "
+                "never in the same turn as the preview, unless they already said yes to exactly that summary. Claude "
+                "Code also asks the person before every write. Never write a note the person would not; clients may see "
+                "notes.")
 SERVER_INFO = {"name": "pulsar", "title": "Pulsar", "version": __version__}
 
 

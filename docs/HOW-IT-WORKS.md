@@ -486,7 +486,11 @@ bypass mode, and allow rules cannot skip it; with no one to ask (`-p`, `dontAsk`
 Pulsar. The prompt shows the tool's arguments, so `pulsar_log` refuses unless `summary` is the preview's text word for
 word: the person approves Pulsar's words, not the model's. Other apps ignore the mark, so `pulsar_log` refuses any
 client whose name is not `claude-code` (from `initialize`, or from each request's `_meta` in the 2026-07-28 protocol).
-A code that is refused (wrong summary, wrong app, Pulsar closed, writes blocked) is not used up.
+A code that is refused (wrong summary, wrong app, Pulsar closed, writes blocked) is not used up. The instructions, the
+preview's `next` and `pulsar_log`'s description all say the same: show the person the summary, stop, and call
+`pulsar_log` only after their yes in a new message, never in the same turn as the preview unless they already said yes
+to exactly that summary. In a simulation, Haiku asked to "Log my time" called `pulsar_log` straight after the preview
+before this was said.
 
 **Protocols.** Claude Code 2.1.301 first sends `server/discover` (2026-07-28): Pulsar answers it, and every request
 after it carries its version, capabilities and client in `_meta`, with no handshake; results say
@@ -498,7 +502,11 @@ versions Pulsar speaks.
 titles, notes of logged entries, rule words. Returned on purpose: the calling session's own title, and note drafts
 (`noteDraft`) from repeats, from Ask Claude, and from commit subjects only when the entry's repository is the calling
 session's (`CLAUDE_PROJECT_DIR` through `sessions.project_of_path`, names compared loosely as `commits.matches` does);
-a meeting's note is its title and is never returned.
+a meeting's note is its title and is never returned. **Repositories** (`mcp.Places`): where no file a session touched
+was in a repository, `sessions.analyse` and the fi-time-from-activity script name the work after the session's title
+(cut to 40 characters; the script first drops a leading "IMPORTANT!"), then "Claude Code" or "unknown". Such a name is
+never returned: a repository or project is named only when it is one of the day's Likely projects and none of these,
+else it is empty, and a reason that names another place (a past day's, in "logged while in …") says "other work".
 
 **Writes blocked.** `PULSAR_READ_ONLY` in the MCP's environment refuses `pulsar_log` before anything is sent. The
 server refuses a blocked write (`PULSAR_READ_ONLY`, or Preview without "allow writes") in `_log_checked` before the
@@ -698,6 +706,11 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   `**/api/entry/**` in a scripted browser as well. On such a server only, `?ignore_logged=1` in the page's address
   makes Log the day plan a day as if nothing were logged, to see a whole proposal on a day already logged. Give it
   `XDG_CACHE_HOME` pointing at a copy of `~/.cache/pulsar`, so its journal and Logs are not the real ones.
+- `PULSAR_MCP_IGNORE_LOGGED=1` in the MCP's environment, with `PULSAR_READ_ONLY=1` there and on the server (else
+  every tool refuses): every tool sees the day as if nothing were logged. Log the day plans with `ignore_logged`, the
+  Likely rows learn their tasks from the days before only (`/api/proposal?ignore_logged=1`, refused by a server that
+  is not read-only), "logged lately" stops the day before, and the preview's dry run does not report overlaps with the
+  real entries. Used to measure proposals against days already logged.
 - The window has test hooks when built with `PULSAR_SWIFT_FLAGS="-D PULSAR_TEST"`: with `PULSAR_TEST_DIR` it saves a
   picture of the page, a download and a PDF, then quits.
 
