@@ -160,11 +160,17 @@ async function saveSettings(extra = {}) {
   if (r.error) { msg.className = 'msg warn'; msg.textContent = r.error; return; }
   applyConfig(r.config);
   fillSettings(r.config);
-  // Productive was asked again only if the connection changed; its answer goes to the Productive part too
-  msg.className = 'msg' + (r.test && !r.test.ok ? ' warn' : '');
-  msg.textContent = !r.test ? 'Saved.' : r.test.ok ? `Saved. ${r.test.message}` : `Saved, but Productive: ${r.test.message}`;
-  if (r.test) { const st = $('#pd-status'); st.textContent = r.test.message; st.classList.toggle('warn', !r.test.ok); }
+  // Productive was asked again only if the connection changed. Saved and fine: the dialog closes, as Save does
+  // everywhere; a connection that now fails keeps it open, with the reason, so it can be fixed at once.
   reloadView();
+  if (r.test && !r.test.ok) {
+    msg.className = 'msg warn'; msg.textContent = `Saved, but Productive: ${r.test.message}`;
+    const st = $('#pd-status'); st.textContent = r.test.message; st.classList.add('warn');
+    showTab('t-conn');
+    return;
+  }
+  dlg.close();
+  toast(r.test ? `Settings saved. ${r.test.message}` : 'Settings saved.');
 }
 
 form.addEventListener('submit', ev => { ev.preventDefault(); saveSettings(); });
