@@ -2,8 +2,11 @@
 the note's draft, and Ask Claude reads them with what you typed.
 
 Which repositories: those the row's Claude sessions worked in during the row (the session's folder and the paths its
-tools named) whose name matches the row's project. Which commits: yours (the repository's user.email), on any branch,
-from five minutes before the row to ten minutes after it; no merges, version bumps or work in progress.
+tools named) whose name matches the row's project. Which commits: yours, on any branch, from five minutes before the
+row to ten minutes after it; no merges, version bumps or work in progress. Yours means author and committer both carry
+an email of your own git settings (global or system, `git config --global user.email`), or one that two or more of the
+repositories of the day's sessions set as their own user.email: never one that a single repository's .git/config names, which a
+repository from elsewhere could set to its own author's.
 Read only: `git config` and `git log`, nothing else, both through `_run_git`, which keeps a repository's own settings from
 running anything (a signature check's program, a hook, fsmonitor, a fetch). No git command runs when git is missing,
 or when it is only Apple's stand-in that would ask to install the developer tools.
@@ -98,22 +101,41 @@ def _run_git(git: str, root: str, args: list, run, timeout: float):
                timeout=timeout, env=env)
 
 
-def _log(git: str, root: str, since: float, run) -> list:
-    """[(author time, subject)] of your commits in a repository since a time, on any branch."""
+def _identity(git: str, root: str, run) -> tuple:
+    """({emails from your own git settings: global or system scope}, {emails the repository sets itself: local or
+    worktree scope, which its own .git/config, or a file it includes, decides})."""
     try:
-        email = _run_git(git, root, ["config", "user.email"], run, 5).stdout.strip().lower()
-        if not email:
+        done = _run_git(git, root, ["config", "--show-scope", "--get-all", "user.email"], run, 5)
+    except (OSError, subprocess.TimeoutExpired):
+        return set(), set()
+    own, local = set(), set()
+    for line in (done.stdout or "").splitlines():
+        scope, _, email = line.partition("\t")
+        email = email.strip().lower()
+        if email and scope in ("global", "system"):
+            own.add(email)
+        elif email and scope in ("local", "worktree"):
+            local.add(email)
+    return own, local
+
+
+def _log(git: str, root: str, since: float, run, trusted=None) -> list:
+    """[(author time, subject)] of your commits in a repository since a time, on any branch: author and committer
+    both one of the `trusted` emails (by default, those of your own git settings: _identity)."""
+    try:
+        if trusted is None:
+            trusted = _identity(git, root, run)[0]
+        if not trusted:
             return []
         when = datetime.fromtimestamp(since, timezone.utc).strftime("%Y-%m-%d %H:%M:%S +0000")
         done = _run_git(git, root, ["log", "--no-show-signature", "--exclude=refs/stash", "--all", "--no-merges", "-n",
-                                "500", f"--since={when}", "--format=%at%x09%ae%x09%s"], run, 10)
+                                "500", f"--since={when}", "--format=%at%x09%ae%x09%ce%x09%s"], run, 10)
     except (OSError, subprocess.TimeoutExpired):
         return []
     out = []
     for line in (done.stdout or "").splitlines():
-        t, _, rest = line.partition("\t")
-        who, _, subject = rest.partition("\t")
-        if t.isdigit() and who.lower() == email and subject.strip():
+        t, author, committer, subject = (line.split("\t", 3) + ["", "", ""])[:4]
+        if t.isdigit() and author.lower() in trusted and committer.lower() in trusted and subject.strip():
             out.append((int(t), subject.strip()))
     return out
 
@@ -179,7 +201,8 @@ def attach(rows: list, t0: float, projects_dir: str = sessions.PROJECTS_DIR, run
     found = [x for x in found if x]
     logs: dict = {}
     best: dict = {}  # (repository, time, subject) -> (distance from the row, row index)
-    for i, r in enumerate(rows):
+    each: list = []  # per row: (its time, the repositories it worked in that are its project's)
+    for r in rows:
         keys = {k for k in (sessions.norm_title(t) for t in r["titles"]) if len(k) >= 5}
         a, b = t0 + r["s"] * 60, t0 + r["e"] * 60
         roots: set = set()
@@ -187,9 +210,25 @@ def attach(rows: list, t0: float, projects_dir: str = sessions.PROJECTS_DIR, run
             if any(n.startswith(k) or k.startswith(n) for k in keys for n in names):
                 roots |= {x for x in map(repo_root, ([cwd] if cwd else []) + [p for t, p in paths if a - LEAD <= t <= b])
                           if x}
-        for root in sorted(x for x in roots if matches(r.get("project") or "", x)):
+        each.append((a, b, sorted(x for x in roots if matches(r.get("project") or "", x))))
+    # whose commits count: your own git settings' emails; and, when a repository sets an email of its own (a person
+    # who sets user.email per repository), that email only if another repository of the day's sessions sets it too:
+    # one repository alone never decides whose commits are yours
+    ids = {root: _identity(git, root, run) for root in sorted({x for _, _, rs in each for x in rs})}
+    trusted = {e for own, _ in ids.values() for e in own}
+    if any(local - trusted for _, local in ids.values()):
+        day = {repo_root(p) for _, cwd, paths in found for p in ([cwd] if cwd else []) + [p for _, p in paths]}
+        for root in sorted(x for x in day if x and x not in ids)[:40]:
+            ids[root] = _identity(git, root, run)
+        counts: dict = {}
+        for _, local in ids.values():
+            for e in local:
+                counts[e] = counts.get(e, 0) + 1
+        trusted |= {e for e, n in counts.items() if n >= 2}
+    for i, (a, b, roots) in enumerate(each):
+        for root in roots:
             if root not in logs:
-                logs[root] = _log(git, root, t0 - 86400, run)
+                logs[root] = _log(git, root, t0 - 86400, run, trusted)
             for t, subject in logs[root]:
                 if a - LEAD <= t <= b + TAIL:
                     d = max(a - t, t - b, 0)
