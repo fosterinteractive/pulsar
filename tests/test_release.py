@@ -1,5 +1,5 @@
 """How a release reaches a Mac: the code Pulsar.app carries is installed only as a release signed it (release_sig.py,
-launcher.sh), and a session dies with its server.
+launcher.sh), a port held for a moment at start marks no version bad, and a session dies with its server.
 
 Every key here is a throwaway one made for the test; the launcher runs with a home folder of its own and dialogs
 written to a file (PULSAR_TEST_DIALOGS), and the code it starts is a stand-in that exits at once.
@@ -243,6 +243,35 @@ class LauncherInstallTest(unittest.TestCase):
         self.assertEqual(self.current(), "versions/1.1.0")
         with open(os.path.join(self.root, "versions", "1.1.0", "pulsar", "server.py"), encoding="utf-8") as fh:
             self.assertEqual(fh.read(), "# the server\n")  # copied again from the app, as signed
+
+    def test_a_port_taken_at_start_is_tried_again_and_marks_nothing_bad(self):
+        self.installed("1.0.0")
+        launcher = self.app("1.1.0")
+        code, said, log = self.launch(launcher, fake_exit=98)  # pulsar.py's PORT_TAKEN, every time
+        self.assertEqual(code, 1)
+        self.assertIn("another program is using port", said)
+        self.assertEqual(log.count("Pulsar 1.1.0 starting"), 5)          # tried five times
+        self.assertNotIn("Pulsar 1.0.0 starting", log)                   # previous not tried: the port, not 1.1.0
+        self.assertEqual(self.current(), "versions/1.1.0")
+        self.assertFalse(os.path.exists(os.path.join(self.root, "bad-versions")))
+        code, said, log = self.launch(launcher, fake_exit=1)  # a copy that really does not start: as before
+        self.assertIn("Pulsar 1.1.0 did not start; trying 1.0.0", log)
+        self.assertFalse(os.path.exists(os.path.join(self.root, "bad-versions")))  # 1.0.0 did not start either
+
+
+class PortTakenTest(unittest.TestCase):
+    def test_pulsar_says_the_port_was_taken_with_its_own_exit_status(self):
+        held = socket.socket()
+        held.bind(("127.0.0.1", 0))
+        held.listen(1)
+        self.addCleanup(held.close)
+        run = subprocess.run([sys.executable, "-E", "-s", "-B", os.path.join(REPO, "pulsar.py"), "--no-open", "--port",
+                              str(held.getsockname()[1])], capture_output=True, text=True, timeout=60)
+        self.assertEqual(run.returncode, 98, run.stderr)
+        self.assertIn("could not listen", run.stderr)
+        with open(os.path.join(REPO, "macos", "launcher.sh"), encoding="utf-8") as fh:
+            self.assertIn("PORT_TAKEN=98", fh.read())  # the launcher reads the same number
+
 
 class SessionLifetimeTest(unittest.TestCase):
     def test_a_session_is_good_only_for_the_server_that_issued_it(self):

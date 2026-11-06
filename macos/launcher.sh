@@ -40,6 +40,7 @@ ICON="$CONTENTS/Resources/AppIcon.icns"
 ROOT="$HOME/Library/Application Support/Pulsar"
 BAD="$ROOT/bad-versions"
 SIGNED="$CONTENTS/Resources/app.manifest.json"   # B's version and files (build_app.sh); .sig: the release signature
+PORT_TAKEN=98   # pulsar.py's exit status when something else holds the port: says nothing about the version
 LOG="$HOME/Library/Logs/Pulsar.log"
 PY=/usr/bin/python3
 MODE="${1:-}"
@@ -200,23 +201,31 @@ started_by_app() {
 
 # Starts the copy in folder $1 in the background and waits for it to answer with this user's key (is_ours): a
 # version answering on the port is not enough, since something else may hold the port while this copy failed to get
-# it. Returns 1 if it stops or does not answer within 15 seconds (then it is stopped).
+# it. Returns 0 once it answers; 2 when the port stayed taken (pulsar.py exits PORT_TAKEN: tried again, five times in
+# all, and never the copy's fault); 1 if it stops or does not answer within 15 seconds (then it is stopped).
 start_server() {
-  local real="$1" server
-  log "Pulsar $(version_of "$real") starting on port $PORT from $real"
-  cd "$real" || return 1
-  # Its own session, so it outlives this script and the app's process group. -B: no __pycache__ written.
-  /usr/bin/nohup "$PY" -c 'import os, sys
+  local real="$1" server rc try holder
+  for try in 1 2 3 4 5; do
+    log "Pulsar $(version_of "$real") starting on port $PORT from $real"
+    cd "$real" || return 1
+    # Its own session, so it outlives this script and the app's process group. -B: no __pycache__ written.
+    /usr/bin/nohup "$PY" -c 'import os, sys
 if os.getpid() != os.getpgrp():
     os.setsid()
 os.execv("/usr/bin/python3", ["/usr/bin/python3", "-E", "-s", "-B"] + sys.argv[1:])' \
-    "$real/pulsar.py" --no-open --port "$PORT" >>"$LOG" 2>&1 </dev/null &
-  server=$!
-  for _ in $(seq 1 60); do
-    sleep 0.25
-    [ -n "$(running_version)" ] && is_ours && return 0
-    kill -0 "$server" 2>/dev/null || break
+      "$real/pulsar.py" --no-open --port "$PORT" >>"$LOG" 2>&1 </dev/null &
+    server=$! rc=""
+    for _ in $(seq 1 60); do
+      sleep 0.25
+      [ -n "$(running_version)" ] && is_ours && return 0
+      kill -0 "$server" 2>/dev/null || { wait "$server"; rc=$?; break; }
+    done
+    [ "$rc" = "$PORT_TAKEN" ] || break
+    holder="$(listener_pid)"
+    log "Port $PORT was taken while Pulsar $(version_of "$real") started (try $try of 5)${holder:+, by: $(/bin/ps -o command= -p "$holder" 2>/dev/null)}"
+    sleep 1
   done
+  [ "$rc" = "$PORT_TAKEN" ] && return 2
   is_ours && return 0
   kill "$server" 2>/dev/null
   if [ -n "$(running_version)" ]; then
@@ -290,7 +299,11 @@ if [ -n "$PREVIEW_DIR" ]; then
   # Preview takes any value as read-only and writes nothing.
   export PULSAR_PREVIEW=1 PULSAR_INSTANCE=preview
   [ -n "${PULSAR_READ_ONLY:-}" ] || export PULSAR_READ_ONLY=preview
-  start_server "$PREVIEW_DIR" && { open_page; exit 0; }
+  start_server "$PREVIEW_DIR"
+  case $? in
+    0) open_page; exit 0 ;;
+    2) fail_dialog "Pulsar Preview could not start: another program is using port $PORT." ;;
+  esac
   fail_dialog "Pulsar Preview could not start. Its log is ~/Library/Logs/Pulsar-Preview.log."
 fi
 
@@ -371,8 +384,13 @@ fi
 
 # 4. Start current. If it does not come up, try previous: if previous starts where current did not, current is the
 #    problem (whatever its self-test said), so it is marked bad and previous stays. If neither starts, the cause is
-#    the Mac (the port, a slow start), not a version: nothing is marked and a dialog says so.
-start_server "$CUR_REAL" && { open_page; exit 0; }
+#    the Mac (the port, a slow start), not a version: nothing is marked and a dialog says so. A port that stays taken
+#    while current starts is never current's fault: then nothing is marked and previous is not tried.
+start_server "$CUR_REAL"
+case $? in
+  0) open_page; exit 0 ;;
+  2) fail_dialog "Pulsar could not start: another program is using port $PORT. Nothing was changed; try opening it again." ;;
+esac
 PREV_REAL="$(real_of previous)"
 if [ -n "$PREV_REAL" ] && [ "$PREV_REAL" != "$CUR_REAL" ]; then
   log "Pulsar $C did not start; trying $(version_of "$PREV_REAL")"
