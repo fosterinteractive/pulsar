@@ -332,7 +332,8 @@ class ReadRetryTest(unittest.TestCase):
         import http.client, socket
         for outcome, write in ((http.client.RemoteDisconnected("closed"), True), (socket.timeout("slow"), False)):
             Conn, calls = self.conn_class([outcome, None])
-            with mock.patch.object(productive.http.client, "HTTPSConnection", Conn):
+            with mock.patch.object(productive.http.client, "HTTPSConnection", Conn), \
+                 mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": ""}):  # the write reaches the fake connection
                 with self.assertRaises(Exception):
                     productive.https("POST", "https://example.invalid/x", b"{}", write=write)
             self.assertEqual(len(calls), 1)
@@ -1471,6 +1472,257 @@ class ValidateTest(unittest.TestCase):
                     {"activitywatch_url": "file:///etc/passwd"}):
             with self.assertRaises(ValueError):
                 server.validate(bad)
+
+
+class NamesAgeTest(unittest.TestCase):
+    """Names and billing types are read again once old: a renamed project, a moved service, a role that sees more."""
+
+    def path(self):
+        return os.path.join(tempfile.mkdtemp(), "names.json")
+
+    def test_a_name_is_trusted_for_a_week_and_a_hidden_billing_type_for_a_day(self):
+        n = productive.Names(self.path())
+        keys = ("tasks:1", "billing:services:2", "billing:services:3")
+        n.set_many({"tasks:1": "Client site", "billing:services:2": "1", "billing:services:3": "0"})
+        self.assertEqual([n.fresh(k) for k in keys], [True, True, True])
+        for k in n.at:
+            n.at[k] -= 2 * 86400                                   # two days later
+        self.assertEqual([n.fresh(k) for k in keys], [True, True, False])
+        for k in n.at:
+            n.at[k] -= 6 * 86400                                   # eight days later
+        self.assertEqual([n.fresh(k) for k in keys], [False, False, False])
+        self.assertEqual(n.get("tasks:1"), "Client site")          # still shown until it is read again
+        n.set_many({"tasks:9": "x"})                               # any write keeps the times in the file
+        self.assertFalse(productive.Names(n.path).fresh("tasks:1"))
+
+    def test_names_an_older_version_kept_are_refreshed_a_few_at_a_time(self):
+        import json
+        p = self.path()
+        with open(p, "w") as fh:
+            json.dump({f"tasks:{i}": "P" for i in range(200)}, fh)
+        n = productive.Names(p)
+        self.assertTrue(all(n.fresh(f"tasks:{i}") for i in range(200)))
+        ages = sorted(time.time() - n.at[f"tasks:{i}"] for i in range(200))
+        self.assertGreater(ages[-1] - ages[0], 5 * 86400)          # due over the week, not all on one day
+        with open(p) as fh:
+            kept = json.load(fh)
+        self.assertIn("_at", kept)                                 # the times given are kept
+        self.assertEqual(kept["tasks:7"], "P")                     # and an older version still finds every name
+
+    def test_mcp_reads_a_stale_name_and_billing_type_again(self):
+        sent, visible = [], {"on": True}
+
+        def mcp(tool, args, token):
+            kind = args.get("resource_type")
+            sent.append((tool, kind))
+            if tool == "load_resource" and kind == "tasks":
+                return '```json\n{"item": {"id": "1", "fields": {}}, "included": [{"type": "projects", "id": "9", "fields": {"name": "Client site"}}]}\n```'
+            if tool == "load_resource":
+                return ('```json\n{"item": {"id": "2", "fields": {"deal": {"type": "deals", "id": "7"}}}, '
+                        '"included": [{"type": "deals", "id": "7", "fields": {"name": "Retainer"}}]}\n```')
+            if kind == "services":  # one list per billing type: service 2 is Fixed price, when this role can see it
+                hit = visible["on"] and args["filters"]["conditions"][0]["value"] == "1"
+                return '```json\n{"items": {"columns": ["type", "id", "name"], "rows": %s}, "pagination": {"total": %d}}\n```' % (
+                    '[["services", "2", "Dev"]]' if hit else '[]', 1 if hit else 0)
+            return ('```json\n{"items": {"columns": ["type", "id", "date", "started_at", "time", "note", "is_approved", "task", '
+                    '"service"], "rows": [["time_entries", "5", "2026-11-04", null, "30 min", "", true, "tasks:1", "services:2"]]}, '
+                    '"included": {"columns": ["type", "id", "title", "name"], "rows": [["tasks", "1", "Build it", null], '
+                    '["services", "2", null, "Dev"]]}, "pagination": {"total": 1}}\n```')
+
+        names = productive.Names(self.path())
+        lookups = lambda: [s for s in sent if s[0] == "load_resource" or s[1] == "services"]  # noqa: E731
+        read = lambda: productive.mcp_entries("2026-11-04", "2026-11-04", "t", "42", names)  # noqa: E731
+        with mock.patch.object(productive, "mcp_text", mcp):
+            rows = read()
+            self.assertEqual((rows[0]["project"], rows[0]["budget"], rows[0]["billable"]), ("Client site", "Retainer", True))
+            self.assertEqual(len(lookups()), 2 + 4)                # two names, the services once per billing type
+            sent.clear(); read()
+            self.assertEqual(lookups(), [])                        # fresh: not asked again
+            for k in names.at:
+                names.at[k] -= 8 * 86400                           # a week later: everything is read again
+            sent.clear(); visible["on"] = False; read()
+            self.assertEqual(len(lookups()), 2 + 4)
+            self.assertEqual(names.get("billing:services:2"), "0")  # in no list now: hidden from this role
+            names.at["billing:services:2"] -= 3600
+            sent.clear(); read()
+            self.assertEqual(lookups(), [])                        # an hour later: not asked again
+            names.at["billing:services:2"] -= 86400
+            visible["on"] = True
+            sent.clear(); rows = read()
+            self.assertEqual(len(lookups()), 4)                    # a day later: asked again, and now it is seen
+            self.assertTrue(rows[0]["billable"])
+
+    def test_a_failed_reread_keeps_the_old_name_and_waits_a_day(self):
+        names = productive.Names(self.path())
+        names.set_many({"tasks:1": "Old name"})
+        names.at["tasks:1"] -= 8 * 86400
+        names.keep_for_now(["tasks:1", "tasks:404"])
+        self.assertEqual(names.get("tasks:1"), "Old name")
+        self.assertTrue(names.fresh("tasks:1"))
+        names.at["tasks:1"] -= 86400 + 1
+        self.assertFalse(names.fresh("tasks:1"))
+        self.assertIsNone(names.get("tasks:404"))                  # nothing made up for one never known
+
+
+class ScrubTest(unittest.TestCase):
+    """The error log cuts credentials and keeps everything a person needs to read it."""
+
+    CUT = [
+        ("https://x/oauth/google?state=abc&code=4/0AeaYSHBc1x2y3z_Qw-ER&scope=calendar",
+         "https://x/oauth/google?state=abc&code=[removed]&scope=calendar"),
+        ("code=4/0AeaYSHBc1x2y3z&code_verifier=dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk&grant_type=authorization_code",
+         "code=[removed]&code_verifier=[removed]&grant_type=authorization_code"),
+        ("client_secret=GOCSPX-a1B2c3D4e5F6 sent", "client_secret=[removed] sent"),
+        ('{"client_secret": "GOCSPX-a1B2c3D4e5F6", "x": 1}', '{"client_secret": "[removed]", "x": 1}'),
+        ("p.zip?X-Amz-Date=20261106T000000Z&X-Amz-Credential=AKIAEXAMPLE%2F20261106&X-Amz-Signature=0a1b2c3d4e5f6071&X-Amz-SignedHeaders=host",
+         "p.zip?X-Amz-Date=20261106T000000Z&X-Amz-Credential=[removed]&X-Amz-Signature=[removed]&X-Amz-SignedHeaders=host"),
+        ("key sk-ant-api03-AbCdEf_12345-xyzXYZ0987-QwErTy failed", "key [removed] failed"),
+        ("session AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-AbCd ended", "session [removed] ended"),
+        ("the token was q8Zx3Lm-Vt9_Rk2Wp7Ys4Bn6Hj1Gf5Dc0Ae8Su3Oi7. Then", "the token was [removed]. Then"),
+        ("jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c here",
+         "jwt [removed] here"),
+        ("Authorization: Bearer abc.def-123", "Authorization: Bearer [removed]"),
+        ("access_token=ya29.a0AfH6SM&x=1", "access_token=[removed]&x=1"),
+    ]
+    KEEP = [
+        "/Users/nick/.claude/projects/-Users-nick-Sites-tua-trent/09cccb5f-9d87-4b3e-b524-2dad39b09fc2.jsonl",
+        "/var/folders/xx/T/pulsar-memtime-AbCdEfGhIjKlMnOpQrStUvWxYz0123456789",
+        'File "/Users/nick/Library/Application Support/Pulsar/versions/1.0.4/pulsar/server.py", line 303, in api_proposal',
+        "test_a_write_and_a_timeout_are_never_tried_twice_and_more_words",
+        "PULSAR_READ_ONLY_IS_SET_SO_NOTHING_WAS_WRITTEN_TO_PRODUCTIVE",
+        "pulsar.server.api_proposal_and_a_very_long_dotted_Name1234567890abc",
+        "the command failed with exit code=1 (returncode=2); code=ECONNREFUSED",
+        "commit 3503708c1f4e2b6a9d0e8f7a6b5c4d3e2f1a0b9c on branch nick-dev",
+        "Productive did not give the time entries (HTTP 503). Showing the copy saved 05.11 21:40.",
+        "https://app.productive.io/1234-foster/tasks/5678?filter=open",
+        "ValueError: date=YYYY-MM-DD",
+    ]
+
+    def test_credentials_are_cut(self):
+        from pulsar import logbook
+        for text, want in self.CUT:
+            self.assertEqual(logbook.scrub(text), want, text)
+
+    def test_normal_text_and_paths_stay(self):
+        from pulsar import logbook
+        for text in self.KEEP:
+            self.assertEqual(logbook.scrub(text), text)
+
+
+class CapTest(unittest.TestCase):
+    def test_the_error_log_remembers_only_its_newest_messages(self):
+        from pulsar import logbook
+        logbook._last.clear()
+        with mock.patch.object(logbook, "LOG_DIR", tempfile.mkdtemp()):
+            for i in range(1000):
+                logbook.record("test", f"problem {i}", once_per=0)
+        self.assertLessEqual(len(logbook._last), logbook._last.size)
+        self.assertIn(("test", "problem 999"), logbook._last)
+        b = config.Newest(2)
+        b["a"], b["b"], b["a"], b["c"] = 1, 2, 3, 4
+        self.assertEqual(list(b.items()), [("a", 3), ("c", 4)])    # "a" set again was newest, so "b" went
+        logbook._last.clear()
+
+
+class LearnPendingTest(unittest.TestCase):
+    """The Likely column does not wait for the 60 days of history its learned tasks need."""
+
+    def settings(self):
+        return {**config.DEFAULTS, "timezone": "UTC", "likely": "on", "person_id": "9", "org_id": "1"}
+
+    def test_the_rows_come_at_once_and_their_tasks_when_the_page_asks_again(self):
+        import threading
+        gate, reads = threading.Event(), []
+
+        def rows(d0, d1, s):
+            if d0 != d1:  # the history, not the day's own entries
+                reads.append((d0, d1))
+                gate.wait(5)
+            return [{"date": d0, "taskId": "1"}], None, "token", False
+
+        def annotate(result, *a):
+            for e in result["entries"]:
+                e["learned"] = [{"taskId": "1"}]
+
+        s = self.settings()
+        server._rows_before.clear()
+        with mock.patch.object(server.config, "load", lambda: dict(s)), \
+             mock.patch.object(server, "current_settings", lambda: dict(s)), \
+             mock.patch.object(server.likely, "enabled", lambda s: True), \
+             mock.patch.object(server.likely, "proposal", lambda *a, **k: {"entries": [{"s": 600, "e": 660, "minutes": 60, "project": "p"}]}), \
+             mock.patch.object(server, "productive_rows", rows), mock.patch.object(server.learn, "annotate", annotate):
+            began = time.time()
+            first = server.api_proposal({"date": "2026-11-04"})
+            self.assertLess(time.time() - began, 1)                   # not held up by the read
+            self.assertTrue(first["learnPending"])
+            self.assertNotIn("learned", first["entries"][0])
+            self.assertTrue(server.api_proposal({"date": "2026-11-04"})["learnPending"])  # still being read
+            gate.set()
+            done = server.api_proposal({"date": "2026-11-04", "wait": "1"})               # the page's second ask
+            later = server.api_proposal({"date": "2026-11-04"})
+        self.assertNotIn("learnPending", done)
+        self.assertEqual(done["entries"][0]["learned"], [{"taskId": "1"}])
+        self.assertNotIn("learnPending", later)                        # read: kept for the hour
+        self.assertEqual(len(reads), 1)                               # one read, however many asked
+
+    def test_columns_asking_at_the_same_moment_share_one_history_read(self):
+        import threading
+        calls = []
+
+        def slow(d0, d1, s):
+            calls.append((d0, d1))
+            time.sleep(0.2)
+            return [{"date": "2026-10-20", "taskId": "1"}], None, "mcp", False
+        server._rows_before.clear()
+        got = []
+        with mock.patch.object(server, "productive_rows", slow):
+            ts = [threading.Thread(target=lambda d=d: got.append(server.history_rows("2026-11-03", {"person_id": "9"}, days=d)))
+                  for d in (28, 60, 28)]
+            for t in ts:
+                t.start()
+            for t in ts:
+                t.join()
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(got), 3)
+
+
+class SilentFailureTest(unittest.TestCase):
+    def test_assigned_tasks_that_fail_are_logged_and_said(self):
+        seen = []
+
+        def boom(s):
+            raise productive.ProductiveError("Productive did not list tasks (HTTP 503).")
+        server._recent.clear()
+        with mock.patch.object(server, "current_settings", lambda: {**config.DEFAULTS, "person_id": "9", "timezone": "UTC"}), \
+             mock.patch.object(server, "productive_rows", lambda *a: ([], None, "token", False)), \
+             mock.patch.object(server.productive, "assigned_tasks", boom), \
+             mock.patch.object(server.logbook, "record", lambda *a, **k: seen.append(a)):
+            got = server.api_suggest({"date": "2026-11-04"})
+        server._recent.clear()
+        self.assertEqual(got["assigned"], [])
+        self.assertIn("HTTP 503", got["assignedError"])
+        self.assertTrue(any("assigned tasks" in a[1] for a in seen))
+
+    def test_a_task_that_cannot_be_read_says_why(self):
+        mcp = lambda s: {"kind": "claude-code", "token": "t"}  # noqa: E731
+        rest = lambda s: {"kind": "token", "token": "t"}       # noqa: E731
+        cases = [  # (connection, how Productive answers, words the message must have)
+            (mcp, {"https": lambda *a, **k: (401, b"")}, "expired"),
+            (rest, {"rest_get": lambda *a: (401, None)}, "expired"),
+            (rest, {"rest_get": lambda *a: (0, "Productive took too long to answer")}, "took too long"),
+            (rest, {"rest_get": lambda *a: (404, None)}, "deleted, or not visible to you"),
+        ]
+        for conn, patches, words in cases:
+            productive._task_cache.clear()
+            with mock.patch.object(productive, "connection", conn), mock.patch.multiple(productive, **patches), \
+                 mock.patch.object(productive, "_cc_cache", [0.0, None]):
+                with self.assertRaises(productive.ProductiveError) as caught:
+                    productive.bookable_services("5", "2026-11-04", {"org_id": "1"})
+                self.assertIn(words, str(caught.exception))
+                if words != "deleted, or not visible to you":  # the connection: said by the Tasks box too
+                    self.assertNotIn("did not return that task", str(caught.exception))
+                    with mock.patch.object(server, "current_settings", lambda: {"org_id": "1"}):
+                        self.assertIn(words, server.api_estimates({"ids": "5"})["error"])
 
 
 if __name__ == "__main__":

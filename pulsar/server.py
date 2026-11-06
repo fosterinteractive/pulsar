@@ -309,6 +309,11 @@ def api_proposal(q: dict) -> dict:
     if not result.get("error"):  # the tasks you logged in the same session or repository: a hint, never an error
         ps = current_settings()
         if ps.get("person_id"):
+            if not history_ready(date, ps) and q.get("wait") != "1":
+                # 60 days of history is a slow read: the rows go out now, without their tasks, while it is read in
+                # the background; the page asks once more (wait=1) and gets them
+                history_in_background(date, ps)
+                return {**result, "learnPending": True}
             before, _ = history_rows(date, ps, days=learn.LEARN_DAYS)
             same_day, problem, _, _ = productive_rows(date, date, ps)
             learn.annotate(result, date, s, before, [] if problem else same_day, tz)
@@ -399,7 +404,7 @@ def api_settings(body: dict) -> dict:
 
 # ---- tasks, services, logging ----------------------------------------------------------------------------
 
-_recent: dict = {}
+_recent = config.Newest(8)  # (date, person) -> (until, suggestions)
 
 
 def api_estimates(q: dict) -> dict:
@@ -415,7 +420,7 @@ def api_suggest(q: dict) -> dict:
     then the open ones assigned to you."""
     s = current_settings()
     key = (q["date"], s.get("person_id"))
-    if key not in _recent or time.time() - _recent[key][0] > 600:
+    if key not in _recent or time.time() > _recent[key][0]:
         d1 = q["date"]
         d0 = (datetime.strptime(d1, "%Y-%m-%d") - timedelta(days=30)).strftime("%Y-%m-%d")
         rows, _, _, _ = productive_rows(d0, d1, s)
@@ -430,15 +435,20 @@ def api_suggest(q: dict) -> dict:
             t["minutes"] += r["minutes"]
             t["count"] += 1
         recent = sorted(by_task.values(), key=lambda t: (t["last"], t["count"]), reverse=True)
+        problem = ""
         try:
             mine = productive.assigned_tasks(s)
-        except Exception:
+        except Exception as exc:  # the dialog still offers the rest, and says why this group is empty
             mine = []
+            problem = f"Your assigned tasks could not be read: {exc}"
+            logbook.record("productive", problem, kind="warning", once_per=600)
         known = {t["taskId"]: t for t in mine}
         for t in recent:  # what Productive says of the tasks you logged to: due date, status, blocked
             t.update({k: known[t["taskId"]][k] for k in ("due", "status", "blocked")} if t["taskId"] in known else {})
         assigned = urgent_first([t for t in mine if t["taskId"] not in by_task], today(config.tz(s)))
-        _recent[key] = (time.time(), {"recent": recent, "assigned": assigned})
+        # kept 10 minutes; one without the assigned tasks only a minute, so the next dialog tries again
+        _recent[key] = (time.time() + (60 if problem else 600),
+                        {"recent": recent, "assigned": assigned, **({"assignedError": problem} if problem else {})})
     return _recent[key][1]
 
 
@@ -462,7 +472,7 @@ REPEAT_SHARE = 0.5  # of the days a task was logged, how many must be at that ti
 REPEAT_STALE = 10   # days: a repeat not seen this long has stopped (a meeting that was cancelled)
 CALL_WINDOW = 75    # minutes around the usual time to look for the call (wide enough for an hour's clock change)
 CALL_GAP = 20       # minutes: the call goes on while its window shows again within this; people work during calls
-_repeats: dict = {}
+_repeats = config.Newest(8)  # (date, person) -> (when, patterns)
 
 
 def is_call(it: dict) -> bool:
@@ -568,32 +578,59 @@ def api_repeats(q: dict) -> dict:
     return {"repeats": repeat_suggestions(_repeats[key][1], items, datetime.strptime(date, "%Y-%m-%d").weekday())}
 
 
-_rows_before: dict = {}
+_rows_before = config.Newest(10)  # (date, person) -> (when, rows)
 _rows_lock = threading.Lock()
+_reading = config.Newest(32)     # (date, person) -> a lock held while that history is read
+HISTORY_FOR = 3600               # seconds a history read is kept
+
+
+def history_ready(date: str, s: dict) -> bool:
+    """The history for `date` has been read in the last hour, so history_rows answers at once."""
+    with _rows_lock:
+        kept = _rows_before.get((date, s.get("person_id")))
+    return bool(kept and time.time() - kept[0] < HISTORY_FOR)
 
 
 def history_rows(date: str, s: dict, days: int = REPEAT_DAYS) -> tuple:
     """(your entries of the `days` days before `date`, problem), kept an hour: the history the repeats, the meetings
     and the Likely rows learn from."""
     # One read per date covers every caller: the longest history anyone asks for, sliced for the shorter ones (it used
-    # to be three reads, 60 + 28 + 31 days, before the day's own entries could load)
+    # to be three reads, 60 + 28 + 31 days, before the day's own entries could load). The columns ask at the same
+    # moment, so a caller that comes while it is being read waits for that read instead of starting another.
     span = max(days, learn.LEARN_DAYS)
     key = (date, s.get("person_id"))
     first = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=days)).strftime("%Y-%m-%d")
     with _rows_lock:
-        kept = _rows_before.get(key)
-    if not (kept and time.time() - kept[0] < 3600):
-        d0 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=span)).strftime("%Y-%m-%d")
-        d1 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
-        rows, problem, _, from_copy = productive_rows(d0, d1, s)
-        if problem and not from_copy:
-            return [], problem
-        kept = (time.time(), rows)
+        reading = _reading.get(key) or threading.Lock()
+        _reading[key] = reading
+    with reading:
         with _rows_lock:
-            _rows_before[key] = kept
-            for old in sorted(_rows_before, key=lambda k: _rows_before[k][0])[:-10]:
-                _rows_before.pop(old, None)
+            kept = _rows_before.get(key)
+        if not (kept and time.time() - kept[0] < HISTORY_FOR):
+            d0 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=span)).strftime("%Y-%m-%d")
+            d1 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+            rows, problem, _, from_copy = productive_rows(d0, d1, s)
+            if problem and not from_copy:
+                return [], problem
+            kept = (time.time(), rows)
+            with _rows_lock:
+                _rows_before[key] = kept
     return [r for r in kept[1] if r.get("date", "") >= first], None
+
+
+def history_in_background(date: str, s: dict) -> None:
+    """Start reading the history for `date`, unless it is being read already."""
+    with _rows_lock:
+        reading = _reading.get((date, s.get("person_id")))
+    if reading and reading.locked():
+        return
+
+    def run():
+        try:
+            history_rows(date, s, days=learn.LEARN_DAYS)
+        except Exception as exc:  # a hint for Likely: the page asks again and gets the rows without learned tasks
+            logbook.record("learn", f"Reading your history from Productive: {type(exc).__name__}: {exc}", kind="warning")
+    threading.Thread(target=run, daemon=True, name="pulsar-history").start()
 
 
 # ---- a meeting's task --------------------------------------------------------------------------------

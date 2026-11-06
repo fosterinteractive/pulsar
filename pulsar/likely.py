@@ -19,7 +19,7 @@ from . import config
 
 SCRIPT = os.path.expanduser("~/.claude/skills/fi-time-from-activity/scripts/activity_blocks.py")
 SESSIONS = os.path.expanduser("~/.claude/projects")
-_cache: dict = {}
+_cache = config.Newest(16)  # (date, time zone) -> (when, proposal): the days looked at lately
 
 
 def available() -> bool:
@@ -44,9 +44,10 @@ _locks: dict = {}
 TODAY_FOR = 180  # seconds a proposal for today is reused: the script reads every session of the day (~3 s)
 
 
-def proposal(date: str, tz_name: str, today: str, fresh: bool, settings: dict | None = None) -> dict:
+def proposal(date: str, tz_name: str, today: str, fresh: bool, settings: dict | None = None, keep: bool = True) -> dict:
     """The proposal for a day: past days once, today again after three minutes (or on ↻). One run per day at a time;
-    a request that arrives while it runs waits for it instead of starting another."""
+    a request that arrives while it runs waits for it instead of starting another. keep=False (learning's 60 past
+    days, which it stores on disk) leaves the days in memory, the ones the page shows, where they are."""
     key = (date, tz_name)
     lock = _locks.setdefault(key, threading.Lock())
     with lock:
@@ -57,7 +58,8 @@ def proposal(date: str, tz_name: str, today: str, fresh: bool, settings: dict | 
         result = _run(date, tz_name) if own_script() else _built_in(date, settings)
         if not result.get("error"):
             _with_tasks(result, date, settings)
-            _cache[key] = (time.time(), result)
+            if keep:
+                _cache[key] = (time.time(), result)
         return result
 
 

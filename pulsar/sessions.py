@@ -22,6 +22,8 @@ import os
 import re
 from datetime import datetime
 
+from .config import Newest
+
 HOME = os.path.expanduser("~")
 PROJECTS_DIR = os.path.join(HOME, ".claude", "projects")
 AWAY = 30  # minutes without a sign of work that end a sitting
@@ -100,7 +102,7 @@ def tool_paths(r: dict) -> list:
     return found
 
 
-_repo_of: dict = {}
+_repo_of = Newest(5000)  # folder -> its repository (None outside one)
 
 
 def project_of_path(path: str) -> str | None:

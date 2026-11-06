@@ -65,6 +65,22 @@ def write_atomic(path: str, text: str) -> None:
         raise
 
 
+class Newest(dict):
+    """A dict that keeps only the `size` keys set most recently (setting a key again makes it newest): the caches
+    kept in memory, so a server left running for weeks stops growing."""
+
+    def __init__(self, size: int):
+        super().__init__()
+        self.size, self._lock = size, threading.Lock()
+
+    def __setitem__(self, key, value) -> None:
+        with self._lock:
+            super().pop(key, None)
+            super().__setitem__(key, value)
+            while len(self) > self.size:
+                super().pop(next(iter(self)))
+
+
 def ensure_dirs() -> None:
     os.makedirs(CONFIG_DIR, exist_ok=True)
     os.makedirs(CACHE_DIR, exist_ok=True)
