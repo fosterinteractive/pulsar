@@ -164,13 +164,15 @@ def _keep_copy(text: str, why: str) -> None:
 
 # What Pulsar Preview does not take from Pulsar's settings when it starts with none of its own: the update reminder,
 # the Google account (its token is Pulsar's), where Productive comes from (a token is Pulsar's too: "auto" then uses
-# Claude Code's connection) and permission to write.
-SEED_SKIP = ("update_skip", "update_asked", "calendar_account", "productive_source", "preview_writes")
+# Claude Code's connection), permission to write, and the Claude Code switch (Ask Claude sends session text to
+# Anthropic and costs money, so it starts off in Preview until switched on there; the ask rules are Pulsar's own).
+SEED_SKIP = ("update_skip", "update_asked", "calendar_account", "productive_source", "preview_writes",
+             "ask_claude", "ask_claude_model", "claude_rules_added")
 
 
 def _seed_preview() -> bool:
-    """Pulsar Preview's first start: its settings begin as a copy of Pulsar's (rules, time zone, who you are), read
-    once. After that the two never share a file. True when a copy was made."""
+    """Pulsar Preview's first start: its settings begin as a copy of Pulsar's (rules, time zone, who you are; not
+    SEED_SKIP), read once. After that the two never share a file. True when a copy was made."""
     try:
         with open(os.path.join(MAIN_CONFIG_DIR, "settings.json"), encoding="utf-8") as fh:
             main = json.load(fh)

@@ -327,6 +327,16 @@ class DisconnectTest(Isolated):
         self.assertEqual(self.settings()["calendar_account"], "")
         self.assertIsNone(calendar._access["token"])
 
+    def test_preview_only_forgets_so_pulsar_stays_connected(self):
+        # Preview signs in with Pulsar's Google client: a revoke would withdraw the client's access, Pulsar's too
+        self.connect()
+        with mock.patch.dict(os.environ, {"PULSAR_PREVIEW": "1"}):
+            out = calendar.disconnect(self.settings())
+        self.assertEqual(self.google.to(calendar.REVOKE_URL), [])
+        self.assertIn("Google was not told", out["message"])
+        self.assertIsNone(config.get_google_token())
+        self.assertFalse(out["calendar"]["connected"])
+
     def test_offline_it_still_forgets_and_says_where_to_finish(self):
         self.connect()
         self.google.revoke = (0, {"error": "Google could not be looked up"})
@@ -352,7 +362,8 @@ class ServerTest(Isolated):
         self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
         self.port = self.httpd.server_address[1]
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
-        self.key = {"X-Pulsar-Key": config.session_secret()}
+        self.key = {"X-Pulsar-Key": config.session_secret()}  # reads
+        self.page = {"X-Pulsar-Session": config.new_session()}  # changes: the key alone may not (server.key_refusal)
 
     def tearDown(self):
         self.httpd.shutdown()
@@ -371,7 +382,8 @@ class ServerTest(Isolated):
     def test_connect_needs_the_session_and_opens_google(self):
         post = {"X-Pulsar": "1", "Content-Type": "application/json"}
         self.assertEqual(self.ask("/api/calendar/connect", "POST", post, b"{}")[0], 401)
-        status, _, body = self.ask("/api/calendar/connect", "POST", {**post, **self.key}, b"{}")
+        self.assertEqual(self.ask("/api/calendar/connect", "POST", {**post, **self.key}, b"{}")[0], 403)
+        status, _, body = self.ask("/api/calendar/connect", "POST", {**post, **self.page}, b"{}")
         answer = json.loads(body)
         self.assertEqual((status, answer["opened"], self.opened), (200, True, [answer["url"]]))
         q = parse_qs(urlsplit(answer["url"]).query)
@@ -435,7 +447,7 @@ class ServerTest(Isolated):
         self.assertEqual(json.loads(body)["calendar"], {"configured": True, "connected": True, "account": "ada@example.com"})
         self.assertNotIn(b"made-up-refresh", body)
         status, _, body = self.ask("/api/calendar/disconnect", "POST",
-                                   {**self.key, "X-Pulsar": "1", "Content-Type": "application/json"}, b"{}")
+                                   {**self.page, "X-Pulsar": "1", "Content-Type": "application/json"}, b"{}")
         self.assertEqual((status, json.loads(body)["calendar"]["connected"]), (200, False))
         self.assertEqual(json.loads(self.ask("/api/calendar/status", headers=self.key)[2])["connected"], False)
 

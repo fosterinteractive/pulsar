@@ -104,7 +104,7 @@ class McpTest(unittest.TestCase):
         config.session_secret()
         cls.httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
         threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
-        mcp._state.update({"port": cls.httpd.server_address[1], "verified": False})
+        mcp._state.update({"port": cls.httpd.server_address[1]})
 
     @classmethod
     def tearDownClass(cls):
@@ -195,7 +195,8 @@ class McpTest(unittest.TestCase):
             self.assertNotIn("\u2014", text)  # no em dashes in what the model reads
 
     def test_impostor_never_gets_the_key(self):
-        mcp._state["verified"] = False
+        self.assertIn("version", mcp.fetch({"c": ("/api/config", None)})["c"])  # the real Pulsar, checked...
+        # ...then Pulsar quits and another program takes its port: checked again before the key goes out
         with mock.patch.object(mcp, "_request", side_effect=lambda *a, **k: {"proof": "0" * 64}) as req:
             with self.assertRaises(mcp.ToolError):
                 mcp.fetch({"c": ("/api/config", None)})
@@ -351,8 +352,10 @@ class McpTest(unittest.TestCase):
         os.makedirs(os.path.join(folder, ".git"), exist_ok=True)
         return folder
 
-    def test_commit_notes_only_from_the_callers_repository(self):
+    def test_note_drafts_only_from_the_callers_repository(self):
         self.day.plan["entries"] = [plan_row(540, 600, note="Search keeps every letter", noteFrom="commits"),
+                                    plan_row(620, 640, repo="other-repo", note="Drafted for another client",
+                                             noteFrom="claude"),
                                     plan_row(800, 830, repo="other-repo", note="Weekly call", noteFrom="repeat")]
         self.day.rows[0]["s"] = 540  # the session's own row, for pulsar_session
 
@@ -362,12 +365,19 @@ class McpTest(unittest.TestCase):
                 mine, _ = self.call("pulsar_session", {"date": DATE})
             return ([p.get("noteDraft") for p in data["proposed"]],
                     [r.get("suggested", {}).get("noteDraft") for r in mine["rows"]])
-        kept = ["Search keeps every letter", "Weekly call"]
+        kept = ["Search keeps every letter", None, None]  # a repeat's note is past entries' note: never
         self.assertEqual(notes(self._repo("acme-site")), (kept, ["Search keeps every letter"]))
         self.assertEqual(notes(os.path.join(self._repo("acme-site"), "web", "themes")), (kept, ["Search keeps every letter"]))
         self.assertEqual(notes(self._repo("ACME_Site-2")), (kept, ["Search keeps every letter"]))  # loosely, as commits.matches
-        for folder in (self._repo("other-repo"), "", "relative/acme-site", os.path.join(_SCRATCH, "not-a-repo")):
-            self.assertEqual(notes(folder), ([None, "Weekly call"], [None]), folder)  # a repeat's note stays
+        self.assertEqual(notes(self._repo("other-repo")), ([None, "Drafted for another client", None], [None]))
+        for folder in ("", "relative/acme-site", os.path.join(_SCRATCH, "not-a-repo")):
+            self.assertEqual(notes(folder), ([None, None, None], [None]), folder)
+
+    def test_a_learned_tasks_shared_words_stay_in_pulsar(self):
+        why = "your notes on it share words with this work: salary, doctor, acme"
+        self.assertEqual(mcp.safe_why(why), "your notes on it share words with this work")
+        self.assertEqual(mcp.Places([]).why(why), "your notes on it share words with this work")
+        self.assertEqual(mcp.safe_why("logged while in acme-site: 2 h 5 min"), "logged while in acme-site: 2 h 5 min")
 
     # ---- Pulsar closed, and pulsar_status ----------------------------------------------------------------
 
@@ -378,8 +388,8 @@ class McpTest(unittest.TestCase):
             dead = sock.getsockname()[1]
         port = mcp._state["port"]
         self.addCleanup(mcp._state.update, {"port": port})
-        for verified in (True, False):
-            mcp._state.update({"port": dead, "verified": verified})
+        for _ in range(2):  # a second call: still "Open Pulsar"
+            mcp._state.update({"port": dead})
             for name, args in (("pulsar_day", {}), ("pulsar_propose", {}), ("pulsar_session", {}),
                                ("pulsar_suggest", {"start": "09:00", "minutes": 30}), ("pulsar_tasks", {"query": "x"}),
                                ("pulsar_preview", self.ARGS), ("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})):

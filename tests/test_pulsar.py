@@ -848,7 +848,7 @@ class AskClaudeTest(unittest.TestCase):
 
         def fake(cmd, **kw):
             if seen is not None:
-                seen["cmd"] = cmd
+                seen["cmd"], seen["env"] = cmd, kw.get("env") or {}
                 path = cmd[cmd.index("--mcp-config") + 1]
                 seen["path"] = path
                 with open(path) as fh:
@@ -877,6 +877,7 @@ class AskClaudeTest(unittest.TestCase):
         cmd = seen["cmd"]
         self.assertIn("--strict-mcp-config", cmd)                       # no other MCP server
         self.assertEqual(cmd[cmd.index("--setting-sources") + 1], "")  # no allowed tools, hooks or plugins from settings
+        self.assertEqual(seen["env"].get("CLAUDE_CODE_DISABLE_AUTO_MEMORY"), "1")  # no MEMORY.md: not a setting
         self.assertEqual(seen["mcp"], {"mcpServers": {"productive": entry}})  # Claude Code's own entry, as it is
         self.assertEqual(seen["mode"], 0o600)
         self.assertFalse(os.path.exists(seen["path"]))                   # removed after the run
@@ -1413,7 +1414,8 @@ print(json.dumps([config.CONFIG_DIR, config.CACHE_DIR, config.KEYCHAIN_SERVICE, 
         main, own = tempfile.mkdtemp(), tempfile.mkdtemp()
         rule = {"match": "acme", "taskId": "12", "title": "Acme", "project": "P"}
         mine = {**config.DEFAULTS, "rules": [rule], "timezone": "Europe/Kyiv", "calendar_account": "a@b.c",
-                "productive_source": "token", "update_skip": "1.2.1", "preview_writes": True, "unknown_key": 1}
+                "productive_source": "token", "update_skip": "1.2.1", "preview_writes": True, "unknown_key": 1,
+                "ask_claude": True, "ask_claude_model": "opus", "claude_rules_added": ["mcp__productive__create_resource"]}
         with open(os.path.join(main, "settings.json"), "w") as fh:
             _json.dump(mine, fh)
         with mock.patch.object(config, "INSTANCE", "preview"), mock.patch.object(config, "MAIN_CONFIG_DIR", main), \
@@ -1421,7 +1423,9 @@ print(json.dumps([config.CONFIG_DIR, config.CACHE_DIR, config.KEYCHAIN_SERVICE, 
                 mock.patch.object(config, "SETTINGS_FILE", os.path.join(own, "settings.json")):
             s = config.load()
             self.assertEqual((s["rules"], s["timezone"]), ([rule], "Europe/Kyiv"))
-            for key in config.SEED_SKIP:  # Pulsar's Google account, token source, update choice, write permission
+            for key in config.SEED_SKIP:  # Pulsar's Google account, token source, update choice, write permission,
+                self.assertEqual(s[key], config.DEFAULTS[key], key)  # and the Claude Code switch: off in Preview
+            for key in ("ask_claude", "ask_claude_model", "claude_rules_added"):
                 self.assertEqual(s[key], config.DEFAULTS[key], key)
             config.update({"timezone": "UTC"})
             with open(os.path.join(main, "settings.json")) as fh:
@@ -2272,6 +2276,27 @@ class GuardTest(unittest.TestCase):
     def test_the_launcher_proves_itself_with_the_key(self):
         self.assertEqual(self.ask("/api/logs?days=1", headers={"X-Pulsar-Key": config.session_secret()})[0], 200)
         self.assertEqual(self.ask("/api/logs?days=1", headers={"X-Pulsar-Key": "0" * 64})[0], 401)
+
+    def test_the_key_alone_may_read_quit_and_log_new_entries_nothing_more(self):
+        # the key is a file any program of this user can read, a Claude Code session too (server.key_refusal)
+        key = {"X-Pulsar-Key": config.session_secret(), "X-Pulsar": "1", "Content-Type": "application/json"}
+        page = {**self.token(), "X-Pulsar": "1", "Content-Type": "application/json"}
+        post = lambda path, body, h: self.ask(path, "POST", h, json.dumps(body).encode())  # noqa: E731
+        for path in ("/api/settings", "/api/entry/update", "/api/entry/delete", "/api/update/check", "/api/update/install",
+                     "/api/update/apply", "/api/likely/ask", "/api/likely/note", "/api/calendar/connect",
+                     "/api/calendar/disconnect", "/api/productive/test", "/api/session/end", "/api/client-error"):
+            status, _, body = post(path, {"preview_writes": True, "id": "1", "date": "2026-11-04", "force": True}, key)
+            self.assertEqual(status, 403, path)
+            self.assertIn("Pulsar's window", json_load(body)["error"])
+        day = {"date": "2026-11-04", "start": "09:00", "minutes": 30, "taskId": "5", "serviceId": "6",
+               "run": "ld-2026-11-04-0123456789ab", "row": "mcp-1"}
+        self.assertEqual(post("/api/log", {**day, "force": True}, key)[0], 403)  # never over another entry
+        self.assertEqual(post("/api/log", {k: v for k, v in day.items() if k != "run"}, key)[0], 403)  # outside a run
+        with mock.patch.object(server, "api_log", lambda body: {"dry": True}):
+            self.assertEqual(post("/api/log", {**day, "dry": True}, key)[0], 200)  # pulsar_preview and pulsar_log
+            self.assertEqual(post("/api/log", {**day, "force": True}, page)[0], 200)  # the window: as before
+        with mock.patch.object(server, "api_settings", lambda body: {"ok": True}):
+            self.assertEqual(post("/api/settings", {}, page)[0], 200)
 
     def test_the_changelog_is_for_signed_in_pages(self):
         from pulsar import __version__

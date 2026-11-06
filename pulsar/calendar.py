@@ -7,7 +7,9 @@ Connecting (OAuth 2.0 for an installed app, with PKCE):
    does nothing without a state it handed out and has not used; with one, it trades the code and the PKCE verifier
    for tokens at Google.
 3. The refresh token goes to the keychain (config.set_google_token). The access token stays in memory and is renewed
-   when it runs out. Disconnect revokes the token at Google and deletes it here.
+   when it runs out. Disconnect revokes the token at Google and deletes it here. In Pulsar Preview it only deletes it
+   here: Preview signs in with Pulsar's own Google client, and revoking at Google withdraws that client's access for
+   the account, Pulsar's included.
 
 The only scope asked for is calendar.events.readonly: it reads events and nothing else, and events.list on the primary
 calendar accepts it. The account shown is the primary calendar's name, which Google sets to its owner's email.
@@ -257,9 +259,9 @@ def _account(summary) -> str:
 
 
 def disconnect(settings: dict) -> dict:
-    """Revoke the token at Google, then forget it here whatever Google said."""
-    refresh, told = config.get_google_token(), True
-    if refresh:
+    """Revoke the token at Google, then forget it here whatever Google said. Preview only forgets (above)."""
+    refresh, told, preview = config.get_google_token(), True, config.is_preview()
+    if refresh and not preview:
         got, _ = http("POST", REVOKE_URL, {"token": refresh})
         told = got in (200, 400)  # 400: Google had already let it go
     config.delete_google_token()
@@ -268,7 +270,9 @@ def disconnect(settings: dict) -> dict:
     forget()
     with _lock:
         _pending.clear()
-    message = ("Google Calendar is disconnected, and Google has withdrawn Pulsar's access." if told else
+    message = ("Pulsar Preview has forgotten its access to Google Calendar. Google was not told, because that would "
+               "disconnect Pulsar too; to withdraw it for both: myaccount.google.com/connections." if preview else
+               "Google Calendar is disconnected, and Google has withdrawn Pulsar's access." if told else
                "Pulsar has forgotten its access to Google Calendar, but Google could not be told (offline?). To "
                "withdraw it there too: myaccount.google.com/connections.")
     return {"ok": True, "told": told, "message": message, "calendar": status({**settings, "calendar_account": ""})}
