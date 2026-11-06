@@ -226,29 +226,79 @@ def _config() -> dict:
 
 def task_out(t: dict, why: str | None = None) -> dict:
     """A task, from any of Pulsar's lists, with the allowed fields only."""
-    out = {"taskId": str(t.get("taskId") or ""), "task": str(t.get("title") or t.get("task") or ""),
-           "project": str(t.get("project") or "")}
+    out = {"taskId": str(t.get("taskId") or ""), "task": name_out(t.get("title") or t.get("task")),
+           "project": name_out(t.get("project"))}
     for k in ("serviceId", "service", "budget", "billable", "due", "status", "blocked"):
         if t.get(k) not in (None, ""):
-            out[k] = t[k]
+            out[k] = name_out(t[k]) if k in ("service", "budget", "status") else t[k]
     if why:
         out["why"] = why
     return out
 
 
-def safe_why(why: str) -> str:
-    """Pulsar's reasons are made of repository names, counts and durations, except those that quote a meeting's title,
-    a rule's words or Ask Claude's own words: those parts are replaced."""
-    why = str(why or "")
-    why = re.sub(r";? ?on your calendar as “[^”]*”", "; on your calendar", why)
-    why = re.sub(r"your rule “[^”]*”", "one of your rules", why)
-    if "the title says" in why:
-        return "a word in the meeting's title is in the task's name"
-    if why.startswith("Claude:"):
-        return "Ask Claude's pick"
-    # a learned task's reason quotes words shared by your past notes and other sessions' text: the words stay here
-    why = re.sub(r"(your notes on it share words with this work):.*", r"\1", why)
-    return why[:140]
+# Every reason Claude Code gets is one of these fixed phrases, never text from Pulsar's data: a meeting's title, a rule's
+# words, Ask Claude's words or another session's text cannot pass, whatever form a reason takes. Only digits are kept
+# from the original (a share, a duration, "2 of the last 3").
+BY_SOURCE = {
+    "rule": "one of your rules", "link": "a task link in this Claude session", "ticket": "the work names its ticket",
+    "session": "you logged it during this Claude session before", "repo": "you logged it in this repository before",
+    "sameday": "you logged it earlier today in this session", "words": "your past notes on it match this work",
+    "new": "a new task that matches this work", "recent": "you logged it lately", "claude": "Ask Claude's pick",
+    "repeat": "you log this at this time on most days", "call": "a call with no calendar entry",
+    "neighbour": "work outside Claude, next to other work", "none": "no signal: pick the task",
+}
+BY_TEXT = [  # (the start, or a part, of Pulsar's own reason, lower case) -> the phrase
+    ("logged while in this claude session", "you logged it during this Claude session before"),
+    ("you logged it while in this claude session", "you logged it during this Claude session before"),
+    ("logged while in ", "you logged it in this repository before"),
+    ("you logged it while in ", "you logged it in this repository before"),
+    ("you logged it during", "you logged it during earlier meetings like this"),
+    ("logged during", "you logged it during earlier meetings like this"),
+    ("the title says", "a word of the meeting's title is in the task's name"),
+    ("a meeting on your calendar", "a meeting on your calendar; no task found for it"),
+    ("on your calendar", "on your calendar; no call seen and no activity"),
+    ("you log this at", "you log this at this time on most days"),
+    ("a call the tracker saw", "a call with no calendar entry"),
+    ("work outside claude", "work outside Claude, next to other work"),
+    ("no room before", "no room before an entry already logged"),
+    ("no likely work", "no Likely work at that time"),
+    ("no signal", "no signal: pick the task"),
+    ("share words", "your past notes on it match this work"),
+    ("the work names", "the work names its ticket"),
+    ("you never log this repository", "you never log this repository"),
+    ("claude:", "Ask Claude's pick"),
+    ("rule", "one of your rules"),
+    ("link", "a task link in this Claude session"),
+    ("assigned", "assigned to you"),
+    ("lately", "you logged it lately"),
+]
+_NUMBERS = re.compile(r"\b\d{1,3}%|\b\d+ h(?: \d+ min)?|\b\d+ min|\b\d+ of the last \d+")
+
+
+def reason(text="", source: str = "") -> str:
+    """The reason Claude Code gets: a fixed phrase picked by the source or by Pulsar's own wording, plus the numbers
+    in it (digits and units only). Nothing else from the original text is ever returned."""
+    t = str(text or "")
+    phrase = BY_SOURCE.get(str(source or "").lower())
+    if not phrase:
+        low = t.lower()
+        phrase = next((p for start, p in BY_TEXT if low.startswith(start)), None) or \
+            next((p for start, p in BY_TEXT if start in low), "Pulsar's suggestion")
+    numbers = _NUMBERS.findall(t)
+    return f"{phrase} ({', '.join(numbers[:2])})" if numbers else phrase
+
+
+def safe_why(why: str) -> str:  # kept for callers and tests: the same rule
+    return reason(why)
+
+
+_CONTROL = re.compile(r"[\x00-\x1f\x7f\u200b-\u200f\u202a-\u202e\u2060-\u2069\ufeff]")
+
+
+def name_out(text, most: int = 120) -> str:
+    """A name from Productive (a task, project, service, budget): its own words, but without control or invisible
+    characters, on one line, and not longer than `most`."""
+    return _CONTROL.sub("", re.sub(r"\s+", " ", str(text or ""))).strip()[:most]
 
 
 # Where no file a session touched was in a repository, sessions.py and the fi-time-from-activity script name the work
@@ -279,22 +329,11 @@ class Places:
 
     def repo(self, name) -> str:
         name = str(name or "")
-        return name if name in self.known else ""
+        return name if name in self.known and re.fullmatch(r"[\w.\-/ ]{1,60}", name) else ""
 
-    def why(self, text) -> str:
-        """Pulsar's reason, with a place it names kept only when it is one of the day's repositories: a learned task's
-        reason can name a past day's, which may have been a session title."""
-        text = str(text or "")
-
-        def keep(m):
-            name = m.group(2)
-            return m.group(1) + (name if name in self.known or name == "this Claude session" else "other work") + m.group(3)
-        text = re.sub(r"(logged (?:it )?while in )(.+?)( \(\d+%\)|: \d|$)", keep, text)
-        text = re.sub(r"^(.+?)(: you never log this repository)",
-                      lambda m: (m.group(1) if m.group(1) in self.known else "this work") + m.group(2), text)
-        for name in sorted(self.hidden, key=len, reverse=True):
-            text = text.replace(name, "other work")
-        return safe_why(text)
+    def why(self, text, source: str = "") -> str:
+        """A reason as Claude Code gets it: a fixed phrase (reason), never a place or any other words of the original."""
+        return reason(text, source)
 
 
 def entry_out(x: dict) -> dict:
@@ -454,7 +493,7 @@ def pulsar_day(args: dict) -> dict:
 # Drafted notes returned: from your commits or Ask Claude, and only for the calling session's own repository (both are
 # made from that repository's work: another's is another client's words). A repeat's note is the note of past logged
 # entries, and a meeting's is its title: never returned.
-NOTE_SOURCES = ("commits", "claude")
+NOTE_SOURCES = ("commits",)  # your own commit subjects; never text a model wrote from other text
 
 
 def _caller_repo() -> str | None:
@@ -478,7 +517,7 @@ def plan_entry(e: dict, places: Places) -> dict:
            "serviceId": str(e.get("serviceId") or "") or None, "service": str(e.get("service") or ""),
            "billable": e.get("billable"),
            "confidence": e.get("confidence"), "pulsarWouldTick": bool(e.get("checked")),
-           "why": places.why(e.get("why")), "flags": [f for f in e.get("flags") or [] if isinstance(f, str)]}
+           "why": places.why(e.get("why"), e.get("source")), "flags": [f for f in e.get("flags") or [] if isinstance(f, str)]}
     if e.get("meeting"):
         out["meeting"] = True
     if e.get("note") and e.get("noteFrom") in NOTE_SOURCES and _same_repo(out["repository"], _caller_repo()):

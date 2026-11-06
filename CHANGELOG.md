@@ -6,6 +6,9 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- Pulsar in Claude Code: reasons are fixed phrases only, names are cleaned, and no model-written note is returned.
+
 ## 1.4.0 (2026-11-06)
 - Log the day: Earlier days, to catch up on several days one after another.
 - Ticket flags: a closed task, no budget on that date, or no estimate.

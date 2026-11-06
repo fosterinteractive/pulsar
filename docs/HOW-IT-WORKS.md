@@ -649,10 +649,15 @@ with `initialize` (2025-11-25 and earlier) gets that protocol instead. An unknow
 versions Pulsar speaks.
 
 **What leaves.** Never returned: window titles, apps, addresses, typed messages, meeting titles, other sessions'
-titles, notes of logged entries (a repeat's note is one), rule words, and the words a learned task's notes share with
-other work ("your notes on it share words with this work" stops there). Returned on purpose: the calling session's
-own title, and note drafts (`noteDraft`) from commit subjects or Ask Claude, only when the entry's repository is the
-calling session's (`CLAUDE_PROJECT_DIR` through `sessions.project_of_path`, names compared loosely as
+titles, notes of logged entries (a repeat's note is one), rule words, Ask Claude's words, and the words a learned
+task's notes share with other work. **Reasons are an allow-list** (`mcp.reason`): Claude Code gets one of a fixed set
+of phrases ("you logged it in this repository before", "one of your rules", …), chosen by the pick's source or by
+Pulsar's own wording, plus the digits in it (a share, a duration); no other word of the original passes, so an
+instruction hidden in a meeting's title or anywhere else cannot reach the session through a reason. Names from
+Productive (task, project, service, budget) lose control and invisible characters and are cut at 120 characters
+(`mcp.name_out`); they are the one free text left, written by people with access to Productive. Returned on purpose:
+the calling session's own title, and note drafts (`noteDraft`) from your own commit subjects only (never a note a
+model drafted), only when the entry's repository is the calling session's (`CLAUDE_PROJECT_DIR` through `sessions.project_of_path`, names compared loosely as
 `commits.matches` does): both are made from that repository's work. A meeting's note is its title and is never
 returned. **Repositories** (`mcp.Places`): where no file a session touched
 was in a repository, `sessions.analyse` and the fi-time-from-activity script name the work after the session's title
