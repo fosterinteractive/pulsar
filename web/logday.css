@@ -48,7 +48,7 @@
 .iss.ok:hover { background: transparent; }
 .rv-ask, .rv-test { margin: 10px 0 0; font-size: 12px; color: var(--muted); line-height: 1.45; }
 .rv-test { color: var(--gap-text); }
-.rv-list { flex: 1; overflow-y: auto; min-height: 0; list-style: none; margin: 0; padding: 0 0 10px; }
+.rv-list { flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0; list-style: none; margin: 0; padding: 0 0 10px; }
 
 /* a proposed entry */
 .er { position: relative; border-bottom: 1px solid var(--line2); display: flex; flex-wrap: wrap; align-items: flex-start; }
@@ -67,11 +67,11 @@
 /* the dot: a ring while proposed, filled once in Productive (shape, not only colour) */
 .er .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; border: 1.5px solid var(--c); transform: none; }
 .er .dot.full { background: var(--c); }
-.e-meta, .e-why, .e-warn { grid-column: 2 / span 2; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.e-meta, .e-why, .e-warn { grid-column: 2 / span 2; min-width: 0; font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .e-meta .bill { margin-left: 2px; }
 .e-why { display: flex; align-items: center; min-width: 0; }
 .e-why > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.e-warn { color: var(--gap-text); white-space: normal; }
+.e-warn { color: var(--gap-text); white-space: normal; overflow-wrap: anywhere; }
 .e-warn.neutral { color: var(--muted); }
 .wi { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; margin-right: 5px; flex: none; }
 .e-conf { grid-column: 3; grid-row: 1; display: inline-flex; gap: 6px; align-items: center; align-self: center; }
@@ -96,25 +96,41 @@
 .gr .gt { color: var(--muted); font-size: 12px; }
 .gr .gt b { color: var(--text); font-weight: 500; }
 
-/* the editor of the open entry */
-.ed { flex: 0 0 100%; padding: 2px 14px 14px 104px; }
-.ed .field { margin: 8px 0 0; }
-.taskbtn { display: grid; grid-template-columns: minmax(0, 1fr); width: 100%; text-align: left; font: inherit; color: var(--text);
+/* the editor of the open entry. It takes the row's width and never asks for more: its size does not depend on what
+   it holds (a long task name, a service, a note), so the row, its background and the panel keep their width. */
+.ed { flex: 0 0 100%; min-width: 0; container-type: inline-size; padding: 2px 14px 14px 104px; }
+.ed .field { margin: 8px 0 0; grid-template-columns: minmax(0, 1fr); }
+.ed .field input, .ed .field select, .ed .field textarea { width: 100%; max-width: 100%; min-width: 0; }
+.ed .field select { text-overflow: ellipsis; }
+.ed .hint, .whyd { overflow-wrap: anywhere; }
+.taskbtn { display: grid; grid-template-columns: minmax(0, 1fr); width: 100%; min-width: 0; text-align: left; font: inherit; color: var(--text);
   background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 6px 9px; cursor: pointer; }
 .taskbtn:hover { border-color: color-mix(in srgb, var(--text) 18%, transparent); }
 .taskbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .taskbtn .tb-t { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
 .taskbtn .tb-p { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.alts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; align-items: center; }
-.alts > span { color: var(--muted); font-size: 11.5px; }
-.alt { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 7px; font: inherit; font-size: 12px; padding: 2px 8px; cursor: pointer; max-width: 100%; }
-.alt span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* "Or", then the alternatives in a column of their own: a long one shortens beside it instead of leaving it alone */
+.alts { display: flex; gap: 6px; margin-top: 7px; align-items: baseline; }
+.alts > span { color: var(--muted); font-size: 11.5px; flex: none; }
+.alts > div { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.alt { display: inline-flex; gap: 6px; align-items: center; border: 1px solid var(--line); background: var(--card); color: var(--text); border-radius: 7px; font: inherit; font-size: 12px; padding: 2px 8px; cursor: pointer; min-width: 0; max-width: 100%; }
+.alt span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .alt:hover { background: var(--hover); }
 .alt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.tl { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end; }
+.tl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; column-gap: 10px; align-items: end; }
+.tl .field input { height: 32px; }  /* the time and number fields the same height, so their labels line up */
 .tl .endt { color: var(--muted); font-size: 12px; padding-bottom: 8px; white-space: nowrap; }
-.whyd { display: flex; gap: 2px; color: var(--muted); font-size: 12px; margin: 10px 0 0; line-height: 1.45; }
+/* a narrow editor: "until" under the two fields, then the fields one under the other */
+@container (max-width: 300px) {
+  .tl { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .tl .endt { grid-column: 1 / -1; padding: 4px 0 0; }
+}
+@container (max-width: 220px) { .tl { grid-template-columns: minmax(0, 1fr); } }
+.whyd { display: flex; gap: 2px; color: var(--muted); font-size: 12px; margin: 8px 0 0; line-height: 1.45; }
+.whyd > span { min-width: 0; }
 .whyd .wi, .whyd .cl-mark { margin-top: 3px; }
+.whyd.alt-why { padding-left: 18px; }  /* why an alternative is offered, while it is hovered or focused */
+.whyd.alt-why b { color: var(--text); font-weight: 500; }
 .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
 .acts .btn { font-size: 12px; padding: 3px 9px; }
 
@@ -172,13 +188,12 @@ dialog.dlg::backdrop { background: rgba(0,0,0,.35); }
 
 /* a narrow window: the review first, the day under it */
 @media (max-width: 1100px) {
-  .rv-on #dayview { grid-template-columns: 1fr; }
-  .rv-on aside { order: -1; overflow: visible; min-height: auto; }  /* its row as tall as the review */
+  .rv-on #dayview { grid-template-columns: minmax(0, 1fr); }  /* the window's width, whatever the review holds */
+  .rv-on aside { order: -1; overflow: visible; min-height: auto; min-width: 0; }  /* its row as tall as the review */
   .rv { flex: none; }
   .rv-list { flex: none; max-height: 70vh; }
 }
 @media (max-width: 640px) {
   .ed { padding-left: 14px; }
-  .eb { grid-template-columns: 44px minmax(0, 1fr) auto; }
   #log-day { right: 92px; }
 }

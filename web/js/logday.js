@@ -253,12 +253,15 @@ function noteHint(r) {
   if (r.noteFrom === 'commits' && !r.noteEdited) return 'From your commits. Clients may see notes.';
   return 'Clients may see notes: the outcome, in a sentence.';
 }
+const altName = a => a.title || 'task ' + a.taskId;
+const whyLine = r => `${whyIcon(r)}<span>${esc(r.why)}${r.parts > 1 ? ` (${r.parts} stretches joined)` : ''}</span>`;
 function editorHTML(r) {
   const svcs = r.services || [];
   return `<div class="ed" role="group" aria-label="Change this entry">
     <div class="field"><span>Task</span><button type="button" class="taskbtn" data-ld-task="${r.id}">
       <span class="tb-t">${esc(r.title || 'Pick a task')}</span><span class="tb-p">${esc(r.project || 'Search every task in Productive')}</span></button></div>
-    ${r.alts?.length ? `<div class="alts"><span>Or</span>${r.alts.map((a, i) => `<button type="button" class="alt" data-ld-alt="${i}" title="${esc(a.why || '')}"><span>${esc(a.title || 'task ' + a.taskId)}</span></button>`).join('')}</div>` : ''}
+    ${r.alts?.length ? `<div class="alts"><span>Or</span><div>${r.alts.map((a, i) => `<button type="button" class="alt" data-ld-alt="${i}"><span>${esc(altName(a))}</span>${a.why ? `<span class="vh">, ${esc(a.why)}</span>` : ''}</button>`).join('')}</div></div>` : ''}
+    <p class="whyd">${whyLine(r)}</p>
     <label class="field"><span>Service</span><select data-ld-svc="${r.id}"${svcs.length ? '' : ' disabled'}>
       ${r.serviceId ? '' : '<option value="">' + (svcs.length ? 'Pick a service' : r.taskId ? 'Loading or none on this date' : 'Pick a task first') + '</option>'}
       ${svcs.map(x => `<option value="${esc(x.id)}"${x.id === r.serviceId ? ' selected' : ''}>${esc(x.name)}${x.budget ? ' · ' + esc(x.budget) : ''}${x.billable ? ' · billable' : x.billable === false ? ' · not billable' : ''}</option>`).join('')}
@@ -268,11 +271,22 @@ function editorHTML(r) {
       <span class="endt">until ${hm(r.s + r.minutes)}</span></div>
     <label class="field"><span>Note</span><textarea rows="2" data-ld-note placeholder="What was done: the outcome, in a sentence">${esc(r.note || '')}</textarea></label>
     <p class="hint">${noteHint(r)}</p>
-    <p class="whyd">${whyIcon(r)}<span>${esc(r.why)}${r.parts > 1 ? ` (${r.parts} stretches joined)` : ''}</span></p>
     <div class="acts"><button type="button" class="btn bordered" data-ld-del="${r.id}">Delete from the proposal</button></div></div>`;
 }
 function wireEditor(r) {
   const li = $(`#review [data-row="${r.id}"]`); if (!li) return;
+  // an alternative: its full name as a tooltip only when the chip cuts it, and why it is offered on the why line
+  // under the chips while it is hovered or focused (a tooltip of its own would cover the entry it is on)
+  const why = li.querySelector('.ed .whyd');
+  for (const b of li.querySelectorAll('[data-ld-alt]')) {
+    const a = r.alts[+b.dataset.ldAlt], name = b.firstElementChild;
+    const fit = () => { if (name.scrollWidth > name.clientWidth) b.title = altName(a); else b.removeAttribute('title'); };
+    const show = () => { fit(); why.classList.add('alt-why');
+      why.innerHTML = `<span><b>${esc(altName(a))}</b>${a.why ? ` · ${esc(a.why)}` : ''}</span>`; };
+    const back = () => { why.classList.remove('alt-why'); why.innerHTML = whyLine(r); };
+    fit();
+    b.onpointerenter = b.onfocus = show; b.onpointerleave = b.onblur = back;
+  }
   li.querySelector('[data-ld-start]').onchange = ev => {
     const m = /^(\d\d):(\d\d)$/.exec(ev.target.value); if (!m) return;
     const s = +m[1] * 60 + +m[2]; r.s = s; r.e = Math.min(1440, s + r.minutes); r.minutes = r.e - r.s; ldChanged(r);
