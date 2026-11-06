@@ -3,6 +3,7 @@
     python3 -m unittest discover -s tests
 """
 
+import json
 import os
 import stat
 import sys
@@ -701,6 +702,88 @@ class LearnTest(unittest.TestCase):
         self.assertEqual(sess[k]["1"][1], 120)                                    # the real minutes, kept apart
 
 
+class LearnWordsTest(unittest.TestCase):
+    """One task found by its words: the task whose name, project and your notes share most words with the row's work
+    takes the fifth place. Measured on 15 held-out days of real logging: the right task among the first five for 59%
+    of the minutes instead of 52%, with no group of rows doing worse."""
+
+    ENTRIES = [
+        {"date": "2026-11-02", "taskId": "1", "task": "Checkout bugs", "project": "Acme Support",
+         "note": "Fixed the checkout button on the cart page"},
+        {"date": "2026-11-03", "taskId": "2", "task": "Blog feature", "project": "Law Faculty",
+         "note": "Blog listing shows the newest posts first; Nick Example reviewed the editor"},
+        {"date": "2026-10-06", "taskId": "3", "task": "Old blog import", "project": "Law Faculty",
+         "note": "Imported the old blog posts"},
+        {"date": "2026-11-03", "taskId": "4", "task": "Nick Example - meetings", "project": "Internal",
+         "note": "Weekly meeting"},
+    ]
+
+    def test_words_of_the_work_find_the_task_by_its_notes_recent_first(self):
+        from pulsar import learn
+        skip = frozenset(w for _, w in learn.words("Nick Example"))
+        index = learn.note_index(self.ENTRIES, skip)
+        got = learn.text_match(index, "The blog listing order is wrong", "2026-11-04", skip)
+        self.assertEqual(max(got, key=lambda t: got[t][0]), "2")     # its notes say blog and listing
+        self.assertIn("listing", got["2"][1])
+        self.assertGreater(got["2"][0], got["3"][0])                 # "blog" in both; the one logged a month ago fades
+        self.assertNotIn("1", got)                                   # no word in common
+        # your own name is in many task names and notes: it finds nothing
+        self.assertEqual(learn.text_match(index, "Nick Example", "2026-11-04", skip), {})
+        self.assertEqual(learn.words("Updates"), [("updat", "updates")])  # a light stem: update and updates agree
+
+    def test_the_task_found_by_words_takes_the_fifth_place(self):
+        from pulsar import learn
+        names = {t: {"task": f"Task {t}", "project": "P"} for t in "abcdefg"}
+        repo = {"site": {t: [10.0 - i, 10] for i, t in enumerate("abcdef")}}  # six voted tasks, a first
+        text = {"g": (0.9, ["blog"]), "b": (0.8, ["cart"])}
+        got = learn.suggest({"k": [], "p": "site"}, {}, repo, names, text=text)
+        self.assertEqual([t["taskId"] for t in got], ["a", "b", "c", "d", "g"])  # the votes keep the first four
+        self.assertEqual(got[4]["why"], "your notes on it share words with this work: blog")
+        self.assertEqual(got[1]["why"], "logged while in site: 10 min")
+        # the best by words already among the first four: the next one by words takes the fifth place
+        got = learn.suggest({"k": [], "p": "site"}, {}, repo, names, text={"b": (0.9, ["cart"]), "f": (0.5, ["x"])})
+        self.assertEqual([t["taskId"] for t in got], ["a", "b", "c", "d", "f"])
+        # no votes at all (a new session in a new repository): the words fill the list
+        got = learn.suggest({"k": [], "p": "new"}, {}, repo, names, text=text)
+        self.assertEqual([t["taskId"] for t in got], ["g", "b"])
+        # no words: the votes alone, as before
+        self.assertEqual([t["taskId"] for t in learn.suggest({"k": [], "p": "site"}, {}, repo, names)], list("abcde"))
+
+    def test_the_work_is_the_titles_what_was_typed_and_the_commits_never_the_replies(self):
+        import json
+        from pulsar import learn
+        root = tempfile.mkdtemp()
+        folder = os.path.join(root, "-acme")
+        os.makedirs(folder)
+        t0 = datetime(2026, 11, 4, tzinfo=timezone.utc).timestamp()
+        at = lambda m: datetime.fromtimestamp(t0 + m * 60, timezone.utc).isoformat().replace("+00:00", "Z")  # noqa
+        lines = [{"type": "custom-title", "customTitle": "Fix the blog listing"},
+                 {"type": "user", "timestamp": at(600), "origin": {"kind": "human"},
+                  "message": {"content": "The listing shows old posts first"}},
+                 {"type": "assistant", "timestamp": at(605), "message": {"content": [{"type": "text", "text": "Sorted."}]}},
+                 {"type": "user", "timestamp": at(900), "origin": {"kind": "human"},
+                  "message": {"content": "Later, other work"}}]
+        with open(os.path.join(folder, "s1.jsonl"), "w") as fh:
+            fh.write("\n".join(json.dumps(x) for x in lines) + "\n")
+        row = {"s": 590, "e": 640, "titles": ["Fix the blog listing"], "commits": ["Blog: newest posts first"]}
+        text = learn.work_text(row, t0, root)
+        self.assertEqual(text, "Fix the blog listing The listing shows old posts first Blog: newest posts first")
+        self.assertEqual(learn.work_text({"s": 590, "e": 640, "commits": ["Only a commit"]}, t0, root), "Only a commit")
+
+    def test_annotate_puts_the_task_found_by_words_on_the_row_and_reads_no_real_sessions(self):
+        from zoneinfo import ZoneInfo
+        from pulsar import learn, sessions
+        empty = tempfile.mkdtemp()
+        proposal = {"entries": [{"s": 600, "e": 660, "project": "law-site", "titles": ["Blog listing order"],
+                                 "commits": ["Blog listing: newest first"]}]}
+        with mock.patch.object(learn, "warm", lambda *a: None), mock.patch.object(learn, "_stored", lambda d: None), \
+             mock.patch.object(sessions, "PROJECTS_DIR", empty):
+            learn.annotate(proposal, "2026-11-04", {"person_name": "Nick Example"}, self.ENTRIES, [], ZoneInfo("UTC"))
+        got = proposal["entries"][0]["learned"]
+        self.assertEqual(got[0]["taskId"], "2")
+        self.assertTrue(got[0]["why"].startswith("your notes on it share words with this work: "))
+
+
 class AskClaudeTest(unittest.TestCase):
     """The Ask Claude button: what Claude Code is run with, and how its answer becomes picks."""
 
@@ -717,7 +800,7 @@ class AskClaudeTest(unittest.TestCase):
         rows = [{"s": 600, "e": 660, "project": "acme-site", "titles": [], "minutes": 60}]
         entries = [{"taskId": "7", "task": "Estimations", "project": "Proposals", "minutes": 30, "date": "2026-11-02"}]
         with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/bin/claude"), \
-                mock.patch.object(askclaude.productive, "task_details", lambda ids, s: {"99": {"title": "Found", "project": "P"}}), \
+                mock.patch.object(askclaude.productive, "task_details", lambda ids, s, *a: {"99": {"title": "Found", "project": "P"}}), \
                 mock.patch.object(askclaude.config, "load", lambda: {}):
             got = askclaude.ask("2026-11-03", rows, 0, entries, run=fake_run)
         cmd = seen["cmd"]
@@ -749,6 +832,104 @@ class AskClaudeTest(unittest.TestCase):
         with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/bin/claude"):
             got = askclaude.ask("2026-11-04", rows, 0, entries, run=fake)
         self.assertEqual(got["picks"]["540|acme-site"]["tasks"][0]["title"], "Estimations")
+
+    def ask(self, out, date, task_details=None, claude_json=None, seen=None):
+        """askclaude.ask with Claude Code faked: it answers `out` (a dict, or raw text), and `seen` gets the command
+        and the MCP file Claude Code was given, read while it ran."""
+        import json as _json
+        from pulsar import askclaude
+
+        def fake(cmd, **kw):
+            if seen is not None:
+                seen["cmd"] = cmd
+                path = cmd[cmd.index("--mcp-config") + 1]
+                seen["path"] = path
+                with open(path) as fh:
+                    seen["mcp"] = _json.load(fh)
+                seen["mode"] = stat.S_IMODE(os.stat(path).st_mode)
+            return mock.Mock(stdout=out if isinstance(out, str) else _json.dumps(out), stderr="", returncode=1)
+        rows = [{"s": 540, "e": 600, "project": "acme-site", "titles": [], "minutes": 60}]
+        entries = [{"taskId": "7", "task": "Estimations", "project": "Proposals", "minutes": 30, "date": "2026-11-02"}]
+        cj = os.path.join(tempfile.mkdtemp(), "claude.json")
+        with open(cj, "w") as fh:
+            _json.dump(claude_json or {}, fh)
+        with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/bin/claude"), \
+                mock.patch.object(askclaude.claudelink, "CLAUDE_JSON", cj), \
+                mock.patch.object(askclaude.productive, "task_details", task_details or (lambda *a: {})), \
+                mock.patch.object(askclaude.config, "load", lambda: {}):
+            return askclaude.ask(date, rows, 0, entries, run=fake)
+
+    def test_claude_gets_productive_alone_and_none_of_the_settings(self):
+        # Claude Code otherwise loads every MCP server of the person's, runs tools their settings allow even in
+        # dontAsk mode, and runs their hooks with the prompt (checked with the real claude 2.1.301)
+        seen = {}
+        entry = {"type": "http", "url": "https://mcp.productive.io/mcp", "headers": {"X-Extra": "kept as is"}}
+        out = {"structured_output": {"picks": [{"id": 0, "tasks": ["7"], "why": "w", "note": ""}]}}
+        self.ask(out, "2026-10-01", claude_json={"mcpServers": {"productive": entry, "coda": {"command": "npx"}}},
+                 seen=seen)
+        cmd = seen["cmd"]
+        self.assertIn("--strict-mcp-config", cmd)                       # no other MCP server
+        self.assertEqual(cmd[cmd.index("--setting-sources") + 1], "")  # no allowed tools, hooks or plugins from settings
+        self.assertEqual(seen["mcp"], {"mcpServers": {"productive": entry}})  # Claude Code's own entry, as it is
+        self.assertEqual(seen["mode"], 0o600)
+        self.assertFalse(os.path.exists(seen["path"]))                   # removed after the run
+        self.assertNotIn("kept as is", " ".join(cmd))                     # never on the command line
+        self.assertTrue(all(t.startswith("mcp__productive__") for t in cmd[cmd.index("--allowedTools") + 1].split(",")))
+        for other in ({"mcpServers": {"productive": {"type": "http", "url": "https://evil.example/mcp"}}}, {}):
+            seen = {}
+            self.ask(out, "2026-10-02" if other else "2026-10-03", claude_json=other, seen=seen)
+            self.assertEqual(seen["mcp"]["mcpServers"]["productive"], {"type": "http", "url": "https://mcp.productive.io/mcp"})
+
+    def test_claude_codes_own_errors_are_said(self):
+        from pulsar import askclaude
+        budget = {"type": "result", "subtype": "error_max_budget_usd", "is_error": True, "result": None,
+                  "errors": ["Reached maximum budget ($0.75)"], "total_cost_usd": 0.76}
+        with self.assertRaises(askclaude.AskError) as e:
+            self.ask(budget, "2026-10-04")
+        self.assertIn("limit of $0.75", str(e.exception))
+        self.assertIn("$0.76 of your Claude usage was spent", str(e.exception))
+        self.assertEqual(e.exception.cost, 0.76)
+        nologin = {"type": "result", "subtype": "success", "is_error": True, "result": "Not logged in · Please run /login",
+                   "total_cost_usd": 0}
+        with self.assertRaises(askclaude.AskError) as e:
+            self.ask(nologin, "2026-10-05")
+        self.assertIn("not signed in", str(e.exception))
+        for odd in ("[1, 2]", "null", '"text"', {"structured_output": {"picks": "none"}}, {"result": '{"picks": 3}'}):
+            with self.assertRaises(askclaude.AskError, msg=odd):  # never a 500
+                self.ask(odd, "2026-10-06")
+
+    def test_odd_picks_are_skipped_not_a_crash(self):
+        out = {"structured_output": {"picks": ["x", 5, {"id": "zero", "tasks": ["7"]}, {"id": 0, "tasks": 7},
+                                                {"id": 0, "tasks": ["7", None, 8], "why": None}]}}
+        got = self.ask(out, "2026-10-07")
+        self.assertEqual(got["picks"]["540|acme-site"]["tasks"][0]["taskId"], "7")
+
+    def test_tasks_found_by_search_never_vanish_silently(self):
+        from pulsar import askclaude, productive as prod
+        out = {"structured_output": {"picks": [{"id": 0, "tasks": ["99", "7"], "why": "w", "note": ""}]}}
+        calls = []
+
+        def down(ids, s, reasons=None, transient=None):
+            calls.append(ids)
+            raise prod.ProductiveError("Productive could not be reached (timed out)")
+        got = self.ask(out, "2026-10-08", task_details=down)
+        self.assertIn("1 task", got["warning"])
+        self.assertIn("timed out", got["warning"])
+        self.assertEqual([t["taskId"] for t in got["picks"]["540|acme-site"]["tasks"]], ["7"])
+        self.ask(out, "2026-10-08", task_details=down)
+        self.assertEqual(len(calls), 2)  # not kept: asking again asks again
+
+        def one_busy(ids, s, reasons=None, transient=None):
+            reasons.update({"99": "Productive could not be asked (HTTP 503)"}); transient.add("99")
+            return {}
+        self.assertIn("HTTP 503", self.ask(out, "2026-10-09", task_details=one_busy)["warning"])
+
+        def gone(ids, s, reasons=None, transient=None):  # deleted or not visible: nothing to ask again for
+            reasons.update({"99": "deleted, or not visible to you"})
+            return {}
+        got = self.ask(out, "2026-10-10", task_details=gone)
+        self.assertNotIn("warning", got)
+        self.assertIs(askclaude.latest("2026-10-10"), got)  # kept
 
     def test_a_short_day_asks_nothing(self):
         from pulsar import askclaude
@@ -1175,14 +1356,109 @@ class PreviewTest(unittest.TestCase):
             self.assertIn("read-only", config.writes_blocked())  # tests and demos stay read-only, preview or not
 
 
+class PreviewIsolationTest(unittest.TestCase):
+    """Pulsar Preview (PULSAR_INSTANCE=preview from its launcher) keeps its own settings, sign-in, sessions, caches and
+    keychain items, so "Remove token", "Disconnect" or a save in Preview never reach Pulsar's."""
+
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def py(self, code, env):
+        import subprocess
+        base = {k: v for k, v in os.environ.items() if not k.startswith("PULSAR_")}
+        done = subprocess.run([sys.executable, "-I", "-B", "-c", "import sys; sys.path.insert(0, sys.argv[1])\n" + code,
+                               self.ROOT], env={**base, "PULSAR_TESTS_OFFLINE": "1", **env}, capture_output=True,
+                              text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return done.stdout
+
+    def test_preview_has_its_own_folders_and_keychain_items(self):
+        import json as _json
+        tmp = tempfile.mkdtemp()
+        code = """import json
+from unittest import mock
+from pulsar import config
+calls = []
+config._keychain = lambda: True
+config.subprocess.run = lambda args, **kw: calls.append(args) or mock.Mock(returncode=0, stdout="", stderr="")
+config.delete_token(); config.delete_google_token()
+print(json.dumps([config.CONFIG_DIR, config.CACHE_DIR, config.KEYCHAIN_SERVICE, [c[c.index("-s") + 1] for c in calls]]))"""
+        env = {"XDG_CONFIG_HOME": os.path.join(tmp, "c"), "XDG_CACHE_HOME": os.path.join(tmp, "k")}
+        got = _json.loads(self.py(code, {**env, "PULSAR_INSTANCE": "preview"}))
+        self.assertEqual(got, [os.path.join(tmp, "c", "pulsar-preview"), os.path.join(tmp, "k", "pulsar-preview"),
+                               "pulsar-preview", ["pulsar-preview", "pulsar-preview"]])
+        got = _json.loads(self.py(code, env))  # Pulsar itself, and an older launcher's Preview: as before
+        self.assertEqual(got[1:], [os.path.join(tmp, "k", "pulsar"), "pulsar", ["pulsar", "pulsar"]])
+
+    def test_the_instance_flag_reaches_config_before_it_loads(self):
+        # how Claude Code starts Preview's MCP server (claudelink.command): it must read Preview's key, not Pulsar's
+        import subprocess
+        tmp = tempfile.mkdtemp()
+        base = {k: v for k, v in os.environ.items() if not k.startswith("PULSAR_")}
+        done = subprocess.run([sys.executable, "-I", "-B", os.path.join(self.ROOT, "pulsar.py"), "--instance", "preview",
+                               "--signin-url", "--port", "5999"], capture_output=True, text=True, timeout=60,
+                              env={**base, "PULSAR_TESTS_OFFLINE": "1", "XDG_CONFIG_HOME": tmp})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertTrue(os.path.exists(os.path.join(tmp, "pulsar-preview", "signin-code")))
+        self.assertFalse(os.path.exists(os.path.join(tmp, "pulsar")))
+
+    def test_preview_starts_from_a_copy_of_pulsars_settings_once(self):
+        import json as _json
+        main, own = tempfile.mkdtemp(), tempfile.mkdtemp()
+        rule = {"match": "acme", "taskId": "12", "title": "Acme", "project": "P"}
+        mine = {**config.DEFAULTS, "rules": [rule], "timezone": "Europe/Kyiv", "calendar_account": "a@b.c",
+                "productive_source": "token", "update_skip": "1.2.1", "preview_writes": True, "unknown_key": 1}
+        with open(os.path.join(main, "settings.json"), "w") as fh:
+            _json.dump(mine, fh)
+        with mock.patch.object(config, "INSTANCE", "preview"), mock.patch.object(config, "MAIN_CONFIG_DIR", main), \
+                mock.patch.object(config, "CONFIG_DIR", own), \
+                mock.patch.object(config, "SETTINGS_FILE", os.path.join(own, "settings.json")):
+            s = config.load()
+            self.assertEqual((s["rules"], s["timezone"]), ([rule], "Europe/Kyiv"))
+            for key in config.SEED_SKIP:  # Pulsar's Google account, token source, update choice, write permission
+                self.assertEqual(s[key], config.DEFAULTS[key], key)
+            config.update({"timezone": "UTC"})
+            with open(os.path.join(main, "settings.json")) as fh:
+                self.assertEqual(_json.load(fh), mine)  # Pulsar's file: never written, unknown keys and all
+            os.remove(os.path.join(main, "settings.json"))
+            self.assertEqual(config.load()["timezone"], "UTC")  # read once: from now on its own
+        with mock.patch.object(config, "INSTANCE", ""), mock.patch.object(config, "MAIN_CONFIG_DIR", main), \
+                mock.patch.object(config, "SETTINGS_FILE", os.path.join(tempfile.mkdtemp(), "settings.json")):
+            self.assertEqual(config.load(), config.DEFAULTS)  # Pulsar itself copies nothing
+
+    def test_read_only_preview_follows_its_own_setting(self):
+        # the launcher sets PULSAR_READ_ONLY=preview: older code reads it as read-only, this code as "a preview"
+        with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "preview", "PULSAR_PREVIEW": ""}):
+            self.assertFalse(config.read_only())
+            with mock.patch.object(config, "load", lambda: {"preview_writes": False}):
+                self.assertIn("Preview", config.writes_blocked())
+            with mock.patch.object(config, "load", lambda: {"preview_writes": True}):
+                self.assertIsNone(config.writes_blocked())
+            with self.assertRaises(ValueError):
+                server.api_dayplan({"date": "2026-11-03", "ignore_logged": "1"})  # test servers only
+        with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):
+            self.assertTrue(config.read_only())
+
+    def test_preview_finds_the_google_client_in_pulsars_folder(self):
+        import json as _json
+        from pulsar import calendar
+        main, own = tempfile.mkdtemp(), tempfile.mkdtemp()
+        with open(os.path.join(main, "google_client.json"), "w") as fh:
+            _json.dump({"installed": {"client_id": "12345-abcdefgh.apps.googleusercontent.com",
+                                      "client_secret": "GOCSPX-abcdefgh"}}, fh)
+        with mock.patch.object(config, "CONFIG_DIR", own), mock.patch.object(config, "MAIN_CONFIG_DIR", main), \
+                mock.patch.object(calendar, "CLIENT_FILE", os.path.join(own, "none.json")):
+            self.assertEqual(calendar.client()["id"], "12345-abcdefgh.apps.googleusercontent.com")
+
+
 class EditEntryTest(unittest.TestCase):
     """Changing and deleting your own entries: fresh read, approved ones refused, overlaps first, dry runs."""
 
     def setUp(self):
         t = lambda h, m: datetime(2026, 11, 4, h, m, tzinfo=timezone.utc).timestamp()  # noqa: E731
-        self.existing = [{"id": "1", "date": "2026-11-04", "start": t(10, 0), "minutes": 60, "project": "P", "task": "T", "approved": False},
-                         {"id": "2", "date": "2026-11-04", "start": t(11, 0), "minutes": 30, "project": "Q", "task": "U", "approved": False},
-                         {"id": "3", "date": "2026-11-04", "start": t(12, 0), "minutes": 30, "project": "R", "task": "V", "approved": True}]
+        row = lambda i, start, minutes, project, approved=False: {  # noqa: E731
+            "id": i, "date": "2026-11-04", "start": start, "minutes": minutes, "project": project, "task": "T" + i,
+            "taskId": "5", "serviceId": "6", "note": "AB", "approved": approved, "personId": "1"}
+        self.existing = [row("1", t(10, 0), 60, "P"), row("2", t(11, 0), 30, "Q"), row("3", t(12, 0), 30, "R", True)]
         self.updated, self.deleted = [], []
         self.patches = [
             mock.patch.object(server, "current_settings", lambda: {"timezone": "UTC", "person_id": "1"}),
@@ -1198,41 +1474,41 @@ class EditEntryTest(unittest.TestCase):
         for p in self.patches:
             p.stop()
 
+    def seen(self, i):
+        x = next(x for x in self.existing if x["id"] == i)
+        return {"start": datetime.fromtimestamp(x["start"], timezone.utc).strftime("%H:%M"), "minutes": x["minutes"],
+                "taskId": x["taskId"], "serviceId": x["serviceId"], "note": x["note"]}
+
+    def change(self, i, **kw):
+        return server.api_entry_update({"id": i, "date": "2026-11-04", "seen": self.seen(i), **kw})
+
     def test_extending_into_the_next_entry_shows_the_overlap_first(self):
-        got = server.api_entry_update({"id": "1", "date": "2026-11-04", "start": "10:00", "minutes": 75})
+        got = self.change("1", start="10:00", minutes=75)
         self.assertEqual([o["project"] for o in got["overlap"]], ["Q"])
         self.assertEqual(self.updated, [])
-        got = server.api_entry_update({"id": "1", "date": "2026-11-04", "start": "10:00", "minutes": 75, "force": True})
+        got = self.change("1", start="10:00", minutes=75, force=True)
         self.assertEqual(got, {"updated": "1"})
-        entry, change = self.updated[0]
-        self.assertEqual((entry, change["started_at"], change["minutes"]), ("1", "2026-11-04T10:00:00+00:00", 75))
-        # nothing the request did not name is changed: not the note, the task or the service
-        self.assertEqual([k for k in ("note", "task_id", "service_id") if change.get(k)], [])
+        self.assertEqual(self.updated[0][1], {"minutes": 75})  # the start it already had is not sent again
+        self.assertEqual(self.updated[0][0], "1")
 
     def test_shrinking_writes_and_a_dry_run_writes_nothing(self):
-        got = server.api_entry_update({"id": "1", "date": "2026-11-04", "start": "10:15", "minutes": 30, "dry": True})
+        got = self.change("1", start="10:15", minutes=30, dry=True)
         self.assertEqual((got["dry"], got["wouldChange"]["started_at"][:16], got["overlap"]), (True, "2026-11-04T10:15", []))
         self.assertEqual(self.updated, [])
-        self.assertEqual(server.api_entry_update({"id": "1", "date": "2026-11-04", "start": "10:15", "minutes": 30}), {"updated": "1"})
-        self.assertEqual([(i, c["started_at"], c["minutes"]) for i, c in self.updated], [("1", "2026-11-04T10:15:00+00:00", 30)])
-
-    def test_a_new_note_task_and_service_are_passed_on_as_given(self):
-        server.api_entry_update({"id": "2", "date": "2026-11-04", "start": "11:00", "minutes": 30, "note": "Fixed the menu",
-                                 "taskId": "77", "serviceId": "88"})
-        entry, change = self.updated[0]
-        self.assertEqual((entry, change["note"], change["task_id"], change["service_id"]), ("2", "Fixed the menu", "77", "88"))
+        self.assertEqual(self.change("1", start="10:15", minutes=30), {"updated": "1"})
 
     def test_missing_entries_are_refused_and_approved_ones_left_to_productive(self):
         with self.assertRaises(ValueError):
-            server.api_entry_delete({"id": "99", "date": "2026-11-04"})
+            server.api_entry_delete({"id": "99", "date": "2026-11-04", "seen": {}})
         self.assertEqual(self.deleted, [])
         # auto-approved (a budget with no approval step) is still the author's to change: Productive decides
-        self.assertEqual(server.api_entry_update({"id": "3", "date": "2026-11-04", "start": "12:00", "minutes": 20}), {"updated": "3"})
+        self.assertEqual(self.change("3", start="12:00", minutes=20), {"updated": "3"})
 
     def test_delete_and_its_dry_run(self):
-        self.assertEqual(server.api_entry_delete({"id": "2", "date": "2026-11-04", "dry": True}), {"dry": True, "wouldDelete": "2"})
+        self.assertEqual(server.api_entry_delete({"id": "2", "date": "2026-11-04", "dry": True, "seen": self.seen("2")}),
+                         {"dry": True, "wouldDelete": "2"})
         self.assertEqual(self.deleted, [])
-        self.assertEqual(server.api_entry_delete({"id": "2", "date": "2026-11-04"}), {"deleted": "2"})
+        self.assertEqual(server.api_entry_delete({"id": "2", "date": "2026-11-04", "seen": self.seen("2")}), {"deleted": "2"})
         self.assertEqual(self.deleted, ["2"])
 
     def test_read_only_refuses_every_change_at_the_lowest_level(self):
@@ -1249,6 +1525,211 @@ class EditEntryTest(unittest.TestCase):
             with self.assertRaises(productive.ProductiveError):
                 productive.delete_entry("1", {"person_id": "1"})
         self.assertEqual(sent, [])
+
+    # ---- the second review (2026-11-06): A2, A3, A4, A5 and the rounding at resize ----
+
+    def test_no_person_id_changes_nothing_and_reads_nothing(self):
+        read = []
+        with mock.patch.object(server, "current_settings", lambda: {"timezone": "UTC", "person_id": ""}), \
+                mock.patch.object(server.productive, "entries", lambda *a: read.append(a) or (self.existing, None, "c")):
+            with self.assertRaises(ValueError):
+                self.change("1", minutes=20)
+            with self.assertRaises(ValueError):
+                server.api_entry_delete({"id": "1", "date": "2026-11-04", "seen": self.seen("1")})
+        self.assertEqual((read, self.updated, self.deleted), ([], [], []))
+
+    def test_an_entry_of_someone_else_is_left_alone_whatever_the_filter_returned(self):
+        self.existing[1]["personId"] = "555"
+        self.existing[2]["personId"] = ""  # Productive did not say whose it is
+        for i in ("2", "3"):
+            with self.assertRaises(ValueError):
+                server.api_entry_delete({"id": i, "date": "2026-11-04", "seen": self.seen(i)})
+            with self.assertRaises(ValueError):
+                self.change(i, minutes=10)
+        self.assertEqual((self.updated, self.deleted), ([], []))
+
+    def test_only_what_changed_is_written(self):
+        # the page sends the note and service it showed (the note as plain text: "<p>A</p><p>B</p>" shows as "AB"):
+        # unchanged, so the note's formatting in Productive and the service stay
+        self.assertEqual(self.change("1", minutes=45, note="AB ", serviceId="6", taskId="5"), {"updated": "1"})
+        self.assertEqual(self.updated[-1][1], {"minutes": 45})
+        self.change("1", note="A new note")
+        self.assertEqual(self.updated[-1][1], {"note": "A new note"})
+        self.change("1", serviceId="7")
+        self.assertEqual(self.updated[-1][1], {"service_id": "7"})
+        self.assertEqual(self.change("1", start="10:00", minutes=60), {"unchanged": "1"})
+        self.assertEqual(len(self.updated), 3)
+
+    def test_a_long_note_is_refused_not_cut(self):
+        with self.assertRaises(ValueError) as said:
+            self.change("1", note="x" * 2001)
+        self.assertIn("2001", str(said.exception))
+        self.assertEqual(self.updated, [])
+
+    def test_an_entry_changed_since_the_page_showed_it_is_not_written(self):
+        for field, value in (("note", "Someone's newer note"), ("minutes", 50), ("taskId", "8")):
+            seen = self.seen("1")
+            self.existing[0][field] = value
+            with self.assertRaises(ValueError) as said:
+                server.api_entry_update({"id": "1", "date": "2026-11-04", "seen": seen, "minutes": 20})
+            self.assertIn("changed in Productive", str(said.exception))
+            with self.assertRaises(ValueError):
+                server.api_entry_delete({"id": "1", "date": "2026-11-04", "seen": seen})
+            self.existing[0][field] = {"note": "AB", "minutes": 60, "taskId": "5"}[field]
+        self.assertEqual((self.updated, self.deleted), ([], []))
+
+    def test_a_change_or_delete_without_what_was_seen_is_refused(self):
+        with self.assertRaises(ValueError):
+            server.api_entry_update({"id": "1", "date": "2026-11-04", "minutes": 20})
+        with self.assertRaises(ValueError):
+            server.api_entry_delete({"id": "1", "date": "2026-11-04"})
+        self.assertEqual((self.updated, self.deleted), ([], []))
+
+    def test_a_start_with_seconds_is_kept_when_only_the_end_moves(self):
+        self.existing[0]["start"] += 40  # 10:00:40
+        self.assertEqual(self.change("1", minutes=30), {"updated": "1"})       # the end dragged: no start sent
+        self.assertEqual(self.updated[-1][1], {"minutes": 30})
+        self.change("1", start="10:00", minutes=20)                            # the minute it is in: not a change
+        self.assertEqual(self.updated[-1][1], {"minutes": 20})
+        self.change("1", start="09:55")
+        self.assertEqual(self.updated[-1][1], {"started_at": "2026-11-04T09:55:00+00:00"})
+
+
+class FakeMcp:
+    """Productive's MCP endpoint as Claude Code transcripts show it answering: a refusal comes as plain text, never
+    flagged as an error, and an update of a field the session has not loaded is "aborted". It keeps what a session
+    loaded in that session; a request without a session has none to keep. Nothing here reaches the network."""
+
+    def __init__(self, person="1", sessions=True, answer=None):
+        self.calls, self.loaded, self.person, self.sessions, self.answer = [], {}, person, sessions, answer
+
+    def __call__(self, method, url, body=None, headers=None, timeout=60, write=False, head=None):
+        assert url == productive.MCP_URL, url
+        msg, sid = json.loads(body), (headers or {}).get("Mcp-Session-Id")
+        self.calls.append((msg["method"], (msg.get("params") or {}).get("name"), sid, write))
+        if msg["method"] == "initialize":
+            if self.sessions and head is not None:
+                head["mcp-session-id"] = "s-1"
+            return 200, b'data: {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-06-18"}}'
+        if msg["method"] == "notifications/initialized":
+            return 202, b""
+        name, args = msg["params"]["name"], msg["params"]["arguments"]
+        if name == "load_resource":
+            self.loaded.setdefault(sid, set()).update(args.get("include_fields") or [])
+            text = ('Found time entry: \n```{"item":{"id":"%s","type":"time_entries","fields":{"time":{"value":60,"unit":'
+                    '"minute"},"person":{"type":"people","id":"%s"}}},"included":[]}```' % (args["id"], self.person))
+        elif name == "update_resource":
+            item = args["items"][0]
+            missing = [k for k in item if k != "id" and (sid is None or k not in self.loaded.get(sid, set()))]
+            text = self.answer if self.answer is not None else (("Update of time entry aborted to avoid overwriting data you have not seen.\nnot loaded "
+                                    "before update: " + ", ".join(missing)) if missing else f"time entry updated (ID: {item['id']}).")
+        else:
+            text = self.answer if self.answer is not None else f"time entry deleted (id: {args['items'][0]['id']})"
+        answer = {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": text}]}}
+        return 200, ("event: message\ndata: " + json.dumps(answer)).encode()
+
+
+class EntryWriteAnswersTest(unittest.TestCase):
+    """What counts as done when an entry is changed or deleted (the second review, 2026-11-06, A1 and C)."""
+
+    def setUp(self):
+        # https is faked in every test here, and PULSAR_TESTS_OFFLINE stays set: the real one refuses whatever happens
+        self.patches = [mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": ""}),  # so the write reaches the fake
+                        mock.patch.object(productive, "connection", lambda s: {"kind": "claude-code", "token": "t"})]
+        for p in self.patches:
+            p.start()
+
+    def tearDown(self):
+        for p in self.patches:
+            p.stop()
+
+    def test_an_mcp_change_loads_its_fields_in_one_session_then_needs_the_success_sentence(self):
+        fake = FakeMcp()
+        with mock.patch.object(productive, "https", fake):
+            productive.update_entry("7", {"minutes": 30, "note": "New", "task_id": "5"}, {"person_id": "1"})
+        self.assertEqual([c[:3] for c in fake.calls], [("initialize", None, None), ("notifications/initialized", None, "s-1"),
+                                                       ("tools/call", "load_resource", "s-1"),
+                                                       ("tools/call", "update_resource", "s-1")])
+        self.assertEqual(fake.loaded["s-1"], {"time", "note", "task", "person"})
+        self.assertEqual([c[3] for c in fake.calls], [False, False, False, True])  # only the update is a write
+
+    def test_a_refusal_in_plain_text_is_never_taken_for_done(self):
+        refusals = ["Update of time entry aborted to avoid overwriting data you have not seen.\nnot loaded before update: note",
+                    "Invalid parameters:\nstarted_at: Invalid string",
+                    'Failed to update time entry. API request failed because of error:\n```{"status": 422, "code": '
+                    '"service_not_accessible"}```', ""]
+        for text in refusals:
+            with mock.patch.object(productive, "https", FakeMcp(answer=text)):
+                with self.assertRaises(productive.ProductiveUnclear) as said:
+                    productive.update_entry("7", {"note": "x"}, {"person_id": "1"})
+            self.assertIn(text[:40] or "nothing", str(said.exception))
+        with mock.patch.object(productive, "https", FakeMcp(sessions=False)):  # no session: Productive aborts it
+            with self.assertRaises(productive.ProductiveUnclear) as said:
+                productive.update_entry("7", {"minutes": 30}, {"person_id": "1"})
+        self.assertIn("not loaded before update: time", str(said.exception))
+        with mock.patch.object(productive, "https", FakeMcp(answer="time entry updated (ID: 8).")):  # another entry
+            with self.assertRaises(productive.ProductiveUnclear):
+                productive.update_entry("7", {"minutes": 30}, {"person_id": "1"})
+
+    def test_an_entry_productive_shows_as_someone_elses_is_not_changed(self):
+        fake = FakeMcp(person="555")
+        with mock.patch.object(productive, "https", fake):
+            with self.assertRaises(productive.ProductiveError) as said:
+                productive.update_entry("7", {"minutes": 30}, {"person_id": "1"})
+        self.assertNotIsInstance(said.exception, productive.ProductiveUnclear)
+        self.assertNotIn("update_resource", [c[1] for c in fake.calls])
+
+    def test_an_mcp_delete_needs_its_success_sentence(self):
+        with mock.patch.object(productive, "https", FakeMcp()):
+            productive.delete_entry("7", {"person_id": "1"})
+        for text in ("Productive could not find time entry 7", "time entry deleted (id: 8)", "2 time entries deleted"):
+            with mock.patch.object(productive, "https", FakeMcp(answer=text)):
+                with self.assertRaises(productive.ProductiveUnclear) as said:
+                    productive.delete_entry("7", {"person_id": "1"})
+            self.assertIn(text, str(said.exception))
+
+    def test_a_rest_server_error_after_a_change_was_sent_is_unclear_not_refused(self):
+        def rest(status, raw=b"{}"):
+            return mock.patch.object(productive, "https", lambda *a, **k: (status, raw))
+        token = mock.patch.object(productive, "connection", lambda s: {"kind": "token", "token": "t"})
+        with token:
+            for status in (500, 502, 503, 504):
+                with rest(status), self.assertRaises(productive.ProductiveUnclear):
+                    productive.update_entry("7", {"minutes": 30}, {"person_id": "1", "org_id": "2"})
+                with rest(status), self.assertRaises(productive.ProductiveUnclear):
+                    productive.delete_entry("7", {"person_id": "1", "org_id": "2"})
+            for status, word in ((422, "HTTP 422"), (429, "limiting requests")):  # turned away before anything changed
+                with rest(status, b'{"errors": []}'), self.assertRaises(productive.ProductiveError) as said:
+                    productive.update_entry("7", {"minutes": 30}, {"person_id": "1", "org_id": "2"})
+                self.assertNotIsInstance(said.exception, productive.ProductiveUnclear)
+                self.assertIn(word, str(said.exception))
+            with rest(200):
+                productive.update_entry("7", {"minutes": 30}, {"person_id": "1", "org_id": "2"})
+            with rest(204, b""):
+                productive.delete_entry("7", {"person_id": "1", "org_id": "2"})
+
+    def test_rows_say_whose_entry_it_is_and_never_read_without_a_person(self):
+        names = productive.Names(os.path.join(tempfile.mkdtemp(), "names.json"))
+        with mock.patch.object(productive, "mcp_text", lambda *a: self.fail("asked Productive")):
+            with self.assertRaises(productive.ProductiveError):
+                productive.mcp_entries("2026-11-04", "2026-11-04", "t", "", names)
+        e = entry("1", "2026-11-02", 45)
+        e["relationships"]["person"] = {"data": {"type": "people", "id": "42"}}
+        e["attributes"]["note"] = "<p>A</p><p>B</p>"
+        asked = []
+
+        def get(path, query, token, org):
+            asked.append(query.get("include"))
+            return 200, jsonapi([e], INCLUDED)
+        rows = productive.rest_entries("2026-11-02", "2026-11-02", "t", "1", "42", names, get)
+        self.assertEqual((rows[0]["personId"], rows[0]["note"], rows[0]["noteRich"]), ("42", "AB", True))
+        self.assertIn("person", asked[0])
+
+    def test_rich_note(self):
+        self.assertFalse(productive.rich_note("Plain words"))
+        self.assertFalse(productive.rich_note("<p>One paragraph &amp; more</p>"))
+        for rich in ("<p>A</p><p>B</p>", "A<br>B", "<ul><li>A</li></ul>", '<a href="https://x">x</a>', "<strong>A</strong>"):
+            self.assertTrue(productive.rich_note(rich), rich)
 
 
 class LogTest(unittest.TestCase):
@@ -1940,6 +2421,13 @@ class ScrubTest(unittest.TestCase):
          "jwt [removed] here"),
         ("Authorization: Bearer abc.def-123", "Authorization: Bearer [removed]"),
         ("access_token=ya29.a0AfH6SM&x=1", "access_token=[removed]&x=1"),
+        ("Google gave ya29.a0AfB_byC1x2y3z4ABCdefGHIjk-lMNO_pq.rST here", "Google gave [removed] here"),
+        ("refresh 1//0gAbCdEfGhIjKlMnOpQrStUv-_Wx kept", "refresh [removed] kept"),
+        ("X-Pulsar-Session: 3f2a9c0d1e4b5a6978877665544332211aabbccddeeff00112233445566778899",
+         "X-Pulsar-Session: [removed]"),
+        ('{"X-Pulsar-Key": "3f2a9c0d1e4b5a69788776655443322", "Host": "127.0.0.1"}',
+         '{"X-Pulsar-Key": "[removed]", "Host": "127.0.0.1"}'),
+        ("GET /?code=abcdefabcdefabcdefabcdefabcdefab HTTP/1.1", "GET /?code=[removed] HTTP/1.1"),
     ]
     KEEP = [
         "/Users/nick/.claude/projects/-Users-nick-Sites-tua-trent/09cccb5f-9d87-4b3e-b524-2dad39b09fc2.jsonl",
@@ -1953,6 +2441,8 @@ class ScrubTest(unittest.TestCase):
         "Productive did not give the time entries (HTTP 503). Showing the copy saved 05.11 21:40.",
         "https://app.productive.io/1234-foster/tasks/5678?filter=open",
         "ValueError: date=YYYY-MM-DD",
+        "see /Users/nick/a//b and https://x.org/1//y",
+        "?code=short&x=1",
     ]
 
     def test_credentials_are_cut(self):

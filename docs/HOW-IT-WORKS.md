@@ -319,24 +319,29 @@ claim wins:
 
 1. entries already logged;
 2. meetings attended: a repeat whose call the tracker saw, a calendar meeting with a call seen, a call with no
-   calendar entry. A repeat and a calendar meeting on the same call are one entry; a Likely row inside a meeting
-   gives it its minutes;
+   calendar entry. A repeat and a calendar meeting on the same call are one entry (when the repeat covers half of the
+   meeting, so a repeat that runs on into the next meeting never swallows it); a Likely row inside a meeting gives
+   it its minutes;
 3. Likely rows at their own time, never on away minutes or time spent logging (Pulsar, Productive);
 4. on free active minutes only: agent-only rows (Claude's agent ran while you did something else), calendar meetings
-   with no call seen, and work outside Claude (it takes the task of the work next to it, never a meeting's).
+   with no call seen, and work outside Claude, an editor or terminal with no session row included (it takes the task
+   of the work next to it, never a meeting's, and starts unticked).
 
-Pieces of one task in one sitting join, pieces under 10 minutes join a neighbour, boundaries go on a 5-minute grid,
-nothing overlaps an entry already logged, and **proposed plus logged never exceeds active time plus attended
-meetings**: the rest is listed as not placed, never placed. A row's task comes from, in this order: a rule, a task
-link pasted in the session, a ticket key in the title, the tasks logged in the same session, then the same
-repository (votes from the last 60 days, older days counting half every 7 days), the same session earlier that day,
-and task names that share words with the work (your own name does not count). Confidence: high, medium or low, in
-words and a three-bar meter. **Unticked at the start**: low confidence, no task, no service, agent-only time,
-meetings with no call seen. **Notes** are never written from session text: only a meeting's title, your usual note
-for a repeat, a note Ask Claude drafted for that task, or one from your commits in the work, each with "clients may
-see notes". The **service** is the
-one last used on the task, checked against the services that take time on that date (`bookable_services`). With
-Productive unreadable, nothing is proposed. About 6 seconds for a day the first time, under a second after.
+Pieces of one task in one sitting join, pieces under 10 minutes join a neighbour within 30 minutes in the same sitting
+(never one hours away, which would move it there), boundaries go on a 5-minute grid, nothing overlaps an entry already
+logged, and **proposed plus logged never exceeds active time plus attended meetings**: the rest is listed as not
+placed, never placed. A row's task comes from, in this order: a rule, a task link pasted in the session, a ticket key
+in the title, the tasks logged in the same session, then the same repository (votes from the last 60 days, older days
+counting half every 7 days), the same session earlier that day, and task names that share words with the work (your
+own name does not count). A repository you work in for an hour or more and log under a tenth of is set aside as one
+you never log; days with entries that have no start time do not count, since they cannot be matched to the work.
+Confidence: high, medium or low, in words and a three-bar meter; the same session's votes are high from 60% (and 30
+minutes), else low. **Unticked at the start**: low confidence, no task, no service, agent-only time, meetings with no
+call seen. **Notes** are never written from session text: only a meeting's title, your usual note for a repeat, a note
+Ask Claude drafted for that task, or one from your commits in the work, each with "clients may see notes". The
+**service** is the one last used on the task, checked against the services that take time on that date
+(`bookable_services`). With Productive unreadable, nothing is proposed. About 6 seconds for a day the first time,
+under a second after.
 
 **Ask Claude** (only when it is on in Settings): the review shows the plan at once, then sends the day to Claude
 (every row of ten minutes or more) and fills in the answer as it arrives. Claude's pick replaces only rows the planner
@@ -358,11 +363,14 @@ writes it twice. **Undo this run** (asked first) deletes, one at a time through 
 run's name, only the entries that run created, and only if each is still as it wrote it. Runs older than 31 days are
 dropped.
 
-On one person's 11 fully logged days, planned as if nothing had been logged and compared with what was logged: 46%
-of the minutes needed no change, 42% a different task and 12% a different length; 76% of the proposed minutes had a
-task logged that day, 98% the right service. The rows ticked at the start were 88% right; by confidence, high 92%,
-medium 84%, low 40%. Calendar meetings were the weakest source: their task was rarely the one logged, so most start
-unticked.
+Replayed on one person's 34 fully logged days (21 September to 4 November 2026, `tools/replay/`), each day planned
+as if nothing were logged, from the days before it only, and compared with what was logged: 44% of the minutes
+needed no change; the right task in the right amount for 47% of the logged minutes; the right task at the right time
+for 36% of them (35% of the proposed minutes). By confidence, right at that time and right somewhere that day: high
+66% and 94%, medium 30% and 75%, low 22% and 55%. The rows ticked at the start were right that day for 92% of their
+minutes. Repeats were the surest source (78% at the right time), calendar meetings the weakest (14%), so most start
+unticked. Most of the rest is tasks new that day (15% of the logged minutes), sessions that moved between tasks, and
+time logged when the tracker saw nothing (8%).
 
 ### 5.5 Where the suggestions come from
 
@@ -380,6 +388,15 @@ unticked.
   instead of 43%, and 44% instead of 51% for sessions that worked in two or more repositories that day). A long
   session moves from task to task over the weeks more than it changes task between repositories, and a row shared
   by two sessions has one repository, which may be the other session's.
+- **A task found by its words** (`learn.text_match`): after the first four learned tasks, the fifth place goes to
+  the task whose name, project and your own notes on it (the 60 days of entries already read) share most words with
+  the row's work: its sessions' titles, what you typed in them during the row (`askclaude.steps`: up to 15 messages
+  of 400 characters) and your commit subjects (Notes from commits). The words are compared as TF-IDF vectors
+  (cosine); common English and Ukrainian words and your own name do not count; a task's score halves every 7 days
+  since you last logged it. With fewer than four votes, more tasks found by words fill the list. The why names up to
+  three shared words. Nothing new is kept on disk: the notes are in memory with the history, and the session text is
+  read when a day is shown (about 3 seconds the first time, under 0.1 s after; a refresh re-reads only the session
+  files that changed, about 1 s for a 300 MB one).
   Past days' rows are worked out once in the background and kept in
   `~/.cache/pulsar/likely-days/<date>.json`: times, repository names and a hash of each session title, never the
   titles or anything typed. Only a day that is over is kept, worked out after it ended: a proposal the page saw
@@ -398,9 +415,19 @@ unticked.
   for the day:
 
   ```
-  claude -p --model <sonnet|haiku|opus> --no-session-persistence --output-format json --tools ""
+  claude -p --model <sonnet|haiku|opus> --no-session-persistence --output-format json --json-schema <picks>
+         --max-budget-usd <0.25|0.75|2> --tools "" --permission-mode dontAsk
+         --strict-mcp-config --mcp-config <a file naming Claude Code's own "productive" entry> --setting-sources ""
          --allowedTools <Productive search and read tools> --disallowedTools <Productive write tools>
   ```
+
+  Without `--strict-mcp-config` and `--setting-sources ""`, Claude Code (2.1.301, checked) loads every MCP server the
+  person has (Drive, Calendar, Coda), runs any tool their settings allow even in `dontAsk` mode, and runs their hooks,
+  which receive the whole prompt with the session text. The MCP file is owner-only in the cache folder and removed
+  after the run; the entry is copied as Claude Code has it, so its sign-in still applies (the subscription login is
+  kept too). An answer Claude Code marks `is_error` (the spending limit, not signed in) is said in words, with what
+  was spent; tasks Claude found by searching that Productive could not name just then come with a warning, and that
+  answer is not kept, so asking again tries again.
 
   It gets, for each row of ten minutes or more, the time, the repository, the session titles, up to 15 steps of the
   work (what was typed and Claude's reply at the end of each, `askclaude.steps()`, 5.7) and up to 10 of your commit
@@ -446,6 +473,15 @@ learned from the 60 days before it only, the right task being the one logged ove
 it first for 43% of the minutes and in their first five for 57% (39% and 52% before older days counted less). For
 rows whose session worked in two or more repositories that day, 51% and 63% (51% and 60% before). The "lately" list
 alone: 29% and 56%.
+
+With the task found by its words in the fifth place, tuned on the first 15 of those days and checked on the other
+15: the right task was in the first five for 59% of the checked days' minutes instead of 52%. It was first for 38%,
+the same as before, and no group of rows did worse. For rows whose session had no votes, it was in the first five
+for 20% of the minutes instead of 3%. Over all 30 days: 45% first and 66% in the first five. A weighted vote that let
+words outrank votes did better on the 15 days it was tuned on (60% first) but worse on the other 15 (32% first), so
+votes keep the first four places. Claude's replies, git branch names, ticket numbers (ABC-123, #56) and client names
+matched to project names were measured as well. None of them added anything to the words above. A fifth of the
+minutes went to tasks logged for the first time that day: no learning from past days can name those.
 
 ### 5.6 Pulsar in Claude Code (`pulsar/mcp.py`, experimental)
 
@@ -500,16 +536,18 @@ nothing else. Saving it on:
 - adds Pulsar to Claude Code: `claude mcp remove` (an older entry), then
   `claude mcp add --scope user pulsar -- /usr/bin/python3 -E -s -B <dir>/pulsar.py --mcp --port <port>`. An
   installed Pulsar is started through `~/Library/Application Support/Pulsar/current`, so updates keep it working;
-  Pulsar Preview adds itself as `pulsar-preview` on its own port;
+  Pulsar Preview adds itself as `pulsar-preview` on its own port, with `--instance preview` so the server reads
+  Preview's key;
 - adds "ask" rules for the Productive connection's `create_resource`, `update_resource`, `delete_resource` and
   `perform_action` to `~/.claude/settings.json`, so no session changes Productive without asking. The file is read,
   merged and renamed into place (a linked file stays linked), with a one-time backup `settings.json.pulsar-backup`;
   a file that is not valid JSON is left alone and the switch says so. Rules already there are not counted as added.
 
 Saving it off removes Pulsar from Claude Code and only the rules Pulsar added (`claude_rules_added` in Pulsar's
-settings). Settings shows where things stand from `~/.claude.json` and the settings file, read only, and offers **Add
-Pulsar to Claude Code again** when the entry is missing or starts another copy. A read-only run (`PULSAR_READ_ONLY`)
-never changes Claude Code.
+settings). The rules are one set for Pulsar and Preview: while the other is still in Claude Code they stay, and this
+copy keeps them on its list to take back later. Settings shows where things stand from `~/.claude.json` and the settings file, read only, and offers **Add
+Pulsar to Claude Code again** when the entry is missing or starts another copy. A read-only run (`PULSAR_READ_ONLY`, any value but
+`preview`) never changes Claude Code.
 
 **The session note.** With the switch on, **Log this time** on a Likely block shows the commit draft at once, then asks
 `POST /api/likely/note`: `askclaude.steps()` reads the block's sessions (matched by title) for each step's typed

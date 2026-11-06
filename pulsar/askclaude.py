@@ -4,8 +4,10 @@ switched on in Settings.
 It runs the person's own Claude Code (`claude -p`), with their own subscription, and gives it, for each row of at
 least ten minutes, the time, the repository, the session titles and what they typed then; and the tasks they logged
 to in the last 30 days. Claude may search Productive through the person's own Productive connection, read only: the
-tools that change anything are refused, and no other tool is allowed. Nothing is written anywhere; the session is not
-kept (so it never shows up in the Likely column itself).
+tools that change anything are refused, and no other tool is allowed. It is started with that one connection and
+none of the person's settings (--strict-mcp-config, --setting-sources ""): no other MCP server, no tool their settings
+allow, no hook that would receive the prompt. Nothing is written anywhere; the session is not kept (so it never shows
+up in the Likely column itself).
 
 On one person's days the picks read right (an estimate to the estimations task, a database upgrade to the client's
 "Database Upgrade" task, a personal project to none), for about $0.13 and 15 seconds a day.
@@ -18,10 +20,12 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 import threading
+import urllib.parse
 from datetime import datetime, timedelta
 
-from . import config, productive, sessions
+from . import claudelink, config, logbook, productive, sessions
 
 MODELS = ("sonnet", "haiku", "opus")  # Claude Code's aliases: always the latest model of each
 BUDGET = {"haiku": 0.25, "sonnet": 0.75, "opus": 2.0}  # dollars one day's question may cost at most (--max-budget-usd)
@@ -155,7 +159,55 @@ _lock = threading.Lock()
 
 
 class AskError(Exception):
-    pass
+    """A sentence for the page; `cost` is what the run had already spent, when Claude Code said."""
+
+    def __init__(self, message: str, cost=None):
+        super().__init__(message)
+        self.cost = cost
+
+
+def productive_server() -> dict:
+    """Claude Code's own "productive" connection (its user-scope entry in ~/.claude.json, as it is, so Claude Code
+    finds the sign-in it keeps for it), or Productive's address when it has none there. An entry that points anywhere
+    but Productive is not used."""
+    entry = claudelink.registered("productive")
+    if entry and urllib.parse.urlparse(str(entry.get("url") or "")).hostname == "mcp.productive.io":
+        return entry
+    return {"type": "http", "url": productive.MCP_URL}
+
+
+def _mcp_config() -> str:
+    """A file (owner-only, in the cache folder, removed after the run) naming the one MCP server Claude may use. A
+    file, not the command line: an entry may carry a header with a token, and command lines are visible to others."""
+    os.makedirs(config.CACHE_DIR, exist_ok=True)
+    fd, path = tempfile.mkstemp(prefix="askclaude-mcp-", suffix=".json", dir=config.CACHE_DIR)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump({"mcpServers": {"productive": productive_server()}}, fh)
+    return path
+
+
+def _answer(done, what: str, budget: float) -> dict:
+    """Claude Code's JSON answer, or AskError with what went wrong in words the page can show: the spending limit,
+    not signed in, or an answer that is not JSON at all."""
+    try:
+        res = json.loads(done.stdout)
+    except (ValueError, TypeError):
+        res = None
+    if not isinstance(res, dict):
+        tail = (done.stderr or done.stdout or "").strip()[-200:]
+        raise AskError(f"Claude's {what} could not be read." + (f" {tail}" if tail else ""))
+    if not res.get("is_error"):
+        return res
+    cost = res.get("total_cost_usd")
+    spent = f" ${cost:.2f} of your Claude usage was spent." if isinstance(cost, (int, float)) and cost >= 0.005 else ""
+    said = " ".join(str(x) for x in [res.get("result")] + list(res.get("errors") or []) if x).strip()
+    if res.get("subtype") == "error_max_budget_usd":
+        raise AskError(f"Claude stopped at the limit of ${budget:g} for one question before it answered.{spent} Ask "
+                       "again, or choose a smaller model in Settings.", cost)
+    if "/login" in said or "not logged in" in said.lower():
+        raise AskError("Claude Code is not signed in on this Mac. Open Terminal, run claude and sign in, then ask "
+                       "again.", cost)
+    raise AskError(f"Claude Code could not answer: {said[:200] or res.get('subtype') or 'no reason given'}.{spent}", cost)
 
 
 def available() -> bool:
@@ -293,58 +345,88 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
     binary = productive._claude_binary()
     if not binary:
         raise AskError("Claude Code was not found on this Mac.")
-    os.makedirs(config.CACHE_DIR, exist_ok=True)
-    for attempt in (1, 2):  # an empty answer ({"picks": []}) is asked once more: Haiku sometimes gives one
+    mcp = _mcp_config()
+    try:
+        for attempt in (1, 2):  # an empty answer ({"picks": []}) is asked once more: Haiku sometimes gives one
+            try:  # Productive's read tools only: no other MCP server, nothing the person's settings allow, no hooks
+                done = run([binary, "-p", "--model", model, "--no-session-persistence", "--output-format", "json",
+                            "--json-schema", json.dumps(SCHEMA), "--max-budget-usd", str(BUDGET[model]),
+                            "--tools", "", "--permission-mode", "dontAsk", "--strict-mcp-config", "--mcp-config", mcp,
+                            "--setting-sources", "", "--allowedTools", ",".join(READ_TOOLS),
+                            "--disallowedTools", ",".join(WRITE_TOOLS)],
+                           input=prompt, capture_output=True, text=True, timeout=TIMEOUT, cwd=config.CACHE_DIR)
+            except subprocess.TimeoutExpired:
+                raise AskError("Claude took too long to answer. Try again later.") from None
+            except OSError as exc:
+                raise AskError(f"Claude Code could not be started ({exc}).") from None
+            res = _answer(done, "answer", BUDGET[model])
+            try:
+                if isinstance(res.get("structured_output"), dict):  # checked against SCHEMA by Claude Code
+                    picks = res["structured_output"]["picks"]
+                else:  # an older Claude Code: the JSON at the end of its text, unchecked, so no notes from it
+                    text = str(res.get("result") or "")
+                    picks = json.loads(text[text.rindex('{"picks"'):text.rindex("}") + 1])["picks"]
+                    picks = [{k: v for k, v in p.items() if k != "note"} if isinstance(p, dict) else p for p in picks]
+                if not isinstance(picks, list):
+                    raise TypeError("picks is not a list")
+            except (ValueError, KeyError, TypeError, AttributeError):
+                tail = (done.stderr or str(res.get("result") or "")).strip()[-200:]
+                raise AskError("Claude's answer could not be read." + (f" {tail}" if tail else ""),
+                               res.get("total_cost_usd")) from None
+            picks = [p for p in picks if isinstance(p, dict)]  # anything else in the list is not a pick
+            if picks:
+                break
+    finally:
         try:
-            done = run([binary, "-p", "--model", model, "--no-session-persistence", "--output-format", "json",
-                        "--json-schema", json.dumps(SCHEMA), "--max-budget-usd", str(BUDGET[model]),
-                        "--tools", "", "--permission-mode", "dontAsk",  # nothing outside --allowedTools can run
-                        "--allowedTools", ",".join(READ_TOOLS), "--disallowedTools", ",".join(WRITE_TOOLS)],
-                       input=prompt, capture_output=True, text=True, timeout=TIMEOUT, cwd=config.CACHE_DIR)
-        except subprocess.TimeoutExpired:
-            raise AskError("Claude took too long to answer. Try again later.") from None
-        except OSError as exc:
-            raise AskError(f"Claude Code could not be started ({exc}).") from None
-        try:
-            res = json.loads(done.stdout)
-            if isinstance(res.get("structured_output"), dict):  # checked against SCHEMA by Claude Code
-                picks = res["structured_output"]["picks"]
-            else:  # an older Claude Code: the JSON at the end of its text, unchecked, so no notes from it
-                text = str(res.get("result") or "")
-                picks = json.loads(text[text.rindex('{"picks"'):text.rindex("}") + 1])["picks"]
-                picks = [{k: v for k, v in p.items() if k != "note"} if isinstance(p, dict) else p for p in picks]
-        except (ValueError, KeyError, TypeError):
-            tail = (done.stderr or done.stdout or "").strip()[-200:]
-            raise AskError("Claude's answer could not be read." + (f" {tail}" if tail else "")) from None
-        if picks:
-            break
-    names = {t[0]: {"taskId": t[0], "title": t[1], "project": t[2]} for t in mine}
-    unknown = [str(x) for p in picks for x in (p.get("tasks") or []) if x and str(x) not in names and str(x).isdigit()]
-    if unknown:  # found by searching Productive: their names
-        try:
-            for tid, d in productive.task_details(list(dict.fromkeys(unknown))[:20], config.load()).items():
-                names[tid] = {"taskId": tid, "title": d.get("title") or "", "project": d.get("project") or ""}
-        except Exception:
+            os.remove(mcp)
+        except OSError:
             pass
+    names = {t[0]: {"taskId": t[0], "title": t[1], "project": t[2]} for t in mine}
+    task_ids = lambda p: [str(x) for x in (p.get("tasks") if isinstance(p.get("tasks"), list) else [])]  # noqa: E731
+    unknown = list(dict.fromkeys(x for p in picks for x in task_ids(p) if x not in names and x.isdigit()))[:20]
+    unnamed = ""  # why tasks Claude found by searching Productive could not be named now: then nothing is cached
+    if unknown:  # found by searching Productive: their names
+        reasons, transient = {}, set()
+        try:
+            found = productive.task_details(unknown, config.load(), reasons, transient)
+        except productive.ProductiveError as exc:  # the connection: none of them could be asked
+            found, transient = {}, set(unknown)
+            reasons = dict.fromkeys(unknown, str(exc))
+        except Exception as exc:  # a fault here: said in Logs, and the answer is still shown without those tasks
+            logbook.record("ask claude", f"Naming the tasks Claude found failed: {type(exc).__name__}: {exc}")
+            found, transient = {}, set(unknown)
+            reasons = dict.fromkeys(unknown, f"{type(exc).__name__}: {exc}")
+        for tid, d in found.items():
+            names[tid] = {"taskId": tid, "title": d.get("title") or "", "project": d.get("project") or ""}
+        if transient:
+            unnamed = reasons.get(sorted(transient)[0]) or "Productive did not answer"
     out: dict = {}
     blocked: list = []
     by_id = {b["id"]: b for b in blocks}
-    for p in picks if isinstance(picks, list) else []:
+    for p in picks:
         try:
-            r = rows[int(p.get("id"))]
+            i = int(p.get("id"))
+            r = rows[i]
         except (TypeError, ValueError, IndexError):
             continue
-        if int(p.get("id")) not in by_id:
+        if i not in by_id:
             continue
-        tasks = [names[str(x)] for x in (p.get("tasks") or []) if x and str(x) in names][:3]
+        ids = task_ids(p)
+        tasks = [names[x] for x in ids if x in names][:3]
         note, bad = guard_note(p.get("note"))
-        first = str((p.get("tasks") or [""])[0])
+        first = ids[0] if ids else ""
         if note and not (tasks and tasks[0]["taskId"] == first):  # written for a task that could not be named
             note, bad = "", "no task"
         if bad:
             blocked.append(bad)
         out[f"{r['s']}|{r.get('project') or ''}"] = {"tasks": tasks, "why": str(p.get("why") or "")[:120], "note": note}
     answer = {"picks": out, "cost": res.get("total_cost_usd"), "notesBlocked": blocked}
+    if unnamed:  # shown with the picks; not kept, so asking again can name them
+        n = sum(1 for x in unknown if x not in names)
+        answer["warning"] = (f"Claude also found {n} task{'s' if n != 1 else ''} by searching Productive that Pulsar "
+                             f"could not name just now ({unnamed}). Ask again to see {'them' if n != 1 else 'it'}.")
+        logbook.record("ask claude", answer["warning"], kind="warning")
+        return answer
     with _lock:
         _cache[sig] = answer
         for old in list(_cache)[:-30]:
@@ -402,15 +484,13 @@ def note(date: str, row: dict, t0: float, history: list = (), run=subprocess.run
                     "--json-schema", json.dumps(NOTE_SCHEMA), "--max-budget-usd", "0.1", "--tools", "",
                     "--permission-mode", "dontAsk", "--strict-mcp-config", "--setting-sources", ""],
                    input=prompt, capture_output=True, text=True, timeout=90, cwd=config.CACHE_DIR)
-        res = json.loads(done.stdout)
-        drafted = (res.get("structured_output") or {}).get("note")
     except subprocess.TimeoutExpired:
         raise AskError("Claude took too long to draft the note.") from None
     except OSError as exc:
         raise AskError(f"Claude Code could not be started ({exc}).") from None
-    except (ValueError, AttributeError, TypeError):
-        tail = (done.stderr or done.stdout or "").strip()[-200:]
-        raise AskError("Claude's note could not be read." + (f" {tail}" if tail else "")) from None
+    res = _answer(done, "note", 0.1)
+    drafted = res.get("structured_output")
+    drafted = drafted.get("note") if isinstance(drafted, dict) else None
     text, bad = guard_note(drafted)
     answer = {"note": text, "why": f"the draft had {bad}, so it was left out" if bad else "",
               "cost": res.get("total_cost_usd")}

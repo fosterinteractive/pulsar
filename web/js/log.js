@@ -145,9 +145,15 @@ async function draftFromSession({date, s, e, project}) {
     logDrafted = {note: r.note, from: 'session'}; logFilled = false;
   }
   showDraft();
+  if (!r.note && r.error && !logDrafted) $('#log-note-hint').textContent = `No note from Claude: ${r.error}`;
 }
 function showDraft() {
   const d = logDrafted, sel = logPicker.selected;
+  if (logEdit) {  // nothing is drafted for an entry already logged
+    $('#log-note-hint').textContent = logEdit.noteRich ? 'In Productive this note has formatting (paragraphs, a list or '
+      + 'links). It stays as it is unless you change the note here; a changed note is saved as plain text.' : '';
+    return;
+  }
   $('#log-note-hint').innerHTML = !d ? (logFilled ? esc('Filled in for you: clients may see notes on invoices; check it.')
                                         : logDrafting ? esc('Claude is drafting a note from this session…') : '')
     : d.from === 'commits' ? esc('From your commits' + (logDrafting ? '; Claude is drafting one from the session…' : ': check it before logging; clients may see notes.'))
@@ -176,16 +182,21 @@ logForm.elements.date.addEventListener('change', () => {
 
 /* lead: a group offered first and picked: {label, tasks}, {label, ids} (the page knows only the tasks' ids), or
    {label, url} (the server works them out, each with why). drafted: the drafted note (logDrafted), when `note` is it */
-let logEdit = null;  // {id, serviceId, title} while the dialog edits an entry that is already logged
+/* while the dialog edits an entry that is already logged: {id, taskId, serviceId, service, budget, title, noteRich,
+   seen (the entry as the page showed it), orig (the fields as the dialog opened)} */
+let logEdit = null;
 async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = [], note = '', lead = null, edit = null, drafted = null} = {}) {
   logEdit = edit; logOpened++; logDrafting = 0;
   $('#log-title').textContent = edit ? 'Change a logged entry' : 'Log time in Productive';
   logForm.elements.date.disabled = !!edit;  // an entry changes within its own day
   if (!CONFIG?.productive.active) { toast('Connect Productive in Settings first.', true); openSettings('t-conn'); return; }
   const f = logForm.elements;
-  start = Math.max(0, Math.min(1435, Math.round(start)));  // inside the day: hm() would wrap 24:00 to 00:00
+  // inside the day: hm() would wrap 24:00 to 00:00. An entry shows the minute it starts in, as Productive does, and
+  // its own length: the dialog never moves it by itself
+  start = edit ? Math.max(0, Math.min(1439, Math.floor(start))) : Math.max(0, Math.min(1435, Math.round(start)));
   minutes = Math.max(1, Math.min(1440 - start, Math.round(minutes)));
   f.date.value = date; f.start.value = hm(start); f.minutes.value = minutes; f.note.value = note || '';
+  if (edit) edit.orig = {start: f.start.value, minutes, note: f.note.value};
   logDrafted = drafted?.note && drafted.note === note ? drafted : null;
   logFilled = !edit && !logDrafted && !!f.note.value.trim();
   f.service.innerHTML = '<option value="">Pick a task first</option>'; f.service.disabled = true;
@@ -235,23 +246,31 @@ async function loadServices(task) {
   f.service.disabled = true; f.service.innerHTML = '<option value="">Loading services…</option>';
   const r = await getJSON(`/api/services?task=${task.taskId}&date=${date}`);
   if (logPicker.selected?.taskId !== task.taskId || f.date.value !== date) return;  // a newer choice is loading
-  if (r.error) { f.service.innerHTML = ''; setLogMsg(r.error, true); return; }
-  const list = r.services || [];
+  // an entry edited on its own task keeps its service, even one that takes no new time on this date: never another
+  // picked for it
+  const own = logEdit && task.taskId === logEdit.taskId && logEdit.serviceId
+    ? {id: logEdit.serviceId, name: logEdit.service || 'Its service', budget: logEdit.budget || ''} : null;
+  if (r.error && !own) { f.service.innerHTML = ''; setLogMsg(r.error, true); return; }
+  let list = r.services || [];
+  const ownGone = own && !list.some(x => x.id === own.id);
+  if (ownGone) list = [{...own, gone: true}, ...list];
   if (!list.length) { f.service.innerHTML = ''; setLogMsg("No service of this task's project takes time on this date. Ask the project's PM.", true); return; }
   // the service you used last on this task; else one of the same name in a newer budget; else the task's own
   const recent = (await suggestions(date)).recent?.find(t => t.taskId === task.taskId);
   if (logPicker.selected?.taskId !== task.taskId || f.date.value !== date) return;
-  const pick = (logEdit && task.taskId === logEdit.taskId ? list.find(x => x.id === logEdit.serviceId) : null)
+  const pick = (own ? list.find(x => x.id === own.id) : null)
     || list.find(x => x.id === recent?.serviceId)
     || list.find(x => recent?.service && x.name.trim() === recent.service.trim())
     || list.find(x => x.id === r.task?.serviceId) || (list.length === 1 ? list[0] : null);
   f.service.innerHTML = (pick ? '' : '<option value="">Pick a service</option>') + list.map(x =>
     `<option value="${esc(x.id)}"${pick?.id === x.id ? ' selected' : ''}>${esc(x.name.trim())}${x.budget ? ' · ' + esc(x.budget) : ''}${
-      x.billable ? ' · billable' : x.billable === false ? ' · not billable' : ''}</option>`).join('');
+      x.billable ? ' · billable' : x.billable === false ? ' · not billable' : ''}${x.gone ? ' · takes no new time on this date' : ''}</option>`).join('');
   f.service.disabled = false;
   // a blocked task can still take time (the blocker may be what you worked on), but say so before anything is written
-  setLogMsg(task.blocked ? `This task is ${(task.status || 'blocked').toLowerCase()} in Productive. You can still log to it.` : '',
-            !!task.blocked);
+  const said = [task.blocked ? `This task is ${(task.status || 'blocked').toLowerCase()} in Productive. You can still log to it.` : '',
+                ownGone ? (r.error ? r.error + ' ' : '') + "This entry's service takes no new time on this date. It stays as it is "
+                  + 'unless you pick another; Productive may refuse a change to the entry.' : ''].filter(Boolean);
+  setLogMsg(said.join(' '), said.length > 0);
 }
 
 logForm.addEventListener('submit', async ev => {
@@ -263,8 +282,7 @@ logForm.addEventListener('submit', async ev => {
   f.start.value = startHHMM(f.start.value);
   const btn = $('#log-save'); btn.disabled = $('#log-next').disabled = true; setLogMsg(logEdit ? 'Checking the day, then saving…' : 'Checking the day, then logging…');
   const r = logEdit
-    ? await postJSON('/api/entry/update', {id: logEdit.id, date: f.date.value, start: f.start.value, minutes: +f.minutes.value,
-                                           taskId: task.taskId, serviceId: f.service.value, note: f.note.value.trim(), force: logForce})
+    ? await postJSON('/api/entry/update', {id: logEdit.id, date: f.date.value, seen: logEdit.seen, force: logForce, ...editChanges(task)})
     : await postJSON('/api/log', {date: f.date.value, start: f.start.value, minutes: +f.minutes.value, taskId: task.taskId,
                                   serviceId: f.service.value, note: f.note.value.trim(), force: logForce});
   btn.disabled = $('#log-next').disabled = false;
@@ -278,11 +296,23 @@ logForm.addEventListener('submit', async ev => {
     return setLogMsg('This overlaps ' + r.overlap.map(o => `${o.start} ${dur(o.minutes)} ${o.project}`).join('; ') + '.', true);
   }
   logDlg.close(); suggestCache = null;
+  if (r.unchanged) return toast('Nothing to change: the entry is already like this.');
   const said = logEdit ? `Changed: ${f.start.value}, ${dur(+f.minutes.value)}, ${task.title}.` : `Logged ${dur(+f.minutes.value)} to ${task.title}.`;
   if (f.date.value === state.date) refreshLogged();
   if (!logEdit && afterLog(f.date.value, f.start.value, +f.minutes.value, said, andNext)) return;  // flow.js: Log and next
   toast(said);
 });
+/* Edit sends only what was changed in the dialog, so an untouched start, note or service stays exactly as Productive
+   has it (a note with formatting, a service that takes no new time, a start with seconds) */
+function editChanges(task) {
+  const f = logForm.elements, o = logEdit.orig, out = {};
+  if (f.start.value !== o.start) out.start = f.start.value;
+  if (+f.minutes.value !== o.minutes) out.minutes = +f.minutes.value;
+  if (f.note.value.trim() !== o.note.trim()) out.note = f.note.value.trim();
+  if (task.taskId !== logEdit.taskId) out.taskId = task.taskId;
+  if (out.taskId || f.service.value !== logEdit.serviceId) out.serviceId = f.service.value;
+  return out;
+}
 logDlg.querySelectorAll('[data-close]').forEach(b => b.onclick = () => logDlg.close());
 logDlg.addEventListener('keydown', ev => {  // Cmd+Enter (Ctrl+Enter elsewhere) logs from anywhere in the dialog
   if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) {  // with Shift: Log and next

@@ -134,9 +134,11 @@ def _google_reason(status: int, doc: dict) -> str:
 
 def client() -> Optional[dict]:
     """{"id", "secret"} of the Google Cloud client, as Google Cloud Console downloads it ({"installed": {...}}): from
-    ~/.config/pulsar/google_client.json (where the person who releases Pulsar keeps it, out of git), else from the
-    copy next to this file (the one a release ships). None while both are missing or hold placeholders."""
-    for path in (os.path.join(config.CONFIG_DIR, "google_client.json"), CLIENT_FILE):
+    ~/.config/pulsar/google_client.json (where the person who releases Pulsar keeps it, out of git; Pulsar Preview
+    looks in its own folder, then there), else from the copy next to this file (the one a release ships). None while
+    all are missing or hold placeholders."""
+    places = dict.fromkeys([config.CONFIG_DIR, config.MAIN_CONFIG_DIR])  # one folder, or Preview's then Pulsar's
+    for path in [os.path.join(d, "google_client.json") for d in places] + [CLIENT_FILE]:
         found = _client_in(path)
         if found:
             return found

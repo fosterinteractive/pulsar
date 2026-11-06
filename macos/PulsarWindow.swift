@@ -6,7 +6,7 @@
 // opening a browser. The window loads that address, so it is signed in at once.
 //
 //   - Only Pulsar's own address (http://127.0.0.1:<port>) opens in the window. A link elsewhere that the person
-//     clicks opens in their browser; anything else is refused.
+//     clicks opens in their browser; anything else is refused. Only Pulsar's own page may message the window.
 //   - Downloads (CSV, the error log) ask where to save; "Print or save as PDF" opens the print dialog.
 //   - Closing the window quits the app, and quitting stops the server this app started (launcher.sh --stop). A
 //     server started some other way, such as python3 pulsar.py in a git checkout, keeps running.
@@ -292,13 +292,22 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
         decisionHandler(disposition.lowercased().hasPrefix("attachment") || !response.canShowMIMEType ? .download : .allow)
     }
 
-    /// window.open and target="_blank": never a second window; a link elsewhere goes to the browser.
+    /// target="_blank" and window.open: never a second window. A link elsewhere goes to the browser only when the
+    /// person clicked it in Pulsar's own page, as in decidePolicyFor above: a script's window.open opens nothing.
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
                  for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if let url = action.request.url, ["http", "https", "mailto"].contains(url.scheme ?? ""), !isPulsar(url) {
+        if let url = action.request.url, ["http", "https", "mailto"].contains(url.scheme ?? ""), !isPulsar(url),
+           action.navigationType == .linkActivated, action.sourceFrame.isMainFrame, isPulsarFrame(action.sourceFrame) {
             NSWorkspace.shared.open(url)
         }
         return nil
+    }
+
+    /// A frame showing Pulsar's own page: its origin is Pulsar's address (scheme, host and port).
+    private func isPulsarFrame(_ frame: WKFrameInfo) -> Bool {
+        guard let origin = origin else { return false }
+        let o = frame.securityOrigin
+        return o.protocol == origin.scheme && o.host == origin.host && o.port == (origin.port ?? 0)
     }
 
     /// The server is not answering (it stopped, or the Mac slept through an update): offer to start it again.
@@ -312,9 +321,13 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
 
     // MARK: messages from the page
 
+    /// Only Pulsar's own page may ask for anything; the window's own message page ("Pulsar is not running", loaded
+    /// with no address) may only ask to start Pulsar again.
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame, let body = message.body as? [String: Any],
               let action = body["action"] as? String else { return }
+        let ownMessagePage = message.frameInfo.request.url.map { $0.absoluteString == "about:blank" } ?? true
+        guard isPulsarFrame(message.frameInfo) || (action == "start" && ownMessagePage) else { return }
         switch action {
         case "print": printPage()
         case "warp":   // {to: 0..1, instant, dark}: the page's warp, drawn here on the graphics card

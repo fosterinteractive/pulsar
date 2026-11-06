@@ -178,6 +178,57 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual(p["entries"], [])
         self.assertEqual(p["skipped"][0]["minutes"], 60)
 
+    def test_a_short_piece_far_away_does_not_pull_an_entry_to_its_time(self):
+        # replay, 6 Oct: a 3-minute row at 00:39 joined a 204-minute afternoon row, laid out at 00:40-04:00
+        items = [work(39, 42), work(785, 989)]
+        rows = [row(39, 42, project="elsewhere", titles=["Something new"]), row(785, 989)]
+        p = dayplan.plan(day(items=items, rows=rows, away=[{"s": 42, "e": 785, "off": True}]), self.ctx)
+        [main] = [e for e in p["entries"] if e["taskId"] == "11"]
+        self.assertEqual((main["s"], main["e"]), (785, 990))
+        for e in p["entries"]:
+            self.assertFalse(e["s"] < 785 and e["e"] > 60, e)  # nothing proposed in the night
+
+    def test_a_repeat_stretched_over_the_next_meeting_does_not_swallow_it(self):
+        # replay, 4 Nov: the 16:25 repeat ran to 17:45 on one long call and was taken for the 17:00 meeting too,
+        # whose call was then left with no task
+        rep = {"s": 985, "e": 1065, "minutes": 80, "at": 985, "taskId": "77", "title": "Scrum", "project": "PM",
+               "serviceId": "s77", "service": "Admin", "note": "", "days": 13}
+        meetings = [{"s": 990, "e": 1020, "title": "Scrum", "uid": "u1", "declined": False, "all_day": False,
+                     "tasks": [{"taskId": "77", "title": "Scrum", "project": "PM", "n": 2, "of": 2}]},
+                    {"s": 1020, "e": 1140, "title": "AI jam", "uid": "u2", "declined": False, "all_day": False,
+                     "tasks": [{"taskId": "88", "title": "Jams", "project": "AI", "n": 2, "of": 4}]}]
+        p = dayplan.plan(day(items=[work(991, 1156, app="zoom.us", title="Zoom Meeting")], calls=[{"s": 991, "e": 1156}],
+                             repeats=[rep], meetings=meetings), self.ctx)
+        jam = [e for e in p["entries"] if e["taskId"] == "88"]
+        self.assertTrue(jam and sum(e["minutes"] for e in jam) >= 60, p["entries"])
+        self.assertFalse([e for e in p["entries"] if e["source"] == "call"], p["entries"])
+        self.assertEqual([e["taskId"] for e in p["entries"] if e["s"] < 1065], ["77"])
+
+    def test_days_with_entries_logged_by_length_only_never_make_a_repository_never_logged(self):
+        # replay, Sep: entries with no start time cannot be matched to the work; the person's main repository was
+        # set aside as "you never log this repository"
+        t0_of = lambda d: datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()  # noqa: E731
+        stored = {f"2026-10-{n:02d}": [{"k": [], "p": "qa", "s": 540, "e": 720}] for n in (20, 21, 22)}
+        untimed = [{"date": d, "start": None, "minutes": 180, "taskId": "5", "task": "QA", "project": "P"} for d in stored]
+        self.assertNotIn("qa", dayplan.learn(DATE, untimed, stored, t0_of)["never_logged"])
+        # logged at other times of those days, with a start: the repository really is never logged
+        timed = [{**r, "start": t0_of(r["date"]) + 1200 * 60, "minutes": 60} for r in untimed]
+        self.assertIn("qa", dayplan.learn(DATE, timed, stored, t0_of)["never_logged"])
+
+    def test_an_editor_with_no_session_row_is_unticked_work_with_the_neighbouring_task(self):
+        items = [work(540, 600), work(640, 670, app="Terminal")]
+        p = dayplan.plan(day(items=items, rows=[row(540, 600)]), self.ctx)
+        session, editor = p["entries"]
+        self.assertEqual((session["taskId"], session["checked"]), ("11", True))
+        self.assertEqual((editor["taskId"], editor["kind"], editor["s"], editor["minutes"], editor["checked"]),
+                         ("11", "outside", 640, 30, False))
+
+    def test_a_session_vote_of_40_to_60_percent_is_low_and_unticked(self):
+        key = dayplan.title_key("Fix the importer")
+        ctx = {**self.ctx, "sess": {key: {"11": 55.0, "22": 45.0}}}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600)]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["confidence"], e["checked"]), ("11", "low", False))
+
     def test_your_own_name_in_titles_is_no_evidence(self):
         ctx = {**self.ctx, "recent": ["90"], "names": {"90": {"task": "Estimations - Nick", "project": "X"}},
                "sess": {}, "repo": {}}
@@ -330,9 +381,9 @@ class WriteTest(unittest.TestCase):
     def test_undo_deletes_only_this_runs_entries_and_only_as_written(self):
         server.api_log(self.body())                                         # 501, 10:00
         server.api_log(self.body(row="r2", start="11:00"))                  # 502, 11:00
-        self.existing = [{"id": "501", "date": DATE, "start": T0 + 600 * 60, "minutes": 30, "taskId": "5", "project": "P"},
-                         {"id": "502", "date": DATE, "start": T0 + 660 * 60, "minutes": 45, "taskId": "5", "project": "P"},
-                         {"id": "777", "date": DATE, "start": T0 + 720 * 60, "minutes": 30, "taskId": "5", "project": "P"}]
+        self.existing = [{"id": "501", "date": DATE, "start": T0 + 600 * 60, "minutes": 30, "taskId": "5", "project": "P", "personId": "1"},
+                         {"id": "502", "date": DATE, "start": T0 + 660 * 60, "minutes": 45, "taskId": "5", "project": "P", "personId": "1"},
+                         {"id": "777", "date": DATE, "start": T0 + 720 * 60, "minutes": 30, "taskId": "5", "project": "P", "personId": "1"}]
         with self.assertRaises(ValueError):  # not created by this run
             server.api_entry_delete({"id": "777", "date": DATE, "run": self.run})
         with self.assertRaises(ValueError):  # changed since (45 minutes now): left alone

@@ -478,6 +478,7 @@ function renderAside(gapMin) {
 /* ---------- popover ---------- */
 const pop = $('#pop');
 let popFrom = null;  // the card the keyboard opened the popover from: Escape returns there
+let popEntry = null;  // the logged entry the popover shows, as it showed it
 function openPop(html, ev) {
   pop.innerHTML = html; pop.classList.add('on');
   pop.setAttribute('aria-label', pop.querySelector('h3')?.textContent || 'Details');
@@ -511,12 +512,12 @@ document.addEventListener('click', ev => {
       draftFromSession({date: state.date, s: a, e: b, project: likelyCache[+logBtn.dataset.likely].project});
     return;
   }
-  const editBtn = ev.target.closest('[data-edit]');
-  if (editBtn) { const x = loggedCache[+editBtn.dataset.edit]; closePop(); editEntry(x); return; }
-  const delBtn = ev.target.closest('[data-del]');
-  if (delBtn) { askDelete(loggedCache[+delBtn.dataset.del], ev); return; }
+  // Edit, Delete and Change act on the entry the popover shows (popEntry), never on a place in a list that a refresh
+  // may have filled with another one; the server also refuses it if it changed since (seen)
+  if (ev.target.closest('[data-edit]') && popEntry) { const x = popEntry; closePop(); editEntry(x); return; }
+  if (ev.target.closest('[data-del]') && popEntry) { askDelete(popEntry, ev); return; }
   const delYes = ev.target.closest('[data-del-yes]');
-  if (delYes) { deleteEntry(loggedCache[+delYes.dataset.delYes], delYes); return; }
+  if (delYes && popEntry) { deleteEntry(popEntry, delYes); return; }
   const rzYes = ev.target.closest('[data-rz-yes]');
   if (rzYes) { saveResize(rzYes, rzYes.dataset.force === '1'); return; }
   if (ev.target.closest('[data-rz-no]')) { closePop(); render(); return; }
@@ -555,17 +556,18 @@ document.addEventListener('click', ev => {
         <span class="num">${dur(x.minutes)}</span></div>`).join(''), ev);
   } else {
     const x = loggedCache[i];
+    popEntry = x;
     openPop(`<h3>${esc(x.project)}</h3><div class="sub">${hm(x.s)}–${hm(x.e)} · ${dur(x.minutes)}${x.approved ? ' · approved' : ''}</div>
       <p>${esc(x.note)}</p>
       <dl><dt>Task</dt><dd>${esc(x.task)}</dd><dt>Budget</dt><dd>${esc(x.budget)}</dd><dt>Service</dt><dd>${esc(x.service)}</dd><dt>Billable</dt><dd>${x.billable == null ? 'Unknown' : x.billable ? 'Yes' : 'No'}${x.billing ? ' · ' + esc(x.billing) : ''}</dd></dl>
-      <div class="btnrow"><button class="btn bordered sm" data-edit="${i}">Edit</button><button class="btn bordered sm" data-del="${i}">Delete</button>${
+      <div class="btnrow"><button class="btn bordered sm" data-edit>Edit</button><button class="btn bordered sm" data-del>Delete</button>${
         productiveTaskURL(x.taskId) ? `<a class="btn bordered sm" href="${esc(productiveTaskURL(x.taskId))}" target="_blank" rel="noopener noreferrer">Open in Productive</a>` : ''}</div>
       ${x.approved ? '<p class="sub">Approved. Where your budget has an approver, Productive may refuse a change and say why.</p>' : ''}`, ev);
   }
 });
 function closePop(refocus = false) {
   const was = pop.classList.contains('on');
-  pop.classList.remove('on');
+  pop.classList.remove('on'); popEntry = null;
   if (refocus && was && popFrom) {  // the card may have been redrawn since: find it again by its place
     const el = popFrom.isConnected ? popFrom : document.querySelector(`.card[data-k="${popFrom.dataset.k}"][data-i="${popFrom.dataset.i}"]`);
     el?.focus();
@@ -624,7 +626,8 @@ $('#ask-claude').onclick = async () => {
   if (d !== state.date) return;
   state.claude = {date: d, picks: r.picks || {}};
   const n = Object.values(state.claude.picks).filter(p => p.tasks?.length).length;
-  toast(n ? `Claude picked a task for ${n} ${n === 1 ? 'block' : 'blocks'}. Log one to see them first.` : 'Claude found no task for these blocks.');
+  const said = n ? `Claude picked a task for ${n} ${n === 1 ? 'block' : 'blocks'}. Log one to see them first.` : 'Claude found no task for these blocks.';
+  toast(r.warning ? `${said} ${r.warning}` : said, !!r.warning);
   render();
 };
 /* logged time only: one Productive read, the other columns stay as they are */
@@ -663,20 +666,25 @@ setInterval(async () => {
 
 
 /* ---------- changing a logged entry: Edit (the log dialog), Delete (asked first), drag an edge (asked first) ---------- */
+/* the entry as the page shows it: the server changes nothing if Productive has it otherwise now. The start is the
+   minute it falls in, as the server reads it. */
+const seenOf = x => ({start: x.s == null ? null : hm(Math.floor(x.s)), minutes: x.minutes, taskId: x.taskId || '',
+                      serviceId: x.serviceId || '', note: x.note || ''});
 function editEntry(x) {
   openLog({date: state.date, start: x.s, minutes: x.minutes, note: x.note || '',
-           edit: {id: x.id, taskId: x.taskId, serviceId: x.serviceId, title: x.task},
+           edit: {id: x.id, taskId: x.taskId, serviceId: x.serviceId, service: x.service, budget: x.budget, title: x.task,
+                  noteRich: !!x.noteRich, seen: seenOf(x)},
            lead: {label: 'This entry', tasks: x.taskId ? [{taskId: x.taskId, title: x.task, project: x.project}] : []}});
 }
 function askDelete(x, ev) {
-  const i = loggedCache.indexOf(x);
+  popEntry = x;
   openPop(`<h3>Delete this entry?</h3><div class="sub">${hm(x.s)}–${hm(x.e)} · ${dur(x.minutes)} · ${esc(x.project)}</div>
     <p>${esc(x.task || '')}</p><p class="sub">It goes to Productive's Recycle Bin, where it can be restored.</p>
-    <div class="btnrow"><button class="btn primary sm" data-del-yes="${i}">Delete</button><button class="btn bordered sm" data-rz-no>Cancel</button></div>`, ev);
+    <div class="btnrow"><button class="btn primary sm" data-del-yes>Delete</button><button class="btn bordered sm" data-rz-no>Cancel</button></div>`, ev);
 }
 async function deleteEntry(x, btn) {
   btn.disabled = true;
-  const r = await postJSON('/api/entry/delete', {id: x.id, date: state.date});
+  const r = await postJSON('/api/entry/delete', {id: x.id, date: state.date, seen: seenOf(x)});
   closePop();
   if (r.error) { toast(r.error, true); refreshLogged(); return; }
   toast(`Deleted ${dur(x.minutes)} of ${x.task || x.project}.`);
@@ -703,29 +711,35 @@ async function deleteEntry(x, btn) {
   lane.addEventListener('pointerup', ev => {
     if (!drag) return;
     const d = drag; drag = null; justDone = Date.now();
-    if (Math.round(d.s) === Math.round(d.x.s) && Math.round(d.e) === Math.round(d.x.e)) { render(); return; }
+    if (d.s === d.x.s && d.e === d.x.e) { render(); return; }
     const r = d.card.getBoundingClientRect();
-    askResize(d.x, Math.round(d.s), Math.round(d.e - d.s), {clientX: r.right - 8, clientY: r.top + 10});
+    // only the edge that moved changes: the other keeps its exact time (an entry's start can hold seconds)
+    askResize(d.x, d.s === d.x.s ? null : d.s, Math.round(d.e - d.s), {clientX: r.right - 8, clientY: r.top + 10});
   });
   lane.addEventListener('pointercancel', () => { if (drag) { drag = null; render(); } });
   // the click that ends a drag must not open the card's popover over the question
   lane.addEventListener('click', ev => { if (Date.now() - justDone < 400) { ev.stopPropagation(); ev.preventDefault(); } }, true);
 })();
+/* start: the new start, or null when only the end moved (the start stays exactly as it is) */
 function askResize(x, start, minutes, at, overlap = null) {
-  const i = loggedCache.indexOf(x);
-  openPop(`<h3>Change this entry?</h3><div class="sub">${hm(x.s)}–${hm(x.e)} → <b>${hm(start)}–${hm(start + minutes)}</b> · ${dur(minutes)}</div>
+  popEntry = x;
+  const s = start ?? x.s;
+  openPop(`<h3>Change this entry?</h3><div class="sub">${hm(x.s)}–${hm(x.e)} → <b>${hm(s)}–${hm(s + minutes)}</b> · ${dur(minutes)}</div>
     <p>${esc(x.task || x.project)}</p>
     ${overlap ? `<p class="sub warnish">It would overlap ${esc(overlap.map(o => `${o.start} ${dur(o.minutes)} ${o.project}`).join('; '))}.</p>` : ''}
-    <div class="btnrow"><button class="btn primary sm" data-rz-yes="${i}" data-start="${start}" data-minutes="${minutes}" data-force="${overlap ? 1 : 0}">${overlap ? 'Change anyway' : 'Change'}</button>
+    <div class="btnrow"><button class="btn primary sm" data-rz-yes data-start="${start ?? ''}" data-minutes="${minutes}" data-force="${overlap ? 1 : 0}">${overlap ? 'Change anyway' : 'Change'}</button>
       <button class="btn bordered sm" data-rz-no>Cancel</button></div>`, at);
 }
 async function saveResize(btn, force) {
-  const x = loggedCache[+btn.dataset.rzYes], start = +btn.dataset.start, minutes = +btn.dataset.minutes;
+  const x = popEntry, start = btn.dataset.start === '' ? null : +btn.dataset.start, minutes = +btn.dataset.minutes;
+  if (!x) return;
   btn.disabled = true;
-  const r = await postJSON('/api/entry/update', {id: x.id, date: state.date, start: hm(start), minutes, force});
+  const r = await postJSON('/api/entry/update', {id: x.id, date: state.date, ...(start == null ? {} : {start: hm(start)}),
+                                                 minutes, force, seen: seenOf(x)});
   if (r.overlap) { const at = btn.getBoundingClientRect(); askResize(x, start, minutes, {clientX: at.left, clientY: at.top - 60}, r.overlap); return; }
   closePop();
   if (r.error) { toast(r.error, true); refreshLogged(); return; }
-  toast(`Changed to ${hm(start)}–${hm(start + minutes)}, ${dur(minutes)}.`);
+  const s = start ?? x.s;
+  toast(`Changed to ${hm(s)}–${hm(s + minutes)}, ${dur(minutes)}.`);
   refreshLogged();
 }

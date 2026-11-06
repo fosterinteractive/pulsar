@@ -264,11 +264,20 @@ bundle. Neither has been through notarization here.
 
 **Pulsar Preview** is a second app that runs a git checkout's code as it is, beside the released Pulsar, so new work
 can be tried on real data before anyone gets it. It uses its own port (5620), its own log
-(`~/Library/Logs/Pulsar-Preview.log`) and its own window storage, and the same settings, tokens and caches as Pulsar.
-It never installs or updates anything, and is never zipped or released.
+(`~/Library/Logs/Pulsar-Preview.log`), its own window storage, and its own settings, sign-in, sessions, caches and
+keychain items (`~/.config/pulsar-preview`, `~/.cache/pulsar-preview`, keychain service `pulsar-preview`): its launcher
+starts the code with `PULSAR_INSTANCE=preview`. "Remove token" or "Disconnect" in Preview never touch Pulsar's, and
+neither app's saves drop the other's settings. It never installs or updates anything, and is never zipped or released.
 
 - **It writes nothing to Productive** unless **Settings > Updates > Preview > Allow this preview to write** is on.
-  The chip at the top always shows the branch and commit it runs; it turns red while writing is allowed.
+  The chip at the top always shows the branch and commit it runs; it turns red while writing is allowed. The launcher
+  also sets `PULSAR_READ_ONLY=preview`: this code reads that as "a preview" and follows the setting, while a checkout
+  older than Preview (`main` before it, 1.2.x) takes any value as read-only and writes nothing at all.
+- **The first start** copies Pulsar's settings once (rules, time zone, who you are; not the Google account, the
+  token source, update choices or write permission). Productive then comes through Claude Code's connection, with no
+  setup; to use a token instead, paste one in Preview's Settings. Google Calendar needs **Connect** once in Preview's
+  Settings (it finds the sign-in client in Pulsar's folder). An older checkout, which does not know
+  `PULSAR_INSTANCE`, keeps using Pulsar's folders: the launcher asks the code where it keeps them.
 - **Set up once:** a checkout for it, and the app:
 
   ```bash

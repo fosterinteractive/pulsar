@@ -106,6 +106,39 @@ class Link(unittest.TestCase):
         self.assertEqual(self.calls, [])
         self.assertFalse(os.path.exists(self.settings))
 
+    def test_preview_starts_its_mcp_server_with_its_own_folders(self):
+        with mock.patch.object(claudelink.config, "INSTANCE", "preview"), \
+                mock.patch.dict(os.environ, {"PULSAR_PREVIEW": "1"}):
+            self.assertEqual(claudelink.name(), "pulsar-preview")
+            self.assertEqual(claudelink.command(5620)[-5:], ["--mcp", "--port", "5620", "--instance", "preview"])
+        self.assertNotIn("--instance", claudelink.command(5610))  # Pulsar, and an older launcher's Preview
+
+    def test_the_ask_rules_stay_while_the_other_pulsar_uses_them(self):
+        with mock.patch.dict(os.environ, {"PULSAR_PREVIEW": "1"}):  # Preview adds the rules first
+            first = claudelink.connect(5620, {})
+        self.assertEqual(sorted(first["rulesAdded"]), sorted(claudelink.rules()))
+        mine = claudelink.connect(5610, {})  # then Pulsar: the rules are already there, so it adds none
+        self.assertEqual(mine["rulesAdded"], [])
+        with mock.patch.dict(os.environ, {"PULSAR_PREVIEW": "1"}):  # Preview off while Pulsar is still in Claude Code
+            off = claudelink.disconnect({"claude_rules_added": first["rulesAdded"]})
+        self.assertTrue(off["ok"])
+        self.assertIn("Pulsar still uses them", off["message"])
+        self.assertEqual(off["rulesAdded"], first["rulesAdded"])  # still its own to take back later
+        self.assertTrue(claudelink.status(5610)["rules"])
+        self.assertIsNone(claudelink.registered("pulsar-preview"))
+        claudelink.disconnect({"claude_rules_added": []})  # Pulsar off: Preview's rules are not Pulsar's to remove
+        self.assertTrue(claudelink.status(5610)["rules"])
+        with mock.patch.dict(os.environ, {"PULSAR_PREVIEW": "1"}):  # Preview on and off again, alone now
+            again = claudelink.connect(5620, {"claude_rules_added": off["rulesAdded"]})
+            claudelink.disconnect({"claude_rules_added": again["rulesAdded"]})
+        self.assertEqual(self.read(), {})
+
+    def test_a_preview_launchers_read_only_value_still_links(self):
+        # PULSAR_READ_ONLY=preview (launcher.sh) is a preview, not a test run: the switch works
+        with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "preview", "PULSAR_PREVIEW": "1"}):
+            self.assertTrue(claudelink.connect(5620, {})["ok"])
+        self.assertTrue(self.calls)
+
     def test_installed_copy_is_started_through_current(self):
         fake = os.path.join(claudelink.INSTALL, "versions", "9.9.9", "pulsar")
         with mock.patch.object(claudelink.os.path, "abspath", lambda p: os.path.join(fake, "claudelink.py")), \

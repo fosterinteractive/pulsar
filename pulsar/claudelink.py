@@ -11,7 +11,8 @@ Off, it takes away what it added, and only that: rules the person had already ar
 Claude Code's own command adds and removes the connection (its settings file is Claude Code's to write); the rules are
 added to ~/.claude/settings.json by a read, a merge and an atomic rename, after a one-time backup beside it. A
 settings file that is not valid JSON is left alone, and the switch says why. Pulsar Preview adds itself as
-"pulsar-preview", on its own port, so the two never share a connection.
+"pulsar-preview", on its own port and with its own folders (--instance preview), so the two never share a connection.
+The ask rules are one set for both: switching one off leaves them while the other is still in Claude Code.
 """
 
 from __future__ import annotations
@@ -43,7 +44,8 @@ def command(port: int) -> list:
     if os.path.realpath(here).startswith(os.path.realpath(os.path.join(INSTALL, "versions")) + os.sep):
         here = os.path.join(INSTALL, "current")
     python = "/usr/bin/python3" if os.path.exists("/usr/bin/python3") else sys.executable
-    return [python, "-E", "-s", "-B", os.path.join(here, "pulsar.py"), "--mcp", "--port", str(int(port))]
+    own = ["--instance", config.INSTANCE] if config.INSTANCE else []  # Preview's MCP server reads Preview's key
+    return [python, "-E", "-s", "-B", os.path.join(here, "pulsar.py"), "--mcp", "--port", str(int(port)), *own]
 
 
 def rules(server: str = "productive") -> list:
@@ -70,15 +72,21 @@ def _run(args: list) -> tuple:
     return done.returncode == 0, (done.stdout or done.stderr or "").strip()[-300:]
 
 
-def registered() -> dict | None:
-    """Pulsar's entry among Claude Code's user-scope servers, read from its file (no command runs), or None."""
+def registered(server: str = "") -> dict | None:
+    """Pulsar's entry (or `server`'s) among Claude Code's user-scope servers, read from its file (no command runs),
+    or None."""
     try:
         with open(CLAUDE_JSON, encoding="utf-8") as fh:
             servers = (json.load(fh) or {}).get("mcpServers") or {}
     except (OSError, ValueError, AttributeError):
         return None
-    got = servers.get(name())
+    got = servers.get(server or name()) if isinstance(servers, dict) else None
     return got if isinstance(got, dict) else None
+
+
+def other() -> str:
+    """The other Pulsar's name in Claude Code: Pulsar for Preview, Preview for Pulsar."""
+    return "pulsar" if name() == "pulsar-preview" else "pulsar-preview"
 
 
 def _read_settings() -> tuple:
@@ -150,7 +158,7 @@ def remove_rules(added: list) -> str | None:
 
 def _test_run() -> bool:
     """A read-only run (tests, a test server) never changes Claude Code's settings."""
-    return bool(os.environ.get("PULSAR_READ_ONLY"))
+    return config.read_only()
 
 
 def connect(port: int, settings: dict) -> dict:
@@ -183,11 +191,19 @@ def disconnect(settings: dict) -> dict:
         ok, out = _run(["mcp", "remove", name(), "-s", "user"])
         if not ok:
             problems.append(f"Pulsar could not remove itself from Claude Code: {out or 'no answer'}")
-    why = remove_rules(settings.get("claude_rules_added") or [])
+    added = settings.get("claude_rules_added") or []
+    if added and registered(other()) is not None:
+        # The other Pulsar is still in Claude Code and counts on the same rules: they stay, and this copy keeps
+        # them on its list, so it takes them back when it is switched off again once the other has gone.
+        name_ = "Pulsar Preview" if other() == "pulsar-preview" else "Pulsar"
+        return {"ok": not problems, "rulesAdded": added,
+                "message": " ".join(problems) or f"Pulsar is no longer in Claude Code. Its ask rules stay: {name_} "
+                                                 "still uses them."}
+    why = remove_rules(added)
     if why:
         problems.append(why)
     return {"ok": not problems, "message": " ".join(problems) or "Pulsar is no longer in Claude Code.",
-            "rulesAdded": settings.get("claude_rules_added") if why else []}
+            "rulesAdded": added if why else []}
 
 
 def status(port: int) -> dict:
