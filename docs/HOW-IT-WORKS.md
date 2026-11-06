@@ -313,24 +313,29 @@ claim wins:
 
 1. entries already logged;
 2. meetings attended: a repeat whose call the tracker saw, a calendar meeting with a call seen, a call with no
-   calendar entry. A repeat and a calendar meeting on the same call are one entry; a Likely row inside a meeting
-   gives it its minutes;
+   calendar entry. A repeat and a calendar meeting on the same call are one entry (when the repeat covers half of the
+   meeting, so a repeat that runs on into the next meeting never swallows it); a Likely row inside a meeting gives
+   it its minutes;
 3. Likely rows at their own time, never on away minutes or time spent logging (Pulsar, Productive);
 4. on free active minutes only: agent-only rows (Claude's agent ran while you did something else), calendar meetings
-   with no call seen, and work outside Claude (it takes the task of the work next to it, never a meeting's).
+   with no call seen, and work outside Claude, an editor or terminal with no session row included (it takes the task
+   of the work next to it, never a meeting's, and starts unticked).
 
-Pieces of one task in one sitting join, pieces under 10 minutes join a neighbour, boundaries go on a 5-minute grid,
-nothing overlaps an entry already logged, and **proposed plus logged never exceeds active time plus attended
-meetings**: the rest is listed as not placed, never placed. A row's task comes from, in this order: a rule, a task
-link pasted in the session, a ticket key in the title, the tasks logged in the same session, then the same
-repository (votes from the last 60 days, older days counting half every 7 days), the same session earlier that day,
-and task names that share words with the work (your own name does not count). Confidence: high, medium or low, in
-words and a three-bar meter. **Unticked at the start**: low confidence, no task, no service, agent-only time,
-meetings with no call seen. **Notes** are never written from session text: only a meeting's title, your usual note
-for a repeat, a note Ask Claude drafted for that task, or one from your commits in the work, each with "clients may
-see notes". The **service** is the
-one last used on the task, checked against the services that take time on that date (`bookable_services`). With
-Productive unreadable, nothing is proposed. About 6 seconds for a day the first time, under a second after.
+Pieces of one task in one sitting join, pieces under 10 minutes join a neighbour within 30 minutes in the same sitting
+(never one hours away, which would move it there), boundaries go on a 5-minute grid, nothing overlaps an entry already
+logged, and **proposed plus logged never exceeds active time plus attended meetings**: the rest is listed as not
+placed, never placed. A row's task comes from, in this order: a rule, a task link pasted in the session, a ticket key
+in the title, the tasks logged in the same session, then the same repository (votes from the last 60 days, older days
+counting half every 7 days), the same session earlier that day, and task names that share words with the work (your
+own name does not count). A repository you work in for an hour or more and log under a tenth of is set aside as one
+you never log; days with entries that have no start time do not count, since they cannot be matched to the work.
+Confidence: high, medium or low, in words and a three-bar meter; the same session's votes are high from 60% (and 30
+minutes), else low. **Unticked at the start**: low confidence, no task, no service, agent-only time, meetings with no
+call seen. **Notes** are never written from session text: only a meeting's title, your usual note for a repeat, a note
+Ask Claude drafted for that task, or one from your commits in the work, each with "clients may see notes". The
+**service** is the one last used on the task, checked against the services that take time on that date
+(`bookable_services`). With Productive unreadable, nothing is proposed. About 6 seconds for a day the first time,
+under a second after.
 
 **Ask Claude** (only when it is on in Settings): the review shows the plan at once, then sends the day to Claude
 (every row of ten minutes or more) and fills in the answer as it arrives. Claude's pick replaces only rows the planner
@@ -352,11 +357,14 @@ writes it twice. **Undo this run** (asked first) deletes, one at a time through 
 run's name, only the entries that run created, and only if each is still as it wrote it. Runs older than 31 days are
 dropped.
 
-On one person's 11 fully logged days, planned as if nothing had been logged and compared with what was logged: 46%
-of the minutes needed no change, 42% a different task and 12% a different length; 76% of the proposed minutes had a
-task logged that day, 98% the right service. The rows ticked at the start were 88% right; by confidence, high 92%,
-medium 84%, low 40%. Calendar meetings were the weakest source: their task was rarely the one logged, so most start
-unticked.
+Replayed on one person's 34 fully logged days (21 September to 4 November 2026, `tools/replay/`), each day planned
+as if nothing were logged, from the days before it only, and compared with what was logged: 44% of the minutes
+needed no change; the right task in the right amount for 47% of the logged minutes; the right task at the right time
+for 36% of them (35% of the proposed minutes). By confidence, right at that time and right somewhere that day: high
+66% and 94%, medium 30% and 75%, low 22% and 55%. The rows ticked at the start were right that day for 92% of their
+minutes. Repeats were the surest source (78% at the right time), calendar meetings the weakest (14%), so most start
+unticked. Most of the rest is tasks new that day (15% of the logged minutes), sessions that moved between tasks, and
+time logged when the tracker saw nothing (8%).
 
 ### 5.5 Where the suggestions come from
 

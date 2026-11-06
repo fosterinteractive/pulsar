@@ -12,11 +12,12 @@ How each minute of the day is placed (the first claim wins):
    with no calendar entry. A repeat and a calendar meeting on the same call are one entry; a Likely row in a meeting
    gives its minutes to the meeting;
 3. Likely rows (Claude sessions), at their own time, never on away minutes or time spent logging;
-4. on free active minutes only: agent-only rows, calendar meetings with no call seen, work outside Claude.
+4. on free active minutes only: agent-only rows, calendar meetings with no call seen, work outside Claude (an editor
+   with no session row too).
 
-Then the pieces of one task in one sitting join, short ones join a neighbour, boundaries go on a 5-minute grid,
-nothing overlaps an entry already logged, and the total is capped: proposed plus logged never exceeds active time
-plus attended meetings. What does not fit is shown in `unplaced`, never placed.
+Then the pieces of one task in one sitting join, short ones join a neighbour close by in the same sitting, boundaries
+go on a 5-minute grid, nothing overlaps an entry already logged, and the total is capped: proposed plus logged never
+exceeds active time plus attended meetings. What does not fit is shown in `unplaced`, never placed.
 
 Notes are never written from session text: only a meeting's title, a repeat's usual note, a note Claude drafted
 (Ask Claude) for that task, or the subjects of the person's own commits in the work (commits.py), each marked so the
@@ -51,7 +52,6 @@ RANK = {"low": 0, "medium": 1, "high": 2}
 ORDER = ("rule", "link", "ticket", "session", "scoped", "repo", "sameday", "words")
 BLOCKED = -1
 
-EDITORS = re.compile(r"^(Cursor|Code|Visual Studio Code|Terminal|iTerm2|Warp|Claude)$", re.I)
 # time spent logging time (Pulsar, Productive): never proposed, never given to a session (sessions.LOGGING)
 LOGGING = re.compile(r"^Pulsar$|app\.productive\.io|(127\.0\.0\.1|localhost):56\d\d", re.I)
 # ...except in Pulsar's own repository: there the Pulsar window is the work itself, testing what was just built
@@ -111,6 +111,9 @@ def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_L
     repo: dict = defaultdict(lambda: defaultdict(float))
     seen: dict = defaultdict(float)
     logged: dict = defaultdict(float)
+    # an entry with no start time cannot be matched to the work, so a day that has one says nothing about whether a
+    # repository is logged (2026-09: the person's main repositories were set aside as "never logged")
+    untimed = {d for d, rs in by_day.items() if any(r.get("start") is None for r in rs)}
     for d, rows in days.items():
         if not lo <= d < date or not rows:
             continue
@@ -122,8 +125,9 @@ def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_L
             if m < 5:
                 continue
             task, cov = main_task(by_day.get(d, []), t0 + row["s"] * 60, t0 + row["e"] * 60)
-            seen[row.get("p") or ""] += m
-            logged[row.get("p") or ""] += min(cov, m)
+            if d not in untimed:
+                seen[row.get("p") or ""] += m
+                logged[row.get("p") or ""] += min(cov, m)
             if not task:
                 continue
             for k in row.get("k") or []:
@@ -188,7 +192,8 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
                     v[t] += m
             if v:
                 t, m, share = _ranked(v)[0]
-                conf = "high" if share >= 0.6 and m >= 30 else "medium" if share >= 0.4 else "low"
+                # 40-60% was "medium" and was right no more often than "low" (replay, 34 days): it starts unticked
+                conf = "high" if share >= 0.6 and m >= 30 else "low"
                 out.append((t, "session", conf, f"you logged it while in this Claude session ({round(share * 100)}%)"))
         elif src == "repo":
             v = ctx["repo"].get(row.get("project") or "") or {}
@@ -323,18 +328,15 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
     o = {"grid": GRID, "min_entry": MIN_ENTRY, "merge_gap": MERGE_GAP, "out_min": OUT_MIN, **(opts or {})}
     N = 1440
     work = bytearray(N)
-    editor = bytearray(N)
     logging_ = bytearray(N)
     away = bytearray(N)
     items = day.get("items") or []
     for it in items:
         if it.get("cat") != "work":
             continue  # personal windows never count as work
-        ed = 1 if EDITORS.search(it.get("app") or "") else 0
         lg = 1 if any(LOGGING.search(str(it.get(k) or "")) for k in ("app", "host", "url")) else 0
         for x in range(max(0, int(it["s"])), min(N, int(math.ceil(it["e"])))):
             work[x] = 1
-            editor[x] = ed
             logging_[x] = logging_[x] or lg
     for w in day.get("away") or []:
         for x in range(max(0, int(math.ceil(w["s"]))), min(N, int(w["e"]))):
@@ -404,7 +406,9 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
             continue
         s, e = m["s"], m["e"]
         title = (m.get("title") or "").strip()
-        same = next((x for x in attended if _overlap(x[0], x[1], s, e) >= 0.5 * min(x[1] - x[0], e - s)), None)
+        # the same call only when the repeat covers half of this meeting: a repeat stretched over the next meeting
+        # must not swallow it (its call was left with no task)
+        same = next((x for x in attended if _overlap(x[0], x[1], s, e) >= 0.5 * (e - s)), None)
         if same:  # the repeat already stands for this call: one entry, with the meeting's title if it has no note
             c = claims[same[2]]
             if title and not c.get("note"):
@@ -490,9 +494,10 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
             for k in _keys(r):
                 sameday.setdefault(k, ch["task"])
 
-    # minutes Likely left out on purpose (time spent logging, a session it set aside): never proposed
+    # time spent logging (Pulsar, Productive): never proposed. An editor or terminal with no session row is work
+    # outside Claude, below (it was set aside, and the person logged most of it: 624 minutes in 34 days)
     for x in range(N):
-        if work[x] and owner[x] is None and (editor[x] or logging_[x]):
+        if work[x] and owner[x] is None and logging_[x]:
             owner[x] = BLOCKED
 
     # 4. calendar meetings with no call seen: on free active minutes only, unticked; the rest is listed as skipped
@@ -521,7 +526,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
     for a, b, n in runs:
         if n >= o["out_min"]:
             claim({"kind": "outside", "task": None, "source": "neighbour", "conf": "low", "titles": [],
-                   "why": "work outside Claude (a browser, Slack): the task of the work next to it"},
+                   "why": "work outside Claude (a browser, Slack, an editor with no session): the task of the work next to it"},
                   [x for x in range(a, b + 1) if work[x]])
         else:
             short.append((a, b))
@@ -570,7 +575,13 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
             m["parts"].append(p)
         else:
             merged.append({**p, "parts": [p]})
-    # pieces too short to log join a neighbour; a meeting someone attended stays an entry of its own from 5 minutes
+    # pieces too short to log join a neighbour within MERGE_GAP in the same sitting (one far away pulled a 200-minute
+    # afternoon entry to 00:40); a meeting someone attended stays an entry of its own from 5 minutes
+    def near(p, q) -> bool:  # within MERGE_GAP and in one sitting (a minute with no activity, in a call, fits any)
+        x, y = sorted((p, q), key=lambda r: r["s"])
+        sx, sy = sitting[x["last"]], sitting[y["s"]]
+        return y["s"] - x["last"] <= o["merge_gap"] and (sx is None or sy is None or sx == sy)
+
     if o["min_entry"]:
         changed = True
         while changed:
@@ -579,7 +590,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
                 keep = p.get("attended") and p["minutes"] >= 5
                 if p["minutes"] < o["min_entry"] and p["kind"] != "skip" and not keep:
                     nb = [q for q in (merged[k - 1] if k else None, merged[k + 1] if k + 1 < len(merged) else None)
-                          if q is not None and q["kind"] != "skip"]
+                          if q is not None and q["kind"] != "skip" and near(p, q)]
                     if nb:
                         q = max(nb, key=lambda q: q["minutes"])
                         q["minutes"] += p["minutes"]
