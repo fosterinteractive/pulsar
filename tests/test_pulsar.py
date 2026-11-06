@@ -1109,6 +1109,44 @@ class CreateEntryTest(unittest.TestCase):
                 productive.mcp_text("create_resource", {}, "t")
 
 
+class TokenTasksTest(unittest.TestCase):
+    """The API token's task lists, on a fake Productive that ignores the filters it is sent: the pickers still offer
+    only open tasks as assigned, and only tasks with the words searched for."""
+
+    def setUp(self):
+        self.asked = []
+
+        def task(i, title, status, closed=None):
+            return {"id": i, "type": "tasks", "attributes": {"title": title, "closed_at": closed},
+                    "relationships": {"project": {"data": {"id": "10"}}, "workflow_status": {"data": {"id": status}},
+                                      "assignee": {"data": {"id": "9"}}}}
+
+        def get(path, query, token, org):
+            self.asked.append((path, dict(query)))
+            return 200, {"data": [task("1", "Fix the menu", "s1"), task("2", "Old menu work", "s3", "2026-10-01T10:00:00Z"),
+                                  task("3", "Estimations", "s2"), task("4", "Menu, done", "s9", "2026-10-02T10:00:00Z")],
+                         "included": [{"type": "projects", "id": "10", "attributes": {"name": "Acme"}},
+                                      {"type": "workflow_statuses", "id": "s1", "attributes": {"name": "To do", "category_id": 1}},
+                                      {"type": "workflow_statuses", "id": "s2", "attributes": {"name": "Doing", "category_id": 2}},
+                                      {"type": "workflow_statuses", "id": "s3", "attributes": {"name": "Done", "category_id": 3}}],
+                         "meta": {"total_pages": 1}}
+        for p in (mock.patch.object(productive, "connection", lambda s: {"kind": "token", "token": "t"}),
+                  mock.patch.object(productive, "rest_get", get)):
+            p.start()
+            self.addCleanup(p.stop)
+        self.s = {"person_id": "9", "org_id": "1"}
+
+    def test_assigned_tasks_are_open_ones_whatever_the_server_did_with_the_filter(self):
+        got = productive.assigned_tasks(self.s)
+        self.assertEqual([t["taskId"] for t in got], ["1", "3"])  # "Done", and closed without a known status, left out
+        self.assertEqual(self.asked[0][1]["filter[assignee_id]"], "9")
+
+    def test_a_search_offers_only_tasks_with_the_words_and_marks_closed_ones(self):
+        got = productive.search_tasks("MENU", self.s)
+        self.assertEqual([t["title"] for t in got], ["Fix the menu", "Old menu work (closed)", "Menu, done (closed)"])
+        self.assertEqual(self.asked[0][1]["filter[title][contains]"], "MENU")
+
+
 class PreviewTest(unittest.TestCase):
     """Pulsar Preview writes nothing to Productive until its own setting allows it."""
 

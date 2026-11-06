@@ -825,6 +825,10 @@ def _task_rows(conditions: list, settings: dict, limit: int = 1000) -> list:
     out: list = []
     if conn["kind"] == "token":
         query, active_only = {"include": "project,workflow_status", "page[size]": min(limit, 200)}, False
+        # The filters are checked again below on what comes back: their REST spellings are not yet tried against
+        # Productive, and one it ignored would otherwise offer closed tasks, or every task, in the pickers.
+        words = next((str(c["value"]).lower() for c in conditions if c["field"] == "title"), None)
+        categories = next(({str(v) for v in c["value"]} for c in conditions if c["field"] == "workflow_status_category"), None)
         for c in conditions:  # the REST spellings of the same filters (not yet tried against Productive)
             if c["field"] == "project.status":  # no such filter here: the included project's archived_at tells
                 active_only = True
@@ -842,7 +846,13 @@ def _task_rows(conditions: list, settings: dict, limit: int = 1000) -> list:
                 if active_only and _attr(project, "archived_at"):
                     continue
                 status = inc.get(("workflow_statuses", _rel(d, "workflow_status") or ""))
-                out.append(_task_item(str(d.get("id")), _attr(d, "title") or "", _attr(project, "name") or "",
+                closed = bool(_attr(d, "closed_at"))
+                category = str(_attr(status, "category_id") or ("3" if closed else ""))  # 3: closed
+                if (categories and category and category not in categories) or \
+                        (words and words not in (_attr(d, "title") or "").lower()):
+                    continue
+                out.append(_task_item(str(d.get("id")), (_attr(d, "title") or "") + (" (closed)" if closed else ""),
+                                      _attr(project, "name") or "",
                                       _rel(d, "project") or "", _rel(d, "service") or "", _attr(d, "due_date"),
                                       _attr(status, "name"), _rel(d, "assignee")))
             pages = (doc.get("meta") or {}).get("total_pages")
