@@ -23,6 +23,11 @@ What each Pulsar release changed, newest first.
 - Fixed: copies of MemTime's database no longer pile up in the temporary folder.
 - Fixed: an update whose self-test timed out can be tried again; a late answer no longer replaces a newer one.
 - The README says what Ask Claude sends to Anthropic, what it costs, and how to remove everything.
+- Pulsar's key only reads, quits and logs new entries; changing or deleting entries, settings and updates need its window.
+- Notes from commits never start a program that a repository's own git settings name.
+- Ask Claude leaves out Claude Code's auto memory; Claude Code asks before Pulsar logs, by an ask rule too.
+- Pulsar in Claude Code returns no past notes and no note drafted for another repository.
+- Pulsar Preview starts with Claude Code off, and its Disconnect leaves Pulsar's Google Calendar connected.
 
 ## 1.2.1 (2026-11-06)
 - Settings: categories with icons, and a search.

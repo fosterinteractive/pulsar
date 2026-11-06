@@ -1091,6 +1091,23 @@ def _log_checked(body: dict, s: dict, date: str, begin, minutes: int, task_id: s
 
 # ---- HTTP --------------------------------------------------------------------------------------------
 
+def key_refusal(path: str, body: dict):
+    """Why a POST made with the key alone (no page session) is refused, or None. The key is a file any program of this
+    user can read, a Claude Code session included, so it opens only what its two holders need: the launcher quits
+    Pulsar, and Pulsar in Claude Code (mcp.py) logs new entries through the Log the day journal, with the overlap
+    check. Never `force`, and nothing else: no change or delete of an entry, no settings, no update, no Ask Claude.
+    A program of this user can still do more by other means (HOW-IT-WORKS.md, Security); this closes the plain curl."""
+    if path == "/api/quit":
+        return None
+    if path == "/api/log":
+        if body.get("force"):
+            return "An entry that overlaps another is written only from Pulsar's window."
+        if body.get("run") is None or body.get("row") is None:
+            return "Without Pulsar's window, an entry is logged only as part of a run Log the day can list and undo."
+        return None
+    return "This needs Pulsar's window: the key may only read, quit Pulsar and log new entries from Claude Code."
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "Pulsar"
     timeout = 20  # a client that stops sending mid-request frees its thread instead of holding it forever
@@ -1131,11 +1148,14 @@ class Handler(BaseHTTPRequestHandler):
                 or bool(origin and urlparse(origin).hostname not in ("127.0.0.1", "localhost"))
                 or bool(self.headers.get("Upgrade")))
 
+    def page(self) -> bool:
+        """The page's session token (from localStorage, in a header no other site or port ever gets)."""
+        return config.valid_session(self.headers.get("X-Pulsar-Session") or "")
+
     def signed_in(self) -> bool:
-        """The page's session token (from localStorage, in a header no other site or port ever gets), or the launcher
-        showing the key itself."""
-        return config.valid_session(self.headers.get("X-Pulsar-Session") or "") or \
-            config.is_key(self.headers.get("X-Pulsar-Key") or "")
+        """The page, or the key itself: the launcher and Pulsar in Claude Code (mcp.py). The key alone may do less on a
+        POST (key_refusal)."""
+        return self.page() or config.is_key(self.headers.get("X-Pulsar-Key") or "")
 
     def do_GET(self):
         if not self.local():
@@ -1243,6 +1263,9 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length) or b"{}")
             if not isinstance(body, dict):
                 raise ValueError("The request body must be a JSON object.")
+            refused = None if self.page() else key_refusal(path, body)
+            if refused:
+                return self.send_json({"error": refused}, 403)
             if urlparse(self.path).path == "/api/settings":
                 return self.send_json(api_settings(body))
             if urlparse(self.path).path == "/api/session/end":  # sign this browser out

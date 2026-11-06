@@ -466,8 +466,8 @@ class Run:
     def git(self, cmd, **kw):
         """git config user.email / git log, for the made-up repositories."""
         d = self.day
-        root = cmd[2]
-        if cmd[3] == "config":
+        root = cmd[cmd.index("-C") + 1]
+        if "config" in cmd:
             return mock.Mock(stdout=ME + "\n", returncode=0)
         name = next((n for n, (f, _) in REPOS.items() if repo_path(n) == root), None)
         if root not in d.commits:

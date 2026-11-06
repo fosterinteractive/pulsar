@@ -11,6 +11,7 @@ import sys
 import tempfile
 import unittest
 from datetime import datetime, timezone
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -102,6 +103,51 @@ class Attach(unittest.TestCase):
         rows = [{"s": 9 * 60, "e": 10 * 60, "project": "pulsar", "titles": ["Fix the event time zone"]}]
         commits.attach(rows, T0, projects_dir=self.projects)
         self.assertEqual(rows[0]["commits"], [])
+
+    def test_a_repositorys_own_settings_start_no_program(self):
+        # A folder from elsewhere (an unpacked archive) whose .git/config asks git to check signatures with a program
+        # of its choosing, and a commit carrying a made-up signature: plain `git log` would run that program.
+        marker = os.path.join(self.dir, "ran")
+        program = os.path.join(self.dir, "fake-gpg")
+        with open(program, "w") as fh:
+            fh.write(f"#!/bin/sh\ntouch '{marker}'\nexit 1\n")
+        os.chmod(program, 0o755)
+        for k, v in (("log.showSignature", "true"), ("gpg.program", program), ("core.hooksPath", self.dir),
+                     ("core.fsmonitor", program)):
+            self.git("config", k, v)
+        tree = subprocess.run(["git", "-C", self.repo, "mktree"], input=b"", capture_output=True, check=True).stdout.strip()
+        stamp = int(T0 + 9 * 3600)
+        raw = (f"tree {tree.decode()}\nauthor Me <me@example.com> {stamp} +0000\ncommitter Me <me@example.com> {stamp} "
+               "+0000\ngpgsig -----BEGIN PGP SIGNATURE-----\n \n iQEzBAABCAAdFiEEforgedforgedforged\n -----END PGP "
+               "SIGNATURE-----\n\nSigned by nobody\n").encode()
+        sha = subprocess.run(["git", "-C", self.repo, "hash-object", "-t", "commit", "-w", "--stdin"], input=raw,
+                             capture_output=True, check=True).stdout.strip().decode()
+        self.git("update-ref", "refs/heads/main", sha)
+        subprocess.run(["git", "-C", self.repo, "log", "-1", "--format=%s"], capture_output=True)  # the trap, armed
+        if not os.path.exists(marker):
+            self.skipTest("this git does not run gpg.program for log.showSignature")
+        os.remove(marker)
+        self.assertEqual(commits._log(commits.git_binary(), self.repo, T0, subprocess.run),
+                         [(stamp, "Signed by nobody")])
+        self.assertFalse(os.path.exists(marker), "git ran the repository's program")
+
+    def test_git_runs_with_its_settings_overridden_and_no_transport(self):
+        seen = []
+
+        def run(cmd, **kw):
+            seen.append((cmd, kw["env"]))
+            return subprocess.CompletedProcess(cmd, 0, "me@example.com\n" if "config" in cmd else "", "")
+        with mock.patch.dict(os.environ, {"GIT_DIR": "/elsewhere/.git", "GIT_SSH_COMMAND": "evil"}):
+            commits._log("git", self.repo, T0, run)
+        self.assertEqual(len(seen), 2)
+        for cmd, env in seen:
+            self.assertEqual(cmd[1:3], ["-C", self.repo])
+            self.assertTrue(all(x in cmd for x in ("log.showSignature=false", "core.fsmonitor=false",
+                                                   "core.hooksPath=/dev/null", "--no-pager")))
+            self.assertEqual((env["GIT_ALLOW_PROTOCOL"], env["GIT_NO_LAZY_FETCH"]), ("", "1"))
+            self.assertNotIn("GIT_DIR", env)
+            self.assertNotIn("GIT_SSH_COMMAND", env)
+        self.assertIn("--no-show-signature", seen[1][0])
 
     def test_no_git_no_commits(self):
         self.session("Fix the event time zone", [(9 * 60, "fix it")])

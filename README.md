@@ -122,7 +122,12 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   A read that Productive drops without answering is tried once more; time you log is never sent twice.
 - **Only you can use your Pulsar.** It listens on 127.0.0.1 only. Its data and actions need a session key that only
   your account can read (`~/.config/pulsar/secret`); the app signs its window in when it opens. Other
-  websites, other accounts on the Mac and containers (Docker, DDEV) get nothing. If the window says it is not
+  websites, other accounts on the Mac and containers (Docker, DDEV) get nothing. Programs you run yourself are
+  another matter, a Claude Code session included: they can read that key. With the key alone Pulsar only shows
+  data, quits, and logs new entries the way Pulsar in Claude Code does (never over another entry, each one listed
+  in Log the day with Undo); changing or deleting an entry, settings and updates need Pulsar's window. A program
+  set on it could still get further (for example by signing a window in itself), so treat a session in bypass mode
+  as able to log time. If the window says it is not
   signed in, click **Sign in**. To use Pulsar in a browser too while it runs, run
   `/usr/bin/python3 ~/Library/Application\ Support/Pulsar/current/pulsar.py --signin-url` (from a git checkout:
   `python3 pulsar.py --signin-url`) and open the address it prints within two minutes; it works once.
@@ -158,9 +163,11 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
     commits in a few seconds; it never replaces what you typed.
   - **Logging from a session:** Pulsar adds itself to Claude Code, so in any new session you can ask "what did I not
     log today?" or "log the time of this session". The session reads your day from Pulsar and shows the entries;
-    Claude Code asks you before each one is written. Pulsar must be open.
-  - **Claude Code asks first:** before any session changes Productive by itself (ask rules in
-    `~/.claude/settings.json`; a backup of that file is kept beside it).
+    Claude Code asks you before each write, showing Pulsar's own summary of it. One write may hold up to 40
+    entries, so one yes can log a whole day: read the summary. Pulsar must be open.
+  - **Claude Code asks first:** before any session changes Productive by itself through the Productive server named
+    `productive`, and before Pulsar's log tool (ask rules in `~/.claude/settings.json`; a backup of that file is
+    kept beside it). A Productive connection under another name, such as a claude.ai connector, is not covered.
 
   **What goes to Anthropic.** These run your own Claude Code, so what they send goes to Anthropic under your Claude
   plan or account and its terms:
@@ -173,8 +180,12 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
     show Claude Code: your entries' times, projects and tasks (not their notes), unlogged time, the session's own
     title and note drafts. Never window titles, other sessions or meeting titles.
 
-  **What it costs.** Your Claude usage, not money to Pulsar. One Ask Claude run may cost at most $0.25 (Haiku),
-  $0.75 (Sonnet) or $2 (Opus); a day with Sonnet has cost about $0.10 to $0.25. A note may cost at most $0.10 and
+  Ask Claude runs with none of your Claude Code settings, CLAUDE.md files or auto memory.
+
+  **What it costs.** Your Claude usage, not money to Pulsar. Each Claude run may cost at most $0.25 (Haiku),
+  $0.75 (Sonnet) or $2 (Opus). When Claude answers with no picks, Pulsar asks once more, so one Ask Claude click may
+  cost up to twice that; the cost shown is the last run's. **Log the day** runs Ask Claude by itself when the switch
+  is on and some entries are unsure. A day with Sonnet has cost about $0.10 to $0.25. A note may cost at most $0.10 and
   usually costs under half a cent. Answers are kept only while Pulsar runs: asking again after Pulsar restarted, or
   after the day's blocks changed, asks Claude again and costs again.
 
@@ -187,7 +198,8 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   Meetings column shows your meetings next to the rest of the day (↻ reads them again at once). Pulsar can only read
   your events, never change them. **Log this time** on a meeting fills in its title as the note and offers first the
   task you logged during its earlier ones, then your tasks whose names share a word with its title.
-  **Disconnect** removes the access, at Google too. Only fosterinteractive.com accounts can sign in.
+  **Disconnect** removes the access, at Google too (in Pulsar Preview only on this Mac, because Google would take
+  Pulsar's away with it). Only fosterinteractive.com accounts can sign in.
 - **Change what you logged.** Click an entry in Logged: **Edit** opens it in the log dialog, **Delete** asks first
   (Productive keeps deleted entries in its Recycle Bin). Drag an entry's top or bottom edge to make it start or end
   earlier or later; Pulsar asks before it changes anything. Pulsar does not refuse an approved entry, because a
@@ -253,10 +265,11 @@ Code** above).
 
 ## Remove Pulsar
 
-1. If **Use Claude Code with Pulsar** is on (**Settings → Claude**), switch it off and Save: that takes Pulsar out
-   of Claude Code and removes the ask rules it added. If Pulsar is already gone, run `claude mcp remove pulsar
-   --scope user` (and `pulsar-preview` for Pulsar Preview) and remove the Productive ask rules from
-   `~/.claude/settings.json` yourself.
+1. If **Use Claude Code with Pulsar** is on (**Settings → Claude**), switch it off and Save, in Pulsar and in Pulsar
+   Preview: that takes each out of Claude Code, and the ask rules go with the last one. If Pulsar is already gone,
+   run `claude mcp remove pulsar --scope user` (and `pulsar-preview` for Pulsar Preview) and remove the
+   `mcp__productive__…` and `…pulsar_log` ask rules from `~/.claude/settings.json` yourself. Pulsar's copy of that
+   file from before its first change, `~/.claude/settings.json.pulsar-backup`, stays until you delete it.
 2. Quit Pulsar (Cmd+Q), and Pulsar Preview if you have it.
 3. Drag **Pulsar** (and **Pulsar Preview**) from Applications to the Trash. If you added it to **Login Items**,
    remove it there too.

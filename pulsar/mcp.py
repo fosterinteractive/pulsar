@@ -13,19 +13,25 @@ Tools (all read only, except pulsar_log):
   pulsar_suggest(date, start, minutes) the tasks the log dialog would offer for one stretch
   pulsar_tasks(query)                  your recent tasks (with the service you used last) and a Productive search
   pulsar_preview(date, entries)        the dry run: what would be written, a code, and Pulsar's own summary of it
-  pulsar_log(code, summary)            writes what the code holds. Marked so Claude Code asks the person every time,
-                                       even in auto or bypass mode; the summary must be Pulsar's, word for word, so
-                                       the prompt shows Pulsar's words. Refused in any other app (they ignore the mark).
+  pulsar_log(code, summary)            writes what the code holds (up to 40 entries). Marked so Claude Code asks the
+                                       person before each call, also in auto or bypass mode (an undocumented mark,
+                                       read by Claude Code 2.1.268 to 2.1.301; claudelink also adds an "ask" rule for
+                                       it); the summary must be Pulsar's, word for word, so the prompt shows Pulsar's
+                                       words. Refused in any other app (they ignore the mark).
 
 What it never returns: window titles, apps, sites or addresses, typed messages, meeting titles, the titles of other
-Claude sessions (also where one stands in for a repository: Places), notes of logged entries, rule words. Every answer
-is built field by field from an allow-list; nothing from Pulsar is passed through as is. The calling session's own
-title is returned by pulsar_session (it is that session).
+Claude sessions (also where one stands in for a repository: Places), notes of logged entries, rule words, the words
+a learned task's notes share with other sessions, and notes drafted for another repository's work. Every answer is
+built field by field from an allow-list; nothing from Pulsar is passed through as is. The calling session's own title
+is returned by pulsar_session (it is that session).
 
-How it reaches Pulsar: 127.0.0.1 only, no proxy, no redirects. Before it shows the key (~/.config/pulsar/secret, as
-X-Pulsar-Key) it checks /api/whoami the way the launcher does, so a program that is not this user's Pulsar never sees
-the key. Writes go through POST /api/log, the log dialog's path: a fresh read of the day, the overlap check, the write
-lock, the Log the day journal (no entry sent twice) and config.writes_blocked() (PULSAR_READ_ONLY, Preview).
+How it reaches Pulsar: 127.0.0.1 only, no proxy, no redirects. Each time before it shows the key
+(~/.config/pulsar/secret, as X-Pulsar-Key) it checks /api/whoami the way the launcher does, so a program that is not
+this user's Pulsar never sees the key. Writes go through POST /api/log, the log dialog's path: a fresh read of the day,
+the overlap check, the write lock, the Log the day journal (no entry sent twice) and config.writes_blocked()
+(PULSAR_READ_ONLY, Preview). The key opens nothing more on Pulsar's side: no force, no change or delete of an entry,
+no settings (server.key_refusal). It is not a wall: any program of this user can read the key file too, so the
+person's yes in Claude Code guards this tool, not the key.
 """
 
 from __future__ import annotations
@@ -72,7 +78,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect())
-_state = {"port": 5610, "verified": False}
+_state = {"port": 5610}
 
 
 def _key() -> str:
@@ -120,16 +126,15 @@ def _request(path: str, params: dict | None = None, body: dict | None = None, ke
 
 def _verify() -> str:
     """The launcher's check: the server proves it holds this user's key (an HMAC of a fresh nonce) before it is shown
-    the key. Once per process; a restart of Pulsar keeps the same key."""
+    the key. Before every call that sends it, not once per process: this process lives as long as the Claude Code
+    session, and Pulsar may quit meanwhile and leave its port to another program."""
     key = _key()
-    if not _state["verified"]:
-        nonce = secrets.token_hex(16)
-        proof = str(_request("/api/whoami", {"nonce": nonce}, timeout=5).get("proof") or "")
-        want = hmac.new(key.encode(), nonce.encode(), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(proof.encode(), want.encode()):
-            raise ToolError(f"Something on 127.0.0.1:{_state['port']} answered, but it is not this user's Pulsar. "
-                            "Nothing was sent.")
-        _state["verified"] = True
+    nonce = secrets.token_hex(16)
+    proof = str(_request("/api/whoami", {"nonce": nonce}, timeout=5).get("proof") or "")
+    want = hmac.new(key.encode(), nonce.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(proof.encode(), want.encode()):
+        raise ToolError(f"Something on 127.0.0.1:{_state['port']} answered, but it is not this user's Pulsar. "
+                        "Nothing was sent.")
     return key
 
 
@@ -240,6 +245,8 @@ def safe_why(why: str) -> str:
         return "a word in the meeting's title is in the task's name"
     if why.startswith("Claude:"):
         return "Ask Claude's pick"
+    # a learned task's reason quotes words shared by your past notes and other sessions' text: the words stay here
+    why = re.sub(r"(your notes on it share words with this work):.*", r"\1", why)
     return why[:140]
 
 
@@ -443,7 +450,10 @@ def pulsar_day(args: dict) -> dict:
 
 # ---- pulsar_propose ------------------------------------------------------------------------------------------
 
-NOTE_SOURCES = ("repeat", "commits", "claude")  # a meeting's note is its title: never returned
+# Drafted notes returned: from your commits or Ask Claude, and only for the calling session's own repository (both are
+# made from that repository's work: another's is another client's words). A repeat's note is the note of past logged
+# entries, and a meeting's is its title: never returned.
+NOTE_SOURCES = ("commits", "claude")
 
 
 def _caller_repo() -> str | None:
@@ -470,9 +480,7 @@ def plan_entry(e: dict, places: Places) -> dict:
            "why": places.why(e.get("why")), "flags": [f for f in e.get("flags") or [] if isinstance(f, str)]}
     if e.get("meeting"):
         out["meeting"] = True
-    # commit subjects only from the calling session's own repository: another repository's are another project's words
-    if e.get("note") and e.get("noteFrom") in NOTE_SOURCES and (
-            e["noteFrom"] != "commits" or _same_repo(out["repository"], _caller_repo())):
+    if e.get("note") and e.get("noteFrom") in NOTE_SOURCES and _same_repo(out["repository"], _caller_repo()):
         out["noteDraft"], out["noteFrom"] = str(e["note"])[:300], e["noteFrom"]
     if e.get("sent"):
         out["alreadySent"] = e["sent"]

@@ -152,11 +152,16 @@ function paintLink(l) {
   el.classList.remove('warn');
   if (!l.claudeFound) el.textContent = 'Claude Code was not found on this Mac.';
   else if (!on) el.textContent = 'Off. Switch it on and Save: Pulsar adds itself to Claude Code, and takes it all back when switched off.';
-  else if (k.registered && k.current) el.textContent = `On. Pulsar is in Claude Code as “${k.name}”` +
-    (k.rules ? ', and Claude Code asks before a session changes Productive.' : '.') + ' New sessions see it; a session already open sees it after /mcp.';
+  else if (k.registered && k.current) {
+    el.textContent = `On. Pulsar is in Claude Code as “${k.name}”` + (k.rules
+      ? ', and Claude Code asks before a session changes Productive or logs through Pulsar.'
+      : ', but Claude Code’s settings lack its ask rules (before a session changes Productive or logs through Pulsar).') +
+      ' New sessions see it; a session already open sees it after /mcp.';
+    if (!k.rules) el.classList.add('warn');
+  }
   else { el.textContent = k.registered ? 'On, but Claude Code starts an older copy of Pulsar.' : 'On, but Pulsar is not in Claude Code.';
          el.classList.add('warn'); }
-  again.hidden = !(on && l.claudeFound && !(k.registered && k.current));
+  again.hidden = !(on && l.claudeFound && !(k.registered && k.current && k.rules));
 }
 
 async function saveSettings(extra = {}) {

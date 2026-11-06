@@ -6,8 +6,10 @@ least ten minutes, the time, the repository, the session titles and what they ty
 to in the last 30 days. Claude may search Productive through the person's own Productive connection, read only: the
 tools that change anything are refused, and no other tool is allowed. It is started with that one connection and
 none of the person's settings (--strict-mcp-config, --setting-sources ""): no other MCP server, no tool their settings
-allow, no hook that would receive the prompt. Nothing is written anywhere; the session is not kept (so it never shows
-up in the Likely column itself).
+allow, no hook that would receive the prompt, no CLAUDE.md. Auto memory is not a setting, so it is switched off in the
+environment (CLAUDE_CODE_DISABLE_AUTO_MEMORY): without it, Claude Code 2.1.301 sent the MEMORY.md of the folder it
+runs in (checked against a stand-in for Anthropic's API). Nothing is written anywhere; the session is not kept (so it
+never shows up in the Likely column itself).
 
 On one person's days the picks read right (an estimate to the estimations task, a database upgrade to the client's
 "Database Upgrade" task, a personal project to none), for about $0.13 and 15 seconds a day.
@@ -28,7 +30,8 @@ from datetime import datetime, timedelta
 from . import claudelink, config, logbook, productive, sessions
 
 MODELS = ("sonnet", "haiku", "opus")  # Claude Code's aliases: always the latest model of each
-BUDGET = {"haiku": 0.25, "sonnet": 0.75, "opus": 2.0}  # dollars one day's question may cost at most (--max-budget-usd)
+BUDGET = {"haiku": 0.25, "sonnet": 0.75, "opus": 2.0}  # dollars one run may cost at most (--max-budget-usd); an empty
+# answer is asked once more, so one day's question may cost up to twice this
 NOTE_MAX = 200  # characters in a drafted note
 # The answer's shape, checked by Claude Code itself (--json-schema): it comes back in "structured_output"
 SCHEMA = {"type": "object", "required": ["picks"], "properties": {"picks": {"type": "array", "items": {
@@ -354,7 +357,8 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
                             "--tools", "", "--permission-mode", "dontAsk", "--strict-mcp-config", "--mcp-config", mcp,
                             "--setting-sources", "", "--allowedTools", ",".join(READ_TOOLS),
                             "--disallowedTools", ",".join(WRITE_TOOLS)],
-                           input=prompt, capture_output=True, text=True, timeout=TIMEOUT, cwd=config.CACHE_DIR)
+                           input=prompt, capture_output=True, text=True, timeout=TIMEOUT, cwd=config.CACHE_DIR,
+                           env=_env())
             except subprocess.TimeoutExpired:
                 raise AskError("Claude took too long to answer. Try again later.") from None
             except OSError as exc:
@@ -483,7 +487,7 @@ def note(date: str, row: dict, t0: float, history: list = (), run=subprocess.run
         done = run([binary, "-p", "--model", "haiku", "--no-session-persistence", "--output-format", "json",
                     "--json-schema", json.dumps(NOTE_SCHEMA), "--max-budget-usd", "0.1", "--tools", "",
                     "--permission-mode", "dontAsk", "--strict-mcp-config", "--setting-sources", ""],
-                   input=prompt, capture_output=True, text=True, timeout=90, cwd=config.CACHE_DIR)
+                   input=prompt, capture_output=True, text=True, timeout=90, cwd=config.CACHE_DIR, env=_env())
     except subprocess.TimeoutExpired:
         raise AskError("Claude took too long to draft the note.") from None
     except OSError as exc:
@@ -499,6 +503,11 @@ def note(date: str, row: dict, t0: float, history: list = (), run=subprocess.run
         for old in list(_notes)[:-60]:
             del _notes[old]
     return answer
+
+
+def _env() -> dict:
+    """Claude Code's environment for these runs: Pulsar's, with auto memory off (the module's docstring)."""
+    return {**os.environ, "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"}
 
 
 def latest(date: str):

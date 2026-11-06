@@ -1,12 +1,15 @@
-"""One switch for Claude Code: Settings > Claude Code > "Use Claude Code with Pulsar".
+"""One switch for Claude Code: Settings > Claude > "Use Claude Code with Pulsar".
 
 On, it does three things, so nothing else needs setting up:
 1. Ask Claude: the button in the Likely column, and a note drafted from the session for the log dialog.
 2. Pulsar in Claude Code: `claude mcp add --scope user pulsar -- python3 pulsar.py --mcp` (mcp.py), so any session
-   can read the day from Pulsar and log time through it. Claude Code asks the person before every entry.
-3. Claude Code asks before a session changes Productive itself: "ask" rules for the Productive connection's
-   create, update, delete and action tools, in ~/.claude/settings.json.
-Off, it takes away what it added, and only that: rules the person had already are never removed.
+   can read the day from Pulsar and log time through it. Claude Code asks the person before each write (one write,
+   one pulsar_log call, holds up to 40 entries).
+3. "ask" rules in ~/.claude/settings.json: Claude Code asks before a session changes Productive itself (the create,
+   update, delete and action tools of the Productive server named "productive"; a server under another name, such
+   as a claude.ai connector, is not covered), and before pulsar_log, as a fallback to the mark mcp.py puts on it.
+Off, it takes away what it added, and only that: rules the person had already are never removed. A server named
+"pulsar" that Pulsar did not add (another command, or its own env) is left as it is.
 
 Claude Code's own command adds and removes the connection (its settings file is Claude Code's to write); the rules are
 added to ~/.claude/settings.json by a read, a merge and an atomic rename, after a one-time backup beside it. A
@@ -30,6 +33,7 @@ SETTINGS = os.path.join(CLAUDE_DIR, "settings.json")
 CLAUDE_JSON = os.path.join(os.path.expanduser("~"), ".claude.json")  # where Claude Code keeps user-scope servers
 INSTALL = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Pulsar")
 WRITE_TOOLS = ("create_resource", "update_resource", "delete_resource", "perform_action")
+LOG_RULES = ("mcp__pulsar__pulsar_log", "mcp__pulsar-preview__pulsar_log")  # both Pulsars: one set, as below
 TIMEOUT = 30
 
 
@@ -49,7 +53,7 @@ def command(port: int) -> list:
 
 
 def rules(server: str = "productive") -> list:
-    return [f"mcp__{server}__{t}" for t in WRITE_TOOLS]
+    return [f"mcp__{server}__{t}" for t in WRITE_TOOLS] + list(LOG_RULES)
 
 
 def _claude():
@@ -72,16 +76,30 @@ def _run(args: list) -> tuple:
     return done.returncode == 0, (done.stdout or done.stderr or "").strip()[-300:]
 
 
-def registered(server: str = "") -> dict | None:
-    """Pulsar's entry (or `server`'s) among Claude Code's user-scope servers, read from its file (no command runs),
-    or None."""
+def _servers() -> dict | None:
+    """Claude Code's user-scope servers, read from its file (no command runs): {} when there are none, None when the
+    file cannot be read, so "not there" is never said when it is not known."""
     try:
         with open(CLAUDE_JSON, encoding="utf-8") as fh:
             servers = (json.load(fh) or {}).get("mcpServers") or {}
+    except FileNotFoundError:
+        return {}
     except (OSError, ValueError, AttributeError):
         return None
-    got = servers.get(server or name()) if isinstance(servers, dict) else None
+    return servers if isinstance(servers, dict) else None
+
+
+def registered(server: str = "") -> dict | None:
+    """Pulsar's entry (or `server`'s) among Claude Code's user-scope servers, or None."""
+    got = (_servers() or {}).get(server or name())
     return got if isinstance(got, dict) else None
+
+
+def _ours(entry: dict) -> bool:
+    """An entry Pulsar added (this copy or an older one, any path or port): pulsar.py --mcp, and no env of its own.
+    Anything else under Pulsar's name the person made, and Pulsar leaves it alone."""
+    args = [str(a) for a in entry.get("args") or []]
+    return "--mcp" in args and any(a.endswith("pulsar.py") for a in args) and not entry.get("env")
 
 
 def other() -> str:
@@ -111,9 +129,12 @@ def _read_settings() -> tuple:
 def _write_settings(doc: dict) -> None:
     path = os.path.realpath(SETTINGS)  # a settings file linked from elsewhere (a dotfiles folder) stays linked
     backup = path + ".pulsar-backup"
-    if os.path.exists(path) and not os.path.exists(backup):
+    mode = os.stat(path).st_mode & 0o777 if os.path.exists(path) else None
+    if mode is not None and not os.path.exists(backup):
         shutil.copy2(path, backup)
     config.write_atomic(path, json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
+    if mode is not None:  # the file keeps its own permissions (write_atomic's temporary file is owner-only)
+        os.chmod(path, mode)
 
 
 def add_rules() -> tuple:
@@ -168,14 +189,22 @@ def connect(port: int, settings: dict) -> dict:
                 "rulesAdded": settings.get("claude_rules_added") or []}
     if not _claude():
         return {"ok": False, "message": "Claude Code was not found on this Mac.", "rulesAdded": []}
-    _run(["mcp", "remove", name(), "-s", "user"])  # an older entry (another path or port) goes first
+    mine = registered()
+    if mine is not None and not _ours(mine):  # the person's own entry under Pulsar's name: not Pulsar's to replace
+        added, why = add_rules()
+        return {"ok": False, "rulesAdded": sorted(set(settings.get("claude_rules_added") or []) | set(added)),
+                "message": f"Claude Code already has a server named “{name()}” that Pulsar did not add, so Pulsar left "
+                           f"it as it is. To use Pulsar's own, remove that one (claude mcp remove {name()} -s user) "
+                           "and switch this on again." + (f" {why}" if why else "")}
+    if mine is not None:
+        _run(["mcp", "remove", name(), "-s", "user"])  # Pulsar's older entry (another path or port) goes first
     ok, out = _run(["mcp", "add", "--scope", "user", name(), "--", *command(port)])
     added, why = add_rules()
     kept = sorted(set(settings.get("claude_rules_added") or []) | set(added))
     if not ok:
         return {"ok": False, "message": f"Pulsar could not add itself to Claude Code: {out or 'no answer'}",
                 "rulesAdded": kept}
-    msg = "Pulsar is in Claude Code: a new session can read your day and log time, and asks you before each entry."
+    msg = "Pulsar is in Claude Code: a new session can read your day and log time, and asks you before each write."
     if why:
         msg += f" {why}"
     return {"ok": True, "message": msg, "rulesAdded": kept}
@@ -187,11 +216,18 @@ def disconnect(settings: dict) -> dict:
         return {"ok": True, "message": "A read-only run: Claude Code was not changed.",
                 "rulesAdded": settings.get("claude_rules_added") or []}
     problems = []
-    if registered() is not None:
+    servers = _servers()
+    mine = (servers or {}).get(name())
+    if servers is None or (isinstance(mine, dict) and _ours(mine)):  # not known: Claude Code's command knows
         ok, out = _run(["mcp", "remove", name(), "-s", "user"])
         if not ok:
             problems.append(f"Pulsar could not remove itself from Claude Code: {out or 'no answer'}")
     added = settings.get("claude_rules_added") or []
+    if added and servers is None:  # whether the other Pulsar still uses the rules is not known: they stay
+        return {"ok": False, "rulesAdded": added,
+                "message": " ".join(problems) or "Claude Code's ~/.claude.json could not be read, so Pulsar asked Claude "
+                                                 "Code to remove it and kept its ask rules (Pulsar Preview may use "
+                                                 "them). Switch this on and off again once Claude Code opens normally."}
     if added and registered(other()) is not None:
         # The other Pulsar is still in Claude Code and counts on the same rules: they stay, and this copy keeps
         # them on its list, so it takes them back when it is switched off again once the other has gone.
