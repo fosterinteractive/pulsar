@@ -264,14 +264,24 @@ It opens from many places, each with the time already filled in:
 
 | From | Start and length | First group in the task list |
 |---|---|---|
-| Dragging in the Logged column | the dragged stretch | the rules that match it |
-| The yellow rail (active, not logged) | the stretch | the rules |
-| The hatched rail (away) | the stretch | the rules |
-| An Activity block, **Log this time** | the block | the rules |
+| Dragging in the Logged column | the dragged stretch; note as for a stretch (below) | as for a stretch |
+| The yellow rail (active, not logged) | the stretch; note as for a stretch | as for a stretch |
+| The hatched rail (away) | the stretch; note as for a stretch | as for a stretch |
+| An Activity block, **Log this time** | its active minutes; note as for a stretch | as for a stretch |
 | A Likely block, **Log this time** | the block; note = Claude's draft, if it wrote one | "For this work": Claude's pick, task links, learned tasks |
 | A meeting, **Log this time** | the meeting; note = its title | "For this meeting" |
 | A dashed card (a repeat) | the call as seen; note = the usual note | "Usually at this time" |
-| **+ Log** | after the last entry | the rules |
+| **+ Log** | the first yellow-rail stretch, as for a stretch; else after the last entry | as for a stretch; else the rules |
+
+**A stretch** (`day.js` `logStretch`; also the stretch **Log and next** opens) is read from the Likely rows inside it,
+not from the blocks, which change with the zoom: the project with most minutes there is its work, when it has half
+the stretch, or less when no meeting covers half of it and no rule has more of it. The first group is that project's
+"For this work (project)": Claude's pick, task links and learned tasks of those rows, as for its Likely block, with
+"2 h 2 min of 2 h 30 min" in the label when it has less than half. Else a meeting that covers half of it ("For
+“title”"), else the rules. The note is drafted from the same rows as for a Likely block: Claude's pick's note, else
+the commit draft, then, with the Claude Code switch on, the session note (5.7). A stretch with no Likely row in it
+gets neither. Earlier versions drafted no note for a stretch, and took its first group from the Likely block that
+covered half of it at the zoom on screen: it changed with the zoom and could name a project with no row in it.
 
 After the first group come **From your rules**, **You logged to these lately** (tasks of your last 30 days, with the
 service you used last) and **Assigned to you** (open tasks in active projects, the urgent ones first: overdue, due
@@ -697,14 +707,17 @@ stand from `~/.claude.json` and the settings file, read only, and offers **Add
 Pulsar to Claude Code again** when the entry is missing, starts another copy, or the ask rules are missing. A read-only run (`PULSAR_READ_ONLY`, any value but
 `preview`) never changes Claude Code.
 
-**The session note.** With the switch on, **Log this time** on a Likely block shows the commit draft at once, then asks
-`POST /api/likely/note`: `askclaude.steps()` reads the block's sessions (matched by title) for each step's typed
-message and Claude's last words before the next message (its summary of what it did; no side chains, tool calls or
-tool output; at most 15 steps, 400 and 900 characters), with the commits and up to five of the person's own notes as
-examples. `claude -p --model haiku --tools "" --strict-mcp-config --setting-sources "" --json-schema` drafts the note
+**The session note.** With the switch on, **Log this time** on a Likely block, or a stretch (the yellow rail, a drag,
+**+ Log**, **Log and next**, an Activity block; 5.1), shows the commit draft at once, then asks `POST /api/likely/note`
+with its start, end and project (for a stretch, the project with most minutes in it). The server takes that
+project's Likely rows that overlap the time, whole rows. `askclaude.steps()` reads their sessions (matched by title)
+for each step's typed message and Claude's last words before the next message (its summary of what it did; no side
+chains, tool calls or tool output; at most 15 steps, 400 and 900 characters), with the commits and up to five of the
+person's own notes as examples. `claude -p --model haiku --tools "" --strict-mcp-config --setting-sources "" --json-schema` drafts the note
 (English unless their notes are in another language); `guard_note` checks it. It replaces the note only while the
 person has not typed in it, and only in the dialog that asked, with "Drafted by Claude from this session and your
-commits". Measured: 6 to 11 seconds, $0.001 to $0.004 a note. Asking a copy of the session itself
+commits"; for a stretch "from the fi-drupal-qa session", adding "(the most minutes here; also pulsar)" when other
+projects worked in it too. Measured: 6 to 11 seconds, $0.001 to $0.004 a note. Asking a copy of the session itself
 (`claude -p --resume <id> --fork-session`) also works but reads the whole session each time ($0.16 to $0.55 a
 question) and cannot tell when inside it the work happened.
 
@@ -720,7 +733,11 @@ question) and cannot tell when inside it the work happened.
   no activity yet, a short list at the top of the board says what is missing and gives the one action that fixes
   it (Connect Productive, Get or Open ActivityWatch).
 - **Yellow rail**: stretches of at least 3 minutes, mostly active (personal time excluded), with no entry. Its total
-  is "Active, not logged".
+  is "Active, not logged". It is an amber line on the Logged column's left edge, so it runs beside the Likely column's
+  right edge. A click, or Enter, opens the log dialog on the stretch with its Likely tasks and note (5.1, "A
+  stretch"). Closing the dialog gives the rail its focus back; closed from the keyboard (Escape, ⌘↩), the rail shows
+  the focus ring, a blue outline around the amber line, until something else is clicked.
+- **Hatched rail**: away from the computer, on the Activity column's left edge; a click logs it the same way.
 - **Work time**: logged, billable, not billable, billing unknown, active, personal, active not logged, away (breaks),
   against the daily target (Settings, else the organization's working day in Productive, else 8 h).
 - **Total project time**: per project, then budget and service.

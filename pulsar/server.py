@@ -490,8 +490,9 @@ def api_ask_claude(body: dict) -> dict:
 
 
 def api_likely_note(body: dict) -> dict:
-    """The log dialog's note for a Likely block, from its session and commits (askclaude.note, Haiku). Only when the
-    Claude Code switch is on; a POST, because it runs Claude."""
+    """The log dialog's note for a Likely block, or for a stretch picked another way (the yellow rail, a drag): from
+    the sessions and commits of the project's Likely rows that overlap s to e, whole rows (askclaude.note, Haiku).
+    Only when the Claude Code switch is on; a POST, because it runs Claude."""
     s = current_settings()
     date, project = str(body.get("date") or ""), str(body.get("project") or "")
     if not DATE.match(date):
