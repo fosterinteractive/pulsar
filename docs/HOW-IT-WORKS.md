@@ -226,7 +226,7 @@ It opens from many places, each with the time already filled in:
 | The yellow rail (active, not logged) | the stretch | the rules |
 | The hatched rail (away) | the stretch | the rules |
 | An Activity block, **Log this time** | the block | the rules |
-| A Likely block, **Log this time** | the block | "For this work": Claude's pick, task links, learned tasks |
+| A Likely block, **Log this time** | the block; note = Claude's draft, if it wrote one | "For this work": Claude's pick, task links, learned tasks |
 | A meeting, **Log this time** | the meeting; note = its title | "For this meeting" |
 | A dashed card (a repeat) | the call as seen; note = the usual note | "Usually at this time" |
 | **+ Log** | after the last entry | the rules |
@@ -273,7 +273,18 @@ says so before you log.
   messages; and the tasks logged to in the last 30 days, with the instruction to prefer them and search Productive
   only when none fits. It has no shell and no files, cannot change Productive, and its session is not kept (so it
   never shows up in Likely). The answer is a task (and two alternatives) with a short reason per row, shown on the
-  Likely card and first in the dialog, with Claude's mark next to it. The model is chosen in Settings (Sonnet by
+  Likely card and first in the dialog, with Claude's mark next to it.
+  It also drafts the entry's **note** for its first task: Productive can copy notes into a client's invoice and time
+  export, so the prompt asks for the outcome in one or two plain sentences (200 characters at most), never paths,
+  addresses, tokens, code, logs, tool names, private matters, other clients or how the time was spent. Each row
+  carries up to five of the person's own recent notes on its likely tasks (learned or linked, then the same projects),
+  labelled with their task, as examples of their style; only notes that pass the guard are used. `guard_note` then
+  checks the draft on this Mac and blanks it, never repairs it, when it has a path, a web address, something like a
+  token, code or a log, Claude, Pulsar or an agent, a remark on how the time was spent, or more than two sentences.
+  A note written for a task that could not be named, and any note from an older Claude Code without
+  `structured_output`, is dropped. The log dialog fills the note in with "Drafted by Claude: check it before logging;
+  clients may see notes" under it; the line goes when the note is edited, and names the task the note was written
+  for when another task is picked. The model is chosen in Settings (Sonnet by
   default); each name is Claude Code's alias for the latest model of that kind. About 15 to 60 seconds and $0.10 to $0.25 of the person's usage per day.
 - **A meeting's task** (`server.meeting_tasks`): first, the task you logged during the earlier meetings of the same
   series (Google's `recurringEventId`) or the same title, each earlier meeting voting for the task that took most of

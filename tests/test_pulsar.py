@@ -638,7 +638,7 @@ class AskClaudeTest(unittest.TestCase):
         self.assertIn('"Estimations"', seen["input"])
         self.assertEqual(got["picks"], {"600|acme-site": {"tasks": [{"taskId": "7", "title": "Estimations", "project": "Proposals"},
                                                                      {"taskId": "99", "title": "Found", "project": "P"}],
-                                                           "why": "estimate work"}})
+                                                           "why": "estimate work", "note": ""}})
 
     def test_the_checked_answer_is_used_when_claude_code_gives_one(self):
         import json as _json
@@ -656,6 +656,128 @@ class AskClaudeTest(unittest.TestCase):
         got = askclaude.ask("2026-11-03", [{"s": 600, "e": 605, "project": "x", "titles": []}], 0, [],
                             run=lambda *a, **k: self.fail("Claude must not run"))
         self.assertEqual(got["picks"], {})
+
+
+class ClaudeNoteTest(unittest.TestCase):
+    """Ask Claude's drafted note: asked for in the schema, shaped by the person's own notes, checked before the page."""
+    ROWS = [{"s": 540, "e": 600, "project": "acme-site", "titles": [], "minutes": 60,
+             "learned": [{"taskId": "7", "title": "Events"}]}]
+    ENTRIES = [{"taskId": "7", "task": "Events", "project": "Acme", "minutes": 30, "date": "2026-11-02"}]
+
+    def run_ask(self, out, rows=None, history=(), seen=None, details=None):
+        import json as _json
+        from pulsar import askclaude
+
+        def fake(cmd, **kw):
+            if seen is not None:
+                seen["cmd"], seen["input"] = cmd, kw["input"]
+            return mock.Mock(stdout=_json.dumps(out), stderr="", returncode=0)
+        askclaude._cache.clear()
+        with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/bin/claude"), \
+                mock.patch.object(askclaude.productive, "task_details", lambda ids, s: details or {}), \
+                mock.patch.object(askclaude.config, "load", lambda: {}):
+            return askclaude.ask("2026-11-04", rows or self.ROWS, 0, self.ENTRIES, run=fake, history=history)
+
+    def test_the_command_asks_for_a_short_note(self):
+        import json as _json
+        seen = {}
+        self.run_ask({"structured_output": {"picks": []}}, seen=seen)
+        schema = _json.loads(seen["cmd"][seen["cmd"].index("--json-schema") + 1])
+        item = schema["properties"]["picks"]["items"]
+        self.assertIn("note", item["required"])
+        self.assertEqual(item["properties"]["note"], {"type": "string", "maxLength": 200})
+        self.assertIn("client", seen["input"])                       # the rules: a client may read it
+        self.assertIn("their_notes", seen["input"])
+
+    def test_the_persons_own_notes_are_the_examples(self):
+        from pulsar import askclaude
+        history = [
+            {"taskId": "7", "project": "Acme", "date": "2026-11-03", "note": "Event pages show the right time zone."},
+            {"taskId": "7", "project": "Acme", "date": "2026-11-02", "note": "Fixed in web/modules/custom/x.module"},  # a path
+            {"taskId": "8", "project": "Acme", "date": "2026-11-01", "note": "Sitemap lists the news pages again."},
+            {"taskId": "9", "project": "Other", "date": "2026-11-03", "note": "Another client's work."},
+            {"taskId": "7", "project": "Acme", "date": "2026-10-30", "note": "TASK\\_ID set on \\[ACME-1\\]."},
+            {"taskId": "7", "project": "Acme", "date": "2026-10-29", "note": "Event pages show the right time zone."},
+        ]
+        notes = lambda row, h: [x["note"] for x in askclaude.their_notes(row, h)]  # noqa: E731
+        self.assertEqual(notes(self.ROWS[0], history),
+                         ["Event pages show the right time zone.", "TASK_ID set on [ACME-1].",  # same task, newest first
+                          "Sitemap lists the news pages again."])                               # then the same project
+        self.assertEqual(askclaude.their_notes(self.ROWS[0], history)[0]["task"], "7")
+        self.assertEqual(notes({"s": 0, "e": 60}, history), [])   # no likely task: no examples
+        busy = [{"taskId": "8", "project": "Acme", "date": "2026-11-0%d" % i, "note": f"Release {i} checked."} for i in range(1, 9)]
+        two = {"s": 0, "e": 60, "learned": [{"taskId": "7"}, {"taskId": "8"}]}
+        self.assertEqual(notes(two, history + busy),                # the likeliest task first, however busy the other
+                         ["Event pages show the right time zone.", "TASK_ID set on [ACME-1].",
+                          "Release 8 checked.", "Release 7 checked.", "Release 6 checked."])
+        seen = {}
+        self.run_ask({"structured_output": {"picks": []}}, history=history, seen=seen)
+        self.assertIn("Sitemap lists the news pages again.", seen["input"])
+        self.assertNotIn("Another client", seen["input"])
+        self.assertNotIn("x.module", seen["input"])
+
+    def test_a_good_note_reaches_the_page(self):
+        got = self.run_ask({"structured_output": {"picks": [
+            {"id": 0, "tasks": ["7"], "why": "events work", "note": "  Event pages show the right time zone again.\n"}]}})
+        self.assertEqual(got["picks"]["540|acme-site"]["note"], "Event pages show the right time zone again.")
+        self.assertEqual(got["notesBlocked"], [])
+
+    def test_a_note_that_fails_the_guard_is_blanked(self):
+        got = self.run_ask({"structured_output": {"picks": [
+            {"id": 0, "tasks": ["7"], "why": "events", "note": "Claude fixed the time zone in calendar.module."}]}})
+        self.assertEqual(got["picks"]["540|acme-site"]["note"], "")
+        self.assertEqual(got["picks"]["540|acme-site"]["tasks"][0]["taskId"], "7")   # the task stays
+        self.assertEqual(len(got["notesBlocked"]), 1)
+
+    def test_a_note_for_a_task_that_cannot_be_named_is_dropped(self):
+        got = self.run_ask({"structured_output": {"picks": [
+            {"id": 0, "tasks": ["555", "7"], "why": "events", "note": "Event pages fixed."}]}})
+        self.assertEqual(got["picks"]["540|acme-site"]["tasks"][0]["taskId"], "7")
+        self.assertEqual(got["picks"]["540|acme-site"]["note"], "")                  # it was written for 555
+        self.assertEqual(got["notesBlocked"], ["no task"])
+
+    def test_an_old_claude_code_gives_picks_without_notes(self):
+        import json as _json
+        text = 'Done. ' + _json.dumps({"picks": [{"id": 0, "tasks": ["7"], "why": "events", "note": "Event pages fixed."}]})
+        got = self.run_ask({"result": text, "total_cost_usd": 0.05})
+        self.assertEqual(got["picks"]["540|acme-site"]["tasks"][0]["taskId"], "7")
+        self.assertEqual(got["picks"]["540|acme-site"]["note"], "")
+
+
+class NoteGuardTest(unittest.TestCase):
+    """guard_note: what a drafted note may not contain, because a client may read it."""
+
+    def test_plain_outcomes_pass(self):
+        from pulsar import askclaude
+        for note in ["Event pages show the right time zone again.",
+                     "Faculty blog: summary is optional again, so editors can save posts (PR #290).",
+                     "MariaDB 10.6 upgrade prepared and rehearsed on the test copy. Deploy plan agreed.",
+                     "Astro/Next.js project setup reviewed; estimate of 24 h for the rebuild.",
+                     "Accessibility fixes on the e.g. search form, v1.2 released."]:
+            self.assertEqual(askclaude.guard_note(note), (note, None), note)
+        self.assertEqual(askclaude.guard_note('  "Search fixed."\n '), ("Search fixed.", None))
+        self.assertEqual(askclaude.guard_note(""), ("", None))
+        self.assertEqual(askclaude.guard_note(None), ("", None))
+
+    def test_what_a_client_must_not_read_is_blocked(self):
+        from pulsar import askclaude
+        blocked = {
+            "a file path": ["Updated web/themes/custom/site/templates.", "Fixed ~/Sites/acme config.",
+                            "Edited the settings.php file.", "Changed pantheon.yml for the upgrade."],
+            "a web address": ["Checked https://example.org/events.", "Crawled www.acme.org.", "Sitemap for acme.ca fixed."],
+            "something like a token": ["Rotated key sk-ant-api03abcdefghijkl.", "Used ghp_abcdefgh12345678 for the deploy.",
+                                       "Token a1b2c3d4e5f6a7b8c9d0e1f2a3b4 replaced.", "Commit 3503708f9a1b2c3d reverted."],
+            "code or a log": ["Ran `drush cim` on qa.", "Fixed PDOException on save.", "SQLSTATE[42S22] fixed.",
+                              "Set $settings for the cache.", "Called Foo::bar() again."],
+            "a tool's name": ["Claude drafted the plan.", "Pulsar shows the day.", "The agent built the page.",
+                              "Agents reviewed the PR."],
+            "how the time was spent": ["Two sessions in parallel.", "Overlapping work moved down.", "Run time of the build."],
+            "more than two sentences": ["Fixed the form. Checked qa. Told the client."],
+            "too long": ["Event pages fixed. " * 13],
+        }
+        for why, notes in blocked.items():
+            for note in notes:
+                self.assertEqual(askclaude.guard_note(note), ("", why), note)
 
 
 class HistoryReadTest(unittest.TestCase):
