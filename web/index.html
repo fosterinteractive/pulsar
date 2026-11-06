@@ -159,7 +159,13 @@
             <select name="likely"><option value="auto">Show it when Claude Code sessions are found</option><option value="off">Hide it</option></select></label>
           <p class="hint" id="likely-hint"></p>
           <label class="check"><input type="checkbox" name="ask_claude"> “Ask Claude” button in the Likely column</label>
-          <p class="hint" id="ask-claude-hint">It sends what you typed in that day's Claude Code sessions, and the names of the tasks you logged to in the last 30 days, to Claude through your own Claude Code, which may search Productive (read only). About 15 seconds and a little of your Claude usage per day.</p>
+          <label class="field"><span>Model</span>
+            <select name="ask_claude_model">
+              <option value="sonnet">Sonnet: the default, a good balance</option>
+              <option value="haiku">Haiku: faster and cheaper, a little less careful</option>
+              <option value="opus">Opus: the most careful, slower and costs more</option>
+            </select></label>
+          <p class="hint" id="ask-claude-hint">It sends what you typed in that day's Claude Code sessions, and the names of the tasks you logged to in the last 30 days, to Claude through your own Claude Code, which may search Productive (read only). 15 to 60 seconds and a little of your Claude usage per day. Each name is the latest model of that kind in your Claude Code.</p>
         </section>
       </div>
       <div role="tabpanel" id="p-rules" aria-labelledby="t-rules" hidden>

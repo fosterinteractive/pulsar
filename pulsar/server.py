@@ -103,7 +103,7 @@ def public_config(s: dict) -> dict:
         "update": {**UPDATER.public(), "skip": s["update_skip"], "asked": s["update_asked"]},
         "errors24h": sum(1 for e in logbook.read(1) if e["kind"] == "error"),
         "likely": {"setting": s["likely"], "available": likely.available(), "enabled": likely.enabled(s),
-                   "askClaude": s["ask_claude"], "claudeFound": askclaude.available()},
+                   "askClaude": s["ask_claude"], "askClaudeModel": s["ask_claude_model"], "claudeFound": askclaude.available()},
         "productive": {"source": s["productive_source"], "active": conn["kind"], "problem": conn.get("problem"),
                        "tokenSaved": bool(config.get_token()), "orgId": s["org_id"], "orgName": s["org_name"],
                        "personId": s["person_id"], "personName": s["person_name"]},
@@ -153,6 +153,10 @@ def validate(body: dict) -> dict:
         if not isinstance(body["ask_claude"], bool):
             raise ValueError("ask_claude is true or false")
         out["ask_claude"] = body["ask_claude"]
+    if "ask_claude_model" in body:
+        if body["ask_claude_model"] not in askclaude.MODELS:
+            raise ValueError("The model is sonnet, haiku or opus.")
+        out["ask_claude_model"] = body["ask_claude_model"]
     if "productive_source" in body:
         if body["productive_source"] not in ("auto", "token", "claude-code"):
             raise ValueError("The Productive source is auto, token or claude-code")
@@ -322,7 +326,8 @@ def api_ask_claude(body: dict) -> dict:
     d0, d1 = askclaude.history_span(date)
     before, problem, _, _ = productive_rows(d0, d1, s)
     try:
-        return askclaude.ask(date, proposal.get("entries") or [], day_bounds(date, tz)[0], [] if problem else before)
+        return askclaude.ask(date, proposal.get("entries") or [], day_bounds(date, tz)[0], [] if problem else before,
+                             model=s["ask_claude_model"])
     except askclaude.AskError as exc:
         logbook.record("ask claude", str(exc), kind="warning")
         return {"error": str(exc), "picks": {}}

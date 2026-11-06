@@ -150,8 +150,9 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
 - **Ask Claude (optional, off by default).** Switch it on in **Settings → Activity**, and the Likely column gets an
   **Ask Claude** button: it gives your own Claude Code what you typed in that day's sessions and the tasks you logged
   to in the last 30 days, lets it search Productive (read only; tools that change anything are refused), and shows its
-  task on each block and first when you log one. About 15 to 60 seconds and a little of your Claude usage per day;
-  nothing is written anywhere.
+  task on each block and first when you log one. Choose the model there too: Sonnet (default), Haiku (faster,
+  cheaper) or Opus (most careful). About 15 to 60 seconds and a little of your Claude usage per day; nothing is
+  written anywhere.
 - **The daily meeting, ready to log.** An entry you log at the same time on most days (a daily scrum) is noticed from
   your last four weeks in Productive. When the tracker sees a call near that time (Zoom, Meet, Teams, a Slack huddle),
   the Logged column shows it as a dashed card with the task, the usual note and the call's length. One click opens it

@@ -36,6 +36,7 @@ DEFAULTS = {
     "activitywatch_url": "http://localhost:5600",
     "likely": "auto",            # auto | on | off: the column built from Claude Code sessions
     "ask_claude": False,         # the "Ask Claude" button in the Likely column (sends what you typed to Claude)
+    "ask_claude_model": "sonnet",  # sonnet | haiku | opus: Claude Code's names for the latest of each
     "productive_source": "auto",  # auto | token | claude-code
     "org_id": "", "org_name": "", "person_id": "", "person_name": "", "person_day_hours": None,
     "update_skip": "",           # a release the person chose to skip in the reminder
@@ -90,6 +91,8 @@ def _fits(key: str, value) -> bool:
         return isinstance(value, str) and (not value or _valid_zone(value))
     if key == "likely":
         return value in ("auto", "on", "off")
+    if key == "ask_claude_model":
+        return value in ("sonnet", "haiku", "opus")
     if key == "productive_source":
         return value in ("auto", "token", "claude-code")
     if key == "personal_patterns":

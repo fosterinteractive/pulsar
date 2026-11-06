@@ -618,6 +618,7 @@ class AskClaudeTest(unittest.TestCase):
             got = askclaude.ask("2026-11-03", rows, 0, entries, run=fake_run)
         cmd = seen["cmd"]
         self.assertIn("--no-session-persistence", cmd)                   # never shows up in Likely itself
+        self.assertEqual(cmd[cmd.index("--model") + 1], "sonnet")          # the default
         self.assertEqual(cmd[cmd.index("--tools") + 1], "")              # no shell, no files
         self.assertNotIn("create_resource", cmd[cmd.index("--allowedTools") + 1])
         self.assertIn("mcp__productive__create_resource", cmd[cmd.index("--disallowedTools") + 1])

@@ -265,7 +265,7 @@ says so before you log.
   for the day:
 
   ```
-  claude -p --model sonnet --no-session-persistence --output-format json --tools ""
+  claude -p --model <sonnet|haiku|opus> --no-session-persistence --output-format json --tools ""
          --allowedTools <Productive search and read tools> --disallowedTools <Productive write tools>
   ```
 
@@ -273,7 +273,8 @@ says so before you log.
   messages; and the tasks logged to in the last 30 days, with the instruction to prefer them and search Productive
   only when none fits. It has no shell and no files, cannot change Productive, and its session is not kept (so it
   never shows up in Likely). The answer is a task (and two alternatives) with a short reason per row, shown on the
-  Likely card and first in the dialog, with Claude's mark next to it. About 15 to 60 seconds and $0.10 to $0.25 of the person's usage per day.
+  Likely card and first in the dialog, with Claude's mark next to it. The model is chosen in Settings (Sonnet by
+  default); each name is Claude Code's alias for the latest model of that kind. About 15 to 60 seconds and $0.10 to $0.25 of the person's usage per day.
 - **A meeting's task** (`server.meeting_tasks`): first, the task you logged during the earlier meetings of the same
   series (Google's `recurringEventId`) or the same title, each earlier meeting voting for the task that took most of
   it; then your tasks whose names share a word with the meeting's title. Words every meeting has ("sync", "weekly",

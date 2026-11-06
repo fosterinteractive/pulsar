@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 
 from . import config, productive, sessions
 
-MODEL = "sonnet"
+MODELS = ("sonnet", "haiku", "opus")  # Claude Code's aliases: always the latest model of each
 TIMEOUT = 240
 READ_TOOLS = ["mcp__productive__search_records", "mcp__productive__query_resources", "mcp__productive__load_resource",
               "mcp__productive__describe_resource"]
@@ -88,7 +88,7 @@ def recent_tasks(entries: list) -> list:
     return sorted(mine.values(), key=lambda t: t[4], reverse=True)[:150]
 
 
-def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run) -> dict:
+def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, model: str = "sonnet") -> dict:
     """{"picks": {"<s>|<project>": {"tasks": [{taskId, title, project}], "why"}}, "cost": dollars}. Raises AskError
     with a sentence for the page when Claude Code is missing or its answer cannot be read."""
     blocks = [{"id": i, "time": "%02d:%02d-%02d:%02d" % (r["s"] // 60, r["s"] % 60, (r["e"] // 60) % 24, r["e"] % 60),
@@ -97,7 +97,8 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run) 
               for i, r in enumerate(rows) if r["e"] - r["s"] >= 10]
     if not blocks:
         return {"picks": {}, "cost": 0}
-    sig = (date, tuple((r["s"], r["e"], r.get("project")) for r in rows))
+    model = model if model in MODELS else "sonnet"
+    sig = (date, model, tuple((r["s"], r["e"], r.get("project")) for r in rows))
     with _lock:
         if sig in _cache:
             return _cache[sig]
@@ -109,7 +110,7 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run) 
         raise AskError("Claude Code was not found on this Mac.")
     os.makedirs(config.CACHE_DIR, exist_ok=True)
     try:
-        done = run([binary, "-p", "--model", MODEL, "--no-session-persistence", "--output-format", "json",
+        done = run([binary, "-p", "--model", model, "--no-session-persistence", "--output-format", "json",
                     "--tools", "", "--allowedTools", ",".join(READ_TOOLS), "--disallowedTools", ",".join(WRITE_TOOLS)],
                    input=prompt, capture_output=True, text=True, timeout=TIMEOUT, cwd=config.CACHE_DIR)
     except subprocess.TimeoutExpired:
