@@ -2617,6 +2617,19 @@ class ScrubTest(unittest.TestCase):
         ('{"X-Pulsar-Key": "3f2a9c0d1e4b5a69788776655443322", "Host": "127.0.0.1"}',
          '{"X-Pulsar-Key": "[removed]", "Host": "127.0.0.1"}'),
         ("GET /?code=abcdefabcdefabcdefabcdefabcdefab HTTP/1.1", "GET /?code=[removed] HTTP/1.1"),
+        # bare secrets: Pulsar's key, session tokens and sign-in codes are lowercase hex; Productive's tokens UUIDs
+        ("the key 3f2a9c0d1e4b5a6978877665544332211aabbccddeeff00112233445566778899 was wrong",
+         "the key [removed] was wrong"),
+        ("sign-in code abcdef0123456789abcdef0123456789: expired", "sign-in code [removed]: expired"),
+        ("proof=0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9 nonce", "proof=[removed] nonce"),
+        ("token 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d.", "token [removed]."),
+        ("Productive refused 0A1B2C3D-4E5F-6A7B-8C9D-0E1F2A3B4C5D (401)", "Productive refused [removed] (401)"),
+        # fields named as keys or secrets, whatever their value looks like
+        ('{"key": "correct horse battery staple", "x": 1}', '{"key": "[removed]", "x": 1}'),
+        ('{"private_key": "-----BEGIN EC PRIVATE KEY-----", "apiKey":"zzz", "SECRET_KEY": "s 1"}',
+         '{"private_key": "[removed]", "apiKey":"[removed]", "SECRET_KEY": "[removed]"}'),
+        ("{'secret': 'hunter2', 'client-secret': 'abc'}", "{'secret': '[removed]', 'client-secret': '[removed]'}"),
+        ('{"passphrase": "open sesame"}', '{"passphrase": "[removed]"}'),
     ]
     KEEP = [
         "/Users/someone/.claude/projects/-Users-someone-Sites-client-site/0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d.jsonl",
@@ -2632,6 +2645,14 @@ class ScrubTest(unittest.TestCase):
         "ValueError: date=YYYY-MM-DD",
         "see /Users/someone/a//b and https://x.org/1//y",
         "?code=short&x=1",
+        # ordinary ids that look a little like secrets
+        "commit 3503708c1f4e2b6a9d0e8f7a6b5c4d3e2f1a0b9c..9f8e7d6c5b4a39281706f5e4d3c2b1a0f9e8d7c6 merged",
+        "/Users/someone/.cache/pulsar/days/3f2a9c0d1e4b5a6978877665544332211aabbccddeeff00112233445566778899/2026-11-06.json",
+        "saved as settings.broken-0a1b2c3d4e5f60718293a4b5c6d7e8f9.json",
+        "task 12345678901234567890123456789012345 and entry 98765",
+        '{"monkey": "banana", "keys": ["a", "b"], "key_id": "k1", "keyboard": "us", "turkey": "roast"}',
+        "Cannot read properties of undefined (reading 'key')",
+        "Ask Claude: session 0a1b2c3d-4e5f-6a7b-8c9d-0e1f2a3b4c5d.jsonl could not be read",
     ]
 
     def test_credentials_are_cut(self):
