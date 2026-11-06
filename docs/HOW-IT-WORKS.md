@@ -164,14 +164,22 @@ project, budget, billable, billing}`.
 - **Auto** uses the token when there is one, else Claude Code's connection.
 - **Who you are** is found once from the connection (`identify`) and kept in Settings. A failure is not retried for 5
   minutes.
-- **Names** of projects, budgets, services and tasks are cached in `~/.cache/pulsar/names.json`.
+- **Names** of projects, budgets, services and tasks are cached in `~/.cache/pulsar/names.json`, with when each was
+  read. A name or billing type is read again once it is a week old (a billing type the role could not see, after a
+  day); until then the old one is shown. A failed re-read keeps the old one and tries again a day later.
 - **Billable**: Productive hides the billing fields from some roles but still filters on them. So Pulsar lists each
   deal's services once per billing type and remembers which type each service is. Billable means Fixed price, Time
   and materials or Percentage. Unknown stays unknown (grey on the page), never guessed.
 - **Every successful read is kept** per person and day in `~/.cache/pulsar/days/<person>/<date>.json`. When
   Productive cannot be reached, the day and the report show those copies and say from when.
 - **Network**: one pooled HTTPS connection per host, redirects never followed (a token only ever goes where it was
-  meant). Reads are tried up to 3 times when the server hangs up; writes are never repeated.
+  meant). Reads are tried up to 3 times when the server hangs up; writes are never repeated. Claude Code's
+  connection takes four requests at a time; the 60-day history and the Tasks box's estimates share two of them, so
+  the day's own entries and the log dialog never wait behind them.
+- **History**: the repeats, the meetings' tasks and the learned tasks read the 60 days before a date once, kept an
+  hour. A column that asks while it is being read waits for that read rather than starting another.
+- **The keychain**: when it does not answer (locked, or a dialog nobody sees), the page says so and shows the saved
+  copy, rather than asking for a token.
 
 ### 4.3 Meetings (`pulsar/calendar.py`)
 
@@ -205,8 +213,8 @@ Which Claude Code session, and so which project, each minute of work most likely
   never a project.
 - **Each minute** the tracker saw work goes to one session: the one whose title the editor window showed; else one
   whose agent was running; else the one last used in that sitting (a sitting ends after 30 minutes away). In a
-  browser, a page whose title or address names a project goes to that project's session. Meetings and personal
-  windows go to none.
+  browser, a page whose title or address names a project goes to that project's session. Meetings, personal
+  windows and time logging (a minute that went mostly to Pulsar or Productive) go to none.
 - **Without a tracker**, the time an agent ran on a request, and answers typed within 30 minutes, count as work.
 - **Rows**: neighbouring minutes of one project join into rows `{s, e, minutes, project, titles, messages,
   first_message}`.
@@ -271,7 +279,11 @@ it, Productive refuses and the page shows why. With
   session, then in the same repository, over the last 60 days. Each earlier row votes, with its minutes, for the task
   that took most of it. Past days' rows are worked out once in the background and kept in
   `~/.cache/pulsar/likely-days/<date>.json`: times, repository names and a hash of each session title, never the
-  titles or anything typed. Until all 60 days are there, the page says "Learning your tasks… N of 60".
+  titles or anything typed. Until all 60 days are there, the page says "Learning your tasks… N of 60". The rows do
+  not wait for the 60 days of Productive history: while it is read, they come without learned tasks and with
+  `learnPending`, and the page asks once more (`wait=1`) a few seconds later.
+- **The clock**: the fi-time-from-activity script writes wall-clock times; they are kept as minutes elapsed since
+  midnight, like the built-in rows, and drawn by the clock.
 - **Ask Claude** (`pulsar/askclaude.py`, off until switched on in Settings): runs the person's own Claude Code once
   for the day:
 
@@ -347,9 +359,9 @@ estimate, and a table of every day. **Download** gives the days or the entries a
 | `~/.config/pulsar/google_client.json` | Only on the releaser's Mac: the real Google client. |
 | Keychain, service `pulsar` | `productive` (API token), `google-calendar` (refresh token). |
 | `~/.cache/pulsar/days/<person>/` | The last copy of each day's entries (120 days). |
-| `~/.cache/pulsar/names.json` | Names of projects, budgets, services, tasks; billing types. |
+| `~/.cache/pulsar/names.json` | Names of projects, budgets, services, tasks; billing types; when each was read. |
 | `~/.cache/pulsar/likely-days/` | Past days' Likely rows for learning: times, repository, title hashes. |
-| `~/.cache/pulsar/logs/` | The error log, one JSON line per event, 31 days, tokens removed. |
+| `~/.cache/pulsar/logs/` | The error log, one JSON line per event, 31 days; tokens, keys, OAuth codes, signed addresses and long opaque strings removed. |
 | `~/Library/Application Support/Pulsar/` | The installed code: `versions/`, `current`, `previous`, `bad-versions`. |
 | `~/Library/Logs/Pulsar.log` | What the launcher and the server printed. |
 
@@ -406,7 +418,7 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `GET /api/config` | Settings for the page, the connection's state, update state, calendar state. Never a token. |
 | `GET /api/activity?date=&source=` | Tracker items and away time. |
 | `GET /api/entries?date=` | Productive entries. |
-| `GET /api/proposal?date=[&fresh=1]` | Likely rows, with task links and learned tasks. |
+| `GET /api/proposal?date=[&fresh=1][&wait=1]` | Likely rows, with task links and learned tasks (`learnPending` while the history is read; `wait=1` waits for it). |
 | `GET /api/calendar?date=[&fresh=1]` | Meetings. `GET /api/calendar/status` while signing in. |
 | `GET /api/repeats?date=&source=` | Repeats seen today. |
 | `GET /api/meeting-tasks?date=&uid=&title=` | A meeting's tasks. |
