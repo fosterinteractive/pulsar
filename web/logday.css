@@ -24,8 +24,8 @@
 .card .m.chk, .card .m.fl { color: var(--gap-text); font-weight: 600; }
 
 /* the review panel */
-.rv { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; flex: 1; }
-.rv[hidden] { display: none; }
+section.rv { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; flex: 1; }
+section.rv[hidden] { display: none; }
 .rv-h { padding: 14px 16px 12px; border-bottom: 1px solid var(--line); }
 .rv-t { display: flex; align-items: center; gap: 8px; }
 .rv-t h2 { margin: 0; font-size: 15px; font-weight: 600; flex: 1; }

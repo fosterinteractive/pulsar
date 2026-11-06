@@ -242,7 +242,7 @@ function rankBars(items, total) {
     ...(it.billable != null ? [[dur(it.billable), 'billable', 'var(--accent)']] : []), ...(it.more || [])])}>
     <span class="rn">${'icon' in it ? icon(it.icon, it.name) : ''}<span>${esc(it.name)}</span></span>
     <span class="rt">${barOf(it, max)}</span>
-    <span class="rv num">${dur(it.minutes)}<small>${pct(it.minutes, total)}%</small></span></div>`).join('');
+    <span class="rbv num">${dur(it.minutes)}<small>${pct(it.minutes, total)}%</small></span></div>`).join('');
 }
 function budgetTable(plist, rowsOf) {
   return `<table class="tbl wrap"><thead><tr><th>Project and budget</th><th class="txt">Service</th><th class="txt">Billing</th><th>Logged</th></tr></thead><tbody>`
