@@ -487,9 +487,9 @@ whether one fits is the person's call. It opens a small form over the dialog:
 - **Where it goes**: under the period's contingency task, in a task list, or straight in the project (4.2).
 - **Title and description**, drafted from the Likely rows of the project with most minutes in the dialog's time, whole
   rows, as the session note takes them. At once, on this Mac (`local_draft`): the first commit subject made then is
-  the title, and all of them a list. With the Claude Code switch on, Haiku then drafts both (`claude_draft`) from the
-  same rows' steps (what was typed, Claude's replies, `askclaude.steps`), commits and session titles, with up to 8
-  titles of tasks logged to lately, the same project's first, as examples of the style. It runs as the session note
+  the title, and all of them a list. With the Claude Code switch on, Claude then drafts both (`claude_draft`, with the
+  model chosen for "New task", Haiku by default: 5.7) from the same rows' steps (what was typed, Claude's replies,
+  `askclaude.steps`), commits and session titles, with up to 8 titles of tasks logged to lately, the same project's first, as examples of the style. It runs as the session note
   does (5.7): no tools, no MCP server, none of the person's settings, auto memory off, a JSON schema. A draft replaces
   only a field the person has not typed in. A meeting's title is the draft when the time was a meeting and no work was
   seen in it; Claude is not asked then. The title goes through the note's checks (`guard_title`: no path, web address,
@@ -794,7 +794,7 @@ day, ends it.
   `structured_output`, is dropped. The log dialog fills the note in with "Drafted by Claude: check it before logging;
   clients may see notes" under it; the line goes when the note is edited, and names the task the note was written
   for when another task is picked. The model is chosen in Settings (Sonnet by
-  default); each name is Claude Code's alias for the latest model of that kind. About 15 to 60 seconds and $0.10 to
+  default; 5.7); each name is Claude Code's alias for the latest model of that kind. About 15 to 60 seconds and $0.10 to
   $0.25 of the person's usage per day with Sonnet. `--max-budget-usd` caps each run (not each day) at $0.25 for
   Haiku, $0.75 for Sonnet and $2 for Opus; an empty answer runs Claude once more, so one ask may cost twice the cap,
   and the cost shown is the second run's. Log the day asks by itself when the switch is on (5.4). Answers are kept in memory only (the last 30): asking again after a
@@ -955,6 +955,30 @@ nothing else. Saving it on:
   keeps its permissions), with a one-time backup `settings.json.pulsar-backup`; a file that is not valid JSON is left
   alone and the switch says so. Rules already there are not counted as added, so they are never Pulsar's to take back.
 
+**What Pulsar asks Claude, and with which model** (Settings → Claude, `pulsar/claudeuses.py`). Settings lists every
+use, one row each, from `claudeuses.USES`: its name, what it does, what it sends to Anthropic, and a model to choose
+(Haiku, Sonnet or Opus, the default marked) where Pulsar runs Claude itself:
+
+| Use (id) | What it does | What it sends | Model by default | Most one run may cost (Haiku, Sonnet, Opus) |
+|---|---|---|---|---|
+| Ask Claude (`ask`) | A task and a note for each Likely block; Log the day asks it for the rows it is unsure of (5.4, 5.5) | Each block's time, repository, session titles, steps (typed and Claude's replies), commit subjects, up to 5 of your notes; your tasks of the last 30 days. May search Productive, read only | Sonnet | $0.25, $0.75, $2 |
+| Note in the log dialog (`note`) | The note for a block or a stretch (below) | That work's time, repository, steps, commit subjects, up to 5 of your notes | Haiku | $0.10, $0.30, $0.80 |
+| New task (`task`) | A new task's title and description (5.1) | That work's time, repository, session titles, steps, commit subjects, up to 8 titles of your recent tasks | Haiku | $0.10, $0.30, $0.80 |
+| Pulsar in Claude Code (`session`) | A session reads the day and logs through Pulsar (5.6) | What the session reads from Pulsar, as part of that session | the session's own | none of Pulsar's |
+
+Each `claude -p` call takes its model and cap from there and nothing else changes: its isolation (`--tools ""`,
+`--strict-mcp-config`, `--setting-sources ""`, `dontAsk`, the environment of section 3, the JSON schema) and the
+guards on what comes back stay at the call. The server picks the model with `claudeuses.model(use, settings)`: the
+person's choice in `claude_models` (`{use: model}`), then, for Ask Claude only, `ask_claude_model` (its one setting
+before there was a list), then the default. Models are Claude Code's aliases only, never a pinned model id. A run's
+cap (`--max-budget-usd`, `claudeuses.cap`) is the use's Haiku cap times 1, 3 or 8 (`SCALE`), so a larger model is not
+stopped half way. Saving keeps only choices that differ from the default (a default changed later applies), drops an
+unknown use or name, and keeps `ask_claude_model` in step for an older Pulsar. Pulsar Preview starts with its own
+choices. Each row also shows the runs of that use since Pulsar started and what they cost, as Claude Code said
+(`total_cost_usd`, counted in `askclaude._answer`, in memory only). Pulsar's other runs of the `claude` command ask no
+model: `claude mcp add`, `remove` and `get` (the switch, below) and `claude mcp get productive` (renewing Claude
+Code's Productive sign-in, 4.2). A new use is one entry in `USES`; the page lists it by itself.
+
 **Ask before any Claude Code session changes Productive** (Settings → Claude, `claude_ask_productive`, off by default)
 adds "ask" rules for the `create_resource`, `update_resource`, `delete_resource` and `perform_action` tools of the
 Productive server named `productive`. They bind every Claude Code session on the Mac, not only Pulsar's, so every
@@ -989,7 +1013,7 @@ with its start, end and project (for a stretch, the project with most minutes in
 project's Likely rows that overlap the time, whole rows. `askclaude.steps()` reads their sessions (matched by title)
 for each step's typed message and Claude's last words before the next message (its summary of what it did; no side
 chains, tool calls or tool output; at most 15 steps, 400 and 900 characters), with the commits and up to five of the
-person's own notes as examples. `claude -p --model haiku --tools "" --strict-mcp-config --setting-sources "" --disallowedTools "mcp__*" --json-schema`, with the environment of section 3, drafts the note
+person's own notes as examples. `claude -p --model <haiku unless chosen> --tools "" --strict-mcp-config --setting-sources "" --disallowedTools "mcp__*" --json-schema`, with the environment of section 3, drafts the note
 (English unless their notes are in another language); `guard_note` checks it. It replaces the note only while the
 person has not typed in it, and only in the dialog that asked, with "Drafted by Claude from this session and your
 commits"; for a stretch "from the fi-drupal-qa session", adding "(the most minutes here; also pulsar)" when other
@@ -1134,10 +1158,10 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `GET /api/range?date=&s=&e=[&source=]` | What a stretch of the day (minutes `s` to `e`) holds, by Log the day's minutes: parts, task groups, the one that leads, `mixed` and the `split` (5.1). Nothing is written. `ignore_logged=1` as for `/api/dayplan`. |
 | `POST /api/entry/update`, `/api/entry/delete` | Change or delete one of your entries. Delete with `run`: only what that Log the day run created. |
 | `POST /api/likely/ask` | Ask Claude (only when switched on). |
-| `POST /api/likely/note` | `{date, s, e, project}`: the log dialog's note for a Likely block, from its session and commits (Haiku; only with the Claude Code switch on, 5.7). |
+| `POST /api/likely/note` | `{date, s, e, project}`: the log dialog's note for a Likely block, from its session and commits (Haiku unless another model is chosen; only with the Claude Code switch on, 5.7). |
 | `GET /api/task/projects?date=[&hint=][&repo=]` | Active projects for a new task, those logged to lately first, and the likeliest (5.1). |
 | `GET /api/task/places?project=&date=` | Where in a project a new task can go, and which first (4.2). |
-| `POST /api/task/draft` | `{date, s, e[, meeting]}`: a new task's title and description from the work in that time; with `claude` and `projectName`, Haiku's (the switch on, 5.1). |
+| `POST /api/task/draft` | `{date, s, e[, meeting]}`: a new task's title and description from the work in that time; with `claude` and `projectName`, Claude's (Haiku unless another model is chosen; the switch on, 5.1). |
 | `POST /api/task/create` | `{projectId, parentId or taskListId, title, description}`: one task, assigned to you (the page only). |
 | `POST /api/calendar/connect`, `/disconnect` | Google Calendar. |
 | `POST /api/update/check`, `/install`, `/apply` | Updates. |

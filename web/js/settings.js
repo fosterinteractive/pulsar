@@ -31,8 +31,7 @@ function fillSettings(c) {
   }
   f.ask_claude.checked = !!c.likely.askClaude;
   f.ask_claude.disabled = !c.likely.available || !c.likely.claudeFound;
-  f.ask_claude_model.value = c.likely.askClaudeModel || 'sonnet';
-  f.ask_claude_model.disabled = f.ask_claude.disabled;
+  paintUses(c.claude?.uses || [], f.ask_claude.disabled);
   f.claude_ask_productive.checked = !!c.likely.askProductive;
   f.claude_ask_productive.disabled = f.ask_claude.disabled;
   paintLink(c.likely);
@@ -139,6 +138,7 @@ function openSettings(tab) {
     st.textContent = connectionText(c.productive); st.classList.toggle('warn', !c.productive.active);
     paintUpdate(c.update);
     paintCalendar(c);
+    paintSpent(c.claude?.uses || []);
   });
   const msg = $('#settings-msg'); msg.textContent = ''; msg.className = 'msg';
   const zones = $('#zones');
@@ -175,13 +175,40 @@ function paintLink(l) {
   again.hidden = !(on && l.claudeFound && !(k.registered && k.current && k.rules));
 }
 
-/* which Claude account Ask Claude and the notes use (Claude Code's own sign-in, read from its .claude.json) */
+/* Everything Pulsar asks Claude (claudeuses.py), one row each: what it does and sends, and a model to choose where
+   Pulsar runs Claude itself. The limit of one run follows the model picked; the runs and cost since Pulsar started
+   are what Claude Code said each run cost. */
+const MODEL_NAMES = {haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus'};
+const money = x => x >= 0.995 ? `$${x.toFixed(2).replace(/\.00$/, '')}` : `$${x < 0.01 ? x.toFixed(3) : x.toFixed(2)}`;
+let claudeUses = [];
+function paintUses(uses, off) {
+  claudeUses = uses;
+  $('#claude-uses').innerHTML = uses.map(u => `<div class="cu" role="listitem" data-use="${esc(u.id)}">
+    <p class="cu-t"><b>${esc(u.name)}</b> ${esc(u.does)} <span class="cu-s">${esc(u.sends)}</span></p>
+    <div class="cu-m">${u.model ? `<select data-use="${esc(u.id)}" aria-label="Model for ${esc(u.name)}"${off ? ' disabled' : ''}>
+      ${Object.keys(u.caps).map(m => `<option value="${esc(m)}"${m === u.model ? ' selected' : ''}>${esc(MODEL_NAMES[m] || m)}${m === u.default ? ' (default)' : ''}</option>`).join('')}
+      </select><small class="cu-cap"></small><small class="cu-spent"></small>` : '<small>Your session’s own model</small>'}</div></div>`).join('');
+  for (const sel of document.querySelectorAll('#claude-uses select')) { sel.onchange = () => paintCap(sel); paintCap(sel); }
+  paintSpent(uses);
+}
+function paintCap(sel) {
+  const cap = claudeUses.find(x => x.id === sel.dataset.use)?.caps?.[sel.value];
+  sel.parentElement.querySelector('.cu-cap').textContent = cap ? `At most ${money(cap)} a run` : '';
+}
+function paintSpent(uses) {
+  for (const u of uses) {
+    const el = document.querySelector(`#claude-uses [data-use="${CSS.escape(u.id)}"] .cu-spent`);
+    if (el) el.textContent = u.runs ? `${u.runs} ${u.runs === 1 ? 'run' : 'runs'}, ${money(u.spent)}, since Pulsar started` : '';
+  }
+}
+
+/* which Claude account Pulsar's runs of Claude use (Claude Code's own sign-in, read from its .claude.json) */
 function paintAccount(k, on) {
   const el = $('#claude-account'), a = k.account;
   el.classList.remove('warn'); el.replaceChildren();
   if (!on || !a) { el.hidden = true; return; }
   el.hidden = false;
-  el.append(`Ask Claude and the notes use Claude Code's sign-in: ${a.email ? a.email + ', ' : ''}${a.plan}.`);
+  el.append(`They use Claude Code's sign-in: ${a.email ? a.email + ', ' : ''}${a.plan}.`);
   if (a.consumer) {
     el.classList.add('warn');
     el.append(' This is a consumer plan: Anthropic may use these chats, with your session text, to train its models if that setting is on for the account. ');
@@ -204,7 +231,8 @@ async function saveSettings(extra = {}) {
     timezone: f.timezone.value.trim(), target_hours: f.target_hours.value.trim(), round_to: +f.round_to.value,
     personal_patterns: f.personal_patterns.value,
     activitywatch_url: f.activitywatch_url.value.trim(), likely: f.likely.value, ask_claude: f.ask_claude.checked,
-    ask_claude_model: f.ask_claude_model.value, claude_ask_productive: f.claude_ask_productive.checked,
+    claude_models: Object.fromEntries([...document.querySelectorAll('#claude-uses select')].map(x => [x.dataset.use, x.value])),
+    claude_ask_productive: f.claude_ask_productive.checked,
     ...(CONFIG?.preview ? {preview_writes: f.preview_writes.checked} : {}), ...extra,
   };
   if (f.token.value.trim()) body.token = f.token.value.trim();

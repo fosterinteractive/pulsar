@@ -165,32 +165,22 @@
         </section>
       </div>
       <div role="tabpanel" id="p-claude" aria-labelledby="t-claude" hidden>
-        <section data-k="likely column ask claude sessions sonnet model ai suggestions mcp connect notes log from a session deny sandbox account productive ask rules">
+        <section data-k="likely column ask claude sessions sonnet haiku opus model models ai suggestions mcp connect notes new task draft log from a session deny sandbox account plan cost usage productive ask rules">
           <h3>Claude Code</h3>
           <p class="hint">Pulsar reads your Claude Code sessions on this Mac to show which project each stretch of work went to (the Likely column), and learns from what you log which tasks belong to them. Nothing leaves this Mac unless you switch on Claude Code below.</p>
           <label class="field"><span>“Likely” column</span>
             <select name="likely"><option value="auto">Show it when Claude Code sessions are found</option><option value="off">Hide it</option></select></label>
           <p class="hint" id="likely-hint"></p>
           <label class="check"><input type="checkbox" name="ask_claude"> Use Claude Code with Pulsar</label>
-          <ul class="hint" id="claude-does">
-            <li><b>Ask Claude</b> in the Likely column: the task for each block of work, with its note.</li>
-            <li><b>Notes</b> drafted for you in the log dialog, from that session and your commits.</li>
-            <li><b>Log from a session</b>: say “log the time of this session” in Claude Code. It reads your day from Pulsar and asks you before each write, showing every entry in it.</li>
-            <li><b>Pulsar's folders kept out</b>: deny rules in Claude Code's settings stop its file tools reading or changing Pulsar's key, sign-in code and settings.</li>
-          </ul>
           <p class="hint" id="claude-link"></p>
-          <p class="hint" id="claude-deny">The deny rules stop Claude Code's file tools and the file commands it recognizes in a shell (cat, head, a redirection); a script that opens the files itself is stopped only with <a href="https://code.claude.com/docs/en/sandboxing" target="_blank" rel="noopener noreferrer">Claude Code's sandbox</a> on. Pulsar does not turn the sandbox on.</p>
-          <p class="hint" id="claude-account"></p>
           <button type="button" class="btn sm bordered" id="claude-relink" hidden>Add Pulsar to Claude Code again</button>
+          <h4 class="cu-h" id="claude-uses-h">What Claude does, and with which model</h4>
+          <div class="cu-list" id="claude-uses" role="list" aria-labelledby="claude-uses-h"></div>
+          <p class="hint">Each runs your own Claude Code, under your Claude plan. Each name is the latest model of that kind: Haiku is the fastest and costs least, Opus is the most careful, slower, and costs most. A run stops at its limit, which grows with the model. With Sonnet, Ask Claude has cost about $0.10 to $0.25 a day; with Haiku, a note costs under half a cent. On the rows Log the day is unsure of, Haiku did as well as Sonnet. Answers last until Pulsar restarts.</p>
+          <p class="hint" id="claude-account"></p>
+          <p class="hint" id="claude-deny"><b>Pulsar's folders are kept out:</b> deny rules in Claude Code's settings stop its file tools reading or changing Pulsar's key, sign-in code and settings, and the file commands it recognizes in a shell (cat, head, a redirection); a script that opens the files itself is stopped only with <a href="https://code.claude.com/docs/en/sandboxing" target="_blank" rel="noopener noreferrer">Claude Code's sandbox</a> on. Pulsar does not turn the sandbox on.</p>
           <label class="check"><input type="checkbox" name="claude_ask_productive"> Ask before any Claude Code session changes Productive</label>
           <p class="hint">Adds “ask” rules to Claude Code's own settings for the Productive connection named “productive”. They apply to <b>every</b> Claude Code session on this Mac, not only to Pulsar: each one then asks you before it creates, changes or deletes anything in Productive. Off by default.</p>
-          <label class="field"><span>Model for Ask Claude</span>
-            <select name="ask_claude_model">
-              <option value="sonnet">Sonnet: the default, a good balance</option>
-              <option value="haiku">Haiku: faster and cheaper, a little less careful</option>
-              <option value="opus">Opus: the most careful, slower and costs more</option>
-            </select></label>
-          <p class="hint" id="ask-claude-hint">Ask Claude sends, for each block, its time, repository and session titles, what you typed in those sessions with Claude's replies, your commit subjects and a few of your earlier notes, and the tasks you logged to in the last 30 days, to Anthropic through your own Claude Code, which may search Productive (read only). 15 to 60 seconds; one run may use at most $0.25 (Haiku), $0.75 (Sonnet) or $2 (Opus) of your Claude usage, about $0.10 to $0.25 a day with Sonnet. Answers last until Pulsar restarts. A note in the log dialog uses Haiku: a few seconds and under half a cent. Each name is the latest model of that kind in your Claude Code. Log the day asks it too, for the rows Pulsar is unsure of: Haiku did as well as Sonnet there, at a small part of the cost.</p>
         </section>
       </div>
       <div role="tabpanel" id="p-rules" aria-labelledby="t-rules" hidden>
