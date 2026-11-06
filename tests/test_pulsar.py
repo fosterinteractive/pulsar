@@ -15,6 +15,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Tests never touch the real settings, caches or error log: point them at a scratch folder before importing.
 _SCRATCH = tempfile.mkdtemp(prefix="pulsar-tests-")
+os.environ["PULSAR_TESTS_OFFLINE"] = "1"  # nothing reaches Productive, Google, Claude Code or the keychain
 os.environ["XDG_CONFIG_HOME"] = os.path.join(_SCRATCH, "config")
 os.environ["XDG_CACHE_HOME"] = os.path.join(_SCRATCH, "cache")
 
@@ -281,6 +282,11 @@ class ProductiveTest(unittest.TestCase):
 
 
 class ReadRetryTest(unittest.TestCase):
+    def setUp(self):  # it fakes the connection or `security` and `claude` itself, so the offline guard may step aside
+        off = mock.patch.dict(os.environ, {"PULSAR_TESTS_OFFLINE": ""})
+        off.start()
+        self.addCleanup(off.stop)
+
     def conn_class(self, outcomes):
         calls = []
         class Conn:
@@ -961,6 +967,11 @@ class ReviewFixesTest(unittest.TestCase):
 
 
 class ClaudeCodeTokenTest(unittest.TestCase):
+    def setUp(self):  # it fakes the connection or `security` and `claude` itself, so the offline guard may step aside
+        off = mock.patch.dict(os.environ, {"PULSAR_TESTS_OFFLINE": ""})
+        off.start()
+        self.addCleanup(off.stop)
+
     """An expired Claude Code token is renewed by Claude Code itself (claude mcp get), then read again."""
 
     def keychain(self, expires_in_min):
