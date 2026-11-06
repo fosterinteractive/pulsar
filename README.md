@@ -16,7 +16,7 @@ an entry, Log the day and its Undo, or a Claude Code session logging time for yo
 - **Report**: any range up to 93 days: logged against active time by day, time by project, top apps and sites,
   projects by day, when in the week you work, and a table of every day.
 
-## Install on a Mac (no Terminal)
+## Install on a Mac
 
 Pulsar runs on macOS 12 Monterey or newer, Apple Silicon or Intel.
 
@@ -27,19 +27,27 @@ Pulsar runs on macOS 12 Monterey or newer, Apple Silicon or Intel.
    without typing or moving the mouse; reading and calls then look like time away. To count 30 minutes instead, open
    `~/Library/Application Support/activitywatch/aw-watcher-afk/aw-watcher-afk.toml` (in Finder: **Go → Go to
    Folder…**), set `timeout = 1800` under `[aw-watcher-afk]`, and quit and reopen ActivityWatch.
-2. Download **Pulsar.zip** from the link you were sent and open it. It unpacks into **Pulsar**, next to the zip.
-3. Drag **Pulsar** into your **Applications** folder.
-4. Open it the first time like this, because the app is not signed by Apple and macOS asks you to confirm it
-   once: right-click **Pulsar** in Applications, choose **Open**, then **Open** again.
-   On macOS 15 Sequoia or newer that message only offers **Done**. Click it, open **System Settings → Privacy &
-   Security**, scroll down to the line about Pulsar, click **Open Anyway** and confirm.
-   A company-managed Mac may block Pulsar completely, because it is not signed with a Developer ID. Then IT has
-   to allow it, or Pulsar has to be signed and notarized by Apple first: tell the person who shared it.
-5. If Pulsar says it needs Apple's developer tools, click **Install**. macOS asks for an administrator password
+2. Open **Terminal**, paste this line and press Return. It downloads Pulsar into Applications and opens it:
+
+   ```bash
+   curl -fsSL https://github.com/fosterinteractive/pulsar/releases/latest/download/Pulsar.zip -o /tmp/Pulsar.zip && ditto -x -k /tmp/Pulsar.zip /Applications && rm /tmp/Pulsar.zip && open /Applications/Pulsar.app
+   ```
+
+   Pulsar is not signed by Apple. A file a browser downloads is marked as from the internet, and macOS then refuses
+   to open an unsigned app until you confirm it; a file `curl` downloads is not marked, so Pulsar opens at once. Its
+   own updates download the same way. A company-managed Mac may still block it: then IT has to allow it.
+3. If Pulsar says it needs Apple's developer tools, click **Install**. macOS asks for an administrator password
    the first time. Wait until the installation has finished (about 5 minutes, only once), then open Pulsar
    again.
-6. Pulsar opens in its own window. Click **⚙ Settings → API token** and paste a token
-   from Productive: **Settings → API integrations → Generate new token**, with **Read/Write** access (read-only lets Pulsar show your time but not log it). Click **Save**.
+4. Pulsar opens in its own window. If you use Claude Code with its Productive connection, Pulsar uses that and there
+   is nothing to set up. Otherwise click **⚙ Settings → API token** and paste a token from Productive: **Settings →
+   API integrations → Generate new token**, with **Read/Write** access (read-only lets Pulsar show your time but not
+   log it). Click **Save**.
+
+**Without Terminal:** download **Pulsar.zip** from the link you were sent, open it and drag **Pulsar** into
+Applications. The first time, macOS says it cannot verify Pulsar: click **Done**, open **System Settings → Privacy
+& Security**, scroll down to the line about Pulsar, click **Open Anyway** and confirm (on macOS 14 and older,
+right-click Pulsar, **Open**, then **Open** again). Only once.
 
 After that, open Pulsar like any other app. If it is already running, its window comes to the front. Downloads
 ask where to save; **Print or save as PDF** in the Report opens the print dialog. Cmd+= and Cmd+- make the page
