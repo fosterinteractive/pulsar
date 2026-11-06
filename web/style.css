@@ -64,6 +64,8 @@ input[type=date] {
 @container (max-width: 230px) {
   .colhead .mini-select, .colhead .btn.mini, .colhead .btn.mini2 { position: static; margin: 5px 4px 0 0; vertical-align: middle; }
   .colhead .mini-select { max-width: 100%; }
+  /* a phone-width window: a button wider than its column wraps inside it, instead of running into the next one */
+  .colhead .btn.mini2 { max-width: 100%; white-space: normal; text-align: left; }
 }
 .colhead .mini { position: absolute; top: 9px; right: 8px; color: var(--muted); padding: 1px 6px; }
 .btn.busy { animation: spin .8s linear infinite; pointer-events: none; }
@@ -78,7 +80,7 @@ input[type=date] {
 .toast.warn .ic { color: var(--gap-text); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .colhead + .colhead { border-left: 1px solid var(--line); }
-.colhead b { display: block; font-size: 13px; font-weight: 600; }
+.colhead b { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }  /* never into the next column */
 .colhead span { display: block; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .colhead span.warn { color: var(--gap-text); white-space: normal; }
 .scroll { flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; }
