@@ -340,12 +340,12 @@ sequenceDiagram
   participant GH as GitHub releases
   S->>GH: latest.json and latest.json.sig (every 6 hours)
   S->>S: verify the signature against PUBLIC_KEYS
-  S->>S: versions list -> how many releases behind
-  Note over S: the page shows the version in blue; at 2 or more behind, a reminder every 2 days
+  S->>S: versions list → how many releases behind
+  Note over S: the page shows the version in blue, at 2 or more behind, a reminder every 2 days
   S->>GH: on Update: pulsar-X.Y.Z.zip (at most 30 MB)
   S->>S: SHA-256 = latest.json, unpack (at most 60 MB) into versions/X.Y.Z
   S->>S: run its self-test (60 s)
-  S->>S: current -> X.Y.Z, previous -> the running one, restart in place
+  S->>S: current → X.Y.Z, previous → the running one, restart in place
 ```
 
 - **Only signed releases.** `latest.json` (`{version, url, sha256, notes, published, versions}`) is signed with an
