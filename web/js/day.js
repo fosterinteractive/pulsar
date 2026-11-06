@@ -1,12 +1,21 @@
+/* The newest request of each kind wins: an answer that arrives after a newer request of the same kind went out (a
+   slow tracker after switching, the entries before a refresh that followed a log or a delete) is dropped. A fresh()
+   check also stands for "still the same day", as each new day asks again. */
+const asked = {};
+function newest(kind) {
+  const n = (asked[kind] = (asked[kind] || 0) + 1);
+  return () => asked[kind] === n;
+}
+
 /* Day view: one day on one time axis (activity, likely, logged) */
 function load({fresh = false, keepScroll = false} = {}) {
-  const d = state.date;
+  const d = state.date, act = newest('activity'), logged = newest('entries'), likely = newest('proposal');
   if (!keepScroll) { state.act = state.likely = state.logged = state.repeats = null; render(); }
   loadRepeats();
   return Promise.all([
-    getJSON(`/api/activity?date=${d}&source=${state.source}`).then(x => { if (d === state.date) { state.act = x; render(); } return x; }),
-    getJSON(`/api/entries?date=${d}`).then(x => { if (d === state.date) { state.logged = x; render(); loadEstimates(); } return x; }),
-    getJSON(`/api/proposal?date=${d}${fresh ? '&fresh=1' : ''}`).then(x => { if (d === state.date) { state.likely = x; render(); if (x.learnPending) setTimeout(() => loadLearned(d), 3000); } return x; }),
+    getJSON(`/api/activity?date=${d}&source=${state.source}`).then(x => { if (act()) { state.act = x; render(); } return x; }),
+    getJSON(`/api/entries?date=${d}`).then(x => { if (logged()) { state.logged = x; render(); loadEstimates(); } return x; }),
+    getJSON(`/api/proposal?date=${d}${fresh ? '&fresh=1' : ''}`).then(x => { if (likely()) { state.likely = x; render(); if (x.learnPending) setTimeout(() => loadLearned(d), 3000); } return x; }),
     loadMeetings(d, fresh),  // meetings.js
   ]);
 }
@@ -14,29 +23,30 @@ function load({fresh = false, keepScroll = false} = {}) {
 /* the Likely rows came before your Productive history was read: ask once more for their learned tasks */
 async function loadLearned(d) {
   if (d !== state.date) return;
+  const mine = newest('proposal');
   const x = await getJSON(`/api/proposal?date=${d}&wait=1`);
-  if (d === state.date && !x.error && !x.disabled) { state.likely = x; render(); }
+  if (mine() && !x.error && !x.disabled) { state.likely = x; render(); }
 }
 
 /* entries you log at the same time most days (the daily meeting), offered when the tracker saw the call: a hint,
    so a failure shows nothing rather than an error */
 async function loadRepeats() {
-  const d = state.date;
+  const d = state.date, mine = newest('repeats');
   const x = await getJSON(`/api/repeats?date=${d}&source=${state.source}`);
-  if (d === state.date) { state.repeats = x.repeats || []; render(); }
+  if (mine()) { state.repeats = x.repeats || []; render(); }
 }
 
 /* each task's estimate and the time everyone logged on it, for the Tasks box */
 async function loadEstimates() {
-  const d = state.date, ids = [...new Set((state.logged?.entries || []).map(x => x.taskId).filter(Boolean))];
+  const mine = newest('estimates'), ids = [...new Set((state.logged?.entries || []).map(x => x.taskId).filter(Boolean))];
   if (!ids.length) { state.estimates = {}; render(); return; }
   const r = await getJSON(`/api/tasks/estimates?ids=${ids.join(',')}`);
-  if (d === state.date) { state.estimates = r.tasks || {}; state.estimatesError = r.error || ''; render(); }
+  if (mine()) { state.estimates = r.tasks || {}; state.estimatesError = r.error || ''; render(); }
 }
 async function refreshLogged() {
-  const d = state.date;
+  const d = state.date, mine = newest('entries');
   const x = await getJSON(`/api/entries?date=${d}`);
-  if (d === state.date) { state.logged = x; render(); loadEstimates(); }
+  if (mine()) { state.logged = x; render(); loadEstimates(); }
   return x;
 }
 /* a task against its estimate: the words, and whether it is over */
@@ -642,8 +652,8 @@ document.querySelectorAll('#zoom button').forEach(b => b.onclick = () => {
 });
 $('#source-select').addEventListener('change', ev => {
   state.source = ev.target.value; syncURL(); state.act = null; render();
-  const d = state.date;
-  getJSON(`/api/activity?date=${d}&source=${state.source}`).then(x => { if (d === state.date) { state.act = x; render(); } });
+  const d = state.date, mine = newest('activity');
+  getJSON(`/api/activity?date=${d}&source=${state.source}`).then(x => { if (mine()) { state.act = x; render(); } });
   loadRepeats();  // the call is looked for in the tracker shown
 });
 // today: refresh everything once an hour; the ↻ buttons do it on demand

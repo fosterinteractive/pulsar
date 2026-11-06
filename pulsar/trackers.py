@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import atexit
 import bisect
+import glob
 import json
 import os
 import re
@@ -128,18 +129,39 @@ def make_item(t0: float, t1: float, s: float, e: float, app: str, title: str, ho
 _memtime_lock = threading.Lock()
 _memtime_copy = {"dir": "", "source": "", "at": 0.0}
 MEMTIME_COPY_FOR = 60  # seconds one copy serves every query (the database is tens of megabytes)
+COPY_PREFIX = "pulsar-memtime-"
+STALE_COPY = 600       # seconds after which a copy is nobody's: a running Pulsar replaces its own within a minute of use
+_swept = [0.0]
+
+
+def sweep_memtime_copies(older_than: float = STALE_COPY) -> int:
+    """Remove the copies a Pulsar left when it ended without tidying up (killed, crashed, or restarted into an update,
+    when nothing at exit runs): every copy older than ten minutes, whichever Pulsar made it. A copy serves queries for
+    a minute only, so none that old is still read. Returns how many went."""
+    gone = 0
+    for old in glob.glob(os.path.join(tempfile.gettempdir(), COPY_PREFIX + "*")):
+        try:
+            if time.time() - os.path.getmtime(old) > older_than:
+                shutil.rmtree(old)
+                gone += 1
+        except OSError:
+            pass
+    return gone
 
 
 def _memtime_db(db_path: str) -> str:
     """A private copy of MemTime's database (MemTime keeps the original open and writing), made at most once a minute:
     copying it for every query cost more than the query. The copy lives in this user's temporary folder and goes when
-    the next one is made, or when Pulsar quits."""
+    the next one is made or when Pulsar quits; copies older Pulsars left go too, every ten minutes at most."""
     with _memtime_lock:
         c = _memtime_copy
         if c["dir"] and c["source"] == db_path and time.time() - c["at"] < MEMTIME_COPY_FOR \
                 and os.path.exists(os.path.join(c["dir"], "core.db")):
             return os.path.join(c["dir"], "core.db")
-        fresh = tempfile.mkdtemp(prefix="pulsar-memtime-")
+        if time.time() - _swept[0] > STALE_COPY:
+            _swept[0] = time.time()
+            sweep_memtime_copies()
+        fresh = tempfile.mkdtemp(prefix=COPY_PREFIX)
         try:
             for suffix in ("", "-wal", "-shm"):
                 if os.path.exists(db_path + suffix):

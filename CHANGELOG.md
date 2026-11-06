@@ -2,7 +2,27 @@
 
 What each Pulsar release changed, newest first.
 
-<!-- A release needs its entry before macos/release.sh runs: a "## X.Y.Z (YYYY-MM-DD)" heading and one "- " line. -->
+<!-- A release needs its entry before macos/release.sh runs: a "## X.Y.Z (YYYY-MM-DD)" heading and one "- " line.
+     "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
+     Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
+
+## Unreleased
+- Log the day: the whole day proposed for review, written one entry at a time, with Undo.
+- Edit, delete and resize logged entries; only what changed is sent, and approval is left to Productive.
+- Log and next, a first-run checklist, the week at the top, and Open in Productive on tasks.
+- One Claude Code switch in Settings > Claude: Ask Claude, notes from the session, logging from a session.
+- Pulsar in Claude Code (pulsar.py --mcp): what is not logged, logged after you confirm.
+- Note drafts from your commits and sessions, checked on your Mac before you see them.
+- Ask Claude reaches only Productive, and says when its spending limit stopped it.
+- Learned tasks: recent logging counts more; a task can be found by its words.
+- Pulsar Preview: a branch's code beside Pulsar, with its own settings, writing off by default.
+- The keychain not answering is said as such.
+- Fixed: yesterday's Likely column no longer stops at the hour you last looked at it.
+- Fixed: the day the clocks change adds up, and Ask Claude's picks show on it.
+- Fixed: one odd line in a Claude session no longer empties Likely for the day.
+- Fixed: copies of MemTime's database no longer pile up in the temporary folder.
+- Fixed: an update whose self-test timed out can be tried again; a late answer no longer replaces a newer one.
+- The README says what Ask Claude sends to Anthropic, what it costs, and how to remove everything.
 
 ## 1.2.1 (2026-11-06)
 - Settings: categories with icons, and a search.

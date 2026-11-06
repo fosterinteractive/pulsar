@@ -14,10 +14,8 @@ from datetime import datetime, timezone
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_SCRATCH = tempfile.mkdtemp(prefix="pulsar-tests-")
-os.environ["PULSAR_TESTS_OFFLINE"] = "1"  # nothing reaches Productive, Google, Claude Code or the keychain
-os.environ.setdefault("XDG_CONFIG_HOME", os.path.join(_SCRATCH, "config"))
-os.environ.setdefault("XDG_CACHE_HOME", os.path.join(_SCRATCH, "cache"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from isolation import SCRATCH as _SCRATCH  # noqa: E402,F401  first: nothing real is reachable (isolation.py)
 
 from pulsar import config, dayplan, productive, server  # noqa: E402
 
@@ -318,7 +316,8 @@ class WriteTest(unittest.TestCase):
                         mock.patch.object(server.productive, "entries", lambda d0, d1, s: (self.existing, None, "token")),
                         mock.patch.object(server.productive, "create_entry", create),
                         mock.patch.object(server.productive, "delete_entry", lambda i, s: self.deleted.append(i)),
-                        mock.patch.dict(server._just_logged, clear=True)]
+                        mock.patch.dict(server._just_logged, clear=True),
+                        mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "", "PULSAR_PREVIEW": ""})]  # the fakes only
         for p in self.patches:
             p.start()
         self.run = "ld-2026-11-04-0123abcd"

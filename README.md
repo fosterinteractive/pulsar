@@ -3,8 +3,10 @@
 <h1 align="center">Pulsar</h1>
 
 Your working day as your computer saw it, next to what you logged in Productive. It shows when you worked, on
-what, and which active time has no entry yet. It runs on your own computer, and window titles never leave it.
-It writes to Productive only when you log time yourself: you pick the task and press "Log in Productive".
+what, and which active time has no entry yet. It runs on your own computer, and window titles never leave it. Parts
+of your Claude Code sessions go to Anthropic only if you switch on Claude Code in Settings (see below).
+It writes to Productive only when you ask it to, and each time you confirm first: logging time, changing or deleting
+an entry, Log the day and its Undo, or a Claude Code session logging time for you.
 
 - **Day**: one time axis with up to four columns: your meetings (Meetings, once Google Calendar is connected), what
   was on screen (Activity), what you most likely worked on (Likely, for Claude Code users), and your Productive
@@ -101,7 +103,7 @@ Code and reconnect Productive. A token of your own never expires, so it is the s
 | Setting | Default |
 |---|---|
 | Time zone | this computer's |
-| Daily target | your organization's working day in Productive, else 8 h |
+| Daily target | your organization's working day in Productive, else 8 h (Pulsar reads it through Claude Code's connection; with an API token it is 8 h unless you set it) |
 | Personal windows | Telegram, WhatsApp, YouTube, Netflix, Instagram, Facebook, TikTok, Reddit (one word per line; a window whose app, title or site contains one counts as personal) |
 | ActivityWatch address | `http://localhost:5600` |
 | Likely column | shown when Claude Code sessions are on this computer (`~/.claude/projects`) |
@@ -143,23 +145,38 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   only) and shows, minute by minute, which session you were most likely working in: the one whose title your editor
   showed, else one that was running, else the one you used last in that sitting. Each block is named after the git
   repository the session's files are in. Meetings and your personal windows go to no session. Nothing is sent
-  anywhere, and it never logs anything by itself. **Log this time** on a block offers first: a Productive task you
+  anywhere (unless you switch on Claude Code, below), and it never logs anything by itself. **Log this time** on a block offers first: a Productive task you
   pasted into that session in the three hours before; the tasks you logged while in the same Claude session, then in
   the same repository, over the last 60 days (worked out once in the background; only times, repository names and a
   hash of each session title are kept, in `~/.cache/pulsar/likely-days/`).
 - **Claude Code (one switch, off by default).** Switch on **Use Claude Code with Pulsar** in **Settings → Claude**
   and Save. That is all; it turns on:
-  - **Ask Claude** in the Likely column: your own Claude Code reads what you typed in that day's sessions, Claude's
-    replies at the end of each step, your commit subjects and the tasks you logged to in the last 30 days, may search
-    Productive (read only; tools that change anything are refused), and shows its task and a note on each block. Pick
-    the model there: Sonnet (default), Haiku or Opus. About 15 to 60 seconds and a little of your Claude usage a day.
+  - **Ask Claude** in the Likely column: your own Claude Code suggests a task and a note for each block, and may
+    search Productive (read only; tools that change anything are refused). Pick the model there: Sonnet (default),
+    Haiku or Opus. It takes 15 to 60 seconds.
   - **Notes from the session** in the log dialog: Haiku drafts the note of a Likely block from that session and your
-    commits in a few seconds, for about a fifth of a cent; it never replaces what you typed.
+    commits in a few seconds; it never replaces what you typed.
   - **Logging from a session:** Pulsar adds itself to Claude Code, so in any new session you can ask "what did I not
     log today?" or "log the time of this session". The session reads your day from Pulsar and shows the entries;
     Claude Code asks you before each one is written. Pulsar must be open.
   - **Claude Code asks first:** before any session changes Productive by itself (ask rules in
     `~/.claude/settings.json`; a backup of that file is kept beside it).
+
+  **What goes to Anthropic.** These run your own Claude Code, so what they send goes to Anthropic under your Claude
+  plan or account and its terms:
+  - Ask Claude, for each block of 10 minutes or more: its time, the repository's name, up to 3 session titles, up
+    to 15 of your messages (400 characters each) with Claude's reply at the end of each step (900 characters), up to
+    10 commit subjects, and up to 5 of your earlier notes on its likely tasks. Also the tasks you logged to in the
+    last 30 days, with their projects and minutes. Window titles, other apps and meetings are not sent.
+  - A note: the same for that one block.
+  - Logging from a session: what the session reads from Pulsar becomes part of that session, like anything else you
+    show Claude Code: your entries' times, projects and tasks (not their notes), unlogged time, the session's own
+    title and note drafts. Never window titles, other sessions or meeting titles.
+
+  **What it costs.** Your Claude usage, not money to Pulsar. One Ask Claude run may cost at most $0.25 (Haiku),
+  $0.75 (Sonnet) or $2 (Opus); a day with Sonnet has cost about $0.10 to $0.25. A note may cost at most $0.10 and
+  usually costs under half a cent. Answers are kept only while Pulsar runs: asking again after Pulsar restarted, or
+  after the day's blocks changed, asks Claude again and costs again.
 
   Switching it off takes back everything it added, and nothing else.
 - **The daily meeting, ready to log.** An entry you log at the same time on most days (a daily scrum) is noticed from
@@ -173,8 +190,9 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   **Disconnect** removes the access, at Google too. Only fosterinteractive.com accounts can sign in.
 - **Change what you logged.** Click an entry in Logged: **Edit** opens it in the log dialog, **Delete** asks first
   (Productive keeps deleted entries in its Recycle Bin). Drag an entry's top or bottom edge to make it start or end
-  earlier or later; Pulsar asks before it changes anything. An entry an approver has approved can only be changed
-  in Productive by them; Pulsar shows Productive's answer.
+  earlier or later; Pulsar asks before it changes anything. Pulsar does not refuse an approved entry, because a
+  budget without an approval step approves every entry at once and you can still change it. Where an approver
+  approved it, Productive refuses the change and Pulsar shows Productive's reason.
 - **Log the day.** **Log the day** in the Logged column proposes the whole day at once, from your activity, Claude
   sessions, meetings, daily repeats, rules and what you logged before, and lists it in the side panel for review:
   each entry with its task, service, how sure Pulsar is and why. Unsure entries start unticked; you can change the
@@ -225,27 +243,44 @@ If Pulsar does not open at all, send `~/Library/Logs/Pulsar.log` instead: in Fin
 | Your Google Calendar access | the login keychain, item `pulsar`, account `google-calendar` |
 | The window's own data (its sign-in, theme, size) | `~/Library/WebKit/com.fosterinteractive.pulsar/`, `~/Library/Caches/com.fosterinteractive.pulsar/`, `~/Library/Preferences/com.fosterinteractive.pulsar.plist` |
 
+Pulsar Preview, if you have it, keeps the same things under its own names: `/Applications/Pulsar Preview.app`,
+`~/.config/pulsar-preview`, `~/.cache/pulsar-preview`, `~/Library/Logs/Pulsar-Preview.log`, the keychain service
+`pulsar-preview`, and `com.fosterinteractive.pulsar.preview` in place of `com.fosterinteractive.pulsar`.
+
 Nothing is kept anywhere else, and nothing leaves your Mac except what Pulsar asks Productive, Google Calendar (when
-you connect it) and GitHub (for updates).
+you connect it) and GitHub (for updates), and, with Claude Code switched on, what goes to Anthropic (see **Claude
+Code** above).
 
 ## Remove Pulsar
 
-1. Quit Pulsar (Cmd+Q).
-2. Drag **Pulsar** from Applications to the Trash. If you added it to **Login Items**, remove it there too.
-3. To remove what it kept as well, paste this into Terminal:
+1. If **Use Claude Code with Pulsar** is on (**Settings → Claude**), switch it off and Save: that takes Pulsar out
+   of Claude Code and removes the ask rules it added. If Pulsar is already gone, run `claude mcp remove pulsar
+   --scope user` (and `pulsar-preview` for Pulsar Preview) and remove the Productive ask rules from
+   `~/.claude/settings.json` yourself.
+2. Quit Pulsar (Cmd+Q), and Pulsar Preview if you have it.
+3. Drag **Pulsar** (and **Pulsar Preview**) from Applications to the Trash. If you added it to **Login Items**,
+   remove it there too.
+4. To remove what it kept as well, paste this into Terminal:
 
    ```bash
    rm -rf ~/Library/Application\ Support/Pulsar ~/.config/pulsar ~/.cache/pulsar ~/Library/Logs/Pulsar.log \
-     ~/Library/WebKit/com.fosterinteractive.pulsar ~/Library/Caches/com.fosterinteractive.pulsar
+     ~/Library/WebKit/com.fosterinteractive.pulsar ~/Library/Caches/com.fosterinteractive.pulsar \
+     ~/.config/pulsar-preview ~/.cache/pulsar-preview ~/Library/Logs/Pulsar-Preview.log \
+     ~/Library/WebKit/com.fosterinteractive.pulsar.preview ~/Library/Caches/com.fosterinteractive.pulsar.preview
    defaults delete com.fosterinteractive.pulsar
-   security delete-generic-password -s pulsar -a productive
-   security delete-generic-password -s pulsar -a google-calendar
+   defaults delete com.fosterinteractive.pulsar.preview
+   for s in pulsar pulsar-preview; do for a in productive google-calendar; do
+     security delete-generic-password -s $s -a $a; done; done
    ```
 
-   The last two lines remove your Productive token and Google Calendar access from the keychain; each says the item
-   could not be found if you never saved one. If you connected Google Calendar, also remove Pulsar at
-   [myaccount.google.com/connections](https://myaccount.google.com/connections) (Disconnect in Settings does both). Your time entries in Productive are not touched. If you also want Claude Code or ActivityWatch gone,
-   they have their own uninstallers.
+   The last lines remove your Productive token and Google Calendar access from the keychain; each says the item
+   could not be found if you never saved one (the same for anything of Pulsar Preview you never had).
+5. The token still works in Productive until you revoke it there: **Settings → API integrations**, delete the token
+   you made for Pulsar. If you connected Google Calendar, also remove Pulsar at
+   [myaccount.google.com/connections](https://myaccount.google.com/connections) (Disconnect in Settings does both).
+
+Your time entries in Productive are not touched. If you also want Claude Code or ActivityWatch gone, they have their
+own uninstallers.
 
 ## For developers
 
@@ -288,7 +323,9 @@ docs/HOW-IT-WORKS.md   how it all works
 CHANGELOG.md           one line per change, per release
 tests/                 python3 -m unittest discover -s tests
 
-Test servers: PULSAR_READ_ONLY=1 makes writing to Productive impossible; use `"dry": true` on /api/log.
+Tests run under tests/isolation.py: no keychain, network, Claude Code or real files, and the run fails if a
+test reaches for one. Test servers: PULSAR_READ_ONLY=1 makes writing to Productive impossible; use `"dry": true` on
+/api/log.
 ```
 
 Chart colours follow a validated palette: one blue for logged time, a de-emphasis grey for active time, and a

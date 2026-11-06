@@ -30,7 +30,7 @@ from . import config, logbook
 LEARN_DAYS = 60
 HALF_LIFE = 7  # days: a day's votes count half as much this many days later (as in dayplan.py)
 TEXT_PLACE = 5  # the place of the task found by its words: the votes keep the places before it
-FORMAT = 1
+FORMAT = 2  # 2: a day is kept only once it is over (a format-1 file may hold a day cut off at the hour it was seen)
 DIR = os.path.join(config.CACHE_DIR, "likely-days")
 _warming = threading.Lock()
 _state = {"done": 0, "of": 0}
@@ -73,11 +73,12 @@ def warm(date: str, settings: dict) -> None:
     def run():
         from . import likely
         try:
-            todo = [d for d in _days_before(date) if _stored(d) is None]
+            today = datetime.now(config.tz(settings)).strftime("%Y-%m-%d")  # a day is kept on disk only once it is over
+            todo = [d for d in _days_before(date) if d < today and _stored(d) is None]
             _state.update(done=LEARN_DAYS - len(todo), of=LEARN_DAYS)
             os.makedirs(DIR, mode=0o700, exist_ok=True)
             for d in todo:
-                got = likely.proposal(d, config.timezone_name(settings), "9999-12-31", False, settings, keep=False)
+                got = likely.proposal(d, config.timezone_name(settings), today, False, settings, keep=False)
                 if not got.get("error"):
                     config.write_atomic(_path(d), json.dumps({"format": FORMAT, "rows": rows_of(got)}))
                 _state["done"] += 1

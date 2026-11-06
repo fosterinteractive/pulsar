@@ -62,6 +62,48 @@ def clock(epoch: float, t0: float, tz) -> float:
     return (epoch - t0 + shift) / 60
 
 
+def clock_change(t0: float, t1: float, tz):
+    """The minute of the day [t0, t1) (elapsed since midnight) at which the clocks change, or None on any other day."""
+    first = datetime.fromtimestamp(t0, tz).utcoffset()
+    lo, hi = 0, int((t1 - 1 - t0) // 60)
+    if datetime.fromtimestamp(t0 + hi * 60, tz).utcoffset() == first:
+        return None
+    while hi - lo > 1:  # the first minute with the new offset
+        mid = (lo + hi) // 2
+        lo, hi = (mid, hi) if datetime.fromtimestamp(t0 + mid * 60, tz).utcoffset() == first else (lo, mid)
+    return hi
+
+
+def clock_spans(spans: list, t0: float, t1: float, tz, places: int = 3) -> list:
+    """Spans in elapsed minutes ({s, e, ...}) placed by the wall clock, on a day the clocks change. A span across the
+    change is cut there and each piece keeps its real length: a stretch over the repeated autumn hour no longer reads
+    as negative (the old -40 min), one over the lost spring hour no longer an hour too long. Other days: unchanged."""
+    change = clock_change(t0, t1, tz)
+    if change is None:
+        return spans
+    out = []
+    for it in spans:
+        cuts = [(it["s"], change), (change, it["e"])] if it["s"] < change < it["e"] else [(it["s"], it["e"])]
+        for a, b in cuts:
+            start = clock(t0 + a * 60, t0, tz)
+            out.append({**it, "s": round(start, places), "e": round(start + (b - a), places)})
+    return out
+
+
+def page_span(row: dict, t0: float, tz) -> tuple:
+    """A Likely row's (s, e) as the page draws it: its start by the clock, its real length. The page names a row by
+    this start (Ask Claude's picks, the session note), so the server turns it back the same way."""
+    start = round(clock(t0 + row["s"] * 60, t0, tz), 2)
+    return start, round(start + row["e"] - row["s"], 2)
+
+
+def pick_key(start: float, project: str) -> str:
+    """The key the page looks an Ask Claude pick up by, `${s}|${project}`, written the way JavaScript writes the
+    number (600, not 600.0)."""
+    start = float(start)
+    return f"{int(start) if start.is_integer() else start}|{project or ''}"
+
+
 # ---- helpers -----------------------------------------------------------------------------------
 
 def day_bounds(date: str, tz) -> tuple:
@@ -285,13 +327,11 @@ def api_activity(q: dict) -> dict:
     source = trackers.pick(found, q.get("source", "auto"))
     minutes = {k: round(sum(x["e"] - x["s"] for x in v)) for k, v in found.items()}
     tz = config.tz(s)
-    if datetime.fromtimestamp(t0, tz).utcoffset() != datetime.fromtimestamp(t1 - 1, tz).utcoffset():
-        for it in found[source]:  # the clocks change today: place everything by the clock, not by elapsed time
-            it["s"], it["e"] = round(clock(t0 + it["s"] * 60, t0, tz), 3), round(clock(t0 + it["e"] * 60, t0, tz), 3)
+    # away time from elapsed minutes; then, on a day the clocks change, everything by the clock (each piece its real length)
+    items, gaps = clock_spans(found[source], t0, t1, tz), clock_spans(away(found[source]), t0, t1, tz, 2)
     for name, problem in list(trackers.PROBLEMS.items()):
         logbook.record(f"tracker {name}", problem, kind="warning")
-    return {"source": source, "minutes": minutes, "items": found[source], "problems": dict(trackers.PROBLEMS),
-            "away": away(found[source])}
+    return {"source": source, "minutes": minutes, "items": items, "problems": dict(trackers.PROBLEMS), "away": gaps}
 
 
 AWAY_MIN = 5    # minutes without anything on screen that count as being away from the computer
@@ -343,10 +383,6 @@ def api_proposal(q: dict) -> dict:
     date, tz = q["date"], config.tz(s)
     result = likely.proposal(date, config.timezone_name(s), today(tz), q.get("fresh") == "1", s)
     t0, t1 = day_bounds(date, tz)
-    if not result.get("error") and datetime.fromtimestamp(t0, tz).utcoffset() != datetime.fromtimestamp(t1 - 1, tz).utcoffset():
-        # the clocks change today: rows by the clock, like the activity (a copy, so the cached proposal stays elapsed)
-        result = {**result, "entries": [{**e, "s": round(clock(t0 + e["s"] * 60, t0, tz), 2),
-                                         "e": round(clock(t0 + e["e"] * 60, t0, tz), 2)} for e in result["entries"]]}
     if not result.get("error"):  # the tasks you logged in the same session or repository: a hint, never an error
         ps = current_settings()
         if ps.get("person_id"):
@@ -354,10 +390,15 @@ def api_proposal(q: dict) -> dict:
                 # 60 days of history is a slow read: the rows go out now, without their tasks, while it is read in
                 # the background; the page asks once more (wait=1) and gets them
                 history_in_background(date, ps)
-                return {**result, "learnPending": True}
-            before, _ = history_rows(date, ps, days=learn.LEARN_DAYS)
-            same_day, problem, _, _ = productive_rows(date, date, ps)
-            learn.annotate(result, date, s, before, [] if problem else same_day, tz)
+                result = {**result, "learnPending": True}
+            else:
+                before, _ = history_rows(date, ps, days=learn.LEARN_DAYS)
+                same_day, problem, _, _ = productive_rows(date, date, ps)
+                learn.annotate(result, date, s, before, [] if problem else same_day, tz)  # elapsed minutes, as entries
+    if not result.get("error") and clock_change(t0, t1, tz) is not None:
+        # the clocks change today: rows by the clock, like the activity, each its real length (a copy: the cached
+        # proposal stays in elapsed minutes, which learning and Ask Claude use)
+        result = {**result, "entries": [{**e, **dict(zip(("s", "e"), page_span(e, t0, tz)))} for e in result["entries"]]}
     return result
 
 
@@ -381,9 +422,14 @@ def api_ask_claude(body: dict) -> dict:
     rows = [dict(e) for e in proposal.get("entries") or []]
     if not problem:
         learn.annotate({**proposal, "entries": rows}, date, s, before, [], tz)
+    t0, t1 = day_bounds(date, tz)
     try:
-        return askclaude.ask(date, rows, day_bounds(date, tz)[0], [r for r in before if r.get("date", "") >= d0],
-                             model=s["ask_claude_model"], history=before)
+        answer = askclaude.ask(date, rows, t0, [r for r in before if r.get("date", "") >= d0],
+                               model=s["ask_claude_model"], history=before, tz=tz)
+        if clock_change(t0, t1, tz) is not None:  # the page names its rows by their start on the clock
+            by_start = {pick_key(r["s"], r.get("project")): pick_key(page_span(r, t0, tz)[0], r.get("project")) for r in rows}
+            answer = {**answer, "picks": {by_start.get(k, k): v for k, v in (answer.get("picks") or {}).items()}}
+        return answer
     except askclaude.AskError as exc:
         logbook.record("ask claude", str(exc), kind="warning")
         return {"error": str(exc), "picks": {}, "cost": exc.cost}
@@ -403,9 +449,11 @@ def api_likely_note(body: dict) -> dict:
     if not s["ask_claude"]:
         raise ValueError("Claude Code is off. Switch it on in Settings first.")
     tz = config.tz(s)
+    t0 = day_bounds(date, tz)[0]
     proposal = likely.proposal(date, config.timezone_name(s), today(tz), False, s)
+    # s and e are the page's: by the clock on a day the clocks change, so the rows are compared as the page drew them
     rows = [dict(r) for r in proposal.get("entries") or [] if r.get("project") == project
-            and min(r["e"], b) - max(r["s"], a) > 0]
+            and min(page_span(r, t0, tz)[1], b) - max(page_span(r, t0, tz)[0], a) > 0]
     if not rows:
         return {"note": "", "why": "no Likely work at that time"}
     before, problem = history_rows(date, s, days=learn.LEARN_DAYS)
@@ -417,7 +465,7 @@ def api_likely_note(body: dict) -> dict:
            "commits": [c for r in sorted(rows, key=lambda r: r["s"]) for c in r.get("commits") or []],
            "learned": lead.get("learned") or [], "tasks": lead.get("tasks") or []}
     try:
-        return askclaude.note(date, row, day_bounds(date, tz)[0], [] if problem else before)
+        return askclaude.note(date, row, t0, [] if problem else before, tz=tz)
     except askclaude.AskError as exc:
         logbook.record("ask claude", str(exc), kind="warning")
         return {"note": "", "error": str(exc)}
@@ -656,8 +704,7 @@ def api_repeats(q: dict) -> dict:
     t0, t1 = day_bounds(date, tz)
     found = trackers.both(t0, t1, s["activitywatch_url"], trackers.classifier(s["personal_patterns"]))
     items = found[trackers.pick(found, q.get("source", "auto"))]
-    if datetime.fromtimestamp(t0, tz).utcoffset() != datetime.fromtimestamp(t1 - 1, tz).utcoffset():
-        items = [{**it, "s": clock(t0 + it["s"] * 60, t0, tz), "e": clock(t0 + it["e"] * 60, t0, tz)} for it in items]
+    items = clock_spans(items, t0, t1, tz)  # by the clock on a day the clocks change, like the usual times
     return {"repeats": repeat_suggestions(_repeats[key][1], items, datetime.strptime(date, "%Y-%m-%d").weekday())}
 
 

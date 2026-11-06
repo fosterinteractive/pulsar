@@ -14,11 +14,8 @@ from datetime import datetime, timezone
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# Tests never touch the real settings, caches or error log: point them at a scratch folder before importing.
-_SCRATCH = tempfile.mkdtemp(prefix="pulsar-tests-")
-os.environ["PULSAR_TESTS_OFFLINE"] = "1"  # nothing reaches Productive, Google, Claude Code or the keychain
-os.environ["XDG_CONFIG_HOME"] = os.path.join(_SCRATCH, "config")
-os.environ["XDG_CACHE_HOME"] = os.path.join(_SCRATCH, "cache")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from isolation import SCRATCH as _SCRATCH  # noqa: E402,F401  first: nothing real is reachable (isolation.py)
 
 from pulsar import config, productive, report, server, trackers, updater  # noqa: E402
 
@@ -388,6 +385,13 @@ class ChangelogTest(unittest.TestCase):
         from pulsar import changelog
         self.assertEqual(changelog.read(os.path.join(tempfile.mkdtemp(), "CHANGELOG.md")), [])
 
+    def test_unreleased_lines_show_nowhere_until_the_heading_becomes_a_version(self):
+        from pulsar import changelog
+        unreleased = changelog.parse("## Unreleased\n- Log the day.\n\n## 1.2.1 (2026-11-06)\n- Search.\n")
+        self.assertEqual([(r["version"], r["lines"]) for r in unreleased], [("1.2.1", ["Search."])])  # not added to 1.2.1
+        released = changelog.parse("## 1.2.2 (2026-11-07)\n- Log the day.\n\n## 1.2.1 (2026-11-06)\n- Search.\n")
+        self.assertEqual(released[0]["lines"], ["Log the day."])  # what release.sh then finds for 1.2.2
+
 
 class ReasonTest(unittest.TestCase):
     def test_a_request_without_an_answer_says_why(self):
@@ -498,6 +502,29 @@ class SessionsTest(unittest.TestCase):
 
     def test_claude_codes_own_files_are_no_project(self):
         self.assertIsNone(self.sessions.project_of_path(os.path.join(self.sessions.HOME, ".claude", "skills", "x", "SKILL.md")))
+
+    def test_an_odd_line_is_skipped_not_the_session_or_the_day(self):
+        import json
+        from pulsar import askclaude
+        self.write_session()
+        at = self.at(12)
+        odd = ['["ai-title"]', '"custom-title"', '{"type": "ai-title", "aiTitle": 5}', '[1, 2', '[' * 5000 + ']' * 5000,
+               json.dumps({"type": "user", "timestamp": at, "message": "a string"}),
+               json.dumps({"type": "user", "timestamp": at, "message": ["app.productive.io/1-acme/tasks/9"]}),
+               json.dumps({"type": "attachment", "timestamp": at, "attachment": "x"}),
+               json.dumps({"type": "user", "timestamp": at, "origin": "human", "message": {"content": "hi"}}),
+               json.dumps({"type": "user", "timestamp": at, "cwd": 5, "message": {"content": "app.productive.io/1-acme/tasks/7"}}),
+               json.dumps({"type": "assistant", "timestamp": at, "message": {"content": 5}}),
+               json.dumps({"type": "user", "timestamp": {"at": 1}, "message": {"content": "x"}})]
+        with open(os.path.join(self.projects, "abcd1234.jsonl"), "a") as fh:
+            fh.write("\n".join(odd) + "\n")
+        items = [{"s": 9, "e": 30, "app": "Cursor", "title": "Fix the checkout form", "host": "", "url": "", "cat": "work"}]
+        got = self.sessions.propose(self.t0, self.t0 + 86400, items, "ActivityWatch", os.path.dirname(self.projects))
+        self.assertEqual([(e["project"], e["s"], e["e"]) for e in got["entries"]], [("acme-site", 9, 30)])
+        links = self.sessions.task_links(self.t0, os.path.dirname(self.projects))
+        self.assertEqual([x for f in links for _, x in f["links"]], ["7"])  # the typed link on an odd line still counts
+        steps = askclaude.steps(self.t0, ["Fix the checkout form"], 0, 60, os.path.dirname(self.projects))
+        self.assertEqual(steps[0]["typed"], "The checkout button does nothing")
 
 
 class TaskLinksTest(SessionsTest):
@@ -790,8 +817,13 @@ class AskClaudeTest(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--max-budget-usd") + 1], "0.75")   # a cap on one day's cost
         self.assertEqual(cmd[cmd.index("--tools") + 1], "")              # no shell, no files
         self.assertEqual(cmd[cmd.index("--permission-mode") + 1], "dontAsk")  # no other MCP tool, whatever the default
-        self.assertNotIn("create_resource", cmd[cmd.index("--allowedTools") + 1])
-        self.assertIn("mcp__productive__create_resource", cmd[cmd.index("--disallowedTools") + 1])
+        allowed = cmd[cmd.index("--allowedTools") + 1].split(",")
+        self.assertEqual(sorted(allowed), sorted(askclaude.READ_TOOLS))  # named one by one: no mcp__productive__*
+        self.assertTrue(all(t.startswith("mcp__productive__") and "*" not in t and t not in askclaude.WRITE_TOOLS
+                            for t in allowed), allowed)
+        self.assertFalse(any("*" in part for part in cmd), cmd)  # no wildcard anywhere, in any flag
+        self.assertTrue(set(askclaude.WRITE_TOOLS) <= set(cmd[cmd.index("--disallowedTools") + 1].split(",")))
+        self.assertNotIn("--dangerously-skip-permissions", cmd)
         self.assertIn('"Estimations"', seen["input"])
         self.assertEqual(got["picks"], {"600|acme-site": {"tasks": [{"taskId": "7", "title": "Estimations", "project": "Proposals"},
                                                                      {"taskId": "99", "title": "Found", "project": "P"}],
@@ -1105,6 +1137,36 @@ class ReviewFixesTest(unittest.TestCase):
             trackers._memtime_copy["at"] -= 61  # a minute later: a fresh copy
             trackers.memtime_query("select x from t", db_path=db)
             self.assertEqual(len([c for c in copies if c == db]), 2)
+            trackers._forget_memtime_copy()  # the dict is put back below: the copy it names must go first
+
+    def test_copies_a_killed_or_restarted_pulsar_left_go_while_pulsar_runs(self):
+        import sqlite3
+        db = os.path.join(tempfile.mkdtemp(), "core.db")
+        sqlite3.connect(db).close()
+        old = [tempfile.mkdtemp(prefix=trackers.COPY_PREFIX) for _ in range(3)]  # from Pulsars that were killed
+        for folder in old:
+            os.utime(folder, (time.time() - 3600, time.time() - 3600))
+        recent = tempfile.mkdtemp(prefix=trackers.COPY_PREFIX)  # another running Pulsar's, made a minute ago
+        with mock.patch.dict(trackers._memtime_copy, {"dir": "", "source": "", "at": 0.0}), \
+                mock.patch.object(trackers, "_swept", [0.0]):
+            trackers.memtime_query("select 1", db_path=db)
+            mine = trackers._memtime_copy["dir"]
+            self.assertEqual([os.path.exists(f) for f in old + [recent, mine]], [False, False, False, True, True])
+            trackers._memtime_copy["at"] -= 61
+            os.utime(recent, (time.time() - 3600, time.time() - 3600))
+            trackers.memtime_query("select 1", db_path=db)  # a new copy within ten minutes: no second sweep
+            self.assertTrue(os.path.exists(recent))
+            self.assertFalse(os.path.exists(mine))  # its own old copy goes as the new one is made
+            trackers._forget_memtime_copy()
+
+    def test_a_restart_into_an_update_removes_this_runs_copy_first(self):
+        copy, seen = tempfile.mkdtemp(prefix=trackers.COPY_PREFIX), []
+        u = updater.Updater(root=tempfile.mkdtemp())
+        u.ready = tempfile.mkdtemp()
+        with mock.patch.dict(trackers._memtime_copy, {"dir": copy}), mock.patch.object(u, "_switch", lambda: None), \
+                mock.patch.object(updater.os, "execv", lambda *a: seen.append(os.path.exists(copy))):
+            u.apply()
+        self.assertEqual(seen, [False])  # gone before the new version took over the process
 
     def test_assigned_tasks_come_overdue_due_today_blocked_or_started_then_the_rest(self):
         t = lambda i, due=None, status="To Do": {"taskId": i, "due": due, "status": status, "blocked": "block" in status.lower()}
@@ -1240,11 +1302,53 @@ class CreateEntryTest(unittest.TestCase):
                 productive.mcp_text("create_resource", {}, "t")
 
 
+class TokenTasksTest(unittest.TestCase):
+    """The API token's task lists, on a fake Productive that ignores the filters it is sent: the pickers still offer
+    only open tasks as assigned, and only tasks with the words searched for."""
+
+    def setUp(self):
+        self.asked = []
+
+        def task(i, title, status, closed=None):
+            return {"id": i, "type": "tasks", "attributes": {"title": title, "closed_at": closed},
+                    "relationships": {"project": {"data": {"id": "10"}}, "workflow_status": {"data": {"id": status}},
+                                      "assignee": {"data": {"id": "9"}}}}
+
+        def get(path, query, token, org):
+            self.asked.append((path, dict(query)))
+            return 200, {"data": [task("1", "Fix the menu", "s1"), task("2", "Old menu work", "s3", "2026-10-01T10:00:00Z"),
+                                  task("3", "Estimations", "s2"), task("4", "Menu, done", "s9", "2026-10-02T10:00:00Z")],
+                         "included": [{"type": "projects", "id": "10", "attributes": {"name": "Acme"}},
+                                      {"type": "workflow_statuses", "id": "s1", "attributes": {"name": "To do", "category_id": 1}},
+                                      {"type": "workflow_statuses", "id": "s2", "attributes": {"name": "Doing", "category_id": 2}},
+                                      {"type": "workflow_statuses", "id": "s3", "attributes": {"name": "Done", "category_id": 3}}],
+                         "meta": {"total_pages": 1}}
+        for p in (mock.patch.object(productive, "connection", lambda s: {"kind": "token", "token": "t"}),
+                  mock.patch.object(productive, "rest_get", get)):
+            p.start()
+            self.addCleanup(p.stop)
+        self.s = {"person_id": "9", "org_id": "1"}
+
+    def test_assigned_tasks_are_open_ones_whatever_the_server_did_with_the_filter(self):
+        got = productive.assigned_tasks(self.s)
+        self.assertEqual([t["taskId"] for t in got], ["1", "3"])  # "Done", and closed without a known status, left out
+        self.assertEqual(self.asked[0][1]["filter[assignee_id]"], "9")
+
+    def test_a_search_offers_only_tasks_with_the_words_and_marks_closed_ones(self):
+        got = productive.search_tasks("MENU", self.s)
+        self.assertEqual([t["title"] for t in got], ["Fix the menu", "Old menu work (closed)", "Menu, done (closed)"])
+        self.assertEqual(self.asked[0][1]["filter[title][contains]"], "MENU")
+
+
 class PreviewTest(unittest.TestCase):
     """Pulsar Preview writes nothing to Productive until its own setting allows it."""
 
     def test_a_preview_writes_only_when_allowed(self):
-        with mock.patch.dict(os.environ, {"PULSAR_PREVIEW": "1"}), mock.patch.dict(os.environ, {}, clear=False):
+        sent = []  # a connection and a Productive that record, so a broken guard fails here instead of writing
+        with mock.patch.dict(os.environ, {"PULSAR_PREVIEW": "1"}), mock.patch.dict(os.environ, {}, clear=False), \
+                mock.patch.object(productive, "connection", lambda s: {"kind": "claude-code", "token": "t"}), \
+                mock.patch.object(productive, "mcp_text", lambda *a: sent.append(a) or "time entry created (ID: 1)."), \
+                mock.patch.object(productive.http.client, "HTTPSConnection", lambda *a, **k: sent.append(a)):
             os.environ.pop("PULSAR_READ_ONLY", None)
             with mock.patch.object(config, "load", lambda: {"preview_writes": False}):
                 self.assertIn("Preview", config.writes_blocked())
@@ -1254,6 +1358,7 @@ class PreviewTest(unittest.TestCase):
                     productive.https("POST", "https://api.productive.io/api/v2/time_entries", b"{}", {}, write=True)
             with mock.patch.object(config, "load", lambda: {"preview_writes": True}):
                 self.assertIsNone(config.writes_blocked())
+        self.assertEqual(sent, [])
         with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):
             self.assertIn("read-only", config.writes_blocked())  # tests and demos stay read-only, preview or not
 
@@ -1391,6 +1496,7 @@ class EditEntryTest(unittest.TestCase):
         got = self.change("1", start="10:00", minutes=75, force=True)
         self.assertEqual(got, {"updated": "1"})
         self.assertEqual(self.updated[0][1], {"minutes": 75})  # the start it already had is not sent again
+        self.assertEqual(self.updated[0][0], "1")
 
     def test_shrinking_writes_and_a_dry_run_writes_nothing(self):
         got = self.change("1", start="10:15", minutes=30, dry=True)
@@ -1416,12 +1522,16 @@ class EditEntryTest(unittest.TestCase):
         for p in self.patches[3:]:
             p.stop()
         self.patches = self.patches[:3]
+        sent = []  # a connection and a Productive that record, so a broken guard fails here instead of writing
         with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}), \
-                mock.patch.object(productive, "https", lambda *a, **k: self.fail("sent")):
+                mock.patch.object(productive, "connection", lambda s: {"kind": "claude-code", "token": "t"}), \
+                mock.patch.object(productive, "mcp_text", lambda *a: sent.append(a) or "done"), \
+                mock.patch.object(productive, "https", lambda *a, **k: sent.append(a) or (200, b"{}")):
             with self.assertRaises(productive.ProductiveError):
                 productive.update_entry("1", {"minutes": 5}, {"person_id": "1"})
             with self.assertRaises(productive.ProductiveError):
                 productive.delete_entry("1", {"person_id": "1"})
+        self.assertEqual(sent, [])
 
     # ---- the second review (2026-11-06): A2, A3, A4, A5 and the rounding at resize ----
 
@@ -1642,6 +1752,7 @@ class LogTest(unittest.TestCase):
             mock.patch.object(server.productive, "entries", lambda d0, d1, s: (self.existing, None, "token")),
             mock.patch.object(server.productive, "create_entry", lambda e, s: self.created.append(e) or {"id": "9"}),
             mock.patch.dict(server._just_logged, clear=True),
+            mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "", "PULSAR_PREVIEW": ""}),  # writes reach the fakes only
         ]
         for p in self.patches:
             p.start()
@@ -1881,13 +1992,62 @@ class UpdaterTest(unittest.TestCase):
                  mock.patch.object(updater, "public_keys", lambda: (self.pub_pem,)):
                 self.assertEqual(updater.Updater(root=self.root).check()["status"], "failed", bad)
 
-    def test_a_self_test_that_hangs_counts_as_failed(self):
+    def test_a_self_test_that_hangs_says_nothing_about_the_version(self):
         import subprocess
         with mock.patch.object(updater.subprocess, "run", side_effect=subprocess.TimeoutExpired("x", 60)):
-            self.assertFalse(updater.self_test(self.root))
+            self.assertIsNone(updater.self_test(self.root))
+
+    def test_a_self_test_failure_is_tried_once_more_before_it_counts(self):
+        answers = [1, 0]
+        run = lambda *a, **k: mock.Mock(returncode=answers.pop(0), stdout="", stderr="")  # noqa: E731
+        with mock.patch.object(updater.subprocess, "run", run):
+            self.assertTrue(updater.self_test(self.root))   # a slow first answer, then fine
+        answers = [1, 1]
+        with mock.patch.object(updater.subprocess, "run", run):
+            self.assertFalse(updater.self_test(self.root))  # broken twice: broken
+
+    def test_a_release_whose_self_test_could_not_finish_is_not_banned(self):
+        manifest, data = self.release()
+        u = self.make(manifest, data, passes=None)
+        got = u.check(install=True)
+        self.assertEqual(got["status"], "failed")
+        self.assertIn("Try Update again", got["message"])
+        self.assertNotIn("1.1.0", updater.bad_versions(self.root))
+        self.assertFalse(os.path.exists(os.path.join(self.root, "versions", "1.1.0")))
+        self.assertEqual(u.check()["status"], "available")  # offered again
 
     def test_the_same_version_is_not_an_update(self):
         self.assertEqual(self.make({"version": "1.0.0", "url": URL, "sha256": "x"}).check()["status"], "latest")
+
+
+class SelfTestTest(unittest.TestCase):
+    """pulsar.py --self-test, which decides whether an update is installed."""
+
+    def setUp(self):
+        import importlib.util
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pulsar.py")
+        spec = importlib.util.spec_from_file_location("pulsar_main", path)
+        self.main = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.main)
+
+    def test_it_checks_every_script_and_style_of_the_page(self):
+        import glob
+        web = self.main.WEB
+        on_disk = {os.path.relpath(p, web) for p in glob.glob(os.path.join(web, "js", "*.js")) + glob.glob(os.path.join(web, "*.css"))}
+        self.assertEqual(on_disk - set(self.main.page_files()), set())  # datepick.js, logs.js, theme-early.js, flow.*
+
+    def test_a_file_the_page_loads_but_the_release_lacks_fails_it(self):
+        import shutil
+        web = os.path.join(tempfile.mkdtemp(), "web")
+        shutil.copytree(self.main.WEB, web)
+        os.remove(os.path.join(web, "js", "datepick.js"))
+        with mock.patch("sys.stderr") as err:
+            self.assertEqual(self.main.self_test(web), 1)
+        self.assertIn("js/datepick.js", "".join(str(c) for c in err.write.call_args_list))
+
+    def test_it_serves_the_page_on_a_free_port(self):
+        with mock.patch("sys.stdout"):
+            self.assertEqual(self.main.self_test(), 0)
 
 
 def json_bytes(obj):
@@ -1966,6 +2126,81 @@ class ClockChangeTest(unittest.TestCase):
         start = (ten - a) / 60  # elapsed minutes: 660 on this 25-hour day
         r = report.build(["2026-10-25"], [(a, b)], {"aw": [item(start, start + 30)]}, [], "2026-10-25", tz=kyiv)
         self.assertEqual(r["hours"][6][10], 30)  # Sunday, 10:00 on the clock
+
+
+class ClockChangeLengthTest(unittest.TestCase):
+    """Across the clock change itself: lengths stay real, and the pieces of Pulsar that count minutes count the same ones."""
+
+    def setUp(self):
+        from zoneinfo import ZoneInfo
+        self.kyiv = ZoneInfo("Europe/Kyiv")  # back from 04:00 to 03:00 on 25 Oct 2026, on from 03:00 to 04:00 on 29 Mar
+        self.s = {**config.DEFAULTS, "timezone": "Europe/Kyiv", "likely": "on", "ask_claude": True, "person_id": "9"}
+
+    def bounds(self, day):
+        return server.day_bounds(day, self.kyiv)
+
+    def test_the_minute_of_the_change(self):
+        self.assertEqual(server.clock_change(*self.bounds("2026-10-25"), self.kyiv), 240)  # 04:00 summer time
+        self.assertEqual(server.clock_change(*self.bounds("2026-03-29"), self.kyiv), 180)  # 03:00 winter time
+        self.assertIsNone(server.clock_change(*self.bounds("2026-11-04"), self.kyiv))
+
+    def test_a_stretch_across_the_change_keeps_its_real_length(self):
+        # 03:50 summer time to 03:10 winter time is 20 minutes, which the clock alone read as -40
+        t0, t1 = self.bounds("2026-10-25")
+        got = server.clock_spans([{"s": 230, "e": 250, "app": "Cursor"}], t0, t1, self.kyiv)
+        self.assertEqual([(x["s"], x["e"]) for x in got], [(230, 240), (180, 190)])
+        self.assertEqual(sum(x["e"] - x["s"] for x in got), 20)
+        # 02:50 to 04:10 on the spring morning is 20 minutes too, which the clock alone read as 80
+        t0, t1 = self.bounds("2026-03-29")
+        got = server.clock_spans([{"s": 170, "e": 190}], t0, t1, self.kyiv)
+        self.assertEqual([(x["s"], x["e"]) for x in got], [(170, 180), (240, 250)])
+        self.assertEqual(server.clock_spans([{"s": 1, "e": 2}], *self.bounds("2026-11-04"), self.kyiv), [{"s": 1, "e": 2}])
+
+    def test_the_activity_column_adds_up_to_the_trackers_minutes(self):
+        items = [{"s": 200, "e": 250, "app": "Cursor", "title": "x", "host": "", "cat": "work", "icon": None},
+                 {"s": 300, "e": 320, "app": "Cursor", "title": "x", "host": "", "cat": "work", "icon": None}]
+        with mock.patch.object(server.config, "load", lambda: dict(self.s)), \
+                mock.patch.object(server.trackers, "both", lambda *a: {"aw": [dict(x) for x in items], "memtime": []}):
+            got = server.api_activity({"date": "2026-10-25", "source": "aw"})
+        self.assertEqual(sum(x["e"] - x["s"] for x in got["items"]), got["minutes"]["aw"])  # 70, not 10
+        self.assertTrue(all(x["e"] > x["s"] for x in got["items"] + got["away"]))
+        self.assertEqual(sum(x["e"] - x["s"] for x in got["away"]), 50)  # 250 to 300, cut at the change
+
+    def test_learning_ask_claude_and_the_note_meet_the_page_on_the_same_rows(self):
+        from pulsar import askclaude
+        rows = [{"s": 120, "e": 150, "project": "p", "titles": ["Fix it"]},     # before the change
+                {"s": 660, "e": 690, "project": "p", "titles": ["Fix it"]}]     # 10:00 on the clock, 11:00 elapsed
+        seen = {}
+        prop = lambda *a, **k: {"entries": [dict(r) for r in rows]}  # noqa: E731
+        annotate = lambda result, *a: seen.setdefault("learned_on", [(e["s"], e["e"]) for e in result["entries"]])  # noqa: E731
+
+        def ask(date, given, t0, entries, **kw):
+            seen["asked"] = [askclaude.clock_at(t0, r["s"], kw.get("tz")) for r in given]
+            return {"picks": {f"{r['s']}|p": {"tasks": [{"taskId": "1"}]} for r in given}}
+
+        def note(date, row, t0, history, tz=None):
+            seen["note"] = (row["s"], row["e"], askclaude.clock_at(t0, row["s"], tz))
+            return {"note": "x", "why": ""}
+        with mock.patch.object(server.config, "load", lambda: dict(self.s)), \
+                mock.patch.object(server, "current_settings", lambda: dict(self.s)), \
+                mock.patch.object(server.likely, "enabled", lambda s: True), mock.patch.object(server.likely, "proposal", prop), \
+                mock.patch.object(server, "history_ready", lambda *a: True), \
+                mock.patch.object(server, "history_rows", lambda *a, **k: ([], None)), \
+                mock.patch.object(server, "productive_rows", lambda *a: ([], None, "token", False)), \
+                mock.patch.object(server.learn, "annotate", annotate), \
+                mock.patch.object(askclaude, "ask", ask), mock.patch.object(askclaude, "note", note):
+            shown = server.api_proposal({"date": "2026-10-25"})["entries"]
+            picks = server.api_ask_claude({"date": "2026-10-25"})["picks"]
+            server.api_likely_note({"date": "2026-10-25", "s": 600, "e": 630, "project": "p"})
+        self.assertEqual([(e["s"], e["e"]) for e in shown], [(120, 150), (600, 630)])   # the page: by the clock
+        self.assertEqual(seen["learned_on"], [(120, 150), (660, 690)])                  # learning: elapsed, as entries
+        self.assertEqual(sorted(picks), ["120|p", "600|p"])                              # the keys the page looks up
+        self.assertEqual(seen["asked"], ["02:00", "10:00"])                              # Claude reads the clock
+        self.assertEqual(seen["note"], (660, 690, "10:00"))                              # the 10:00 row, not 11:00
+
+    def test_the_key_is_written_as_the_page_writes_it(self):
+        self.assertEqual((server.pick_key(600.0, "p"), server.pick_key(600.5, "p"), server.pick_key(600, None)),
+                         ("600|p", "600.5|p", "600|"))
 
 
 class GuardTest(unittest.TestCase):
@@ -2257,6 +2492,58 @@ class KeychainStuckTest(unittest.TestCase):
             self.assertIn("keychain did not answer", conn["problem"])
             self.assertNotIn("add your API token", conn["problem"])
             self.assertTrue(server.public_config({**config.DEFAULTS, "update_skip": "", "update_asked": 0})["productive"]["keychainStuck"])
+
+
+class YesterdayTest(unittest.TestCase):
+    """A day looked at while it was still today is worked out again once it is over, in memory and on disk."""
+
+    def setUp(self):
+        from pulsar import learn, likely
+        self.likely, self.learn, self.runs = likely, learn, []
+
+        def built_in(date, settings):  # what the day looks like at the moment it is worked out
+            self.runs.append(date)
+            return {"entries": [{"s": 600, "e": 600 + 60 * len(self.runs), "project": "p", "titles": []}]}
+        self.patches = [mock.patch.object(likely, "own_script", lambda: False),
+                        mock.patch.object(likely, "_built_in", built_in),
+                        mock.patch.object(likely, "_with_tasks", lambda *a, **k: None),
+                        mock.patch.object(learn, "DIR", tempfile.mkdtemp())]
+        for p in self.patches:
+            p.start()
+            self.addCleanup(p.stop)
+        likely._cache.clear()
+        self.addCleanup(likely._cache.clear)
+        self.s = {**config.DEFAULTS, "timezone": "UTC"}
+
+    def test_a_day_seen_at_noon_is_whole_the_next_day(self):
+        noon = self.likely.proposal("2026-11-05", "UTC", "2026-11-05", False, self.s)
+        self.assertEqual(self.likely.proposal("2026-11-05", "UTC", "2026-11-05", False, self.s), noon)  # reused today
+        whole = self.likely.proposal("2026-11-05", "UTC", "2026-11-06", False, self.s)    # the next morning
+        self.assertEqual(self.runs, ["2026-11-05", "2026-11-05"])
+        self.assertGreater(whole["entries"][0]["e"], noon["entries"][0]["e"])
+        self.assertIs(self.likely.proposal("2026-11-05", "UTC", "2026-11-07", False, self.s), whole)  # then kept
+
+    def test_learning_never_stores_a_day_that_is_not_over_or_was_seen_before_it_was(self):
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        self.likely.proposal(today, "UTC", today, False, self.s)  # the page shows today: cached, unfinished
+        tomorrow = productive.day_shift(today, 1)
+        with mock.patch.object(self.learn, "LEARN_DAYS", 2), \
+                mock.patch.object(self.learn.threading, "Thread", lambda target, **k: mock.Mock(start=target)):  # here, now
+            self.learn.warm(tomorrow, self.s)  # a page asked about tomorrow: the days before it include today
+        self.assertIsNone(self.learn._stored(today))                         # today is not over: not kept
+        self.assertIsNotNone(self.learn._stored(productive.day_shift(today, -1)))
+        self.assertEqual(self.runs.count(today), 1)                          # and not worked out for the disk either
+
+    def test_a_day_cached_while_it_was_today_is_worked_out_again_before_it_is_stored(self):
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        yesterday = productive.day_shift(today, -1)
+        seen = self.likely.proposal(yesterday, "UTC", yesterday, False, self.s)  # looked at yesterday, at noon
+        with mock.patch.object(self.learn, "LEARN_DAYS", 1), \
+                mock.patch.object(self.learn.threading, "Thread", lambda target, **k: mock.Mock(start=target)):
+            self.learn.warm(today, self.s)
+        stored = self.learn._stored(yesterday)
+        self.assertEqual(self.runs, [yesterday, yesterday])
+        self.assertGreater(stored[0]["e"], seen["entries"][0]["e"])
 
 
 class LearnPendingTest(unittest.TestCase):

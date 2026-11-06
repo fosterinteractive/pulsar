@@ -3,7 +3,7 @@
 The installed layout (the Mac launcher creates it), under ~/Library/Application Support/Pulsar/:
     versions/<X.Y.Z>/   a full copy of the app (pulsar.py, pulsar/, web/, README.md)
     current, previous   relative symlinks into versions/
-    bad-versions        versions that failed to start; never used again
+    bad-versions        versions that failed to start, or failed their self-test twice; never used again
 A release is `pulsar-<version>.zip` (one top folder `pulsar-<version>/`), `latest.json`
 ({version, url, sha256, notes, published}) and `latest.json.sig`: an ECDSA P-256 signature of latest.json made with
 the release key, which only the maintainer holds (see macos/README.md). The key's public half is below; a manifest
@@ -189,19 +189,23 @@ def _bytes_io(data: bytes):
     return io.BytesIO(data)
 
 
-def self_test(copy: str) -> bool:
-    """Runs the new copy's own test; when it fails, its output goes to the error log."""
+def self_test(copy: str) -> Optional[bool]:
+    """Runs the new copy's own test: True when it passes, False when it fails twice in a row (the copy is broken),
+    None when it could not finish (a timeout on a busy or sleeping Mac, a process that would not start), which says
+    nothing about the copy. A failure's output goes to the error log."""
     from . import logbook
-    try:
-        run = subprocess.run([sys.executable, "-E", "-s", "-B", os.path.join(copy, "pulsar.py"), "--self-test"],
-                             capture_output=True, text=True, timeout=60)
-    except (subprocess.TimeoutExpired, OSError) as exc:
-        logbook.record("updater", f"The new version's self-test did not run: {exc}")
-        return False
-    if run.returncode != 0:
-        logbook.record("updater", f"The new version failed its self-test (exit {run.returncode}).",
+    for attempt in (1, 2):  # a failure is tried once more: one slow answer must not condemn a version for good
+        try:
+            run = subprocess.run([sys.executable, "-E", "-s", "-B", os.path.join(copy, "pulsar.py"), "--self-test"],
+                                 capture_output=True, text=True, timeout=60)
+        except (subprocess.TimeoutExpired, OSError) as exc:
+            logbook.record("updater", f"The new version's self-test did not finish: {exc}", kind="warning")
+            return None
+        if run.returncode == 0:
+            return True
+        logbook.record("updater", f"The new version failed its self-test (exit {run.returncode}, try {attempt} of 2).",
                        detail=(run.stdout + run.stderr)[-3000:])
-    return run.returncode == 0
+    return False
 
 
 class Updater:
@@ -290,10 +294,14 @@ class Updater:
                 copy = unpack(data, latest, self.root)
             except Exception as exc:
                 return self._set("failed", f"Pulsar {latest} could not be downloaded: {exc}")
-            if not self_test(copy):
-                mark_bad(latest, self.root)
+            passed = self_test(copy)
+            if not passed:
                 shutil.rmtree(copy, ignore_errors=True)
-                return self._set("failed", f"Pulsar {latest} failed its own test, so it was not installed.")
+                if passed is None:  # nothing known against the version: Update may try it again
+                    return self._set("failed", f"Pulsar {latest} could not finish its own test, so it was not installed. "
+                                               "Try Update again in a while.")
+                mark_bad(latest, self.root)
+                return self._set("failed", f"Pulsar {latest} failed its own test twice, so it was not installed.")
             self.ready = copy
             return self._set("ready", f"Pulsar {latest} is downloaded and tested.")
 
@@ -312,6 +320,8 @@ class Updater:
         with self.lock:
             self._switch()
             target = os.path.join(self.ready, "pulsar.py")
+            from . import trackers
+            trackers._forget_memtime_copy()  # nothing registered for exit runs across execv
             os.execv(sys.executable, [sys.executable, "-E", "-s", "-B", target] + sys.argv[1:])
 
     def _cleanup(self) -> None:
