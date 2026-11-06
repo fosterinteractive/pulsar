@@ -242,9 +242,10 @@ class UndoTest(unittest.TestCase):
     def test_an_entry_moved_to_another_task_is_left_alone(self):
         self.existing[0]["taskId"] = "7"  # same start and length, another task: changed by hand since
         with mock.patch.object(server.productive, "delete_entry", lambda i, s: self.deleted.append(i)):
-            with self.assertRaisesRegex(ValueError, "changed after this run"):
-                server.api_entry_delete({"id": "501", "date": DATE, "run": self.RUN})
-        self.assertEqual((self.deleted, self.undoable()), ([], ["501"]))
+            got = server.api_entry_delete({"id": "501", "date": DATE, "run": self.RUN})
+        self.assertEqual(got["left"], "501")  # left alone, said, and no longer offered: Undo goes on with the rest
+        self.assertIn("changed after this run", got["why"])
+        self.assertEqual((self.deleted, self.undoable()), ([], []))
 
 
 class PulsarLogBodyTest(unittest.TestCase):
@@ -309,7 +310,7 @@ class PulsarLogBodyTest(unittest.TestCase):
         done, err = self.call("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})
         self.assertFalse(err, done)
         self.assertEqual((done["written"], done["of"], done["stopped"]), (1, 3, True))
-        self.assertEqual([r["status"] for r in done["results"]], ["logged", "not logged"])
+        self.assertEqual([r["status"] for r in done["results"]], ["logged", "not logged", "not sent"])
         self.assertIn("overlap", done["results"][1]["why"])
         self.assertEqual([args["items"] for tool, args in self.wire.tools()], [[self.item("08:00", 30, "11")]])
 
