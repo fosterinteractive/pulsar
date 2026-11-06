@@ -366,18 +366,20 @@ every 7 days), the same session earlier that day, and task names that share word
 common words such as "not" and "the" do not count). A session's task does not carry over to another client's
 repository: once a repository has an hour of votes, a session's task counts there only when its project has a quarter
 of them or more (`dayplan.fits`; on the replay: no change 43.7% to 45.2%, the right task at the right time 36.4% to
-37.6%, client work 13.4% to 15.1%, no slice worse by more than half a point). A repository you work in for an hour or
+37.6%, client work 13.4% to 15.1%, no slice worse by more than half a point). A task you never logged to that the work
+names (5.5) is the first alternative, and the pick where the answer is unsure and not one you gave (a rule, a link, a
+ticket key): a ticket key it names, or words it shares strongly (cosine 0.5). A repository you work in for an hour or
 more and log under a tenth of is set aside as one you never log; days with entries that have no start time do not
 count, since they cannot be matched to the work. Confidence: high, medium or low, in words and a three-bar meter; the
 same session's votes are high from 60% (and 30 minutes), else low. **Unticked at the start**: low confidence, no task,
 no service, agent-only time, meetings with no call seen, and a task that already has time logged with **no start
-time** that day: such an entry is on no timeline, so no overlap check sees it, and it may be the same work. The
-review lists it ("no start"), the confirm step names it, and under the cap that task's proposals give way first, up to
-its minutes, before the least sure rows. **Notes** are never written from session text: only a
-meeting's title, your usual note for a repeat, a note Ask Claude drafted for that task, or one from your commits in
-the work, each with "clients may see notes". The **service** is the one last used on the task, checked against the
-services that take time on that date (`bookable_services`). With Productive unreadable, nothing is proposed. About 6
-seconds for a day the first time, under a second after.
+time** that day: such an entry is on no timeline, so no overlap check sees it, and it may be the same work. The review
+lists it ("no start"), the confirm step names it, and under the cap that task's proposals give way first, up to its
+minutes, before the least sure rows. **Notes** are never written from session text: only a meeting's title, your usual
+note for a repeat, a note Ask Claude drafted for that task, or one from your commits in the work, each with "clients
+may see notes". The **service** is the one last used on the task, checked against the services that take time on that
+date (`bookable_services`). With Productive unreadable, nothing is proposed. About 6 seconds for a day the first time,
+under a second after.
 
 **Ask Claude** (only when it is on in Settings): the review shows the plan at once, then sends the day to Claude
 (every row of ten minutes or more) and fills in the answer as it arrives. Claude's pick replaces only rows the planner
@@ -438,6 +440,21 @@ time logged when the tracker saw nothing (8%).
   instead of 43%, and 44% instead of 51% for sessions that worked in two or more repositories that day). A long
   session moves from task to task over the weeks more than it changes task between repositories, and a row shared
   by two sessions has one repository, which may be the other session's.
+- **Tasks you never logged to** (`learn.new_tasks`, after Aidan's habit of looking up all the tickets): 14% of one
+  person's logged minutes, and 41% of the client work, went to tasks with no entry in the 60 days before, which the
+  votes cannot know. The pool is the tasks worked on in the last 30 days (`productive.recent_tasks`, one read kept ten
+  minutes, `server.new_task_source`), of them the ones that are not closed before the day and not created after it,
+  and are assigned to you or new in the last 30 days in a project you logged to in the last 30. The row's evidence is
+  its sessions' titles, what you typed and Claude's last words of each step (`askclaude.steps`) and your commit
+  subjects. A task whose ticket key (`UTFLM-271`) or number (`#728`) the work names comes first, unless the first is
+  the same session's vote; else up to two whose title and project share words with the work (TF-IDF, cosine 0.5 or
+  more) take the fifth place, before the task found by its notes. On the replay of 34 days (21 September to 4
+  November 2026), the logged task was among the dialog's first five for 54.8% of the entries instead of 52.7%, and
+  for 579 of the 3,746 minutes of new tasks instead of 364; Log the day had 378 of those minutes right instead of 289,
+  the right task at the right time overall 37.8% instead of 37.3%, and no group of entries got worse by more than 0.1
+  point. Below cosine 0.5, the first one found was the logged task for 1% of the minutes; at the second place they
+  pushed out tasks you had logged before (3 points fewer in the first five). Most of the gain needs the task to exist
+  when you log: counting only tasks created before the day, the first five held 389 minutes, not 579.
 - **A task found by its words** (`learn.text_match`): after the first four learned tasks, the fifth place goes to
   the task whose name, project and your own notes on it (the 60 days of entries already read) share most words with
   the row's work: its sessions' titles, what you typed in them during the row (`askclaude.steps`: up to 15 messages
