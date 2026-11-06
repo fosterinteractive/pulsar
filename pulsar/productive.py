@@ -378,6 +378,7 @@ def _claude_code_token() -> tuple:
         run = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
                              capture_output=True, text=True, timeout=15)
     except subprocess.TimeoutExpired:
+        config.keychain_timed_out()
         return None, "The keychain did not answer when Pulsar asked for Claude Code's Productive connection.", False, False, ""
     try:
         servers = json.loads(run.stdout).get("mcpOAuth", {})
@@ -671,7 +672,8 @@ def connection(settings: dict) -> dict:
     if token:
         return {"kind": "token", "token": token}
     if want == "token":
-        return {"kind": None, "problem": "No Productive token saved yet: add one in Settings."}
+        return {"kind": None, "problem": config.KEYCHAIN_STUCK if config.keychain_stuck() else
+                "No Productive token saved yet: add one in Settings."}
     cc, problem, connected = claude_code_token()
     if cc:
         return {"kind": "claude-code", "token": cc}
@@ -679,6 +681,8 @@ def connection(settings: dict) -> dict:
         return {"kind": None, "problem": problem}
     if connected:  # say what went wrong with the connection in use, and the way out of it
         return {"kind": None, "problem": problem + " An API token in Settings does not expire."}
+    if config.keychain_stuck():  # not "add a token": there may be one the keychain did not give
+        return {"kind": None, "problem": config.KEYCHAIN_STUCK}
     return {"kind": None, "problem": "Productive is not connected: add your API token in Settings."}
 
 

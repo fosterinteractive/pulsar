@@ -1647,6 +1647,22 @@ class CapTest(unittest.TestCase):
         logbook._last.clear()
 
 
+class KeychainStuckTest(unittest.TestCase):
+    def test_a_keychain_that_does_not_answer_is_named_not_a_missing_token(self):
+        import subprocess
+
+        def stuck(args, **k):
+            raise subprocess.TimeoutExpired(args, 15)
+        with mock.patch.object(config.subprocess, "run", stuck), mock.patch.object(config, "_keychain", lambda: True), \
+             mock.patch.object(config, "_token_cache", [0.0, None, False]), mock.patch.object(config, "_keychain_stuck_at", [0.0]), \
+             mock.patch.object(productive, "_cc_cache", [0.0, None]), mock.patch.object(productive.sys, "platform", "darwin"):
+            conn = productive.connection({"productive_source": "auto"})
+            self.assertIsNone(conn["kind"])
+            self.assertIn("keychain did not answer", conn["problem"])
+            self.assertNotIn("add your API token", conn["problem"])
+            self.assertTrue(server.public_config({**config.DEFAULTS, "update_skip": "", "update_asked": 0})["productive"]["keychainStuck"])
+
+
 class LearnPendingTest(unittest.TestCase):
     """The Likely column does not wait for the 60 days of history its learned tasks need."""
 

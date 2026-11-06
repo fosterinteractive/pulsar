@@ -105,6 +105,7 @@ def public_config(s: dict) -> dict:
         "likely": {"setting": s["likely"], "available": likely.available(), "enabled": likely.enabled(s),
                    "askClaude": s["ask_claude"], "askClaudeModel": s["ask_claude_model"], "claudeFound": askclaude.available()},
         "productive": {"source": s["productive_source"], "active": conn["kind"], "problem": conn.get("problem"),
+                       "keychainStuck": config.keychain_stuck(),
                        "tokenSaved": bool(config.get_token()), "orgId": s["org_id"], "orgName": s["org_name"],
                        "personId": s["person_id"], "personName": s["person_name"]},
         "calendar": calendar.status(s),  # configured, connected, account: never a token
