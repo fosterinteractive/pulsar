@@ -1,12 +1,13 @@
 /* Date fields: a button with the day in words that opens a small month calendar.
    Each <input type="date"> stays in the page, hidden, and keeps what the views rely on: its value is YYYY-MM-DD, a pick
-   sets it and fires input and change, and code that sets .value repaints the button. The keys follow the WAI-ARIA
+   sets it and fires input and change, code that sets .value repaints the button, and a disabled field disables it. The keys follow the WAI-ARIA
    date picker dialog: arrows by day and week, PageUp/PageDown by month (with Shift by year), Home/End to the week's
    Monday and Sunday, Enter or Space picks, Escape closes and goes back to the button. Weeks start on Monday. */
 (() => {
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const VALUE = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+const DISABLED = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'disabled');
 const ICON = '<svg class="dp-ic" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><rect x="2" y="3" width="12" height="11" rx="2.5" '
   + 'fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M2.5 6.5h11M5.5 1.6v2.6M10.5 1.6v2.6" fill="none" stroke="currentColor" '
   + 'stroke-width="1.4" stroke-linecap="round"/></svg>';
@@ -159,12 +160,20 @@ function enhance(input, name) {
     get() { return VALUE.get.call(this); },
     set(v) { VALUE.set.call(this, v); paint(); },
   });
+  // a disabled field (the date of an entry being edited, which stays on its day) cannot be changed from its calendar
+  Object.defineProperty(input, 'disabled', {
+    configurable: true,
+    get() { return DISABLED.get.call(this); },
+    set(v) { DISABLED.set.call(this, v); btn.disabled = !!v; if (v && cur?.input === input) close(false); },
+  });
   btn.addEventListener('click', () => {
+    if (input.disabled) return;
     const was = cur?.input === input;
     close(was);  // a second click closes it
     if (!was) open(input, btn);
   });
   paint();
+  btn.disabled = input.disabled;
 }
 enhance($('#date'), 'Day');
 enhance($('#rfrom'), 'From');
