@@ -177,17 +177,14 @@ def _conversation(path: str, t0: float):
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
             if '"ai-title"' in line or '"custom-title"' in line:
-                try:
-                    r = json.loads(line)
-                    if r.get("type") in ("ai-title", "custom-title"):
-                        titles.add(sessions.norm_title(r.get("customTitle") or r.get("aiTitle") or ""))
-                        continue
-                except ValueError:
-                    pass
+                r = sessions.record(line)
+                if r.get("type") in ("ai-title", "custom-title"):
+                    titles.add(sessions.norm_title(r.get("customTitle") or r.get("aiTitle") or ""))
+                    continue
             if '"timestamp"' not in line:
                 continue
             try:
-                r = json.loads(line)
+                r = sessions.record(line)
                 t = sessions.parse_ts(r["timestamp"])
             except (ValueError, KeyError, TypeError, AttributeError):
                 continue
@@ -197,7 +194,7 @@ def _conversation(path: str, t0: float):
             if text is not None:
                 typed_.append((t, text.strip()))
             elif r.get("type") == "assistant":
-                words = sessions.text_of((r.get("message") or {}).get("content")).strip()
+                words = sessions.text_of(sessions._obj(r.get("message")).get("content")).strip()
                 if words:
                     said.append((t, words))
     _talk[k] = ({x for x in titles if len(x) >= 5}, sorted(typed_), sorted(said))
@@ -218,7 +215,7 @@ def steps(t0: float, titles: list, a: float, b: float, projects_dir: str = sessi
             if os.path.getmtime(path) < t0 - 3600:
                 continue
             names, typed_, said = _conversation(path, t0)
-        except OSError:
+        except (OSError, ValueError, TypeError, AttributeError):  # that session only
             continue
         if not any(t.startswith(k) or k.startswith(t) for k in keys for t in names if t):
             continue
@@ -244,7 +241,7 @@ def typed(t0: float, titles: list, a: float, b: float, projects_dir: str = sessi
             if os.path.getmtime(path) < t0 - 3600:
                 continue
             s = sessions.read_session(path, t0, t0 + 86400)
-        except OSError:
+        except (OSError, ValueError, TypeError, AttributeError):  # that session only
             continue
         if not s:
             continue

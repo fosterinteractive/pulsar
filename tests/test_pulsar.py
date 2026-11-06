@@ -495,6 +495,29 @@ class SessionsTest(unittest.TestCase):
     def test_claude_codes_own_files_are_no_project(self):
         self.assertIsNone(self.sessions.project_of_path(os.path.join(self.sessions.HOME, ".claude", "skills", "x", "SKILL.md")))
 
+    def test_an_odd_line_is_skipped_not_the_session_or_the_day(self):
+        import json
+        from pulsar import askclaude
+        self.write_session()
+        at = self.at(12)
+        odd = ['["ai-title"]', '"custom-title"', '{"type": "ai-title", "aiTitle": 5}', '[1, 2', '[' * 5000 + ']' * 5000,
+               json.dumps({"type": "user", "timestamp": at, "message": "a string"}),
+               json.dumps({"type": "user", "timestamp": at, "message": ["app.productive.io/1-acme/tasks/9"]}),
+               json.dumps({"type": "attachment", "timestamp": at, "attachment": "x"}),
+               json.dumps({"type": "user", "timestamp": at, "origin": "human", "message": {"content": "hi"}}),
+               json.dumps({"type": "user", "timestamp": at, "cwd": 5, "message": {"content": "app.productive.io/1-acme/tasks/7"}}),
+               json.dumps({"type": "assistant", "timestamp": at, "message": {"content": 5}}),
+               json.dumps({"type": "user", "timestamp": {"at": 1}, "message": {"content": "x"}})]
+        with open(os.path.join(self.projects, "abcd1234.jsonl"), "a") as fh:
+            fh.write("\n".join(odd) + "\n")
+        items = [{"s": 9, "e": 30, "app": "Cursor", "title": "Fix the checkout form", "host": "", "url": "", "cat": "work"}]
+        got = self.sessions.propose(self.t0, self.t0 + 86400, items, "ActivityWatch", os.path.dirname(self.projects))
+        self.assertEqual([(e["project"], e["s"], e["e"]) for e in got["entries"]], [("acme-site", 9, 30)])
+        links = self.sessions.task_links(self.t0, os.path.dirname(self.projects))
+        self.assertEqual([x for f in links for _, x in f["links"]], ["7"])  # the typed link on an odd line still counts
+        steps = askclaude.steps(self.t0, ["Fix the checkout form"], 0, 60, os.path.dirname(self.projects))
+        self.assertEqual(steps[0]["typed"], "The checkout button does nothing")
+
 
 class TaskLinksTest(SessionsTest):
     """A Productive task link typed in a Claude session names the task of the Likely rows it was typed for."""

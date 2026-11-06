@@ -47,6 +47,20 @@ def parse_ts(s: str) -> float:
     return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
 
 
+def record(line: str) -> dict:
+    """One line of a session file as a dict, {} when it is not one (cut short, or of a shape this code does not know):
+    an odd line is skipped, never the session or the day."""
+    try:
+        r = json.loads(line)
+    except (ValueError, RecursionError):
+        return {}
+    return r if isinstance(r, dict) else {}
+
+
+def _obj(v) -> dict:
+    return v if isinstance(v, dict) else {}
+
+
 def text_of(content) -> str:
     if isinstance(content, str):
         return content
@@ -58,18 +72,18 @@ def text_of(content) -> str:
 def human_prompt(r: dict) -> str | None:
     """What the person typed, or None for anything Claude Code wrote itself (tool results, notices, summaries)."""
     if r.get("type") == "attachment":
-        att = r.get("attachment") or {}
-        if att.get("type") == "queued_command" and (att.get("origin") or {}).get("kind") == "human":
+        att = _obj(r.get("attachment"))
+        if att.get("type") == "queued_command" and _obj(att.get("origin")).get("kind") == "human":
             return text_of(att.get("prompt")) or "(message)"
         return None
     if r.get("type") != "user" or r.get("isMeta") or r.get("isCompactSummary") or r.get("toolUseResult") is not None:
         return None
-    content = (r.get("message") or {}).get("content")
+    content = _obj(r.get("message")).get("content")
     if isinstance(content, list) and any(isinstance(x, dict) and x.get("type") == "tool_result" for x in content):
         return None
     origin = r.get("origin")
     if origin is not None:  # recent Claude Code versions mark typed messages
-        return (text_of(content) or "(attachment)") if origin.get("kind") == "human" else None
+        return (text_of(content) or "(attachment)") if _obj(origin).get("kind") == "human" else None
     text = text_of(content)
     return None if not text or text.lstrip().startswith(NOT_TYPED) else text
 
@@ -77,19 +91,20 @@ def human_prompt(r: dict) -> str | None:
 def notification(r: dict) -> bool:
     """A background task reporting back: the agent starts working again without anyone typing."""
     if r.get("type") == "attachment":
-        att = r.get("attachment") or {}
+        att = _obj(r.get("attachment"))
         return att.get("type") == "queued_command" and text_of(att.get("prompt")).lstrip().startswith("<task-notification>")
     if r.get("type") != "user":
         return False
-    if (r.get("origin") or {}).get("kind") == "task-notification":
+    if _obj(r.get("origin")).get("kind") == "task-notification":
         return True
-    return text_of((r.get("message") or {}).get("content")).lstrip().startswith("<task-notification>")
+    return text_of(_obj(r.get("message")).get("content")).lstrip().startswith("<task-notification>")
 
 
 def tool_paths(r: dict) -> list:
     """The paths in the home folder that an agent's tool calls named."""
     found: list = []
-    for item in ((r.get("message") or {}).get("content") or []):
+    content = _obj(r.get("message")).get("content")
+    for item in content if isinstance(content, list) else []:
         if isinstance(item, dict) and item.get("type") == "tool_use":
             stack = [item.get("input")]
             while stack:
@@ -155,7 +170,7 @@ GENERIC = {"repo", "repository", "src", "app", "code", "project", "site", "web",
 
 
 def norm_title(s: str) -> str:
-    s = (s or "").split(" — ")[0]
+    s = (s if isinstance(s, str) else "").split(" — ")[0]
     return re.sub(r"(…|\.\.\.)\s*$", "", s).strip().lower()
 
 
@@ -166,12 +181,9 @@ def read_session(path: str, t0: float, t1: float) -> dict | None:
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
             if '"ai-title"' in line or '"custom-title"' in line:
-                try:
-                    r = json.loads(line)
-                except ValueError:
-                    r = {}
+                r = record(line)
                 name = r.get("customTitle") or r.get("aiTitle")
-                if r.get("type") in ("ai-title", "custom-title") and name:
+                if r.get("type") in ("ai-title", "custom-title") and name and isinstance(name, str):
                     titles.add(norm_title(name))
                     if r.get("type") == "custom-title" or not custom:  # a title the person set wins
                         title, custom = name, custom or r.get("type") == "custom-title"
@@ -179,13 +191,13 @@ def read_session(path: str, t0: float, t1: float) -> dict | None:
             if '"timestamp"' not in line:
                 continue
             try:
-                r = json.loads(line)
+                r = record(line)
                 t = parse_ts(r["timestamp"])
             except (ValueError, KeyError, TypeError, AttributeError):
                 continue
             if not lo <= t < hi or r.get("isSidechain"):
                 continue
-            cwd = r.get("cwd") or cwd
+            cwd = r["cwd"] if isinstance(r.get("cwd"), str) and r["cwd"] else cwd
             text = human_prompt(r)
             if text is not None:
                 prompts.append((t, text.strip()))
@@ -256,7 +268,7 @@ def propose(t0: float, t1: float, items: list, tracker: str, projects_dir: str =
             if os.path.getmtime(path) < t0 - 3600:
                 continue
             s = read_session(path, t0, t1)
-        except OSError:
+        except (OSError, ValueError, TypeError, AttributeError):  # a file that cannot be read: that session only
             continue
         if s:
             analyse(s)
@@ -399,19 +411,19 @@ def task_links(t0: float, projects_dir: str = PROJECTS_DIR) -> list:
             with open(path, encoding="utf-8", errors="replace") as fh:
                 for line in fh:
                     if '"ai-title"' in line or '"custom-title"' in line or "productive.io" in line:
-                        try:
-                            r = json.loads(line)
-                        except ValueError:
-                            continue
+                        r = record(line)
                         name = r.get("customTitle") or r.get("aiTitle")
-                        if r.get("type") in ("ai-title", "custom-title") and name:
+                        if r.get("type") in ("ai-title", "custom-title") and name and isinstance(name, str):
                             titles.add(norm_title(name))
                             continue
                         text = human_prompt(r)
                         if text and r.get("timestamp"):
-                            t = parse_ts(r["timestamp"])
+                            try:
+                                t = parse_ts(r["timestamp"])
+                            except (ValueError, TypeError, AttributeError):
+                                continue  # this line only
                             links += [(t, x) for x in TASK_LINK.findall(text)]
-        except (OSError, ValueError, TypeError):
+        except (OSError, ValueError, TypeError, AttributeError):
             continue
         if links and titles:
             found.append({"titles": {x for x in titles if len(x) >= 5}, "links": sorted(links)})
