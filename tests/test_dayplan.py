@@ -331,9 +331,9 @@ class WriteTest(unittest.TestCase):
     def test_undo_deletes_only_this_runs_entries_and_only_as_written(self):
         server.api_log(self.body())                                         # 501, 10:00
         server.api_log(self.body(row="r2", start="11:00"))                  # 502, 11:00
-        self.existing = [{"id": "501", "date": DATE, "start": T0 + 600 * 60, "minutes": 30, "taskId": "5", "project": "P"},
-                         {"id": "502", "date": DATE, "start": T0 + 660 * 60, "minutes": 45, "taskId": "5", "project": "P"},
-                         {"id": "777", "date": DATE, "start": T0 + 720 * 60, "minutes": 30, "taskId": "5", "project": "P"}]
+        self.existing = [{"id": "501", "date": DATE, "start": T0 + 600 * 60, "minutes": 30, "taskId": "5", "project": "P", "personId": "1"},
+                         {"id": "502", "date": DATE, "start": T0 + 660 * 60, "minutes": 45, "taskId": "5", "project": "P", "personId": "1"},
+                         {"id": "777", "date": DATE, "start": T0 + 720 * 60, "minutes": 30, "taskId": "5", "project": "P", "personId": "1"}]
         with self.assertRaises(ValueError):  # not created by this run
             server.api_entry_delete({"id": "777", "date": DATE, "run": self.run})
         with self.assertRaises(ValueError):  # changed since (45 minutes now): left alone

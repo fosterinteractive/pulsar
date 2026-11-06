@@ -3,6 +3,7 @@
     python3 -m unittest discover -s tests
 """
 
+import json
 import os
 import stat
 import sys
@@ -1274,9 +1275,10 @@ class EditEntryTest(unittest.TestCase):
 
     def setUp(self):
         t = lambda h, m: datetime(2026, 11, 4, h, m, tzinfo=timezone.utc).timestamp()  # noqa: E731
-        self.existing = [{"id": "1", "date": "2026-11-04", "start": t(10, 0), "minutes": 60, "project": "P", "task": "T", "approved": False},
-                         {"id": "2", "date": "2026-11-04", "start": t(11, 0), "minutes": 30, "project": "Q", "task": "U", "approved": False},
-                         {"id": "3", "date": "2026-11-04", "start": t(12, 0), "minutes": 30, "project": "R", "task": "V", "approved": True}]
+        row = lambda i, start, minutes, project, approved=False: {  # noqa: E731
+            "id": i, "date": "2026-11-04", "start": start, "minutes": minutes, "project": project, "task": "T" + i,
+            "taskId": "5", "serviceId": "6", "note": "AB", "approved": approved, "personId": "1"}
+        self.existing = [row("1", t(10, 0), 60, "P"), row("2", t(11, 0), 30, "Q"), row("3", t(12, 0), 30, "R", True)]
         self.updated, self.deleted = [], []
         self.patches = [
             mock.patch.object(server, "current_settings", lambda: {"timezone": "UTC", "person_id": "1"}),
@@ -1292,42 +1294,257 @@ class EditEntryTest(unittest.TestCase):
         for p in self.patches:
             p.stop()
 
+    def seen(self, i):
+        x = next(x for x in self.existing if x["id"] == i)
+        return {"start": datetime.fromtimestamp(x["start"], timezone.utc).strftime("%H:%M"), "minutes": x["minutes"],
+                "taskId": x["taskId"], "serviceId": x["serviceId"], "note": x["note"]}
+
+    def change(self, i, **kw):
+        return server.api_entry_update({"id": i, "date": "2026-11-04", "seen": self.seen(i), **kw})
+
     def test_extending_into_the_next_entry_shows_the_overlap_first(self):
-        got = server.api_entry_update({"id": "1", "date": "2026-11-04", "start": "10:00", "minutes": 75})
+        got = self.change("1", start="10:00", minutes=75)
         self.assertEqual([o["project"] for o in got["overlap"]], ["Q"])
         self.assertEqual(self.updated, [])
-        got = server.api_entry_update({"id": "1", "date": "2026-11-04", "start": "10:00", "minutes": 75, "force": True})
+        got = self.change("1", start="10:00", minutes=75, force=True)
         self.assertEqual(got, {"updated": "1"})
-        self.assertEqual(self.updated[0][1]["minutes"], 75)
+        self.assertEqual(self.updated[0][1], {"minutes": 75})  # the start it already had is not sent again
 
     def test_shrinking_writes_and_a_dry_run_writes_nothing(self):
-        got = server.api_entry_update({"id": "1", "date": "2026-11-04", "start": "10:15", "minutes": 30, "dry": True})
+        got = self.change("1", start="10:15", minutes=30, dry=True)
         self.assertEqual((got["dry"], got["wouldChange"]["started_at"][:16], got["overlap"]), (True, "2026-11-04T10:15", []))
         self.assertEqual(self.updated, [])
-        self.assertEqual(server.api_entry_update({"id": "1", "date": "2026-11-04", "start": "10:15", "minutes": 30}), {"updated": "1"})
+        self.assertEqual(self.change("1", start="10:15", minutes=30), {"updated": "1"})
 
     def test_missing_entries_are_refused_and_approved_ones_left_to_productive(self):
         with self.assertRaises(ValueError):
-            server.api_entry_delete({"id": "99", "date": "2026-11-04"})
+            server.api_entry_delete({"id": "99", "date": "2026-11-04", "seen": {}})
         self.assertEqual(self.deleted, [])
         # auto-approved (a budget with no approval step) is still the author's to change: Productive decides
-        self.assertEqual(server.api_entry_update({"id": "3", "date": "2026-11-04", "start": "12:00", "minutes": 20}), {"updated": "3"})
+        self.assertEqual(self.change("3", start="12:00", minutes=20), {"updated": "3"})
 
     def test_delete_and_its_dry_run(self):
-        self.assertEqual(server.api_entry_delete({"id": "2", "date": "2026-11-04", "dry": True}), {"dry": True, "wouldDelete": "2"})
+        self.assertEqual(server.api_entry_delete({"id": "2", "date": "2026-11-04", "dry": True, "seen": self.seen("2")}),
+                         {"dry": True, "wouldDelete": "2"})
         self.assertEqual(self.deleted, [])
-        self.assertEqual(server.api_entry_delete({"id": "2", "date": "2026-11-04"}), {"deleted": "2"})
+        self.assertEqual(server.api_entry_delete({"id": "2", "date": "2026-11-04", "seen": self.seen("2")}), {"deleted": "2"})
         self.assertEqual(self.deleted, ["2"])
 
     def test_read_only_refuses_every_change_at_the_lowest_level(self):
         for p in self.patches[3:]:
             p.stop()
         self.patches = self.patches[:3]
-        with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):
+        with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}), \
+                mock.patch.object(productive, "https", lambda *a, **k: self.fail("sent")):
             with self.assertRaises(productive.ProductiveError):
                 productive.update_entry("1", {"minutes": 5}, {"person_id": "1"})
             with self.assertRaises(productive.ProductiveError):
                 productive.delete_entry("1", {"person_id": "1"})
+
+    # ---- the second review (2026-11-06): A2, A3, A4, A5 and the rounding at resize ----
+
+    def test_no_person_id_changes_nothing_and_reads_nothing(self):
+        read = []
+        with mock.patch.object(server, "current_settings", lambda: {"timezone": "UTC", "person_id": ""}), \
+                mock.patch.object(server.productive, "entries", lambda *a: read.append(a) or (self.existing, None, "c")):
+            with self.assertRaises(ValueError):
+                self.change("1", minutes=20)
+            with self.assertRaises(ValueError):
+                server.api_entry_delete({"id": "1", "date": "2026-11-04", "seen": self.seen("1")})
+        self.assertEqual((read, self.updated, self.deleted), ([], [], []))
+
+    def test_an_entry_of_someone_else_is_left_alone_whatever_the_filter_returned(self):
+        self.existing[1]["personId"] = "555"
+        self.existing[2]["personId"] = ""  # Productive did not say whose it is
+        for i in ("2", "3"):
+            with self.assertRaises(ValueError):
+                server.api_entry_delete({"id": i, "date": "2026-11-04", "seen": self.seen(i)})
+            with self.assertRaises(ValueError):
+                self.change(i, minutes=10)
+        self.assertEqual((self.updated, self.deleted), ([], []))
+
+    def test_only_what_changed_is_written(self):
+        # the page sends the note and service it showed (the note as plain text: "<p>A</p><p>B</p>" shows as "AB"):
+        # unchanged, so the note's formatting in Productive and the service stay
+        self.assertEqual(self.change("1", minutes=45, note="AB ", serviceId="6", taskId="5"), {"updated": "1"})
+        self.assertEqual(self.updated[-1][1], {"minutes": 45})
+        self.change("1", note="A new note")
+        self.assertEqual(self.updated[-1][1], {"note": "A new note"})
+        self.change("1", serviceId="7")
+        self.assertEqual(self.updated[-1][1], {"service_id": "7"})
+        self.assertEqual(self.change("1", start="10:00", minutes=60), {"unchanged": "1"})
+        self.assertEqual(len(self.updated), 3)
+
+    def test_a_long_note_is_refused_not_cut(self):
+        with self.assertRaises(ValueError) as said:
+            self.change("1", note="x" * 2001)
+        self.assertIn("2001", str(said.exception))
+        self.assertEqual(self.updated, [])
+
+    def test_an_entry_changed_since_the_page_showed_it_is_not_written(self):
+        for field, value in (("note", "Someone's newer note"), ("minutes", 50), ("taskId", "8")):
+            seen = self.seen("1")
+            self.existing[0][field] = value
+            with self.assertRaises(ValueError) as said:
+                server.api_entry_update({"id": "1", "date": "2026-11-04", "seen": seen, "minutes": 20})
+            self.assertIn("changed in Productive", str(said.exception))
+            with self.assertRaises(ValueError):
+                server.api_entry_delete({"id": "1", "date": "2026-11-04", "seen": seen})
+            self.existing[0][field] = {"note": "AB", "minutes": 60, "taskId": "5"}[field]
+        self.assertEqual((self.updated, self.deleted), ([], []))
+
+    def test_a_change_or_delete_without_what_was_seen_is_refused(self):
+        with self.assertRaises(ValueError):
+            server.api_entry_update({"id": "1", "date": "2026-11-04", "minutes": 20})
+        with self.assertRaises(ValueError):
+            server.api_entry_delete({"id": "1", "date": "2026-11-04"})
+        self.assertEqual((self.updated, self.deleted), ([], []))
+
+    def test_a_start_with_seconds_is_kept_when_only_the_end_moves(self):
+        self.existing[0]["start"] += 40  # 10:00:40
+        self.assertEqual(self.change("1", minutes=30), {"updated": "1"})       # the end dragged: no start sent
+        self.assertEqual(self.updated[-1][1], {"minutes": 30})
+        self.change("1", start="10:00", minutes=20)                            # the minute it is in: not a change
+        self.assertEqual(self.updated[-1][1], {"minutes": 20})
+        self.change("1", start="09:55")
+        self.assertEqual(self.updated[-1][1], {"started_at": "2026-11-04T09:55:00+00:00"})
+
+
+class FakeMcp:
+    """Productive's MCP endpoint as Claude Code transcripts show it answering: a refusal comes as plain text, never
+    flagged as an error, and an update of a field the session has not loaded is "aborted". It keeps what a session
+    loaded in that session; a request without a session has none to keep. Nothing here reaches the network."""
+
+    def __init__(self, person="1", sessions=True, answer=None):
+        self.calls, self.loaded, self.person, self.sessions, self.answer = [], {}, person, sessions, answer
+
+    def __call__(self, method, url, body=None, headers=None, timeout=60, write=False, head=None):
+        assert url == productive.MCP_URL, url
+        msg, sid = json.loads(body), (headers or {}).get("Mcp-Session-Id")
+        self.calls.append((msg["method"], (msg.get("params") or {}).get("name"), sid, write))
+        if msg["method"] == "initialize":
+            if self.sessions and head is not None:
+                head["mcp-session-id"] = "s-1"
+            return 200, b'data: {"jsonrpc":"2.0","id":0,"result":{"protocolVersion":"2025-06-18"}}'
+        if msg["method"] == "notifications/initialized":
+            return 202, b""
+        name, args = msg["params"]["name"], msg["params"]["arguments"]
+        if name == "load_resource":
+            self.loaded.setdefault(sid, set()).update(args.get("include_fields") or [])
+            text = ('Found time entry: \n```{"item":{"id":"%s","type":"time_entries","fields":{"time":{"value":60,"unit":'
+                    '"minute"},"person":{"type":"people","id":"%s"}}},"included":[]}```' % (args["id"], self.person))
+        elif name == "update_resource":
+            item = args["items"][0]
+            missing = [k for k in item if k != "id" and (sid is None or k not in self.loaded.get(sid, set()))]
+            text = self.answer if self.answer is not None else (("Update of time entry aborted to avoid overwriting data you have not seen.\nnot loaded "
+                                    "before update: " + ", ".join(missing)) if missing else f"time entry updated (ID: {item['id']}).")
+        else:
+            text = self.answer if self.answer is not None else f"time entry deleted (id: {args['items'][0]['id']})"
+        answer = {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": text}]}}
+        return 200, ("event: message\ndata: " + json.dumps(answer)).encode()
+
+
+class EntryWriteAnswersTest(unittest.TestCase):
+    """What counts as done when an entry is changed or deleted (the second review, 2026-11-06, A1 and C)."""
+
+    def setUp(self):
+        # https is faked in every test here, and PULSAR_TESTS_OFFLINE stays set: the real one refuses whatever happens
+        self.patches = [mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": ""}),  # so the write reaches the fake
+                        mock.patch.object(productive, "connection", lambda s: {"kind": "claude-code", "token": "t"})]
+        for p in self.patches:
+            p.start()
+
+    def tearDown(self):
+        for p in self.patches:
+            p.stop()
+
+    def test_an_mcp_change_loads_its_fields_in_one_session_then_needs_the_success_sentence(self):
+        fake = FakeMcp()
+        with mock.patch.object(productive, "https", fake):
+            productive.update_entry("7", {"minutes": 30, "note": "New", "task_id": "5"}, {"person_id": "1"})
+        self.assertEqual([c[:3] for c in fake.calls], [("initialize", None, None), ("notifications/initialized", None, "s-1"),
+                                                       ("tools/call", "load_resource", "s-1"),
+                                                       ("tools/call", "update_resource", "s-1")])
+        self.assertEqual(fake.loaded["s-1"], {"time", "note", "task", "person"})
+        self.assertEqual([c[3] for c in fake.calls], [False, False, False, True])  # only the update is a write
+
+    def test_a_refusal_in_plain_text_is_never_taken_for_done(self):
+        refusals = ["Update of time entry aborted to avoid overwriting data you have not seen.\nnot loaded before update: note",
+                    "Invalid parameters:\nstarted_at: Invalid string",
+                    'Failed to update time entry. API request failed because of error:\n```{"status": 422, "code": '
+                    '"service_not_accessible"}```', ""]
+        for text in refusals:
+            with mock.patch.object(productive, "https", FakeMcp(answer=text)):
+                with self.assertRaises(productive.ProductiveUnclear) as said:
+                    productive.update_entry("7", {"note": "x"}, {"person_id": "1"})
+            self.assertIn(text[:40] or "nothing", str(said.exception))
+        with mock.patch.object(productive, "https", FakeMcp(sessions=False)):  # no session: Productive aborts it
+            with self.assertRaises(productive.ProductiveUnclear) as said:
+                productive.update_entry("7", {"minutes": 30}, {"person_id": "1"})
+        self.assertIn("not loaded before update: time", str(said.exception))
+        with mock.patch.object(productive, "https", FakeMcp(answer="time entry updated (ID: 8).")):  # another entry
+            with self.assertRaises(productive.ProductiveUnclear):
+                productive.update_entry("7", {"minutes": 30}, {"person_id": "1"})
+
+    def test_an_entry_productive_shows_as_someone_elses_is_not_changed(self):
+        fake = FakeMcp(person="555")
+        with mock.patch.object(productive, "https", fake):
+            with self.assertRaises(productive.ProductiveError) as said:
+                productive.update_entry("7", {"minutes": 30}, {"person_id": "1"})
+        self.assertNotIsInstance(said.exception, productive.ProductiveUnclear)
+        self.assertNotIn("update_resource", [c[1] for c in fake.calls])
+
+    def test_an_mcp_delete_needs_its_success_sentence(self):
+        with mock.patch.object(productive, "https", FakeMcp()):
+            productive.delete_entry("7", {"person_id": "1"})
+        for text in ("Productive could not find time entry 7", "time entry deleted (id: 8)", "2 time entries deleted"):
+            with mock.patch.object(productive, "https", FakeMcp(answer=text)):
+                with self.assertRaises(productive.ProductiveUnclear) as said:
+                    productive.delete_entry("7", {"person_id": "1"})
+            self.assertIn(text, str(said.exception))
+
+    def test_a_rest_server_error_after_a_change_was_sent_is_unclear_not_refused(self):
+        def rest(status, raw=b"{}"):
+            return mock.patch.object(productive, "https", lambda *a, **k: (status, raw))
+        token = mock.patch.object(productive, "connection", lambda s: {"kind": "token", "token": "t"})
+        with token:
+            for status in (500, 502, 503, 504):
+                with rest(status), self.assertRaises(productive.ProductiveUnclear):
+                    productive.update_entry("7", {"minutes": 30}, {"person_id": "1", "org_id": "2"})
+                with rest(status), self.assertRaises(productive.ProductiveUnclear):
+                    productive.delete_entry("7", {"person_id": "1", "org_id": "2"})
+            for status, word in ((422, "HTTP 422"), (429, "limiting requests")):  # turned away before anything changed
+                with rest(status, b'{"errors": []}'), self.assertRaises(productive.ProductiveError) as said:
+                    productive.update_entry("7", {"minutes": 30}, {"person_id": "1", "org_id": "2"})
+                self.assertNotIsInstance(said.exception, productive.ProductiveUnclear)
+                self.assertIn(word, str(said.exception))
+            with rest(200):
+                productive.update_entry("7", {"minutes": 30}, {"person_id": "1", "org_id": "2"})
+            with rest(204, b""):
+                productive.delete_entry("7", {"person_id": "1", "org_id": "2"})
+
+    def test_rows_say_whose_entry_it_is_and_never_read_without_a_person(self):
+        names = productive.Names(os.path.join(tempfile.mkdtemp(), "names.json"))
+        with mock.patch.object(productive, "mcp_text", lambda *a: self.fail("asked Productive")):
+            with self.assertRaises(productive.ProductiveError):
+                productive.mcp_entries("2026-11-04", "2026-11-04", "t", "", names)
+        e = entry("1", "2026-11-02", 45)
+        e["relationships"]["person"] = {"data": {"type": "people", "id": "42"}}
+        e["attributes"]["note"] = "<p>A</p><p>B</p>"
+        asked = []
+
+        def get(path, query, token, org):
+            asked.append(query.get("include"))
+            return 200, jsonapi([e], INCLUDED)
+        rows = productive.rest_entries("2026-11-02", "2026-11-02", "t", "1", "42", names, get)
+        self.assertEqual((rows[0]["personId"], rows[0]["note"], rows[0]["noteRich"]), ("42", "AB", True))
+        self.assertIn("person", asked[0])
+
+    def test_rich_note(self):
+        self.assertFalse(productive.rich_note("Plain words"))
+        self.assertFalse(productive.rich_note("<p>One paragraph &amp; more</p>"))
+        for rich in ("<p>A</p><p>B</p>", "A<br>B", "<ul><li>A</li></ul>", '<a href="https://x">x</a>', "<strong>A</strong>"):
+            self.assertTrue(productive.rich_note(rich), rich)
 
 
 class LogTest(unittest.TestCase):

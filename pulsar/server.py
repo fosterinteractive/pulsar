@@ -839,51 +839,99 @@ def api_log(body: dict) -> dict:
         return result
 
 
+SEEN = {"start": "start", "minutes": "length", "taskId": "task", "serviceId": "service", "note": "note"}
+
+
+def _hhmm(epoch, tz) -> str | None:
+    """A start as the page shows it: the minute it falls in."""
+    return None if epoch is None else datetime.fromtimestamp(epoch, tz).strftime("%H:%M")
+
+
 def _own_entry(body: dict, s: dict) -> tuple:
     """(the entry as Productive has it now, every entry of that day): read afresh, so a change never works from a
-    stale copy. Refuses one that is not there any more. "Approved" alone is not refused: where a budget needs no
+    stale copy. Refuses one that is not there any more, one Productive does not show as yours, and, given `seen` (the
+    entry as the page showed it: start, minutes, task, service, note), one that has changed since, so a click never
+    lands on another entry or undoes someone's newer change. "Approved" alone is not refused: where a budget needs no
     approval, Productive approves every entry at once and still lets its author change it; where an approver has
     approved it, Productive refuses the change itself and the page shows its reason."""
-    entry_id, date = str(body.get("id") or ""), str(body.get("date") or "")
+    entry_id, date, person = str(body.get("id") or ""), str(body.get("date") or ""), str(s.get("person_id") or "")
     if not (is_id(entry_id) and DATE.match(date)):
         raise ValueError("id and date are needed.")
+    if not person.isdigit():  # the day's read could then hold anyone's entries
+        raise ValueError("Pulsar does not know your Productive person ID yet, so it changes nothing. Open Settings: it "
+                         "fills in by itself once Productive answers, or type it there.")
     existing, problem, _ = productive.entries(date, date, s)
     if problem:
         raise RuntimeError(problem)
     mine = next((x for x in existing if str(x.get("id")) == entry_id), None)
     if not mine:
         raise ValueError("That entry is not in Productive on that day any more. The Logged column has been refreshed.")
+    if str(mine.get("personId") or "") != person:
+        raise ValueError("Productive did not show that entry as yours, so Pulsar leaves it alone.")
+    seen = body.get("seen")
+    if seen is not None:
+        if not isinstance(seen, dict):
+            raise ValueError("seen is the entry as the page showed it.")
+        now = {"start": _hhmm(mine.get("start"), config.tz(s)), "minutes": int(mine["minutes"]),
+               "taskId": str(mine.get("taskId") or ""), "serviceId": str(mine.get("serviceId") or ""),
+               "note": str(mine.get("note") or "").strip()}
+        was = {"start": seen.get("start") or None, "minutes": seen.get("minutes"), "taskId": str(seen.get("taskId") or ""),
+               "serviceId": str(seen.get("serviceId") or ""), "note": str(seen.get("note") or "").strip()}
+        changed = [SEEN[k] for k in SEEN if k in seen and was[k] != now[k]]
+        if changed:
+            raise ValueError(f"That entry changed in Productive since you looked at it (its {', '.join(changed)}), so "
+                             "nothing was written. The Logged column has been refreshed: look at it again.")
     return mine, existing
 
 
 def api_entry_update(body: dict) -> dict:
     """Changes one of your entries: a new start, length, note, task or service. From the Edit dialog or a dragged
-    edge in the Logged column. The same checks as logging: a fresh read, overlaps shown first, one write at a time."""
+    edge in the Logged column. The same checks as logging: a fresh read, overlaps shown first, one write at a time.
+    Only what differs from the entry as Productive has it is written, so an unchanged note or service is left as it
+    is; start and minutes may be left out to keep them."""
     s = current_settings()
     tz = config.tz(s)
-    start, minutes = str(body.get("start") or ""), body.get("minutes")
-    if isinstance(minutes, bool) or not isinstance(minutes, int) or not 1 <= minutes <= 24 * 60:
+    start, minutes, note = body.get("start"), body.get("minutes"), body.get("note")
+    if minutes is not None and (isinstance(minutes, bool) or not isinstance(minutes, int) or not 1 <= minutes <= 24 * 60):
         raise ValueError("Minutes must be a whole number from 1 to 1440.")
-    if not re.fullmatch(r"([01][0-9]|2[0-3]):([0-5][0-9])", start):
+    if start is not None and not re.fullmatch(r"([01][0-9]|2[0-3]):([0-5][0-9])", str(start)):
         raise ValueError("Pick a start time (HH:MM).")
     for k in ("taskId", "serviceId"):
         if body.get(k) and not is_id(str(body[k])):
             raise ValueError(f"{k} is a Productive id.")
+    if not isinstance(body.get("seen"), dict):
+        raise ValueError("The entry as you saw it (seen) is needed, so a change never lands on one that changed meanwhile.")
     with _log_lock:
         mine, existing = _own_entry(body, s)
-        begin = datetime.strptime(f"{mine['date']} {start}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
-        a, b = begin.timestamp(), begin.timestamp() + minutes * 60
-        if b > day_bounds(mine["date"], tz)[1]:
-            raise ValueError("An entry cannot run past midnight.")
-        clashes = [x for x in existing if x is not mine and x.get("start") is not None
-                   and x["start"] < b and x["start"] + x["minutes"] * 60 > a]
-        change = {"started_at": begin.isoformat(timespec="seconds"), "minutes": minutes,
-                  "note": None if body.get("note") is None else str(body["note"])[:2000],
-                  "task_id": str(body.get("taskId") or "") or None, "service_id": str(body.get("serviceId") or "") or None}
+        change: dict = {}
+        if start is not None and start != _hhmm(mine.get("start"), tz):
+            change["started_at"] = datetime.strptime(f"{mine['date']} {start}", "%Y-%m-%d %H:%M").replace(
+                tzinfo=tz).isoformat(timespec="seconds")
+        if minutes is not None and minutes != int(mine["minutes"]):
+            change["minutes"] = minutes
+        if note is not None and str(note).strip() != str(mine.get("note") or "").strip():
+            if len(str(note)) > 2000:
+                raise ValueError(f"The note is {len(str(note))} characters; Pulsar sends at most 2000. Shorten it, or "
+                                 "change it in Productive.")
+            change["note"] = str(note)
+        for k in ("task", "service"):
+            if body.get(k + "Id") and str(body[k + "Id"]) != str(mine.get(k + "Id") or ""):
+                change[k + "_id"] = str(body[k + "Id"])
+        a = datetime.fromisoformat(change["started_at"]).timestamp() if "started_at" in change else mine.get("start")
+        m = change.get("minutes", int(mine["minutes"]))
+        if a is not None and ("started_at" in change or "minutes" in change):
+            if a + m * 60 > day_bounds(mine["date"], tz)[1]:
+                raise ValueError("An entry cannot run past midnight.")
+            clashes = [x for x in existing if x is not mine and x.get("start") is not None
+                       and x["start"] < a + m * 60 and x["start"] + x["minutes"] * 60 > a]
+        else:
+            clashes = []  # where it sits does not change
         overlap = [{"start": datetime.fromtimestamp(x["start"], tz).strftime("%H:%M"), "minutes": x["minutes"],
                     "project": x["project"], "task": x.get("task")} for x in sorted(clashes, key=lambda x: x["start"])]
         if body.get("dry"):
             return {"dry": True, "wouldChange": {"id": mine["id"], **change}, "overlap": overlap}
+        if not change:
+            return {"unchanged": mine["id"]}
         if clashes and not body.get("force"):
             return {"overlap": overlap}
         productive.update_entry(mine["id"], change, s)
@@ -892,10 +940,12 @@ def api_entry_update(body: dict) -> dict:
 
 
 def api_entry_delete(body: dict) -> dict:
-    """Deletes one of your entries, after the page asked "Delete …?". Productive keeps it in its Recycle Bin.
-    With `run` (Undo in Log the day), only an entry that run created, and only as it wrote it."""
+    """Deletes one of your entries, after the page asked "Delete …?" and only as it showed it (`seen`). Productive
+    keeps it in its Recycle Bin. With `run` (Undo in Log the day), only an entry that run created, and only as it wrote it."""
     s = current_settings()
     run = body.get("run")
+    if run is None and not isinstance(body.get("seen"), dict):
+        raise ValueError("The entry as you saw it (seen) is needed, so a delete never lands on another entry.")
     with _log_lock:
         mine, _ = _own_entry(body, s)
         if run is not None:
