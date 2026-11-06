@@ -385,6 +385,13 @@ class ChangelogTest(unittest.TestCase):
         from pulsar import changelog
         self.assertEqual(changelog.read(os.path.join(tempfile.mkdtemp(), "CHANGELOG.md")), [])
 
+    def test_unreleased_lines_show_nowhere_until_the_heading_becomes_a_version(self):
+        from pulsar import changelog
+        unreleased = changelog.parse("## Unreleased\n- Log the day.\n\n## 1.2.1 (2026-11-06)\n- Search.\n")
+        self.assertEqual([(r["version"], r["lines"]) for r in unreleased], [("1.2.1", ["Search."])])  # not added to 1.2.1
+        released = changelog.parse("## 1.2.2 (2026-11-07)\n- Log the day.\n\n## 1.2.1 (2026-11-06)\n- Search.\n")
+        self.assertEqual(released[0]["lines"], ["Log the day."])  # what release.sh then finds for 1.2.2
+
 
 class ReasonTest(unittest.TestCase):
     def test_a_request_without_an_answer_says_why(self):
