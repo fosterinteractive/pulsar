@@ -135,6 +135,8 @@ def _run(date: str, tz_name: str, tz=None) -> dict:
         en = en if en >= s else en + 1440
         rows.append({"s": elapsed(date, tz, s), "e": elapsed(date, tz, en), "minutes": e["minutes"], "project": e["project"],
                      "kind": e["kind"], "titles": e.get("titles", []), "messages": e.get("messages", 0),
-                     "first_message": e.get("first_message", "")})
+                     "first_message": e.get("first_message", ""),
+                     # the sessions' ids (the first 8 characters of the file name): pulsar --mcp finds "this session" by them
+                     "sessions": [str(x)[:8] for x in e.get("sessions") or []]})
     return {"tracker": data.get("tracker"), "working": data.get("working"), "proposed": data.get("proposed"),
             "unplaced": data.get("unplaced", []), "logging": data.get("logging", 0), "entries": rows}

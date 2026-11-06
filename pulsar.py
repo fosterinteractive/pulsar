@@ -2,6 +2,7 @@
 """Pulsar: your working day from ActivityWatch or MemTime, next to what you logged in Productive.
 
     python3 pulsar.py [--port 5610] [--no-open]
+    python3 pulsar.py --mcp [--port 5610]     # for Claude Code: an MCP server over the running Pulsar (pulsar/mcp.py)
 
 Then open http://127.0.0.1:5610/. Activity stays on this computer; Productive gets a time entry only when you
 log one yourself in the page.
@@ -16,13 +17,12 @@ import webbrowser
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # its own package first, however it was started
 from pulsar import __version__  # noqa: E402
-from pulsar.server import serve  # noqa: E402
 
 
 def self_test() -> int:
     """Imports every module and checks the page's files: the updater runs this before it trusts a new version."""
     import os
-    from pulsar import askclaude, config, dayplan, learn, likely, names, productive, report, server, sessions, trackers, updater  # noqa: F401
+    from pulsar import askclaude, config, dayplan, learn, likely, mcp, names, productive, report, server, sessions, trackers, updater  # noqa: F401
     web = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
     need = ["index.html", "style.css", "meetings.css", "logday.css"] + [
         f"js/{n}.js" for n in ("core", "day", "report", "settings", "meetings", "log", "logday", "main")]
@@ -87,12 +87,19 @@ def tidy() -> None:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--port", type=int, default=5610)
+    ap.add_argument("--port", type=int, default=None, help="default 5610")
     ap.add_argument("--no-open", action="store_true", help="do not open the browser")
     ap.add_argument("--version", action="version", version=f"Pulsar {__version__}")
     ap.add_argument("--self-test", action="store_true", help="check this copy can run, then exit")
     ap.add_argument("--signin-url", action="store_true", help="print a one-time address that signs a browser in, then exit")
+    ap.add_argument("--mcp", action="store_true",
+                    help="serve Pulsar's tools to Claude Code over stdio (MCP); Pulsar itself must be running")
     args = ap.parse_args()
+    if args.port is None:
+        args.port = 5610
+    if args.mcp:  # stdout is the protocol: nothing else may print there
+        from pulsar import mcp
+        return mcp.main(args.port)
     if args.self_test:
         return self_test()
     if args.signin_url:
@@ -101,6 +108,7 @@ def main() -> int:
         print(f"http://127.0.0.1:{args.port}/?code={config.new_signin_code()}")
         return 0
     os.umask(0o077)  # settings, caches and logs: readable by this user only
+    from pulsar.server import serve
     tidy()
     try:
         server = serve(args.port)

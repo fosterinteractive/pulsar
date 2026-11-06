@@ -376,7 +376,8 @@ def propose(t0: float, t1: float, items: list, tracker: str, projects_dir: str =
                        if t0 + e["s"] * 60 <= t < t0 + e["e"] * 60 and project_at(sessions[i], t) == e["project"])
         rows.append({"s": e["s"], "e": e["e"], "minutes": e["_minutes"], "project": e["project"], "kind": "focused",
                      "titles": sorted({sessions[i]["title"] for i in e["_sessions"] if sessions[i]["title"]}),
-                     "messages": len(typed), "first_message": (typed[0][1] if typed else "")[:200]})
+                     "messages": len(typed), "first_message": (typed[0][1] if typed else "")[:200],
+                     "sessions": sorted(sessions[i]["id"] for i in e["_sessions"])})
     return {"tracker": tracker, "working": sum(present), "proposed": sum(r["minutes"] for r in rows),
             "unplaced": [], "logging": sum(1 for x in range(n) if logging_at[x] and owner[x] is None), "entries": rows}
 
