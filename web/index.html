@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="/static/style.css">
 <link rel="stylesheet" href="/static/meetings.css">
 <link rel="stylesheet" href="/static/flow.css">
+<link rel="stylesheet" href="/static/logday.css">
 </head>
 <body>
 <header>
@@ -57,7 +58,8 @@
           <option value="auto">Auto</option><option value="aw">ActivityWatch</option><option value="memtime">MemTime</option></select></div>
       <div class="colhead likelycol"><b>Likely</b><span id="h-likely">…</span>
         <button class="btn mini2 bordered" id="ask-claude" hidden title="Ask Claude which task each block belongs to">Ask Claude</button></div>
-      <div class="colhead"><b>Logged</b><span id="h-logged">…</span>
+      <div class="colhead loggedcol"><b>Logged</b><span id="h-logged">…</span>
+        <button class="btn mini2 bordered" id="log-day" title="Propose the whole day from your activity, then review it before anything is logged">Log the day</button>
         <button class="btn mini2 bordered" id="log-new" title="Log time in Productive (or drag in this column)">+ Log</button>
         <button class="btn icon mini" id="refresh-logged" title="Refresh logged time from Productive" aria-label="Refresh logged time">↻</button></div>
     </div>
@@ -76,6 +78,7 @@
     <div class="box" id="projects"><h2>Total project time</h2></div>
     <div class="box" id="tasksbox" hidden></div>
     <div class="box" id="likelybox"><h2>Likely, from Claude sessions</h2></div>
+    <section class="rv" id="review" hidden aria-label="Log the day"></section>
   </aside>
 </main>
 <main id="report">
@@ -167,7 +170,7 @@
               <option value="haiku">Haiku: faster and cheaper, a little less careful</option>
               <option value="opus">Opus: the most careful, slower and costs more</option>
             </select></label>
-          <p class="hint" id="ask-claude-hint">It sends what you typed in that day's Claude Code sessions, and the names of the tasks you logged to in the last 30 days, to Claude through your own Claude Code, which may search Productive (read only). 15 to 60 seconds and a little of your Claude usage per day. Each name is the latest model of that kind in your Claude Code.</p>
+          <p class="hint" id="ask-claude-hint">It sends what you typed in that day's Claude Code sessions, and the names of the tasks you logged to in the last 30 days, to Claude through your own Claude Code, which may search Productive (read only). 15 to 60 seconds and a little of your Claude usage per day. Each name is the latest model of that kind in your Claude Code. Log the day asks it too, for the rows Pulsar is unsure of: Haiku did as well as Sonnet there, at a small part of the cost.</p>
         </section>
       </div>
       <div role="tabpanel" id="p-rules" aria-labelledby="t-rules" hidden>
@@ -270,6 +273,12 @@
   <p id="signin-text">This browser is not signed in to Pulsar. Open Pulsar from its app icon and it will sign this browser in. For another browser, run <code>/usr/bin/python3 ~/Library/Application\ Support/Pulsar/current/pulsar.py --signin-url</code> in Terminal and open the address it prints.</p>
   <div class="df"><button type="button" class="btn bordered" id="signin-reload">Reload the page</button></div>
 </dialog>
+<dialog id="lddlg" class="dlg" aria-labelledby="ld-title"></dialog>
+<div class="pkp" id="ld-pk" hidden role="dialog" aria-labelledby="ld-pk-title">
+  <div class="pkh"><b id="ld-pk-title">Task</b><span class="sub" id="ld-pk-sub"></span><button type="button" class="btn icon" id="ld-pk-x" aria-label="Close">✕</button></div>
+  <input type="search" id="ld-pk-q" placeholder="Search every task in Productive" autocomplete="off" aria-label="Search tasks">
+  <div class="picker" id="ld-pk-list" role="listbox" aria-label="Tasks"></div>
+</div>
 <div class="pop" id="pop" role="dialog" aria-label="Details" tabindex="-1"></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
@@ -281,6 +290,7 @@
 <script src="/static/js/meetings.js"></script>
 <script src="/static/js/log.js"></script>
 <script src="/static/js/flow.js"></script>
+<script src="/static/js/logday.js"></script>
 <script src="/static/js/logs.js"></script>
 <script src="/static/js/main.js"></script>
 </body>

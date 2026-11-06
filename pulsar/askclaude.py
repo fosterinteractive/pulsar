@@ -212,27 +212,30 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
     if not binary:
         raise AskError("Claude Code was not found on this Mac.")
     os.makedirs(config.CACHE_DIR, exist_ok=True)
-    try:
-        done = run([binary, "-p", "--model", model, "--no-session-persistence", "--output-format", "json",
-                    "--json-schema", json.dumps(SCHEMA), "--max-budget-usd", str(BUDGET[model]),
-                    "--tools", "", "--permission-mode", "dontAsk",  # nothing outside --allowedTools can run
-                    "--allowedTools", ",".join(READ_TOOLS), "--disallowedTools", ",".join(WRITE_TOOLS)],
-                   input=prompt, capture_output=True, text=True, timeout=TIMEOUT, cwd=config.CACHE_DIR)
-    except subprocess.TimeoutExpired:
-        raise AskError("Claude took too long to answer. Try again later.") from None
-    except OSError as exc:
-        raise AskError(f"Claude Code could not be started ({exc}).") from None
-    try:
-        res = json.loads(done.stdout)
-        if isinstance(res.get("structured_output"), dict):  # checked against SCHEMA by Claude Code
-            picks = res["structured_output"]["picks"]
-        else:  # an older Claude Code: the JSON at the end of its text, unchecked, so no notes from it
-            text = str(res.get("result") or "")
-            picks = json.loads(text[text.rindex('{"picks"'):text.rindex("}") + 1])["picks"]
-            picks = [{k: v for k, v in p.items() if k != "note"} if isinstance(p, dict) else p for p in picks]
-    except (ValueError, KeyError, TypeError):
-        tail = (done.stderr or done.stdout or "").strip()[-200:]
-        raise AskError("Claude's answer could not be read." + (f" {tail}" if tail else "")) from None
+    for attempt in (1, 2):  # an empty answer ({"picks": []}) is asked once more: Haiku sometimes gives one
+        try:
+            done = run([binary, "-p", "--model", model, "--no-session-persistence", "--output-format", "json",
+                        "--json-schema", json.dumps(SCHEMA), "--max-budget-usd", str(BUDGET[model]),
+                        "--tools", "", "--permission-mode", "dontAsk",  # nothing outside --allowedTools can run
+                        "--allowedTools", ",".join(READ_TOOLS), "--disallowedTools", ",".join(WRITE_TOOLS)],
+                       input=prompt, capture_output=True, text=True, timeout=TIMEOUT, cwd=config.CACHE_DIR)
+        except subprocess.TimeoutExpired:
+            raise AskError("Claude took too long to answer. Try again later.") from None
+        except OSError as exc:
+            raise AskError(f"Claude Code could not be started ({exc}).") from None
+        try:
+            res = json.loads(done.stdout)
+            if isinstance(res.get("structured_output"), dict):  # checked against SCHEMA by Claude Code
+                picks = res["structured_output"]["picks"]
+            else:  # an older Claude Code: the JSON at the end of its text, unchecked, so no notes from it
+                text = str(res.get("result") or "")
+                picks = json.loads(text[text.rindex('{"picks"'):text.rindex("}") + 1])["picks"]
+                picks = [{k: v for k, v in p.items() if k != "note"} if isinstance(p, dict) else p for p in picks]
+        except (ValueError, KeyError, TypeError):
+            tail = (done.stderr or done.stdout or "").strip()[-200:]
+            raise AskError("Claude's answer could not be read." + (f" {tail}" if tail else "")) from None
+        if picks:
+            break
     names = {t[0]: {"taskId": t[0], "title": t[1], "project": t[2]} for t in mine}
     unknown = [str(x) for p in picks for x in (p.get("tasks") or []) if x and str(x) not in names and str(x).isdigit()]
     if unknown:  # found by searching Productive: their names
@@ -265,6 +268,16 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
         for old in list(_cache)[:-30]:
             del _cache[old]
     return answer
+
+
+def latest(date: str):
+    """The last answer Ask Claude gave for `date` in this run of Pulsar (any model), or None: Log the day uses its
+    picks and notes, never asking Claude by itself."""
+    with _lock:
+        for sig, answer in reversed(list(_cache.items())):
+            if sig[0] == date:
+                return answer
+    return None
 
 
 def history_span(date: str) -> tuple:

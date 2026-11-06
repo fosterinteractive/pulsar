@@ -291,13 +291,18 @@ function render() {
   else {
     // a repeat is offered until its task has an entry that day
     const done = new Set(logged.entries.map(x => x.taskId));
-    const laid = lanes([...logged.entries.map(x => ({...x})),
-                        ...(state.repeats || []).filter(r => !done.has(r.taskId)).map(r => ({...r, repeat: true}))], ppm, 18);
-    loggedCache = laid.filter(x => !x.repeat); repeatCache = laid.filter(x => x.repeat);
+    // in Log the day the proposals share the lanes (logday.js), and stand in for the repeats
+    const review = ldActive();
+    const laid = lanes([...(review && LD.plan?.ignoreLogged ? [] : logged.entries).map(x => ({...x})),
+                        ...(review ? [] : (state.repeats || []).filter(r => !done.has(r.taskId)).map(r => ({...r, repeat: true}))),
+                        ...(review ? ldLaneItems() : [])], ppm, 18);
+    loggedCache = laid.filter(x => !x.repeat && !x.prop); repeatCache = laid.filter(x => x.repeat);
     const sum = logged.entries.reduce((s, x) => s + x.minutes, 0);
     const head = $('#h-logged');
     head.textContent = logged.warning ? logged.warning : `Productive · ${dur(sum)} · updated ${logged.fetched.split(' ')[1]}`;
     head.classList.toggle('warn', !!logged.warning);
+    head.previousElementSibling.textContent = ldActive() ? 'Logged and proposed' : 'Logged';
+    if (ldActive() && !logged.warning) head.textContent = ldHead(sum);
     let html = loggedCache.map((x, i) => {
       const h = (x.e - x.s) * ppm, lines = Math.max(0, Math.floor((h - 36) / 15));
       const rz = x.s == null ? '' : '<i class="rz rz-t" data-rz="t" title="Drag to change the start"></i><i class="rz rz-b" data-rz="b" title="Drag to change the end"></i>';
@@ -321,7 +326,8 @@ function render() {
         if (it.cat === 'personal') continue;
         for (let m = it.s; m < it.e && m < end;) { const next = Math.min(it.e, Math.floor(m) + 1); active[Math.floor(m)] += next - m; m = next; }
       }
-      for (const e of logged.entries) if (e.s != null) for (let m = Math.floor(e.s); m < Math.floor(e.s) + e.minutes && m < end; m++) covered[m] = 1;
+      for (const e of ldActive() && LD.plan?.ignoreLogged ? [] : logged.entries) if (e.s != null) for (let m = Math.floor(e.s); m < Math.floor(e.s) + e.minutes && m < end; m++) covered[m] = 1;
+      for (const [a, b] of ldActive() ? ldCoverSpans() : []) for (let m = Math.floor(a); m < b && m < end; m++) covered[m] = 1;  // ticked proposals
       for (let m = 0; m < end; m++) if (!covered[m]) gapMin += Math.min(1, active[m]);
       let runStart = -1;
       for (let m = 0; m <= end; m++) {
@@ -335,6 +341,7 @@ function render() {
         }
       }
     }
+    if (review) html += ldCards(ppm, laid.filter(x => x.prop));  // logday.js: the proposed entries, dashed
     laneLogged.innerHTML = html || '<div class="state">No entries on this day.</div>';
   }
 
@@ -482,6 +489,7 @@ document.addEventListener('click', ev => {
   const card = ev.target.closest('.card');
   if (!card) { if (!ev.target.closest('.pop')) closePop(); return; }
   const i = +card.dataset.i, Z = state.zoom;
+  if (card.dataset.k === 'prop') { closePop(); ldOpen(card.dataset.row, true); return; }  // logday.js
   if (card.dataset.k === 'meet') return openMeeting(i, ev);  // meetings.js
   if (card.dataset.k === 'repeat') {
     const x = repeatCache[i];
@@ -550,7 +558,7 @@ document.addEventListener('keydown', ev => {
   if (ev.code === 'KeyT') go(todayLocal());  // the T key on any layout
 });
 
-function go(date) { if (!validDate(date)) return; state.date = date; closePop(); syncURL(); load(); }
+function go(date) { if (!validDate(date)) return; if (ldActive()) closeLogDay(); state.date = date; closePop(); syncURL(); load(); }
 $('#prev').onclick = () => go(shiftDate(state.date, -1));
 $('#next').onclick = () => go(shiftDate(state.date, 1));
 $('#today').onclick = () => go(todayLocal());

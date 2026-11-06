@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, askclaude, calendar, config, learn, likely, logbook, productive, report, sessions, trackers, updater, names
+from . import __version__, askclaude, calendar, config, dayplan, learn, likely, logbook, productive, report, sessions, trackers, updater, names
 
 UPDATER = updater.Updater()
 
@@ -669,7 +669,7 @@ def meeting_tasks(meeting: dict, past: list, rows: list, offered: list, skip: se
         if best and cover[best] >= min(600, (p["e"] - p["s"]) / 3):  # ten minutes of it, or a third of a short one
             counts[best] = counts.get(best, 0) + 1
     out = [{"taskId": t, "title": seen[t].get("task") or "", "project": seen[t].get("project") or "",
-            "why": f"logged during {n} of the last {len(same)} like it"}
+            "why": f"logged during {n} of the last {len(same)} like it", "n": n, "of": len(same)}
            for t, n in sorted(counts.items(), key=lambda kv: -kv[1])]
     words = words_of(title, skip)
     if words:
@@ -734,13 +734,23 @@ def api_log(body: dict) -> dict:
     a, b = begin.timestamp(), begin.timestamp() + minutes * 60
     if b > day_bounds(date, tz)[1]:
         raise ValueError("An entry cannot run past midnight; log the part after it on the next day.")
+    # Log the day sends each row with its run and row names: the journal records it before the write, and refuses a
+    # row that run (or any run of that day) already sent, so a restart or a retry never writes it twice
+    journal = None
+    if body.get("run") is not None or body.get("row") is not None:
+        journal = {"run": str(body.get("run") or ""), "row": str(body.get("row") or ""),
+                   "entry": {"start": start, "minutes": minutes, "taskId": task_id, "serviceId": service_id}}
     if body.get("dry"):
+        if journal:
+            dayplan.check(journal["run"], journal["row"], date, start, minutes, task_id, service_id)
         return _log_checked(body, s, date, begin, minutes, task_id, service_id, tz, a, b)
     key = (date, start, minutes, task_id, service_id)
     with _log_lock:  # one write at a time: two tabs, or two quick clicks, cannot both pass the overlap check
+        if journal:
+            dayplan.check(journal["run"], journal["row"], date, start, minutes, task_id, service_id)
         if time.time() - _just_logged.get(key, 0) < 60:
             raise ValueError("This entry was logged a moment ago. Check the Logged column before logging it again.")
-        result = _log_checked(body, s, date, begin, minutes, task_id, service_id, tz, a, b)
+        result = _log_checked(body, s, date, begin, minutes, task_id, service_id, tz, a, b, journal)
         if "created" in result:
             _just_logged[key] = time.time()
         return result
@@ -799,15 +809,47 @@ def api_entry_update(body: dict) -> dict:
 
 
 def api_entry_delete(body: dict) -> dict:
-    """Deletes one of your entries, after the page asked "Delete …?". Productive keeps it in its Recycle Bin."""
+    """Deletes one of your entries, after the page asked "Delete …?". Productive keeps it in its Recycle Bin.
+    With `run` (Undo in Log the day), only an entry that run created, and only as it wrote it."""
     s = current_settings()
+    run = body.get("run")
     with _log_lock:
         mine, _ = _own_entry(body, s)
+        if run is not None:
+            made = {x["id"]: x for x in dayplan.undo_ids(dayplan.journal(), str(run))}
+            x = made.get(str(mine["id"]))
+            if not x:
+                raise ValueError("That entry was not created by this Log the day run, so Undo leaves it alone.")
+            tz = config.tz(s)
+            now = (datetime.fromtimestamp(mine["start"], tz).strftime("%H:%M") if mine.get("start") is not None else None,
+                   int(mine["minutes"]), str(mine.get("taskId") or ""))
+            if now != (x["start"], int(x["minutes"]), str(x["taskId"] or "")):
+                raise ValueError("That entry was changed after this run logged it, so Undo leaves it alone. Delete it "
+                                 "from its card if you mean to.")
         if body.get("dry"):
             return {"dry": True, "wouldDelete": mine["id"]}
         productive.delete_entry(mine["id"], s)
+        if run is not None:
+            dayplan.mark_undone(str(run), mine["id"])
         _recent.clear()
         return {"deleted": mine["id"]}
+
+
+def api_dayplan(q: dict) -> dict:
+    """Log the day: the whole day proposed for review (dayplan.py). Nothing is written. ignore_logged=1 plans as if
+    nothing were logged that day; only a read-only test server (PULSAR_READ_ONLY) accepts it."""
+    ignore = q.get("ignore_logged") == "1"
+    if ignore and not os.environ.get("PULSAR_READ_ONLY"):
+        raise ValueError("ignore_logged is for read-only test servers only.")
+    source = q.get("source", "auto")
+    if source not in ("auto", "aw", "memtime"):
+        raise ValueError("source is auto, aw or memtime")
+    return dayplan.gather(q["date"], source, ignore)
+
+
+def api_dayplan_journal(q: dict) -> dict:
+    """The Log the day runs of a day, as the journal has them: what each row became, and what Undo would delete."""
+    return {"runs": [{**r, "undo": dayplan.undo_ids({"runs": [r]}, r["run"])} for r in dayplan.runs_for(q["date"])]}
 
 
 _log_lock = threading.Lock()
@@ -815,9 +857,14 @@ _just_logged: dict = {}  # (date, start, minutes, task, service) -> when it was 
 
 
 def _log_checked(body: dict, s: dict, date: str, begin, minutes: int, task_id: str, service_id: str, tz, a: float,
-                 b: float) -> dict:
+                 b: float, journal: dict | None = None) -> dict:
+    def note(status, **fields):  # a Log the day row: its state in the journal, on disk before the next step
+        if journal:
+            dayplan.mark(journal["run"], date, journal["row"], journal["entry"], status, **fields)
+
     existing, problem, _ = productive.entries(date, date, s)
     if problem:
+        note("refused", reason=f"Not sent: {problem}")
         raise RuntimeError(problem)
     clashes = [x for x in existing if x.get("start") is not None and x["start"] < b and x["start"] + x["minutes"] * 60 > a]
     if body.get("dry"):  # everything up to the write, for tests: nothing reaches Productive
@@ -826,11 +873,25 @@ def _log_checked(body: dict, s: dict, date: str, begin, minutes: int, task_id: s
                 "overlap": [{"start": datetime.fromtimestamp(x["start"], tz).strftime("%H:%M"), "minutes": x["minutes"],
                              "project": x["project"]} for x in clashes]}
     if clashes and not body.get("force"):
-        return {"overlap": [{"start": datetime.fromtimestamp(x["start"], tz).strftime("%H:%M"), "minutes": x["minutes"],
-                             "project": x["project"], "task": x["task"]} for x in sorted(clashes, key=lambda x: x["start"])]}
-    created = productive.create_entry({"date": date, "minutes": minutes, "started_at": begin.isoformat(timespec="seconds"),
-                                       "note": str(body.get("note") or "")[:2000], "task_id": task_id,
-                                       "service_id": service_id}, s)
+        overlap = [{"start": datetime.fromtimestamp(x["start"], tz).strftime("%H:%M"), "minutes": x["minutes"],
+                    "project": x["project"], "task": x["task"]} for x in sorted(clashes, key=lambda x: x["start"])]
+        note("refused", reason="Not sent: it would overlap " + "; ".join(f"{o['start']} {o['project']}" for o in overlap))
+        return {"overlap": overlap}
+    note("sending")
+    try:
+        created = productive.create_entry({"date": date, "minutes": minutes, "started_at": begin.isoformat(timespec="seconds"),
+                                           "note": str(body.get("note") or "")[:2000], "task_id": task_id,
+                                           "service_id": service_id}, s)
+    except productive.ProductiveUnclear as exc:
+        note("unknown", reason=str(exc))
+        raise
+    except productive.ProductiveError as exc:  # a clear refusal: nothing was written
+        note("refused", reason=str(exc))
+        raise
+    except BaseException as exc:  # anything else after sending: it may have happened
+        note("unknown", reason=f"{type(exc).__name__}: {exc}")
+        raise
+    note("logged", id=str(created.get("id") or ""))
     _recent.clear()
     return {"created": created}
 
@@ -944,7 +1005,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(calendar.status(config.load()))
             routes = {"/api/activity": api_activity, "/api/entries": api_entries, "/api/proposal": api_proposal,
                       "/api/tasks/suggest": api_suggest, "/api/services": api_services, "/api/repeats": api_repeats,
-                      "/api/calendar": api_calendar, "/api/meeting-tasks": api_meeting_tasks}
+                      "/api/calendar": api_calendar, "/api/meeting-tasks": api_meeting_tasks,
+                      "/api/dayplan": api_dayplan, "/api/dayplan/journal": api_dayplan_journal}
             if url.path not in routes:
                 return self.send(404, b"not found", "text/plain")
             if not DATE.match(q.get("date", "")):

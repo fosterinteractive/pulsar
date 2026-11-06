@@ -41,6 +41,10 @@ class ProductiveError(Exception):
     pass
 
 
+class ProductiveUnclear(ProductiveError):
+    """A write whose answer never came, or could not be read: it may or may not have happened. Never retried."""
+
+
 # ---- names that never change: a task's project, a service's budget -------------------------
 
 class Names:
@@ -414,6 +418,8 @@ def mcp_text(tool: str, args: dict, token: str) -> str:
         _cc_cache[0] = 0.0  # read the keychain again next time: Claude Code may have renewed it meanwhile
         raise ProductiveError("Productive refused Claude Code's token (HTTP 401); it may have just expired.")
     if status != 200:
+        if tool in WRITE_TOOLS and status >= 500:  # a server error after a write was sent: it may have happened
+            raise ProductiveUnclear(f"Productive answered HTTP {status}, so the change may or may not have happened.")
         raise ProductiveError(f"Productive answered HTTP {status}.")
     text = raw.decode("utf-8", "replace")
     msg = None
@@ -856,7 +862,7 @@ def update_entry(entry_id: str, change: dict, settings: dict) -> None:
             status, raw = https("PATCH", f"{API}/time_entries/{int(entry_id)}", json.dumps(body).encode("utf-8"),
                                 _rest_headers(conn, settings), timeout=30, write=True)
         except (OSError, http.client.HTTPException) as exc:
-            raise ProductiveError(UNCLEAR.format(exc))
+            raise ProductiveUnclear(UNCLEAR.format(exc))
         if status != 200:
             raise ProductiveError(f"Productive refused the change (HTTP {status}): {raw[:300].decode('utf-8', 'replace')}")
         return
@@ -874,7 +880,7 @@ def update_entry(entry_id: str, change: dict, settings: dict) -> None:
     except ProductiveError:
         raise
     except (OSError, http.client.HTTPException, ValueError) as exc:
-        raise ProductiveError(UNCLEAR.format(exc))
+        raise ProductiveUnclear(UNCLEAR.format(exc))
 
 
 def delete_entry(entry_id: str, settings: dict) -> None:
@@ -885,7 +891,7 @@ def delete_entry(entry_id: str, settings: dict) -> None:
             status, raw = https("DELETE", f"{API}/time_entries/{int(entry_id)}", None, _rest_headers(conn, settings),
                                 timeout=30, write=True)
         except (OSError, http.client.HTTPException) as exc:
-            raise ProductiveError(UNCLEAR.format(exc))
+            raise ProductiveUnclear(UNCLEAR.format(exc))
         if status not in (200, 204):
             raise ProductiveError(f"Productive refused to delete it (HTTP {status}): {raw[:300].decode('utf-8', 'replace')}")
         return
@@ -894,7 +900,7 @@ def delete_entry(entry_id: str, settings: dict) -> None:
     except ProductiveError:
         raise
     except (OSError, http.client.HTTPException, ValueError) as exc:
-        raise ProductiveError(UNCLEAR.format(exc))
+        raise ProductiveUnclear(UNCLEAR.format(exc))
 
 
 def create_entry(entry: dict, settings: dict) -> dict:
@@ -917,8 +923,11 @@ def create_entry(entry: dict, settings: dict) -> dict:
                 "X-Auth-Token": conn["token"], "X-Organization-Id": str(settings.get("org_id")),
                 "Content-Type": "application/vnd.api+json", "Accept": "application/vnd.api+json"}, timeout=30, write=True)
         except (OSError, http.client.HTTPException) as exc:
-            raise ProductiveError(f"No clear answer from Productive ({exc}), so the entry may or may not exist. Check "
-                                  "the Logged column (it has been refreshed) before logging again.")
+            raise ProductiveUnclear(f"No clear answer from Productive ({exc}), so the entry may or may not exist. Check "
+                                   "the Logged column (it has been refreshed) before logging again.")
+        if status >= 500:  # a server error after the entry was sent: it may exist
+            raise ProductiveUnclear(f"Productive answered HTTP {status}, so the entry may or may not exist. Check the "
+                                    "Logged column (it has been refreshed) before logging again.")
         if status not in (200, 201):
             raise ProductiveError(f"Productive refused the entry (HTTP {status}): {raw[:300].decode('utf-8', 'replace')}")
         doc = json.loads(raw or b"{}")
@@ -932,12 +941,12 @@ def create_entry(entry: dict, settings: dict) -> dict:
     except ProductiveError:
         raise
     except (OSError, http.client.HTTPException, ValueError) as exc:
-        raise ProductiveError(f"No clear answer from Productive ({exc}), so the entry may or may not exist. Check the "
-                              "Logged column (it has been refreshed) before logging again.")
+        raise ProductiveUnclear(f"No clear answer from Productive ({exc}), so the entry may or may not exist. Check the "
+                               "Logged column (it has been refreshed) before logging again.")
     # only Productive's success sentence counts ("time entry created (ID: 12345678)."); any other text that happens to
     # hold an "ID: n" (an error naming a service, say) is not a new entry
     ids = re.findall(r"time entr(?:y|ies) created \(IDs?:\s*(\d+)", text, re.I)
     if not ids:
-        raise ProductiveError("Productive's answer was unclear, so the entry may or may not exist. Check the Logged "
-                              "column (it has been refreshed) before logging again. Productive said: " + text[:200])
+        raise ProductiveUnclear("Productive's answer was unclear, so the entry may or may not exist. Check the Logged "
+                               "column (it has been refreshed) before logging again. Productive said: " + text[:200])
     return {"id": ids[0]}
