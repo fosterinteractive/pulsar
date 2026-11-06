@@ -312,6 +312,8 @@ class Updater:
         with self.lock:
             self._switch()
             target = os.path.join(self.ready, "pulsar.py")
+            from . import trackers
+            trackers._forget_memtime_copy()  # nothing registered for exit runs across execv
             os.execv(sys.executable, [sys.executable, "-E", "-s", "-B", target] + sys.argv[1:])
 
     def _cleanup(self) -> None:

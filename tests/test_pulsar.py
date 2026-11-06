@@ -921,6 +921,36 @@ class ReviewFixesTest(unittest.TestCase):
             trackers._memtime_copy["at"] -= 61  # a minute later: a fresh copy
             trackers.memtime_query("select x from t", db_path=db)
             self.assertEqual(len([c for c in copies if c == db]), 2)
+            trackers._forget_memtime_copy()  # the dict is put back below: the copy it names must go first
+
+    def test_copies_a_killed_or_restarted_pulsar_left_go_while_pulsar_runs(self):
+        import sqlite3
+        db = os.path.join(tempfile.mkdtemp(), "core.db")
+        sqlite3.connect(db).close()
+        old = [tempfile.mkdtemp(prefix=trackers.COPY_PREFIX) for _ in range(3)]  # from Pulsars that were killed
+        for folder in old:
+            os.utime(folder, (time.time() - 3600, time.time() - 3600))
+        recent = tempfile.mkdtemp(prefix=trackers.COPY_PREFIX)  # another running Pulsar's, made a minute ago
+        with mock.patch.dict(trackers._memtime_copy, {"dir": "", "source": "", "at": 0.0}), \
+                mock.patch.object(trackers, "_swept", [0.0]):
+            trackers.memtime_query("select 1", db_path=db)
+            mine = trackers._memtime_copy["dir"]
+            self.assertEqual([os.path.exists(f) for f in old + [recent, mine]], [False, False, False, True, True])
+            trackers._memtime_copy["at"] -= 61
+            os.utime(recent, (time.time() - 3600, time.time() - 3600))
+            trackers.memtime_query("select 1", db_path=db)  # a new copy within ten minutes: no second sweep
+            self.assertTrue(os.path.exists(recent))
+            self.assertFalse(os.path.exists(mine))  # its own old copy goes as the new one is made
+            trackers._forget_memtime_copy()
+
+    def test_a_restart_into_an_update_removes_this_runs_copy_first(self):
+        copy, seen = tempfile.mkdtemp(prefix=trackers.COPY_PREFIX), []
+        u = updater.Updater(root=tempfile.mkdtemp())
+        u.ready = tempfile.mkdtemp()
+        with mock.patch.dict(trackers._memtime_copy, {"dir": copy}), mock.patch.object(u, "_switch", lambda: None), \
+                mock.patch.object(updater.os, "execv", lambda *a: seen.append(os.path.exists(copy))):
+            u.apply()
+        self.assertEqual(seen, [False])  # gone before the new version took over the process
 
     def test_assigned_tasks_come_overdue_due_today_blocked_or_started_then_the_rest(self):
         t = lambda i, due=None, status="To Do": {"taskId": i, "due": due, "status": status, "blocked": "block" in status.lower()}

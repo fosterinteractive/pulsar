@@ -56,17 +56,9 @@ def tidy() -> None:
     logs older than 31 days."""
     import os
     import time
-    import glob
-    import shutil
-    import tempfile
-    from pulsar import config, logbook
+    from pulsar import config, logbook, trackers
     logbook.prune()
-    for old in glob.glob(os.path.join(tempfile.gettempdir(), "pulsar-memtime-*")):  # copies a restart left behind
-        try:
-            if time.time() - os.path.getmtime(old) > 3600:
-                shutil.rmtree(old, ignore_errors=True)
-        except OSError:
-            pass
+    trackers.sweep_memtime_copies()  # copies of MemTime's database that a killed or restarted Pulsar left behind
     for base in (config.CONFIG_DIR, config.CACHE_DIR):
         for folder, _dirs, files in os.walk(base):
             try:
