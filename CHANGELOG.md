@@ -4,6 +4,10 @@ What each Pulsar release changed, newest first.
 
 <!-- A release needs its entry before macos/release.sh runs: a "## X.Y.Z (YYYY-MM-DD)" heading and one "- " line. -->
 
+## 1.2.1 (2026-11-06)
+- Settings: categories with icons, and a search.
+- Claude's suggestions marked with its icon; Save no longer re-checks Productive.
+
 ## 1.2.0 (2026-11-06)
 - Time away from the computer, marked in the day.
 - Logging a Likely block offers the tasks you used in that session or repository first.
