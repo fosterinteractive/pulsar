@@ -1256,7 +1256,8 @@ class EntryWriteAnswersTest(unittest.TestCase):
     """What counts as done when an entry is changed or deleted (the second review, 2026-11-06, A1 and C)."""
 
     def setUp(self):
-        self.patches = [mock.patch.object(productive.config, "writes_blocked", lambda: None),  # the fakes take the write
+        # https is faked in every test here, and PULSAR_TESTS_OFFLINE stays set: the real one refuses whatever happens
+        self.patches = [mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": ""}),  # so the write reaches the fake
                         mock.patch.object(productive, "connection", lambda s: {"kind": "claude-code", "token": "t"})]
         for p in self.patches:
             p.start()
