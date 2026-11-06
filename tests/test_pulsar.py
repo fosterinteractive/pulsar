@@ -980,6 +980,69 @@ class CreateEntryTest(unittest.TestCase):
                 productive.mcp_text("create_resource", {}, "t")
 
 
+class EditEntryTest(unittest.TestCase):
+    """Changing and deleting your own entries: fresh read, approved ones refused, overlaps first, dry runs."""
+
+    def setUp(self):
+        t = lambda h, m: datetime(2026, 11, 4, h, m, tzinfo=timezone.utc).timestamp()  # noqa: E731
+        self.existing = [{"id": "1", "date": "2026-11-04", "start": t(10, 0), "minutes": 60, "project": "P", "task": "T", "approved": False},
+                         {"id": "2", "date": "2026-11-04", "start": t(11, 0), "minutes": 30, "project": "Q", "task": "U", "approved": False},
+                         {"id": "3", "date": "2026-11-04", "start": t(12, 0), "minutes": 30, "project": "R", "task": "V", "approved": True}]
+        self.updated, self.deleted = [], []
+        self.patches = [
+            mock.patch.object(server, "current_settings", lambda: {"timezone": "UTC", "person_id": "1"}),
+            mock.patch.object(server.config, "tz", lambda s: timezone.utc),
+            mock.patch.object(server.productive, "entries", lambda d0, d1, s: (self.existing, None, "token")),
+            mock.patch.object(server.productive, "update_entry", lambda i, c, s: self.updated.append((i, c))),
+            mock.patch.object(server.productive, "delete_entry", lambda i, s: self.deleted.append(i)),
+        ]
+        for p in self.patches:
+            p.start()
+
+    def tearDown(self):
+        for p in self.patches:
+            p.stop()
+
+    def test_extending_into_the_next_entry_shows_the_overlap_first(self):
+        got = server.api_entry_update({"id": "1", "date": "2026-11-04", "start": "10:00", "minutes": 75})
+        self.assertEqual([o["project"] for o in got["overlap"]], ["Q"])
+        self.assertEqual(self.updated, [])
+        got = server.api_entry_update({"id": "1", "date": "2026-11-04", "start": "10:00", "minutes": 75, "force": True})
+        self.assertEqual(got, {"updated": "1"})
+        self.assertEqual(self.updated[0][1]["minutes"], 75)
+
+    def test_shrinking_writes_and_a_dry_run_writes_nothing(self):
+        got = server.api_entry_update({"id": "1", "date": "2026-11-04", "start": "10:15", "minutes": 30, "dry": True})
+        self.assertEqual((got["dry"], got["wouldChange"]["started_at"][:16], got["overlap"]), (True, "2026-11-04T10:15", []))
+        self.assertEqual(self.updated, [])
+        self.assertEqual(server.api_entry_update({"id": "1", "date": "2026-11-04", "start": "10:15", "minutes": 30}), {"updated": "1"})
+
+    def test_approved_or_missing_entries_are_refused(self):
+        with self.assertRaises(ValueError):
+            server.api_entry_update({"id": "3", "date": "2026-11-04", "start": "12:00", "minutes": 20})
+        with self.assertRaises(ValueError):
+            server.api_entry_delete({"id": "3", "date": "2026-11-04"})
+        with self.assertRaises(ValueError):
+            server.api_entry_delete({"id": "99", "date": "2026-11-04"})
+        self.assertEqual((self.updated, self.deleted), ([], []))
+
+    def test_delete_and_its_dry_run(self):
+        self.assertEqual(server.api_entry_delete({"id": "2", "date": "2026-11-04", "dry": True}), {"dry": True, "wouldDelete": "2"})
+        self.assertEqual(self.deleted, [])
+        self.assertEqual(server.api_entry_delete({"id": "2", "date": "2026-11-04"}), {"deleted": "2"})
+        self.assertEqual(self.deleted, ["2"])
+
+    def test_read_only_refuses_every_change_at_the_lowest_level(self):
+        for p in self.patches[3:]:
+            p.stop()
+        self.patches = self.patches[:3]
+        with mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):
+            with self.assertRaises(productive.ProductiveError):
+                productive.update_entry("1", {"minutes": 5}, {"person_id": "1"})
+            with self.assertRaises(productive.ProductiveError):
+                productive.delete_entry("1", {"person_id": "1"})
+
+
 class LogTest(unittest.TestCase):
     """Writing time: the overlap guard and the dry run, with Productive replaced by fakes."""
 

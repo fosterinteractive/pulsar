@@ -302,7 +302,12 @@ dialog#settings::backdrop { background: rgba(0,0,0,.35); }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .hint { color: var(--muted); font-size: 12px; margin: 2px 0 6px; }
 .hint:empty { display: none; }
-.hint.warnish { color: var(--gap); }
+.hint.warnish { color: var(--gap-text); }
+.sub.warnish { color: var(--gap-text); }
+/* the edges of a logged entry that can change: drag to move its start or end */
+.card.logged .rz { position: absolute; left: 0; right: 0; height: 6px; cursor: ns-resize; z-index: 2; }
+.card.logged .rz-t { top: -2px; } .card.logged .rz-b { bottom: -2px; }
+.card.logged:hover .rz-b, .card.logged:hover .rz-t { background: color-mix(in srgb, var(--c) 35%, transparent); }
 .status { font-size: 12.5px; margin: 0 0 6px; padding: 8px 10px; border-radius: 8px; background: var(--seg); }
 .status.warn, .msg.warn { color: var(--gap-text); }
 .msg { font-size: 12.5px; margin: 0; padding: 10px 18px 0; }

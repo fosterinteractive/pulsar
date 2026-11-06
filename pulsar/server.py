@@ -709,6 +709,70 @@ def api_log(body: dict) -> dict:
         return result
 
 
+def _own_entry(body: dict, s: dict) -> tuple:
+    """(the entry as Productive has it now, every entry of that day): read afresh, so a change never works from a
+    stale copy. Refuses one that is not there any more or is approved (Productive would refuse it too)."""
+    entry_id, date = str(body.get("id") or ""), str(body.get("date") or "")
+    if not (is_id(entry_id) and DATE.match(date)):
+        raise ValueError("id and date are needed.")
+    existing, problem, _ = productive.entries(date, date, s)
+    if problem:
+        raise RuntimeError(problem)
+    mine = next((x for x in existing if str(x.get("id")) == entry_id), None)
+    if not mine:
+        raise ValueError("That entry is not in Productive on that day any more. The Logged column has been refreshed.")
+    if mine.get("approved"):
+        raise ValueError("This entry is approved, so Productive does not let it change. Ask whoever approved it.")
+    return mine, existing
+
+
+def api_entry_update(body: dict) -> dict:
+    """Changes one of your entries: a new start, length, note, task or service. From the Edit dialog or a dragged
+    edge in the Logged column. The same checks as logging: a fresh read, overlaps shown first, one write at a time."""
+    s = current_settings()
+    tz = config.tz(s)
+    start, minutes = str(body.get("start") or ""), body.get("minutes")
+    if isinstance(minutes, bool) or not isinstance(minutes, int) or not 1 <= minutes <= 24 * 60:
+        raise ValueError("Minutes must be a whole number from 1 to 1440.")
+    if not re.fullmatch(r"([01][0-9]|2[0-3]):([0-5][0-9])", start):
+        raise ValueError("Pick a start time (HH:MM).")
+    for k in ("taskId", "serviceId"):
+        if body.get(k) and not is_id(str(body[k])):
+            raise ValueError(f"{k} is a Productive id.")
+    with _log_lock:
+        mine, existing = _own_entry(body, s)
+        begin = datetime.strptime(f"{mine['date']} {start}", "%Y-%m-%d %H:%M").replace(tzinfo=tz)
+        a, b = begin.timestamp(), begin.timestamp() + minutes * 60
+        if b > day_bounds(mine["date"], tz)[1]:
+            raise ValueError("An entry cannot run past midnight.")
+        clashes = [x for x in existing if x is not mine and x.get("start") is not None
+                   and x["start"] < b and x["start"] + x["minutes"] * 60 > a]
+        change = {"started_at": begin.isoformat(timespec="seconds"), "minutes": minutes,
+                  "note": None if body.get("note") is None else str(body["note"])[:2000],
+                  "task_id": str(body.get("taskId") or "") or None, "service_id": str(body.get("serviceId") or "") or None}
+        overlap = [{"start": datetime.fromtimestamp(x["start"], tz).strftime("%H:%M"), "minutes": x["minutes"],
+                    "project": x["project"], "task": x.get("task")} for x in sorted(clashes, key=lambda x: x["start"])]
+        if body.get("dry"):
+            return {"dry": True, "wouldChange": {"id": mine["id"], **change}, "overlap": overlap}
+        if clashes and not body.get("force"):
+            return {"overlap": overlap}
+        productive.update_entry(mine["id"], change, s)
+        _recent.clear()
+        return {"updated": mine["id"]}
+
+
+def api_entry_delete(body: dict) -> dict:
+    """Deletes one of your entries, after the page asked "Delete …?". Productive keeps it in its Recycle Bin."""
+    s = current_settings()
+    with _log_lock:
+        mine, _ = _own_entry(body, s)
+        if body.get("dry"):
+            return {"dry": True, "wouldDelete": mine["id"]}
+        productive.delete_entry(mine["id"], s)
+        _recent.clear()
+        return {"deleted": mine["id"]}
+
+
 _log_lock = threading.Lock()
 _just_logged: dict = {}  # (date, start, minutes, task, service) -> when it was written
 
@@ -909,6 +973,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": True})
             if urlparse(self.path).path == "/api/log":
                 return self.send_json(api_log(body))
+            if urlparse(self.path).path == "/api/entry/update":
+                return self.send_json(api_entry_update(body))
+            if urlparse(self.path).path == "/api/entry/delete":
+                return self.send_json(api_entry_delete(body))
             if urlparse(self.path).path == "/api/likely/ask":
                 return self.send_json(api_ask_claude(body))
             if urlparse(self.path).path == "/api/calendar/connect":

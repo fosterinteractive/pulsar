@@ -135,7 +135,7 @@ logForm.elements.note.addEventListener('input', () => { if (logDrafted) { logDra
 /* after "Log anyway", any change to what would be logged means a new check for overlaps */
 function resetForce() {
   if (!logForce) return;
-  logForce = false; $('#log-save').textContent = 'Log in Productive'; setLogMsg('');
+  logForce = false; $('#log-save').textContent = logEdit ? 'Save changes' : 'Log in Productive'; setLogMsg('');
 }
 for (const name of ['date', 'start', 'minutes', 'service'])
   for (const type of ['input', 'change']) logForm.elements[name].addEventListener(type, resetForce);
@@ -151,7 +151,11 @@ logForm.elements.date.addEventListener('change', () => {
 
 /* lead: a group offered first and picked: {label, tasks}, {label, ids} (the page knows only the tasks' ids), or
    {label, url} (the server works them out, each with why). drafted: Claude's note {note, taskId, title}, when `note` is it */
-async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = [], note = '', lead = null, drafted = null} = {}) {
+let logEdit = null;  // {id, serviceId, title} while the dialog edits an entry that is already logged
+async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = [], note = '', lead = null, edit = null, drafted = null} = {}) {
+  logEdit = edit;
+  $('#log-title').textContent = edit ? 'Change a logged entry' : 'Log time in Productive';
+  logForm.elements.date.disabled = !!edit;  // an entry changes within its own day
   if (!CONFIG?.productive.active) { toast('Connect Productive in Settings first.', true); openSettings('t-conn'); return; }
   const f = logForm.elements;
   start = Math.max(0, Math.min(1435, Math.round(start)));  // inside the day: hm() would wrap 24:00 to 00:00
@@ -159,7 +163,7 @@ async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = 
   f.date.value = date; f.start.value = hm(start); f.minutes.value = minutes; f.note.value = note || '';
   logDrafted = drafted?.note && drafted.note === note ? drafted : null;
   f.service.innerHTML = '<option value="">Pick a task first</option>'; f.service.disabled = true;
-  logForce = false; setLogMsg(''); $('#log-save').textContent = 'Log in Productive';
+  logForce = false; setLogMsg(''); $('#log-save').textContent = edit ? 'Save changes' : 'Log in Productive';
   noStartHint(date);
   logDlg.showModal();
   logPicker.loading();
@@ -210,7 +214,8 @@ async function loadServices(task) {
   // the service you used last on this task; else one of the same name in a newer budget; else the task's own
   const recent = (await suggestions(date)).recent?.find(t => t.taskId === task.taskId);
   if (logPicker.selected?.taskId !== task.taskId || f.date.value !== date) return;
-  const pick = list.find(x => x.id === recent?.serviceId)
+  const pick = (logEdit && task.taskId === logEdit.taskId ? list.find(x => x.id === logEdit.serviceId) : null)
+    || list.find(x => x.id === recent?.serviceId)
     || list.find(x => recent?.service && x.name.trim() === recent.service.trim())
     || list.find(x => x.id === r.task?.serviceId) || (list.length === 1 ? list[0] : null);
   f.service.innerHTML = (pick ? '' : '<option value="">Pick a service</option>') + list.map(x =>
@@ -227,21 +232,24 @@ logForm.addEventListener('submit', async ev => {
   const f = logForm.elements, task = logPicker.selected;
   if (!task) return setLogMsg('Pick a task.', true);
   if (!f.service.value) return setLogMsg('Pick a service.', true);
-  const btn = $('#log-save'); btn.disabled = true; setLogMsg('Checking the day, then logging…');
-  const r = await postJSON('/api/log', {date: f.date.value, start: f.start.value, minutes: +f.minutes.value, taskId: task.taskId,
-                                        serviceId: f.service.value, note: f.note.value.trim(), force: logForce});
+  const btn = $('#log-save'); btn.disabled = true; setLogMsg(logEdit ? 'Checking the day, then saving…' : 'Checking the day, then logging…');
+  const r = logEdit
+    ? await postJSON('/api/entry/update', {id: logEdit.id, date: f.date.value, start: f.start.value, minutes: +f.minutes.value,
+                                           taskId: task.taskId, serviceId: f.service.value, note: f.note.value.trim(), force: logForce})
+    : await postJSON('/api/log', {date: f.date.value, start: f.start.value, minutes: +f.minutes.value, taskId: task.taskId,
+                                  serviceId: f.service.value, note: f.note.value.trim(), force: logForce});
   btn.disabled = false;
   if (r.error) {  // the next try checks overlaps again: the failed write may have landed
-    logForce = false; btn.textContent = 'Log in Productive';
+    logForce = false; btn.textContent = logEdit ? 'Save changes' : 'Log in Productive';
     if (f.date.value === state.date) refreshLogged();
     return setLogMsg(r.error, true);
   }
   if (r.overlap) {
-    logForce = true; btn.textContent = 'Log anyway';
+    logForce = true; btn.textContent = logEdit ? 'Save anyway' : 'Log anyway';
     return setLogMsg('This overlaps ' + r.overlap.map(o => `${o.start} ${dur(o.minutes)} ${o.project}`).join('; ') + '.', true);
   }
   logDlg.close(); suggestCache = null;
-  toast(`Logged ${dur(+f.minutes.value)} to ${task.title}.`);
+  toast(logEdit ? `Changed: ${f.start.value}, ${dur(+f.minutes.value)}, ${task.title}.` : `Logged ${dur(+f.minutes.value)} to ${task.title}.`);
   if (f.date.value === state.date) refreshLogged();
 });
 logDlg.querySelectorAll('[data-close]').forEach(b => b.onclick = () => logDlg.close());

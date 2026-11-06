@@ -300,11 +300,12 @@ function render() {
     head.classList.toggle('warn', !!logged.warning);
     let html = loggedCache.map((x, i) => {
       const h = (x.e - x.s) * ppm, lines = Math.max(0, Math.floor((h - 36) / 15));
+      const rz = x.approved || x.s == null ? '' : '<i class="rz rz-t" data-rz="t" title="Drag to change the start"></i><i class="rz rz-b" data-rz="b" title="Drag to change the end"></i>';
       return `<div class="card logged" data-k="logged" data-i="${i}" style="--c:${color(x.project)};${place(x, ppm, 18)}"
         tabindex="0" role="button" aria-label="${esc(`Logged ${hm(x.s)}–${hm(x.e)}: ${x.project}${x.task ? ', ' + x.task : ''}, ${dur(x.minutes)}`)}">
         <div class="row"><span class="t">${esc(x.project)}</span>${x.billable ? `<span class="bill" title="Billable${x.billing ? ': ' + esc(x.billing) : ''}">$</span>` : ''}<span class="m num">${dur(x.minutes)}</span></div>
         ${h > 34 ? `<div class="d">${esc(x.task)}</div>` : ''}
-        ${lines ? `<div class="n" style="-webkit-line-clamp:${lines}">${esc(x.note)}</div>` : ''}</div>`;
+        ${lines ? `<div class="n" style="-webkit-line-clamp:${lines}">${esc(x.note)}</div>` : ''}${rz}</div>`;
     }).join('') + repeatCache.map((x, i) => {
       const h = (x.e - x.s) * ppm, why = `Logged at about ${hm(x.at)} on ${x.days} days; ${x.seen} seen today. Click to log it.`;
       return `<div class="card repeat" data-k="repeat" data-i="${i}" style="--c:${color(x.project)};${place(x, ppm, 18)}" title="${esc(why)}"
@@ -466,6 +467,15 @@ document.addEventListener('click', ev => {
                    : logBtn.dataset.likely == null ? leadFor(a, b) : null});  // the rail or an Activity block
     return;
   }
+  const editBtn = ev.target.closest('[data-edit]');
+  if (editBtn) { const x = loggedCache[+editBtn.dataset.edit]; closePop(); editEntry(x); return; }
+  const delBtn = ev.target.closest('[data-del]');
+  if (delBtn) { askDelete(loggedCache[+delBtn.dataset.del], ev); return; }
+  const delYes = ev.target.closest('[data-del-yes]');
+  if (delYes) { deleteEntry(loggedCache[+delYes.dataset.delYes], delYes); return; }
+  const rzYes = ev.target.closest('[data-rz-yes]');
+  if (rzYes) { saveResize(rzYes, rzYes.dataset.force === '1'); return; }
+  if (ev.target.closest('[data-rz-no]')) { closePop(); render(); return; }
   const ruleBtn = ev.target.closest('[data-rule-text]');
   if (ruleBtn) { pop.classList.remove('on'); openRule(ruleBtn.dataset.ruleText); return; }
   const card = ev.target.closest('.card');
@@ -502,7 +512,9 @@ document.addEventListener('click', ev => {
     const x = loggedCache[i];
     openPop(`<h3>${esc(x.project)}</h3><div class="sub">${hm(x.s)}–${hm(x.e)} · ${dur(x.minutes)}${x.approved ? ' · approved' : ''}</div>
       <p>${esc(x.note)}</p>
-      <dl><dt>Task</dt><dd>${esc(x.task)}</dd><dt>Budget</dt><dd>${esc(x.budget)}</dd><dt>Service</dt><dd>${esc(x.service)}</dd><dt>Billable</dt><dd>${x.billable == null ? 'Unknown' : x.billable ? 'Yes' : 'No'}${x.billing ? ' · ' + esc(x.billing) : ''}</dd><dt>Entry</dt><dd class="num">${esc(x.id)}</dd></dl>`, ev);
+      <dl><dt>Task</dt><dd>${esc(x.task)}</dd><dt>Budget</dt><dd>${esc(x.budget)}</dd><dt>Service</dt><dd>${esc(x.service)}</dd><dt>Billable</dt><dd>${x.billable == null ? 'Unknown' : x.billable ? 'Yes' : 'No'}${x.billing ? ' · ' + esc(x.billing) : ''}</dd><dt>Entry</dt><dd class="num">${esc(x.id)}</dd></dl>
+      ${x.approved ? '<p class="sub">Approved: Productive does not let it change.</p>'
+        : `<div class="btnrow"><button class="btn bordered sm" data-edit="${i}">Edit</button><button class="btn bordered sm" data-del="${i}">Delete</button></div>`}`, ev);
   }
 });
 function closePop(refocus = false) {
@@ -602,3 +614,72 @@ setInterval(async () => {
   const c = loggedChange(before, logged);
   if (c.changed || c.warn) toast(c.warn ? c.text : `Logs updated automatically: ${c.text}`, c.warn);  // quiet when nothing changed
 }, 60 * 60 * 1000);
+
+
+/* ---------- changing a logged entry: Edit (the log dialog), Delete (asked first), drag an edge (asked first) ---------- */
+function editEntry(x) {
+  openLog({date: state.date, start: x.s, minutes: x.minutes, note: x.note || '',
+           edit: {id: x.id, taskId: x.taskId, serviceId: x.serviceId, title: x.task},
+           lead: {label: 'This entry', tasks: x.taskId ? [{taskId: x.taskId, title: x.task, project: x.project}] : []}});
+}
+function askDelete(x, ev) {
+  const i = loggedCache.indexOf(x);
+  openPop(`<h3>Delete this entry?</h3><div class="sub">${hm(x.s)}–${hm(x.e)} · ${dur(x.minutes)} · ${esc(x.project)}</div>
+    <p>${esc(x.task || '')}</p><p class="sub">It goes to Productive's Recycle Bin, where it can be restored.</p>
+    <div class="btnrow"><button class="btn primary sm" data-del-yes="${i}">Delete</button><button class="btn bordered sm" data-rz-no>Cancel</button></div>`, ev);
+}
+async function deleteEntry(x, btn) {
+  btn.disabled = true;
+  const r = await postJSON('/api/entry/delete', {id: x.id, date: state.date});
+  closePop();
+  if (r.error) { toast(r.error, true); refreshLogged(); return; }
+  toast(`Deleted ${dur(x.minutes)} of ${x.task || x.project}.`);
+  refreshLogged();
+}
+/* drag the top or bottom edge of a logged card: 5-minute steps, the card follows, then "Change to …?" */
+(function resizeEntries() {
+  const lane = $('#lane-logged');
+  let drag = null, justDone = 0;
+  lane.addEventListener('pointerdown', ev => {
+    const h = ev.target.closest('.rz'); if (!h || ev.button !== 0) return;
+    const card = h.closest('.card'), x = loggedCache[+card.dataset.i];
+    ev.preventDefault(); ev.stopPropagation();
+    drag = {card, x, edge: h.dataset.rz, s: x.s, e: x.e};
+    lane.setPointerCapture(ev.pointerId);
+  });
+  lane.addEventListener('pointermove', ev => {
+    if (!drag) return;
+    const ppm = ppmOf(state.zoom), m = Math.round((ev.clientY - lane.getBoundingClientRect().top) / ppm / 5) * 5;
+    if (drag.edge === 't') drag.s = Math.max(0, Math.min(drag.e - 5, m)); else drag.e = Math.min(1440, Math.max(drag.s + 5, m));
+    drag.card.style.top = (drag.s * ppm + 1) + 'px'; drag.card.style.height = Math.max((drag.e - drag.s) * ppm - 2, 18) + 'px';
+    drag.card.title = `${hm(drag.s)}–${hm(drag.e)} · ${dur(drag.e - drag.s)}`;
+  });
+  lane.addEventListener('pointerup', ev => {
+    if (!drag) return;
+    const d = drag; drag = null; justDone = Date.now();
+    if (Math.round(d.s) === Math.round(d.x.s) && Math.round(d.e) === Math.round(d.x.e)) { render(); return; }
+    const r = d.card.getBoundingClientRect();
+    askResize(d.x, Math.round(d.s), Math.round(d.e - d.s), {clientX: r.right - 8, clientY: r.top + 10});
+  });
+  lane.addEventListener('pointercancel', () => { if (drag) { drag = null; render(); } });
+  // the click that ends a drag must not open the card's popover over the question
+  lane.addEventListener('click', ev => { if (Date.now() - justDone < 400) { ev.stopPropagation(); ev.preventDefault(); } }, true);
+})();
+function askResize(x, start, minutes, at, overlap = null) {
+  const i = loggedCache.indexOf(x);
+  openPop(`<h3>Change this entry?</h3><div class="sub">${hm(x.s)}–${hm(x.e)} → <b>${hm(start)}–${hm(start + minutes)}</b> · ${dur(minutes)}</div>
+    <p>${esc(x.task || x.project)}</p>
+    ${overlap ? `<p class="sub warnish">It would overlap ${esc(overlap.map(o => `${o.start} ${dur(o.minutes)} ${o.project}`).join('; '))}.</p>` : ''}
+    <div class="btnrow"><button class="btn primary sm" data-rz-yes="${i}" data-start="${start}" data-minutes="${minutes}" data-force="${overlap ? 1 : 0}">${overlap ? 'Change anyway' : 'Change'}</button>
+      <button class="btn bordered sm" data-rz-no>Cancel</button></div>`, at);
+}
+async function saveResize(btn, force) {
+  const x = loggedCache[+btn.dataset.rzYes], start = +btn.dataset.start, minutes = +btn.dataset.minutes;
+  btn.disabled = true;
+  const r = await postJSON('/api/entry/update', {id: x.id, date: state.date, start: hm(start), minutes, force});
+  if (r.overlap) { const at = btn.getBoundingClientRect(); askResize(x, start, minutes, {clientX: at.left, clientY: at.top - 60}, r.overlap); return; }
+  closePop();
+  if (r.error) { toast(r.error, true); refreshLogged(); return; }
+  toast(`Changed to ${hm(start)}–${hm(start + minutes)}, ${dur(minutes)}.`);
+  refreshLogged();
+}

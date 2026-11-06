@@ -249,6 +249,15 @@ says so before you log.
 4. `create_entry` writes it as the person in Settings, with its start time. `"dry": true` does everything except the
    write (tests).
 
+### 5.2b Changing a logged entry
+
+A logged entry's popover has **Edit** (the log dialog, in its own day: task, service, start, minutes, note) and
+**Delete** (asked first; Productive keeps it in its Recycle Bin). Its top and bottom edges can be dragged in 5-minute
+steps; on release Pulsar asks "Change this entry?" before writing. `POST /api/entry/update` and `/api/entry/delete`
+read the day afresh, refuse an entry that is no longer there or is approved (Productive would refuse it too), show
+overlaps first (Change anyway), take the same write lock as logging, and accept `"dry": true`. With
+`PULSAR_READ_ONLY` every change is refused at the lowest level, like any write.
+
 ### 5.3 Where the suggestions come from
 
 - **Rules** (Settings or the **Rule** button on an Activity window): words in a window's app, title, workspace, site
@@ -407,6 +416,7 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `POST /api/session` | Trade a sign-in code for a session token. `POST /api/session/end` signs out. |
 | `POST /api/settings` | Save settings (each field checked). |
 | `POST /api/log` | Log one entry. |
+| `POST /api/entry/update`, `/api/entry/delete` | Change or delete one of your entries (not approved ones). |
 | `POST /api/likely/ask` | Ask Claude (only when switched on). |
 | `POST /api/calendar/connect`, `/disconnect` | Google Calendar. |
 | `POST /api/update/check`, `/install`, `/apply` | Updates. |

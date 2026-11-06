@@ -828,6 +828,75 @@ def bookable_services(task_id: str, date: str, settings: dict, names: Optional[N
     return {"task": task, "services": services}
 
 
+def _write_conn(settings: dict) -> dict:
+    if os.environ.get("PULSAR_READ_ONLY"):  # tests and demos: nothing may reach Productive
+        raise ProductiveError("Pulsar runs read-only (PULSAR_READ_ONLY): nothing was written.")
+    return _need(settings)
+
+
+def _rest_headers(conn: dict, settings: dict) -> dict:
+    return {"X-Auth-Token": conn["token"], "X-Organization-Id": str(settings.get("org_id")),
+            "Content-Type": "application/vnd.api+json", "Accept": "application/vnd.api+json"}
+
+
+UNCLEAR = ("No clear answer from Productive ({}), so the change may or may not have happened. The Logged column has "
+           "been refreshed: check it before trying again.")
+
+
+def update_entry(entry_id: str, change: dict, settings: dict) -> None:
+    """Changes one of your time entries: start, minutes, note, task, service (only what `change` names). Called only
+    from an explicit click in the page; the caller has checked the entry is yours and not approved."""
+    conn = _write_conn(settings)
+    if conn["kind"] == "token":
+        attrs = {k: v for k, v in (("time", change.get("minutes")), ("started_at", change.get("started_at")),
+                                   ("note", change.get("note"))) if v is not None}
+        rels = {k: {"data": {"type": k + "s", "id": str(change[k + "_id"])}} for k in ("task", "service") if change.get(k + "_id")}
+        body = {"data": {"type": "time_entries", "id": str(entry_id), "attributes": attrs, "relationships": rels}}
+        try:
+            status, raw = https("PATCH", f"{API}/time_entries/{int(entry_id)}", json.dumps(body).encode("utf-8"),
+                                _rest_headers(conn, settings), timeout=30, write=True)
+        except (OSError, http.client.HTTPException) as exc:
+            raise ProductiveError(UNCLEAR.format(exc))
+        if status != 200:
+            raise ProductiveError(f"Productive refused the change (HTTP {status}): {raw[:300].decode('utf-8', 'replace')}")
+        return
+    item = {"id": str(entry_id)}
+    if change.get("minutes") is not None:
+        item["time"] = f"{int(change['minutes'])} min"
+    for k in ("started_at", "note"):
+        if change.get(k) is not None:
+            item[k] = change[k]
+    for k in ("task", "service"):
+        if change.get(k + "_id"):
+            item[k] = str(change[k + "_id"])
+    try:
+        mcp_text("update_resource", {"resource_type": "time_entries", "items": [item]}, conn["token"])
+    except ProductiveError:
+        raise
+    except (OSError, http.client.HTTPException, ValueError) as exc:
+        raise ProductiveError(UNCLEAR.format(exc))
+
+
+def delete_entry(entry_id: str, settings: dict) -> None:
+    """Deletes one of your time entries (Productive keeps it in its Recycle Bin). Only from an explicit click."""
+    conn = _write_conn(settings)
+    if conn["kind"] == "token":
+        try:
+            status, raw = https("DELETE", f"{API}/time_entries/{int(entry_id)}", None, _rest_headers(conn, settings),
+                                timeout=30, write=True)
+        except (OSError, http.client.HTTPException) as exc:
+            raise ProductiveError(UNCLEAR.format(exc))
+        if status not in (200, 204):
+            raise ProductiveError(f"Productive refused to delete it (HTTP {status}): {raw[:300].decode('utf-8', 'replace')}")
+        return
+    try:
+        mcp_text("delete_resource", {"resource_type": "time_entries", "items": [{"id": str(entry_id)}]}, conn["token"])
+    except ProductiveError:
+        raise
+    except (OSError, http.client.HTTPException, ValueError) as exc:
+        raise ProductiveError(UNCLEAR.format(exc))
+
+
 def create_entry(entry: dict, settings: dict) -> dict:
     """Writes one time entry, as the person in Settings. Called only from an explicit click in the page."""
     if os.environ.get("PULSAR_READ_ONLY"):  # tests and demos: nothing may reach Productive
