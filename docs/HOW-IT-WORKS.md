@@ -319,9 +319,11 @@ claim wins:
 4. on free active minutes only: agent-only rows (Claude's agent ran while you did something else), calendar meetings
    with no call seen, and work outside Claude (it takes the task of the work next to it, never a meeting's).
 
-Pieces of one task in one sitting join, pieces under 10 minutes join a neighbour, boundaries go on a 5-minute grid,
-nothing overlaps an entry already logged, and **proposed plus logged never exceeds active time plus attended
-meetings**: the rest is listed as not placed, never placed. A row's task comes from, in this order: a rule, a task
+Pieces of one task in one sitting join, pieces under 10 minutes join a neighbour in their sitting (never across an
+entry already logged; a meeting someone attended keeps its own time, so nothing before it joins it), boundaries go on
+a 5-minute grid, a personal window's minutes are never in an entry, nothing overlaps an entry already logged, and
+**proposed plus logged never exceeds active time plus attended meetings**: the rest is listed as not placed, never
+placed (what the cap leaves under 10 minutes goes with it). A row's task comes from, in this order: a rule, a task
 link pasted in the session, a ticket key in the title, the tasks logged in the same session, then the same
 repository (votes from the last 60 days, older days counting half every 7 days), the same session earlier that day,
 and task names that share words with the work (your own name does not count). Confidence: high, medium or low, in
@@ -669,5 +671,8 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 - The app is ad-hoc signed, not with an Apple Developer ID: macOS asks for confirmation on first open (Open Anyway).
 - The reserve release key has not been created yet.
 - ActivityWatch's AFK timeout decides what counts as a break: with 30 minutes, shorter breaks are not seen.
+- The night the clocks go back, the repeated hour (01:00 to 02:00 in Toronto, 03:00 to 04:00 in Kyiv) is one hour on
+  the clock: Log the day folds the two hours together, and an entry there is sent as the first of them. The overlap
+  check of `POST /api/log` still refuses one that would clash with an entry in the second.
 - Learned tasks and Ask Claude guess; on one person's days they were right often but not always. They only ever
   suggest.

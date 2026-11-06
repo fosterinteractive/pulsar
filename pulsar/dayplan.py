@@ -14,9 +14,10 @@ How each minute of the day is placed (the first claim wins):
 3. Likely rows (Claude sessions), at their own time, never on away minutes or time spent logging;
 4. on free active minutes only: agent-only rows, calendar meetings with no call seen, work outside Claude.
 
-Then the pieces of one task in one sitting join, short ones join a neighbour, boundaries go on a 5-minute grid,
-nothing overlaps an entry already logged, and the total is capped: proposed plus logged never exceeds active time
-plus attended meetings. What does not fit is shown in `unplaced`, never placed.
+Then the pieces of one task in one sitting join, short ones join a neighbour in their sitting (never across an entry
+already logged, and nothing before a meeting someone attended joins it: it keeps its own time), boundaries go on a
+5-minute grid, nothing overlaps an entry already logged, and the total is capped: proposed plus logged never exceeds
+active time plus attended meetings. What does not fit is shown in `unplaced`, never placed.
 
 Notes are never written from session text: only a meeting's title, a repeat's usual note, a note Claude drafted
 (Ask Claude) for that task, or the subjects of the person's own commits in the work (commits.py), each marked so the
@@ -312,7 +313,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
 
     day: {"items": activity [{s, e, app, title, host, url, cat}], "away": [{s, e}], "rows": Likely rows
           [{s, e, minutes, project, kind, titles, first_message, tasks, learned}], "logged": entries already in
-          Productive [{s (None without a start), minutes, taskId}], "meetings": calendar events [{s, e, title, uid,
+          Productive [{s (None without a start), e (its end on the clock), minutes, taskId}], "meetings": calendar events [{s, e, title, uid,
           declined, all_day, tasks: [{taskId, title, project, n, of}]}], "repeats": repeats seen today [{s, e, minutes,
           taskId, title, project, serviceId, service, note, days}], "calls": call windows [{s, e}], "rules",
           "assigned": [{taskId, title, project}], "picks": Ask Claude's answer {"<s>|<project>": {tasks, why, note}}}
@@ -326,8 +327,12 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
     editor = bytearray(N)
     logging_ = bytearray(N)
     away = bytearray(N)
+    personal = bytearray(N)  # a personal window on screen: never work, even inside a Likely row's span
     items = day.get("items") or []
     for it in items:
+        if it.get("cat") == "personal":
+            for x in range(max(0, int(it["s"])), min(N, int(math.ceil(it["e"])))):
+                personal[x] = 1
         if it.get("cat") != "work":
             continue  # personal windows never count as work
         ed = 1 if EDITORS.search(it.get("app") or "") else 0
@@ -375,9 +380,10 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
     for r in logged:
         if r.get("s") is None:
             continue  # no start: not on the timeline (counted in the total, below)
-        a, b = int(r["s"]), int(math.ceil(r["s"] + r["minutes"]))
-        claim({"kind": "logged"}, range(a, b))
-        busy.append((r["s"], r["s"] + r["minutes"]))
+        # its end on the clock: an hour later than s + minutes over the hour the clocks skip in spring
+        end = max(r["s"] + r["minutes"], r.get("e") or 0)
+        claim({"kind": "logged"}, range(int(r["s"]), int(math.ceil(end))))
+        busy.append((r["s"], end))
     busy.sort()
     done_tasks = {str(r.get("taskId")) for r in logged if r.get("taskId")}
 
@@ -485,7 +491,8 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
              "claudeNone": ch["claudeNone"]}
         span = range(int(r["s"]), min(N, int(math.ceil(r["e"]))))
         own = bool(OWN_REPO.match(r.get("project") or ""))
-        claim(c, [x for x in span if not away[x] and (own or not logging_[x]) and (work[x] or not agent)])
+        claim(c, [x for x in span if not away[x] and (own or not logging_[x]) and (work[x] or not agent)
+                  and not (personal[x] and not work[x])])
         if ch["task"] and ch["source"] in ("rule", "link", "session") and ch["conf"] == "high":
             for k in _keys(r):
                 sameday.setdefault(k, ch["task"])
@@ -559,18 +566,34 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
                 q = nb[0]
                 p.update(task=q["task"], project=q.get("project"), alts=list(q.get("alts") or []))
 
-    # one task in one sitting: one entry
+    def logged_between(a, b) -> bool:  # an entry already logged between minutes a and b: laid out from a, a piece
+        return any(a < x[1] and x[0] < b for x in busy)  # joined across it would stop at it, the rest not placed
+
+    # one task in one sitting: one entry, laid out from its first piece; a meeting someone attended keeps its own
+    # time, so what comes before it joins it only when it touches it
     merged: list = []
     for p in pieces:
         m = merged[-1] if merged else None
         if m and m.get("task") and m["task"] == p.get("task") and "skip" not in (m["kind"], p["kind"]) \
-                and p["s"] - m["last"] <= o["merge_gap"] and sitting[m["last"]] == sitting[p["s"]]:
+                and p["s"] - m["last"] <= o["merge_gap"] and sitting[m["last"]] == sitting[p["s"]] \
+                and (not p.get("attended") or p["s"] - m["last"] <= (o["grid"] or 1)) \
+                and not logged_between(m["last"] + 1, p["s"]):
             m["minutes"] += p["minutes"]
             m["last"] = p["last"]
             m["parts"].append(p)
         else:
             merged.append({**p, "parts": [p]})
-    # pieces too short to log join a neighbour; a meeting someone attended stays an entry of its own from 5 minutes
+    # pieces too short to log join a neighbour in their sitting (laid out from the earlier start, a neighbour across a
+    # break would move into it); a meeting someone attended stays an entry of its own from 5 minutes, and keeps its
+    # own time: work before it never joins it
+    def joins(p, q, q_first):
+        if q is None or q["kind"] == "skip" or (q.get("attended") and not q_first and not p.get("attended")):
+            return False
+        a, b = (q["last"], p["s"]) if q_first else (p["last"], q["s"])
+        if logged_between(a + 1, b):
+            return False
+        return b - a <= SITTING_GAP or (sitting[a] is not None and sitting[a] == sitting[b])
+
     if o["min_entry"]:
         changed = True
         while changed:
@@ -578,8 +601,9 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
             for k, p in enumerate(merged):
                 keep = p.get("attended") and p["minutes"] >= 5
                 if p["minutes"] < o["min_entry"] and p["kind"] != "skip" and not keep:
-                    nb = [q for q in (merged[k - 1] if k else None, merged[k + 1] if k + 1 < len(merged) else None)
-                          if q is not None and q["kind"] != "skip"]
+                    nb = [q for q, first in ((merged[k - 1] if k else None, True),
+                                             (merged[k + 1] if k + 1 < len(merged) else None, False))
+                          if joins(p, q, first)]
                     if nb:
                         q = max(nb, key=lambda q: q["minutes"])
                         q["minutes"] += p["minutes"]
@@ -598,15 +622,20 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
     for m in sorted(entries, key=lambda m: m["s"]):
         s = max(int(round(m["s"] / g) * g), end)
         e = int(round((s + m["minutes"]) / g) * g)
-        for a, b in busy:  # an entry already logged: start after it, or stop where it starts
+        for a, b in busy:  # an entry already logged: start after it, or stop before it starts (on the grid both)
             if a <= s < b:
                 length = e - s
                 s = int(math.ceil(b / g) * g)
                 e = s + length
             elif s < a < e:
-                unplaced.append({"minutes": e - int(a), "task": m.get("task"), "project": m.get("project") or "",
+                stop = max(s, int(a // g * g))
+                unplaced.append({"minutes": e - stop, "task": m.get("task"), "project": m.get("project") or "",
                                  "why": "no room before an entry already logged"})
-                e = int(a)
+                e = stop
+        if s > m["last"]:  # moved past entries already logged beyond its own work: listed, never placed elsewhere
+            unplaced.append({"minutes": m["minutes"], "task": m.get("task"), "project": m.get("project") or "",
+                             "why": "no room before an entry already logged"})
+            continue
         e = min(e, N)
         if e - s < (5 if m.get("attended") else g):
             continue  # under half a grid step: rounding
@@ -628,6 +657,8 @@ def plan(day: dict, ctx: dict, opts: dict | None = None) -> dict:
             if over <= 0:
                 break
             cut = min(e["minutes"], int(math.ceil(over / g) * g))
+            if e["minutes"] - cut < o["min_entry"] and not (e["kind"] == "meeting" and e["minutes"] - cut >= 5):
+                cut = e["minutes"]  # too short to stand alone once cut: all of it listed, none placed
             e["minutes"] -= cut
             e["e"] = e["s"] + e["minutes"]
             over -= cut
@@ -786,7 +817,8 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False) -> dict
     if not ignore_logged:
         for x in rows:
             start = None if x.get("start") is None else round(server.clock(x["start"], t0, tz), 2)
-            logged.append({"s": start, "minutes": x["minutes"], "taskId": x.get("taskId"), "id": x.get("id")})
+            end = None if x.get("start") is None else round(server.clock(x["start"] + x["minutes"] * 60, t0, tz), 2)
+            logged.append({"s": start, "e": end, "minutes": x["minutes"], "taskId": x.get("taskId"), "id": x.get("id")})
     act = got["act"]
     calls = [{"s": it["s"], "e": it["e"]} for it in act.get("items") or [] if it.get("cat") == "work" and server.is_call(it)]
     meetings = [m for m in (got["cal"].get("events") or []) if not m.get("all_day")]
