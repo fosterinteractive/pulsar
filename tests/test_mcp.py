@@ -391,7 +391,7 @@ class McpTest(unittest.TestCase):
             self.assertRegex(status["date"], r"^\d{4}-\d{2}-\d{2}$")
         self.assertIn(dry["code"], mcp._pending)  # the code waits for Pulsar
         mcp._state["port"] = port
-        with self._create():  # Productive faked: this write once reached the real one with the keychain's token
+        with self._create():  # a fake Productive: a test never writes for real (this one once reached Productive)
             done, err = self.call("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})
         self.assertFalse(err, done)
         self.assertEqual(done["written"], 2)

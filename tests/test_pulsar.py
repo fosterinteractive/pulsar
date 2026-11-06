@@ -279,6 +279,11 @@ class ProductiveTest(unittest.TestCase):
 
 
 class ReadRetryTest(unittest.TestCase):
+    def setUp(self):  # it fakes the connection or `security` and `claude` itself, so the offline guard may step aside
+        off = mock.patch.dict(os.environ, {"PULSAR_TESTS_OFFLINE": ""})
+        off.start()
+        self.addCleanup(off.stop)
+
     def conn_class(self, outcomes):
         calls = []
         class Conn:
@@ -959,6 +964,11 @@ class ReviewFixesTest(unittest.TestCase):
 
 
 class ClaudeCodeTokenTest(unittest.TestCase):
+    def setUp(self):  # it fakes the connection or `security` and `claude` itself, so the offline guard may step aside
+        off = mock.patch.dict(os.environ, {"PULSAR_TESTS_OFFLINE": ""})
+        off.start()
+        self.addCleanup(off.stop)
+
     """An expired Claude Code token is renewed by Claude Code itself (claude mcp get), then read again."""
 
     def keychain(self, expires_in_min):

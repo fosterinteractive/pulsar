@@ -3,6 +3,8 @@
 - One scratch folder per run holds everything a run writes: temporary files (tempfile and TMPDIR), settings and
   caches (XDG_CONFIG_HOME, XDG_CACHE_HOME) and a home folder of its own (HOME), so ~/.claude, ~/.config/pulsar,
   ~/.cache/pulsar, MemTime's database and the installed copy are out of reach. It is removed when the run ends.
+- PULSAR_TESTS_OFFLINE is set, so Pulsar itself skips the keychain, Claude Code and the network (config.tests_offline).
+  Behind that, for a test that switches it off or code that forgets it:
 - The keychain (`security`), Claude Code (`claude`), `osascript`, `open` and os.exec* cannot be started.
 - Nothing leaves this computer, and on it a connection goes only to a port this process opened itself: never the
   real Pulsar, a Preview or ActivityWatch.
@@ -26,7 +28,8 @@ for _name in ("tmp", "home", "config", "cache"):
     os.makedirs(os.path.join(SCRATCH, _name))
 tempfile.tempdir = os.path.join(SCRATCH, "tmp")
 os.environ.update(TMPDIR=tempfile.tempdir, HOME=os.path.join(SCRATCH, "home"),
-                  XDG_CONFIG_HOME=os.path.join(SCRATCH, "config"), XDG_CACHE_HOME=os.path.join(SCRATCH, "cache"))
+                  XDG_CONFIG_HOME=os.path.join(SCRATCH, "config"), XDG_CACHE_HOME=os.path.join(SCRATCH, "cache"),
+                  PULSAR_TESTS_OFFLINE="1")  # Pulsar's own switch (config.tests_offline): no keychain, network or Claude
 if "pulsar" in sys.modules:  # its paths are read once, at import: too late to move them
     raise RuntimeError("tests/isolation.py must be imported before anything from pulsar/")
 

@@ -34,7 +34,8 @@ class IsolationTest(unittest.TestCase):
             with mock.patch.object(config, "_keychain", lambda: True), mock.patch.object(config, "_token_cache", [0.0, None, False]):
                 with self.assertRaises(isolation.RealWorld):
                     config.get_token()
-            with mock.patch.object(productive, "_cc_cache", [0.0, None]), self.assertRaises(isolation.RealWorld):
+            with mock.patch.object(productive, "_cc_cache", [0.0, None]), self.assertRaises(isolation.RealWorld), \
+                    mock.patch.dict(os.environ, {"PULSAR_TESTS_OFFLINE": ""}):  # the second layer, without the first
                 productive.claude_code_token()
             try:
                 subprocess.run("claude -p hello", shell=True)
@@ -44,6 +45,13 @@ class IsolationTest(unittest.TestCase):
                 pass
         self.assertEqual(len(seen), 4)
         self.assertTrue(all("security" in x or "claude" in x for x in seen), seen)
+
+    def test_pulsar_itself_is_offline_in_tests(self):
+        self.assertTrue(config.tests_offline())
+        self.assertFalse(config._keychain())
+        self.assertIsNone(productive._claude_binary())
+        with self.assertRaises(productive.ProductiveError):
+            productive.https("GET", "https://api.productive.io/api/v2/people")
 
     def test_no_connection_leaves_and_none_reaches_a_server_the_test_did_not_start(self):
         with isolation.refused() as seen:
