@@ -34,10 +34,10 @@ from unittest import mock
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-os.environ["PULSAR_TESTS_OFFLINE"] = "1"  # nothing reaches Productive, Google, Claude Code or the keychain
-_SCRATCH = tempfile.mkdtemp(prefix="pulsar-sim-")
-os.environ.setdefault("XDG_CONFIG_HOME", os.path.join(_SCRATCH, "config"))
-os.environ.setdefault("XDG_CACHE_HOME", os.path.join(_SCRATCH, "cache"))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from isolation import SCRATCH as _RUN  # noqa: E402,F401  first: nothing real is reachable (isolation.py)
+
+_SCRATCH = tempfile.mkdtemp(prefix="pulsar-sim-")  # inside the run's own scratch folder, removed with it
 
 from pulsar import (askclaude, calendar, commits, config, dayplan, learn, likely, logbook, mcp,  # noqa: E402
                     productive, server, sessions, trackers)
