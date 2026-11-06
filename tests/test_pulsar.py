@@ -1597,6 +1597,81 @@ class ClockChangeTest(unittest.TestCase):
         self.assertEqual(r["hours"][6][10], 30)  # Sunday, 10:00 on the clock
 
 
+class ClockChangeLengthTest(unittest.TestCase):
+    """Across the clock change itself: lengths stay real, and the pieces of Pulsar that count minutes count the same ones."""
+
+    def setUp(self):
+        from zoneinfo import ZoneInfo
+        self.kyiv = ZoneInfo("Europe/Kyiv")  # back from 04:00 to 03:00 on 25 Oct 2026, on from 03:00 to 04:00 on 29 Mar
+        self.s = {**config.DEFAULTS, "timezone": "Europe/Kyiv", "likely": "on", "ask_claude": True, "person_id": "9"}
+
+    def bounds(self, day):
+        return server.day_bounds(day, self.kyiv)
+
+    def test_the_minute_of_the_change(self):
+        self.assertEqual(server.clock_change(*self.bounds("2026-10-25"), self.kyiv), 240)  # 04:00 summer time
+        self.assertEqual(server.clock_change(*self.bounds("2026-03-29"), self.kyiv), 180)  # 03:00 winter time
+        self.assertIsNone(server.clock_change(*self.bounds("2026-11-04"), self.kyiv))
+
+    def test_a_stretch_across_the_change_keeps_its_real_length(self):
+        # 03:50 summer time to 03:10 winter time is 20 minutes, which the clock alone read as -40
+        t0, t1 = self.bounds("2026-10-25")
+        got = server.clock_spans([{"s": 230, "e": 250, "app": "Cursor"}], t0, t1, self.kyiv)
+        self.assertEqual([(x["s"], x["e"]) for x in got], [(230, 240), (180, 190)])
+        self.assertEqual(sum(x["e"] - x["s"] for x in got), 20)
+        # 02:50 to 04:10 on the spring morning is 20 minutes too, which the clock alone read as 80
+        t0, t1 = self.bounds("2026-03-29")
+        got = server.clock_spans([{"s": 170, "e": 190}], t0, t1, self.kyiv)
+        self.assertEqual([(x["s"], x["e"]) for x in got], [(170, 180), (240, 250)])
+        self.assertEqual(server.clock_spans([{"s": 1, "e": 2}], *self.bounds("2026-11-04"), self.kyiv), [{"s": 1, "e": 2}])
+
+    def test_the_activity_column_adds_up_to_the_trackers_minutes(self):
+        items = [{"s": 200, "e": 250, "app": "Cursor", "title": "x", "host": "", "cat": "work", "icon": None},
+                 {"s": 300, "e": 320, "app": "Cursor", "title": "x", "host": "", "cat": "work", "icon": None}]
+        with mock.patch.object(server.config, "load", lambda: dict(self.s)), \
+                mock.patch.object(server.trackers, "both", lambda *a: {"aw": [dict(x) for x in items], "memtime": []}):
+            got = server.api_activity({"date": "2026-10-25", "source": "aw"})
+        self.assertEqual(sum(x["e"] - x["s"] for x in got["items"]), got["minutes"]["aw"])  # 70, not 10
+        self.assertTrue(all(x["e"] > x["s"] for x in got["items"] + got["away"]))
+        self.assertEqual(sum(x["e"] - x["s"] for x in got["away"]), 50)  # 250 to 300, cut at the change
+
+    def test_learning_ask_claude_and_the_note_meet_the_page_on_the_same_rows(self):
+        from pulsar import askclaude
+        rows = [{"s": 120, "e": 150, "project": "p", "titles": ["Fix it"]},     # before the change
+                {"s": 660, "e": 690, "project": "p", "titles": ["Fix it"]}]     # 10:00 on the clock, 11:00 elapsed
+        seen = {}
+        prop = lambda *a, **k: {"entries": [dict(r) for r in rows]}  # noqa: E731
+        annotate = lambda result, *a: seen.setdefault("learned_on", [(e["s"], e["e"]) for e in result["entries"]])  # noqa: E731
+
+        def ask(date, given, t0, entries, **kw):
+            seen["asked"] = [askclaude.clock_at(t0, r["s"], kw.get("tz")) for r in given]
+            return {"picks": {f"{r['s']}|p": {"tasks": [{"taskId": "1"}]} for r in given}}
+
+        def note(date, row, t0, history, tz=None):
+            seen["note"] = (row["s"], row["e"], askclaude.clock_at(t0, row["s"], tz))
+            return {"note": "x", "why": ""}
+        with mock.patch.object(server.config, "load", lambda: dict(self.s)), \
+                mock.patch.object(server, "current_settings", lambda: dict(self.s)), \
+                mock.patch.object(server.likely, "enabled", lambda s: True), mock.patch.object(server.likely, "proposal", prop), \
+                mock.patch.object(server, "history_ready", lambda *a: True), \
+                mock.patch.object(server, "history_rows", lambda *a, **k: ([], None)), \
+                mock.patch.object(server, "productive_rows", lambda *a: ([], None, "token", False)), \
+                mock.patch.object(server.learn, "annotate", annotate), \
+                mock.patch.object(askclaude, "ask", ask), mock.patch.object(askclaude, "note", note):
+            shown = server.api_proposal({"date": "2026-10-25"})["entries"]
+            picks = server.api_ask_claude({"date": "2026-10-25"})["picks"]
+            server.api_likely_note({"date": "2026-10-25", "s": 600, "e": 630, "project": "p"})
+        self.assertEqual([(e["s"], e["e"]) for e in shown], [(120, 150), (600, 630)])   # the page: by the clock
+        self.assertEqual(seen["learned_on"], [(120, 150), (660, 690)])                  # learning: elapsed, as entries
+        self.assertEqual(sorted(picks), ["120|p", "600|p"])                              # the keys the page looks up
+        self.assertEqual(seen["asked"], ["02:00", "10:00"])                              # Claude reads the clock
+        self.assertEqual(seen["note"], (660, 690, "10:00"))                              # the 10:00 row, not 11:00
+
+    def test_the_key_is_written_as_the_page_writes_it(self):
+        self.assertEqual((server.pick_key(600.0, "p"), server.pick_key(600.5, "p"), server.pick_key(600, None)),
+                         ("600|p", "600.5|p", "600|"))
+
+
 class GuardTest(unittest.TestCase):
     """The HTTP boundary: who may read data and change things, tested against a real server on a free port."""
 

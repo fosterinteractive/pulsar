@@ -261,13 +261,21 @@ def recent_tasks(entries: list) -> list:
     return sorted(mine.values(), key=lambda t: t[4], reverse=True)[:150]
 
 
+def clock_at(t0: float, minute: float, tz=None) -> str:
+    """Minute `minute` of the day (elapsed since midnight t0) as the wall clock read then: an hour apart from the
+    plain reading after the clocks change. Without a time zone, the plain reading."""
+    if tz is None:
+        return "%02d:%02d" % ((int(minute) // 60) % 24, int(minute) % 60)
+    return datetime.fromtimestamp(t0 + minute * 60, tz).strftime("%H:%M")
+
+
 def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, model: str = "sonnet",
-        history: list = ()) -> dict:
+        history: list = (), tz=None) -> dict:
     """{"picks": {"<s>|<project>": {"tasks": [{taskId, title, project}], "why", "note"}}, "cost": dollars,
     "notesBlocked": [why, ...]}. The note is a draft for the first task, "" when there is none or guard_note refused
     it. `history` is the person's earlier entries with their notes (the examples). Raises AskError with a sentence for
     the page when Claude Code is missing or its answer cannot be read."""
-    blocks = [{"id": i, "time": "%02d:%02d-%02d:%02d" % (r["s"] // 60, r["s"] % 60, (r["e"] // 60) % 24, r["e"] % 60),
+    blocks = [{"id": i, "time": f"{clock_at(t0, r['s'], tz)}-{clock_at(t0, r['e'], tz)}",
                "repository": r.get("project") or "", "session_titles": (r.get("titles") or [])[:3],
                "steps": steps(t0, r.get("titles") or [], r["s"], r["e"]), "commits": (r.get("commits") or [])[:10],
                "their_notes": their_notes(r, history)}
@@ -368,7 +376,7 @@ WORK:
 _notes: dict = {}  # (date, start, end, repository, what was seen) -> the answer
 
 
-def note(date: str, row: dict, t0: float, history: list = (), run=subprocess.run) -> dict:
+def note(date: str, row: dict, t0: float, history: list = (), run=subprocess.run, tz=None) -> dict:
     """A note for one block of work, from its session (steps with Claude's replies) and commits, by Haiku: a few
     seconds, about a fifth of a cent. {"note", "why"}: the note is "" when there was nothing to go on or the guard
     refused the draft (why says which). Raises AskError with a sentence for the page when Claude Code fails."""
@@ -376,14 +384,14 @@ def note(date: str, row: dict, t0: float, history: list = (), run=subprocess.run
     made = (row.get("commits") or [])[:10]
     if not said and not made:
         return {"note": "", "why": "nothing in the session or the commits says what was done"}
-    hm_ = lambda m: "%02d:%02d" % ((int(m) // 60) % 24, int(m) % 60)  # noqa: E731
     sig = (date, row["s"], row["e"], row.get("project"), len(said), len(made), said[-1]["reply"][:40] if said else "")
     with _lock:
         if sig in _notes:
             return _notes[sig]
     work = json.dumps({"steps": said, "commits": made, "their_notes": [n["note"] for n in their_notes(row, history)]},
                       ensure_ascii=False, indent=1)
-    prompt = NOTE_PROMPT.format(date=date, start=hm_(row["s"]), end=hm_(row["e"]), repo=row.get("project") or "",
+    prompt = NOTE_PROMPT.format(date=date, start=clock_at(t0, row["s"], tz), end=clock_at(t0, row["e"], tz),
+                                repo=row.get("project") or "",
                                 note_max=NOTE_MAX, work=work)
     binary = productive._claude_binary()
     if not binary:
