@@ -19,9 +19,11 @@ next to this file: the JSON Google Cloud Console downloads for it. Google treats
 and "Internal" lets only the organization's own accounts sign in. While the file holds placeholders, Pulsar says the
 connection is not set up yet.
 
-day() gives one item per event: {s, e, title, all_day, declined, recurring, uid, url?, link?}, with s and e in minutes
-from the day's midnight on the wall clock, cut to the day (an event across midnight shows on both days). `url` is the
-link to join (Meet, Zoom, Teams, Webex), `link` the event in Google Calendar. Google expands repeating events itself
+day() gives one item per event: {s, e, title, all_day, declined, recurring, uid, external, note, url?, link?}, with
+`external` true when someone outside the person's own company (their Google account's domain) organized it, and `note`
+the title as a log entry's note, or "" (note_of). s and e are in minutes from the day's midnight on the wall clock,
+cut to the day (an event across midnight shows on both days). `url` is the link to join (Meet, Zoom, Teams, Webex),
+`link` the event in Google Calendar. Google expands repeating events itself
 (singleEvents). Working-location, out-of-office and birthday entries are left out: they are not meetings.
 """
 
@@ -55,8 +57,12 @@ CALLBACK = "/oauth/google"
 CLIENT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "google_client.json")
 STATE_TTL = 600   # seconds a sign-in may take, from the click in Settings to Allow
 FRESH = 300       # seconds a day's meetings are kept before Google is asked again (the ↻ button asks at once)
+# what Google sends of each event: never its description or the guests (attendees: only "me", maxAttendees=1); the
+# organizer's address only to tell an event of the person's own company from one anyone outside sent (`outside`)
 FIELDS = ("summary,nextPageToken,items(id,status,summary,start,end,eventType,htmlLink,hangoutLink,recurringEventId,"
-          "location,attendees(self,responseStatus),conferenceData(entryPoints(entryPointType,uri)))")
+          "location,organizer(email,self),attendees(self,responseStatus),conferenceData(entryPoints(entryPointType,uri)))")
+# addresses anyone can have: they name no company, so only the person's own events count as theirs there
+PUBLIC_MAIL = {"gmail.com", "googlemail.com"}
 NOT_MEETINGS = {"workingLocation", "outOfOffice", "birthday"}
 JOIN = re.compile(r"https://(?:[A-Za-z0-9-]+\.)*(?:zoom\.us|meet\.google\.com|teams\.microsoft\.com|teams\.live\.com|"
                   r"webex\.com)(?:/[^\s\"'<>\\]*)?", re.I)
@@ -385,8 +391,35 @@ def _https(value) -> Optional[str]:
     return value if isinstance(value, str) and value.startswith("https://") and len(value) < 2000 else None
 
 
-def events_on(items: list, day: str, tz) -> list:
-    """Google's events as the page draws them, all-day ones first, then by start."""
+def own_domain(account: str) -> str:
+    """The email domain of the person's own Google account (the primary calendar's name), "" when unknown or public."""
+    domain = str(account or "").rpartition("@")[2].strip().lower()
+    return "" if "@" not in str(account or "") or domain in PUBLIC_MAIL else domain
+
+
+def outside(organizer, domain: str) -> bool:
+    """True unless the person organized the event or someone of their own company did (an address of `domain` or
+    one of its subdomains). Anyone can send an invitation that Google puts on the calendar by itself, and its
+    organizer can rename it at any time: its title is never a note (dayplan). Unknown is outside."""
+    if not isinstance(organizer, dict):
+        return True
+    if organizer.get("self") is True:
+        return False
+    email = str(organizer.get("email") or "").strip().lower()
+    host = email.rpartition("@")[2]
+    return not (domain and "@" in email and (host == domain or host.endswith("." + domain)))
+
+
+def note_of(title: str, external: bool) -> str:
+    """The title as a meeting's note, or "": only from the person's own company, and only through the note's checks
+    (askclaude.guard_note: no instruction to a tool, sum, address, look-alike or invisible character)."""
+    from .askclaude import guard_note
+    return "" if external else guard_note(title)[0]
+
+
+def events_on(items: list, day: str, tz, domain: str = "") -> list:
+    """Google's events as the page draws them, all-day ones first, then by start. `domain`: the person's own
+    (own_domain), for `external` and `note`."""
     midnight, t0, t1 = _bounds(day, tz)
     a0, a1 = t0.timestamp(), t1.timestamp()
 
@@ -405,11 +438,13 @@ def events_on(items: list, day: str, tz) -> list:
                 break
         found = JOIN.search(str(x.get("location") or ""))
         conference = _https(x.get("hangoutLink")) or entry or (found.group(0).rstrip(".,;)") if found else None)
-        item = {"title": str(x.get("summary") or "")[:300],
+        title, external = str(x.get("summary") or "")[:300], outside(x.get("organizer"), domain)
+        item = {"title": title,
                 "declined": any(isinstance(a, dict) and a.get("self") and a.get("responseStatus") == "declined"
                                 for a in x.get("attendees") or []),
                 "recurring": bool(x.get("recurringEventId")),
-                "uid": str(x.get("recurringEventId") or x.get("id") or "")}
+                "uid": str(x.get("recurringEventId") or x.get("id") or ""),
+                "external": external, "note": note_of(title, external)}
         item.update({k: v for k, v in (("url", conference), ("link", _https(x.get("htmlLink")))) if v})
         if "date" in start:  # all day: the end date is the first day after
             try:
@@ -499,13 +534,14 @@ def day(day_iso: str, settings: dict, fresh: bool = False) -> dict:
         if kept:
             return {**base, **kept[1], "problem": f"{exc} Showing the meetings as read at {kept[1]['fetched']}."}
         return {**base, "events": [], "problem": str(exc), "fetched": None}
-    result = {"events": events_on(doc["items"], day_iso, tz), "fetched": datetime.now(tz).strftime("%H:%M")}
-    with _cache_lock:
-        _cache[key] = (time.time(), result)
-        for old in sorted(_cache, key=lambda k: _cache[k][0])[:-60]:  # a couple of months of days at most
-            del _cache[old]
     account = _account(doc.get("summary"))
     if account and account != base["account"]:  # connected before the account was known, or renamed
         config.update({"calendar_account": account})
         base["account"] = account
+    result = {"events": events_on(doc["items"], day_iso, tz, own_domain(base["account"])),
+              "fetched": datetime.now(tz).strftime("%H:%M")}
+    with _cache_lock:
+        _cache[key] = (time.time(), result)
+        for old in sorted(_cache, key=lambda k: _cache[k][0])[:-60]:  # a couple of months of days at most
+            del _cache[old]
     return {**base, **result, "problem": None}

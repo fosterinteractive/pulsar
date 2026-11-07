@@ -370,7 +370,12 @@ project, budget, billable, billing}`.
 - **A day**: one `events.list` on the primary calendar, repeats expanded by Google (`singleEvents=true`), kept 5
   minutes; ↻ asks again at once. Working-location, out-of-office and birthday entries are left out. A declined
   meeting is marked. The join link comes from Meet, the conference data, or a Zoom/Teams/Webex address in the
-  location.
+  location. Of each event Pulsar asks only for its title, times, status and type, the links, the person's own answer
+  (`attendees(self,responseStatus)`) and the organizer's address (`organizer(email,self)`); never its description or
+  the other guests (`calendar.FIELDS`). The organizer's address stays in the server: the page gets only `external`,
+  true when neither the person nor someone of their own company (their Google account's domain or a subdomain of it;
+  an account at a public mail service names none) organized it (`calendar.outside`), and `note`, the title a log entry
+  may take as its note (below).
 - **Disconnect** revokes the token at Google, then forgets it here whatever Google answered. Pulsar Preview only
   forgets it here: it signs in with Pulsar's own Google client, and a revoke withdraws that client's access for the
   account, Pulsar's too.
@@ -709,7 +714,15 @@ days** (one it found by searching Productive), **a note Claude drafted**, and a 
 lists it ("no start"), the confirm step names it, and under the cap that task's proposals give way first, up to its
 minutes, before the least sure rows. **Notes** are never written from session text: only a meeting's title, your usual
 note for a repeat, a note Ask Claude drafted for that task, or one from your commits in the work, each with "clients
-may see notes". The **service** is the one last used on the task, checked against the services that take time on that
+may see notes". **What goes into notes from the calendar**: anyone can send an invitation that Google puts on the
+calendar by itself, and its organizer can rename it at any time. So a meeting's title becomes its note only when the
+person or someone of their own company organized it (`calendar.outside`), and only through the note's checks
+(`askclaude.guard_note`, read folded: no tool's name, sum of money, web address, look-alike or invisible character;
+`calendar.note_of`). A title the checks refuse gives no note and leaves the row unticked ("The meeting's title was
+not used as the note"), and so does a series whose title is not the one it had the last time you logged it
+(`server.meeting_tasks` keeps that title as `lastTitle`; "This meeting's title changed since you last logged it"). An
+event organized outside gives no note and keeps its tick: its task comes from what you logged during it before. The
+log dialog's **Log this time** on a meeting fills the note in from the same `note`. The **service** is the one last used on the task, checked against the services that take time on that
 date (`bookable_services`). With Productive unreadable, nothing is proposed. About 6 seconds for a day the first time,
 under a second after.
 

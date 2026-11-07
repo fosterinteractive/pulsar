@@ -127,13 +127,46 @@ class PlannerTest(unittest.TestCase):
                                  meetings=[meet]), self.ctx)
             [e] = p["entries"]
             self.assertEqual((e["taskId"], e["note"], e["noteFrom"], e["meeting"]), ("33", "", "", title), title)
+            self.assertIn("meetingtitle", e["flags"])  # a series logged 5 of 5 times would start ticked: not now
+            self.assertFalse(e["checked"], title)
             # and on a repeat's call with no note of its own
             rep = {"s": 600, "e": 630, "minutes": 30, "at": 600, "taskId": "77", "title": "Scrum", "project": "PM",
                    "serviceId": "s77", "service": "Admin", "note": "", "days": 12}
             p = dayplan.plan(day(items=[work(600, 630, app="zoom.us", title="Zoom Meeting")], calls=[{"s": 601, "e": 629}],
                                  repeats=[rep], meetings=[meet]), self.ctx)
             [e] = p["entries"]
-            self.assertEqual((e["note"], e["noteFrom"]), ("", ""), title)
+            self.assertEqual((e["note"], e["noteFrom"], e["checked"]), ("", "", False), title)
+
+    def call_with(self, **meet):
+        meet = {"s": 600, "e": 630, "title": "Design sync", "uid": "series-1", "declined": False, "all_day": False,
+                "tasks": [{"taskId": "33", "title": "Reviews", "project": "C", "n": 5, "of": 5, "lastTitle": "Design sync"}],
+                **meet}
+        p = dayplan.plan(day(items=[work(600, 630, app="zoom.us", title="Zoom Meeting")], calls=[{"s": 601, "e": 629}],
+                             meetings=[meet]), self.ctx)
+        [e] = p["entries"]
+        return e
+
+    def test_a_series_from_the_persons_company_keeps_its_title_and_its_tick(self):
+        e = self.call_with()
+        self.assertEqual((e["taskId"], e["note"], e["noteFrom"], e["checked"], e["flags"]),
+                         ("33", "Design sync", "meeting", True, []))
+
+    def test_an_event_organized_outside_the_company_gives_no_note(self):
+        """Its organizer outside the person's own domain (calendar.outside): the title is never the note."""
+        e = self.call_with(external=True)
+        self.assertEqual((e["taskId"], e["note"], e["noteFrom"], e["meeting"]), ("33", "", "", "Design sync"))
+        self.assertNotIn("meetingtitle", e["flags"])  # not refused: just not the person's company's words
+
+    def test_a_series_renamed_since_it_was_last_logged_starts_unticked(self):
+        """Its organizer can rename it at any time: logged 5 of 5 times as "Design sync", now called something else."""
+        for title in ("Client approved two extra days", "Design sync (moved)"):
+            e = self.call_with(title=title)
+            self.assertEqual(e["taskId"], "33")
+            self.assertIn("renamed", e["flags"], title)
+            self.assertFalse(e["checked"], title)
+        e = self.call_with(title="  design   SYNC ")  # the same title, written differently: not renamed
+        self.assertNotIn("renamed", e["flags"])
+        self.assertTrue(e["checked"])
 
     def test_a_call_with_no_calendar_entry_has_no_task_and_no_note(self):
         p = dayplan.plan(day(items=[work(700, 730, app="zoom.us", title="Zoom Meeting")], calls=[{"s": 700, "e": 730}]),

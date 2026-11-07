@@ -1333,6 +1333,14 @@ class MeetingTasksTest(unittest.TestCase):
         got = server.meeting_tasks({"uid": "scrum", "title": "Daily Scrum"}, past, rows, offered, skip={"nick"})
         self.assertEqual([(t["taskId"], t["why"]) for t in got],
                          [("7", "logged during 2 of the last 3 like it"), ("8", "the title says “scrum”")])
+        self.assertEqual(got[0]["lastTitle"], "Daily Scrum")  # the latest earlier meeting it was logged in
+        # the organizer renamed the series on the 3rd: the series' task says so, and Log the day starts it unticked
+        past[1]["title"] = "Scrum (new room)"
+        got = server.meeting_tasks({"uid": "scrum", "title": "Scrum (new room)"}, past, rows, offered, skip={"nick"})
+        self.assertEqual((got[0]["taskId"], got[0]["lastTitle"]), ("7", "Scrum (new room)"))
+        past[1]["title"], past[0]["title"] = "Daily Scrum", "Old name"
+        got = server.meeting_tasks({"uid": "scrum", "title": "Daily Scrum"}, past, rows, offered, skip={"nick"})
+        self.assertEqual(got[0]["lastTitle"], "Daily Scrum")  # the newest one counts, not an older name
 
     def test_names_and_words_every_meeting_has_do_not_match(self):
         offered = [{"taskId": "1", "title": "Estimations - Nick", "project": "FI-PR"},

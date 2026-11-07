@@ -244,7 +244,9 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   task, service, start, length and note, or remove an entry. Nothing is written until you confirm; then the entries
   go to Productive one at a time, stopping at the first one that is refused, and **Undo this run** deletes only what
   that run wrote. Notes come only from a meeting's title, your usual note for a repeat, your commits, or Ask
-  Claude's draft.
+  Claude's draft. A meeting's title is a note only when you or someone of your own company (your Google account's
+  domain) organized it and it reads like a meeting's name (not an instruction, a sum or an address); a series renamed
+  since you last logged it starts unticked.
 - **Catching up.** **Earlier days…** in Log the day lists your last workdays with the active time no entry covers.
   Tick the days, and each one opens in turn as Log the day; each is written only when you confirm it.
 - **Ticket flags.** The log dialog and Log the day say when a task is closed, when no budget takes time on that

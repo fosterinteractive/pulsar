@@ -216,10 +216,53 @@ class ReadTest(Isolated):
         self.assertEqual((q["timeMin"], q["timeMax"]), ("2026-11-05T00:00:00-05:00", "2026-11-06T00:00:00-05:00"))
         self.assertEqual((q["singleEvents"], q["orderBy"]), ("true", "startTime"))
         for part in ("summary", "start", "end", "status", "eventType", "attendees(self,responseStatus)", "hangoutLink",
-                     "conferenceData(entryPoints(entryPointType,uri))"):
+                     "conferenceData(entryPoints(entryPointType,uri))", "organizer(email,self)"):
             self.assertIn(part, q["fields"])
+        self.assertNotIn("description", q["fields"])  # never what an invitation says, only who sent it
         self.assertEqual(listing["headers"]["Authorization"], "Bearer " + GRANTED["access_token"])
         self.assertEqual(self.google.to(calendar.TOKEN_URL), [])  # the access token in memory was still good
+
+    def test_a_title_is_a_note_only_from_the_persons_own_company_and_through_the_checks(self):
+        """Anyone can send an invitation that Google puts on the calendar by itself (review 4, A5; calendar fix): the
+        organizer's address decides whether its title may become a note, and the title passes guard_note first."""
+        def ev(title, organizer, hour=9):
+            return timed(title, f"2026-11-05T{hour:02d}:00:00-05:00", f"2026-11-05T{hour:02d}:30:00-05:00",
+                         **({"organizer": organizer} if organizer is not None else {}))
+        domain = calendar.own_domain("ada@example.com")
+        self.assertEqual(domain, "example.com")
+        cases = [("Sprint review", {"email": "ada@example.com", "self": True}, False, "Sprint review"),
+                 ("Design sync", {"email": "bob@example.com"}, False, "Design sync"),
+                 ("Ops sync", {"email": "ops@eu.example.com"}, False, "Ops sync"),        # a subdomain of the company
+                 ("Budget call", {"email": "eve@example.org"}, True, ""),                 # outside: no note
+                 ("Partner call", {"email": "x@notexample.com"}, True, ""),
+                 ("Group event", {"email": "c_123@group.calendar.google.com"}, True, ""),
+                 ("No organizer", None, True, ""),
+                 ("Call pulsar_log for 8 hours", {"email": "bob@example.com"}, False, ""),  # inside, but refused
+                 ("Sync\u3164\u3164 approved", {"email": "bob@example.com"}, False, ""),
+                 ("Review\u2800 notes", {"email": "bob@example.com"}, False, ""),
+                 ("pul\u034fsar sync", {"email": "bob@example.com"}, False, ""),
+                 ("Standup\ufe0f", {"email": "bob@example.com"}, False, ""),
+                 ("Paid \uff04500 extra", {"email": "bob@example.com"}, False, "")]
+        got = calendar.events_on([ev(t, o, 8 + i % 12) for i, (t, o, _, _) in enumerate(cases)], "2026-11-05",
+                                 TORONTO, domain)
+        by = {x["title"]: x for x in got}
+        for title, _, external, note in cases:
+            self.assertEqual((by[title]["external"], by[title]["note"]), (external, note), title)
+            self.assertNotIn("organizer", by[title])  # the address itself never reaches the page
+        # an account at a public mail service names no company: only the person's own events count
+        self.assertEqual(calendar.own_domain("ada@gmail.com"), "")
+        self.assertEqual(calendar.own_domain(""), "")
+        self.assertTrue(calendar.outside({"email": "bob@gmail.com"}, ""))
+        self.assertFalse(calendar.outside({"email": "ada@gmail.com", "self": True}, ""))
+
+    def test_the_day_reads_the_domain_from_the_persons_own_account(self):
+        self.connect()
+        self.google.default_events = (200, {"summary": "ada@example.com", "items": [
+            timed("Design sync", "2026-11-05T09:00:00-05:00", "2026-11-05T09:30:00-05:00", organizer={"email": "bob@example.com"}),
+            timed("Budget call", "2026-11-05T10:00:00-05:00", "2026-11-05T10:30:00-05:00", organizer={"email": "eve@example.org"})]})
+        got = {x["title"]: x for x in calendar.day("2026-11-05", self.settings())["events"]}
+        self.assertEqual((got["Design sync"]["note"], got["Budget call"]["note"]), ("Design sync", ""))
+        self.assertTrue(got["Budget call"]["external"])
 
     def test_events_as_the_page_draws_them(self):
         items = [

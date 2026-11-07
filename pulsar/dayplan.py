@@ -460,13 +460,18 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
                      range(int(rp["s"]), int(rp["e"])))
         attended.append([rp["s"], rp["e"], i])
     unattended = []
-    from .askclaude import guard_note  # anyone can put an event on the calendar: its title is a note only if it passes
+    from .calendar import note_of
+    norm = lambda t: re.sub(r"\s+", " ", str(t or "").strip().lower())  # noqa: E731
     for m in sorted(day.get("meetings") or [], key=lambda m: m["s"]):
         if m.get("all_day") or m.get("declined") or m["e"] - m["s"] < 5:
             continue
         s, e = m["s"], m["e"]
         title = (m.get("title") or "").strip()
-        title_note = guard_note(title)[0]  # the note's checks (folded): no tool's name, look-alike, sum, address…
+        # Anyone can put an event on the calendar, and its organizer can rename it: the title is a note only from the
+        # person's own company and through the note's checks (calendar.note_of); one the checks refuse leaves the row
+        # unticked ("meetingtitle"), as a series whose title changed since it was last logged does ("renamed")
+        title_note = note_of(title, bool(m.get("external")))
+        refused = "meetingtitle" if title and not m.get("external") and not title_note else ""
         # the same call only when the repeat covers half of this meeting: a repeat stretched over the next meeting
         # must not swallow it (its call was left with no task)
         same = next((x for x in attended if _overlap(x[0], x[1], s, e) >= 0.5 * (e - s)), None)
@@ -474,6 +479,8 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
             c = claims[same[2]]
             if title_note and not c.get("note"):
                 c["note"], c["noteFrom"] = title_note, "meeting"
+            elif refused and not c.get("note"):
+                c["flag"] = refused
             if title:
                 c["why"] += f"; on your calendar as “{title}”"
             continue
@@ -490,10 +497,12 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
                    t.get("why") or "a task whose name shares a word with the meeting")
         else:
             conf, why = "low", "a meeting on your calendar; no task found for it"
+        renamed = bool(t and t.get("lastTitle") is not None and norm(t["lastTitle"]) != norm(title))
         seen = any(_overlap(a - MEETING_SLACK, b + MEETING_SLACK, s, e) > 0 for a, b in calls)
         c = {"kind": "meeting", "source": "meeting", "task": str(t["taskId"]) if t else None, "conf": conf,
              "why": why, "note": title_note, "noteFrom": "meeting" if title_note else "", "titles": [], "meeting": title,
-             "alts": [str(x["taskId"]) for x in (m.get("tasks") or [])[1:3]]}
+             "alts": [str(x["taskId"]) for x in (m.get("tasks") or [])[1:3]],
+             **({"flag": "renamed" if renamed else refused} if renamed or refused else {})}
         if seen:
             i, _ = claim({**c, "attended": True}, range(int(s), int(math.ceil(e))))
             attended.append([s, e, i])
@@ -790,6 +799,9 @@ def _entry(m: dict, s: int, e: int, names: dict) -> dict:
         flags.append("agent")
     if kinds.get("unattended", 0) >= 0.5 * m["minutes"]:
         flags.append("unattended")
+    for q in m["parts"]:  # a meeting whose title was refused as a note, or a series renamed since it was last logged
+        if q.get("flag") and q["flag"] not in flags:
+            flags.append(q["flag"])
     # a note only from a part of this task (a meeting's title, a repeat's usual note, Claude's draft for this task,
     # its commits);
     # an entry with no task keeps the note only when that part is most of it

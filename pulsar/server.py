@@ -898,13 +898,15 @@ def words_of(text: str, skip: set) -> set:
 def meeting_tasks(meeting: dict, past: list, rows: list, offered: list, skip: set = frozenset()) -> list:
     """Tasks for a meeting, most likely first. First the tasks you logged during the earlier meetings of the same
     series (or the same title), then your tasks that share a word with its title (people's names you go by, and words
-    every meeting has, do not count). Each with why, in words."""
+    every meeting has, do not count). Each with why, in words; a series' task also with `lastTitle`, the title of the
+    latest earlier meeting you logged it in (a series renamed since starts unticked in Log the day)."""
     title = (meeting.get("title") or "").strip()
     norm = re.sub(r"\s+", " ", title.lower())
     same = [p for p in past if not p.get("declined")
             and ((meeting.get("uid") and p.get("uid") == meeting["uid"]) or re.sub(r"\s+", " ", p.get("title", "").lower()) == norm)]
     counts: dict = {}
     seen: dict = {}
+    last: dict = {}  # task -> (start, title) of the latest earlier meeting that voted for it
     for p in same:  # each earlier meeting votes for the task that took most of it (not the call before it, running over)
         cover: dict = {}
         for r in rows:
@@ -917,8 +919,10 @@ def meeting_tasks(meeting: dict, past: list, rows: list, offered: list, skip: se
         best = max(cover, key=cover.get) if cover else None
         if best and cover[best] >= min(600, (p["e"] - p["s"]) / 3):  # ten minutes of it, or a third of a short one
             counts[best] = counts.get(best, 0) + 1
+            if p["s"] >= last.get(best, (float("-inf"), ""))[0]:
+                last[best] = (p["s"], str(p.get("title") or ""))
     out = [{"taskId": t, "title": seen[t].get("task") or "", "project": seen[t].get("project") or "",
-            "why": f"logged during {n} of the last {len(same)} like it", "n": n, "of": len(same)}
+            "why": f"logged during {n} of the last {len(same)} like it", "n": n, "of": len(same), "lastTitle": last[t][1]}
            for t, n in sorted(counts.items(), key=lambda kv: -kv[1])]
     words = words_of(title, skip)
     if words:

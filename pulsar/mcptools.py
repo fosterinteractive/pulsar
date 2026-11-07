@@ -269,7 +269,8 @@ def summary_name(text, most: int = 120) -> str:
     return name_out("".join(c for c in str(text or "") if c not in QUOTES), most)
 
 
-FLAGS = ("notask", "low", "agent", "unattended", "noservice", "untimed")  # dayplan's: nothing else passes
+FLAGS = ("notask", "low", "agent", "unattended", "noservice", "untimed", "meetingtitle",  # dayplan's: nothing else
+         "renamed")
 
 
 def task_out(t: dict, why: str | None = None) -> dict:

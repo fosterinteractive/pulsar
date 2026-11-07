@@ -247,6 +247,8 @@ function rowHTML(r, overlaps) {
   if (r.claudeNone) quiet.push("Claude found no task for this work: Pulsar's guess stays. Check it.");
   if (r.flags.includes('claudefound')) quiet.push('Claude found this task by searching Productive; you have not logged to it in 30 days: unticked. Check it.');
   if (r.flags.includes('claudenote') && r.noteFrom === 'claude' && !r.noteEdited) quiet.push('Claude drafted the note: unticked until you read it.');
+  if (r.flags.includes('meetingtitle')) quiet.push("The meeting's title was not used as the note (it reads like more than a meeting's name): unticked. Check it.");
+  if (r.flags.includes('renamed')) quiet.push("This meeting's title changed since you last logged it: unticked. Check the task.");
   if (r.flags.includes('untimed')) quiet.push(`${dur(r.untimed)} of this task ${r.untimed === 1 ? 'is' : 'are'} logged with no start time: unticked, in case it is this work.`);
   const open = LD.open === r.id;
   return `<li class="er${open ? ' on' : ''}" data-row="${r.id}">
