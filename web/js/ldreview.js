@@ -12,6 +12,36 @@ function sgFromPlan(plan) {
   SG.items = (plan?.suggestions || []).map((s, i) => ({...s, key: 'p' + i, state: 'open', at: sgAt(s.row)}));
   SG.asking = false; SG.note = '';
 }
+/* kept with the day's work (logday.js ldStash): the suggestions, each with its state, and the line about them */
+function sgSnapshot() { return {items: SG.items.map(s => ({...s})), note: SG.note}; }
+/* back on a fresh plan: FI's rules recomputed take the state they had (the same suggestion, ldkeep.js sgItemKey);
+   Claude's come back as they were, matched to the rows again by time and task */
+function sgRestore(k) {
+  const was = new Map((k.items || []).map(s => [sgItemKey(s), s.state]));
+  for (const s of SG.items) if (was.has(sgItemKey(s))) s.state = was.get(sgItemKey(s));
+  SG.items = SG.items.concat((k.items || []).filter(s => s.source === 'claude').map((s, i) => ({...s, key: 'k' + i})));
+  SG.note = k.note || '';
+}
+/* the panel opening with nothing kept in the page (after a restart): the review the server kept for this plan, if
+   any; never a new run of Claude */
+async function sgKept(d) {
+  if (!CONFIG?.likely?.askClaude || !CONFIG.likely.claudeFound) return;
+  const ans = await postJSON('/api/dayplan/review', {date: d, source: state.source, kept_only: true, ...(LD_IGNORE ? {ignore_logged: true} : {})}).catch(() => ({}));
+  if (!ldActive() || LD.date !== d || !ans.kept || !(ans.suggestions || []).length || SG.items.some(s => s.source === 'claude')) return;
+  sgTake(ans, true);
+  renderReview(); render();
+}
+function sgTake(ans, kept = false) {
+  const rows = ans.rows || [];
+  SG.items = SG.items.filter(x => x.source !== 'claude').concat((ans.suggestions || []).map((s, i) => {
+    const at = s.row ? (sgAt(s.row, rows) || null) : null;  // matched to the page's rows by time and task, not id
+    return {...s, key: 'c' + i, state: 'open', at};
+  }));
+  const n = (ans.suggestions || []).length;
+  SG.note = `${n ? `${n} ${n === 1 ? 'suggestion' : 'suggestions'}` : 'Nothing to change'} from Claude`
+    + (kept || ans.kept ? ', kept from the last review of this plan' : ans.cost != null ? ` · $${(+ans.cost).toFixed(3)}` : '')
+    + (ans.dropped?.length ? ` · ${ans.dropped.length} left out by Pulsar's checks` : '') + '.';
+}
 /* the row a suggestion was made for, as it was then: it applies only while the row is still as proposed */
 function sgAt(id, rows = null) {
   const r = rows ? rows.find(x => x.id === id) : ldRow(id);
@@ -26,18 +56,12 @@ async function sgAsk() {
   if (SG.asking) return;  // the button stays live while it turns (a disabled one would be dimmed), so a second click waits
   const d = LD.date;
   SG.asking = true; SG.note = ''; renderReview();
-  const ans = await postJSON('/api/dayplan/review', {date: d, source: state.source, ...(LD_IGNORE ? {ignore_logged: true} : {})});
+  const again = SG.items.some(s => s.source === 'claude');  // "Review again": a new run, not the kept one
+  const ans = await postJSON('/api/dayplan/review', {date: d, source: state.source, again, ...(LD_IGNORE ? {ignore_logged: true} : {})});
   SG.asking = false;
   if (!ldActive() || LD.date !== d) return;
   if (ans.error) { SG.note = `Review with Claude: ${ans.error}`; renderReview(); return; }
-  const rows = ans.rows || [];
-  SG.items = SG.items.filter(x => x.source !== 'claude').concat((ans.suggestions || []).map((s, i) => {
-    const at = s.row ? (sgAt(s.row, rows) || null) : null;  // matched to the page's rows by time and task, not id
-    return {...s, key: 'c' + i, state: 'open', at};
-  }));
-  const n = (ans.suggestions || []).length;
-  SG.note = `${n ? `${n} ${n === 1 ? 'suggestion' : 'suggestions'}` : 'Nothing to change'} from Claude`
-    + (ans.cost != null ? ` · $${(+ans.cost).toFixed(3)}` : '') + (ans.dropped?.length ? ` · ${ans.dropped.length} left out by Pulsar's checks` : '') + '.';
+  sgTake(ans);
   renderReview(); render();
 }
 
@@ -69,13 +93,32 @@ function sgRowHTML(r) {
   return mine.length ? `<ul class="sg-list" aria-label="Suggestions for this entry">${mine.map(s => sgItemHTML(s, r)).join('')}</ul>` : '';
 }
 /* above the list: the button and what Claude said; the suggestions for the whole day are the list's first item */
+/* Claude's one way in, here in Log the day: "Check my day with Claude" asks for task picks for the rows Pulsar is
+   unsure of when the day has none yet (Ask Claude), then reviews the whole day with FI's rules (Review). The button
+   says which models run and the most each run may cost; nothing runs by itself. */
+const useOf = id => (CONFIG?.claude?.uses || []).find(u => u.id === id);
+const MODEL_NAME = m => ({haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus'}[m] || 'Claude');
+function sgNeedsPicks() {
+  return !LD.plan?.claude && !LD.picked && LD.rows.some(x => ldPending(x) && x.confidence !== 'high' && ['focused', 'agent', 'outside'].includes(x.kind));
+}
+function sgCheckTitle() {
+  const a = useOf('ask'), r = useOf('review'), cap = u => u?.caps?.[u.model] != null ? `, at most $${u.caps[u.model]}` : '';
+  return (sgNeedsPicks() ? `Asks ${MODEL_NAME(a?.model)} for a task for the rows Pulsar is unsure of${cap(a)}, then ` : '')
+    + `${sgNeedsPicks() ? 'reviews' : 'Reviews'} the whole day with FI's rules (${MODEL_NAME(r?.model)}${cap(r)}). Nothing is written: you accept or reject each suggestion.`;
+}
+async function sgCheck() {
+  if (SG.asking || LD.asking) return;
+  const d = LD.date;
+  if (sgNeedsPicks()) { await askClaudeForDay(d); if (!ldActive() || LD.date !== d) return; }
+  await sgAsk();
+}
 function sgHead() {
-  const can = CONFIG?.likely?.askClaude && CONFIG.likely.claudeFound;
-  const model = {haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus'}[(CONFIG?.claude?.uses || []).find(u => u.id === 'review')?.model] || 'Claude';
-  // while Claude reviews, the button wears Ask Claude's ring, beams and glow (ask.css)
-  const anim = SG.asking ? '<span class="ask-ring" aria-hidden="true"><span class="ask-beam"></span><span class="ask-flash"></span></span><span class="ask-glow" aria-hidden="true"></span>' : '';
-  const btn = can && !LD.writing ? `<button type="button" class="btn sm bordered${SG.asking ? ' asking' : ''}" id="sg-ask"${SG.asking ? ' aria-disabled="true"' : ''}>${anim}${CLAUDE_MARK.split('<span')[0]}${SG.asking ? 'Reviewing…' : SG.items.some(s => s.source === 'claude') ? 'Review again' : 'Review with Claude'}</button>` : '';
-  const line = SG.asking ? `${model} is reviewing the day with FI's rules (about a minute). You can review meanwhile.` : SG.note;
+  const can = CONFIG?.likely?.askClaude && CONFIG.likely.claudeFound, busy = SG.asking || LD.asking;
+  // while Claude works, the button wears Ask Claude's ring, beams and glow (ask.css)
+  const anim = busy ? '<span class="ask-ring" aria-hidden="true"><span class="ask-beam"></span><span class="ask-flash"></span></span><span class="ask-glow" aria-hidden="true"></span>' : '';
+  const label = busy ? 'Checking…' : SG.items.some(s => s.source === 'claude') ? 'Check again' : 'Check my day with Claude';
+  const btn = can && !LD.writing ? `<button type="button" class="btn sm bordered${busy ? ' asking' : ''}" id="sg-ask" title="${esc(sgCheckTitle())}"${busy ? ' aria-disabled="true"' : ''}>${anim}${CLAUDE_MARK.split('<span')[0]}${label}</button>` : '';
+  const line = SG.asking ? `${MODEL_NAME(useOf('review')?.model)} is reviewing the day with FI's rules (about a minute). You can review meanwhile.` : SG.note;
   const open = SG.items.filter(s => s.state === 'open' && (!s.row || sgRowFor(s))).length;
   return `<div class="sg-head">${btn}${line ? `<p class="rv-ask" role="status">${esc(line)}</p>` : ''}
     ${open ? `<span class="iss ok">${open} ${open === 1 ? 'suggestion' : 'suggestions'} to decide</span>` : ''}</div>`;
@@ -112,7 +155,7 @@ async function sgAccept(s) {
 
 $('#review').addEventListener('click', ev => {
   const t = ev.target.closest('button'); if (!t || LD.writing) return;
-  if (t.id === 'sg-ask') { ev.stopPropagation(); sgAsk(); return; }
+  if (t.id === 'sg-ask') { ev.stopPropagation(); sgCheck(); return; }
   const k = t.dataset.sgOk || t.dataset.sgNo; if (!k) return;
   ev.stopPropagation();
   const s = SG.items.find(x => x.key === k); if (!s || s.state !== 'open') return;

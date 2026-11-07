@@ -121,13 +121,77 @@ settingsSearch.addEventListener('keydown', ev => {
   if (ev.key === 'Escape' && settingsSearch.value) { ev.preventDefault(); clearSearch(); }
 });
 
+/* Unsaved changes: closing Settings (✕, Close, Escape, the error log) with a field changed and not saved asks first:
+   Save, Discard or Keep editing. The search box and the warp switch (kept at once) are not changes. */
+let settingsDirty = false;
+form.addEventListener('input', markDirty); form.addEventListener('change', markDirty);
+function markDirty(ev) { if (ev.target.name || ev.target.matches('#claude-uses select')) settingsDirty = true; }
+function closeSettings(then) {
+  if (!settingsDirty) { dlg.close(); then?.(); return; }
+  const msg = $('#settings-msg');
+  msg.className = 'msg warn ask-discard';
+  msg.innerHTML = '<span>Your changes are not saved.</span> <button type="button" class="btn sm primary" data-sd="save">Save</button> '
+    + '<button type="button" class="btn sm bordered" data-sd="discard">Discard</button> <button type="button" class="btn sm bordered" data-sd="keep">Keep editing</button>';
+  msg.onclick = ev => {
+    const k = ev.target.closest('[data-sd]')?.dataset.sd; if (!k) return;
+    msg.onclick = null; msg.className = 'msg'; msg.textContent = '';
+    if (k === 'save') saveSettings().then(() => { if (!dlg.open) then?.(); });
+    if (k === 'discard') { settingsDirty = false; dlg.close(); then?.(); }
+  };
+  msg.querySelector('[data-sd="save"]').focus();
+}
+dlg.addEventListener('cancel', ev => { if (settingsDirty) { ev.preventDefault(); closeSettings(); } });
+/* what quitting now would lose, in a sentence, or '' (the app's window asks before ⌘Q quits, native.js) */
+window.pulsarUnsaved = () => {
+  if (dlg.open && settingsDirty) return 'Your changes in Settings are not saved.';
+  if (typeof logDlg !== 'undefined' && logDlg.open && !logEdit && logForm.elements.note.value.trim()) return 'The log dialog is open with a note that is not logged yet.';
+  if (typeof LD !== 'undefined' && LD.writing) return 'Log the day is writing entries to Productive.';
+  return '';
+};
+
+/* This Mac: the window's own choices (Pulsar.app 1.6 and later, native.js). Read from window.PULSAR_APP.native, then
+   asked again (pulsarNative.nativePrefs); each change goes to the window at once (setNativePrefs), and the window
+   answers with a pulsar:prefs event. Hidden in a browser and in an older window. */
+const appNative = () => (window.PULSAR_APP && typeof window.PULSAR_APP === 'object' ? window.PULSAR_APP.native : null);
+function paintApp(n = appNative()) {
+  const sec = $('#app-sec'), can = !!(n && window.pulsarNative?.setNativePrefs);
+  sec.hidden = !can;
+  if (!can) return;
+  $('#app-badge').checked = !!n.badge;
+  $('#app-reminder').checked = !!n.reminder;
+  $('#app-reminder-time').value = /^\d\d:\d\d$/.test(n.reminderTime || '') ? n.reminderTime : '17:30';
+  $('#app-reminder-time').disabled = !n.reminder;
+  const login = n.login, box = $('#app-login'), hint = $('#app-login-hint');
+  box.checked = login === 'on' || login === 'approve';
+  box.disabled = login === 'unsupported';
+  hint.hidden = !['approve', 'unsupported'].includes(login);
+  hint.innerHTML = login === 'approve'
+    ? 'macOS has to allow it first. <button type="button" class="linkbtn" id="app-login-open">Open Login Items</button> and switch Pulsar on.'
+    : login === 'unsupported' ? 'On this macOS, add it by hand: System Settings, General, Login Items, then + under Open at Login, and choose Pulsar.' : '';
+}
+async function refreshApp() {
+  if (!appNative() || !window.pulsarNative?.nativePrefs) return paintApp();
+  paintApp();
+  const got = await window.pulsarNative.nativePrefs();
+  if (got?.native) paintApp(got.native);
+}
+function setApp(change) { $('#app-msg').textContent = ''; window.pulsarNative?.setNativePrefs(change); }
+$('#app-badge').onchange = ev => setApp({badge: ev.target.checked});
+$('#app-reminder').onchange = ev => { $('#app-reminder-time').disabled = !ev.target.checked; setApp({reminder: ev.target.checked}); };
+$('#app-reminder-time').onchange = ev => { if (/^\d\d:\d\d$/.test(ev.target.value)) setApp({reminderTime: ev.target.value}); };
+$('#app-login').onchange = ev => setApp({login: ev.target.checked});
+$('#app-login-hint').addEventListener('click', ev => { if (ev.target.id === 'app-login-open') window.pulsarNative?.openLoginItems(); });
+addEventListener('pulsar:prefs', ev => { if (ev.detail?.native) paintApp(ev.detail.native); });
+
 function openSettings(tab) {
   if (!CONFIG) return;
   clearSearch();
+  refreshApp();
   let last = null;
   try { last = localStorage.getItem(TAB_KEY); } catch { /* storage off */ }
   showTab(typeof tab === 'string' ? tab : last || 't-conn');
   fillSettings(CONFIG);
+  settingsDirty = false; $('#settings-msg').onclick = null;
   paintWarp();
   /* the connection may have changed since the page loaded (a token renewed or expired): ask again, and refresh only
      what the person does not type into */
@@ -251,6 +315,7 @@ async function saveSettings(extra = {}) {
   if (r.error) { msg.className = 'msg warn'; msg.textContent = r.error; return; }
   applyConfig(r.config);
   fillSettings(r.config);
+  settingsDirty = false;
   // Productive was asked again only if the connection changed. Saved and fine: the dialog closes, as Save does
   // everywhere; a connection that now fails keeps it open, with the reason, so it can be fixed at once.
   reloadView();
@@ -272,7 +337,7 @@ async function saveSettings(extra = {}) {
 form.addEventListener('submit', ev => { ev.preventDefault(); saveSettings(); });
 $('#remove-token').onclick = () => saveSettings({remove_token: true});
 $('#claude-relink').onclick = () => saveSettings({relink: true});
-$('#settings-cancel').onclick = $('#settings-x').onclick = () => dlg.close();
+$('#settings-cancel').onclick = $('#settings-x').onclick = () => closeSettings();
 $('#open-settings').onclick = openSettings;
 
 /* version and updates: what runs, since when, what is newer, and whether it installs by itself */

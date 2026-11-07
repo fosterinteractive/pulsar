@@ -6,11 +6,14 @@
 /* entries logged from this page in the last ten minutes: Productive can take a moment to show a new entry, and the
    next stretch offered must never be the one just logged */
 const loggedHere = [];
+/* stretches skipped with Skip in the last ten minutes: the next ones offered leave them out (the rails stay) */
+const skippedHere = [];
+let logStretchNow = null;  // {a, b}: the stretch the log dialog opened on (log.js), for Skip
 /* the active stretches with no entry (the yellow rails, as drawn), less what was just logged and less [skipA, skipB):
    [{a, b}] in minutes, 3 minutes or more each, earliest first */
 function openStretches(skipA = 0, skipB = 0) {
-  while (loggedHere.length && Date.now() - loggedHere[0].at > 10 * 60 * 1000) loggedHere.shift();
-  const cuts = [...loggedHere.filter(x => x.date === state.date), {a: skipA, b: skipB}].filter(x => x.b > x.a);
+  for (const list of [loggedHere, skippedHere]) while (list.length && Date.now() - list[0].at > 10 * 60 * 1000) list.shift();
+  const cuts = [...loggedHere, ...skippedHere].filter(x => x.date === state.date).concat({a: skipA, b: skipB}).filter(x => x.b > x.a);
   let out = [...document.querySelectorAll('#lane-logged .gaprail')].map(g => ({a: +g.dataset.a, b: +g.dataset.b}));
   for (const c of cuts)
     out = out.flatMap(s => (c.b <= s.a || c.a >= s.b ? [s] : [{a: s.a, b: c.a}, {a: c.b, b: s.b}].filter(p => p.b - p.a >= 3)));
@@ -21,6 +24,8 @@ function openStretches(skipA = 0, skipB = 0) {
 function prepareNext(date, edit) {
   logForm.elements.start.removeAttribute('aria-invalid');  // a start the last dialog refused is not this one's
   $('#log-next').hidden = !!edit || date !== state.date;
+  $('#log-skip').hidden = !(logStretchNow && date === state.date && openStretches(logStretchNow.a, logStretchNow.b).length);
+  $('#log-notwork').hidden = !(logStretchNow && date === state.date);
   $('#log-next-hint').textContent = '';
   syncTimes('start', false);
 }
@@ -40,10 +45,36 @@ function afterLog(date, start, minutes, said, andNext) {
   return true;
 }
 
-/* ---------- the start: 24-hour HH:MM, as everywhere else in Pulsar ---------- */
-/* 09:30, and also 9:30, 930 or 9.30; '' when it is not a time of day */
+/* Not work: the stretch the dialog opened on was not work (day.js markNotWork) */
+$('#log-notwork').onclick = async () => {
+  const s = logStretchNow; if (!s) return;
+  if (await markNotWork(s.a, s.b)) logDlg.close();
+};
+/* Skip: this stretch stays unlogged for now, and the next one opens, as after Log and next */
+$('#log-skip').onclick = () => {
+  const s = logStretchNow; if (!s) return;
+  skippedHere.push({date: state.date, a: s.a, b: s.b, at: Date.now()});
+  const left = openStretches(), next = left.find(x => x.a >= s.b) || left[0];
+  logDlg.close();
+  if (!next) { toast('No other active time without an entry.'); return; }
+  logStretch(next.a, next.b);  // day.js
+  const more = left.length - 1;
+  $('#log-next-hint').textContent = `Skipped ${hm(s.a)}–${hm(s.b)}. Next active stretch with no entry: ${hm(next.a)}–${hm(next.b)}`
+    + (more ? `, then ${more} more.` : ', the last one.');
+};
+
+/* ---------- the start: HH:MM, 24-hour, as the server reads it ---------- */
+/* 09:30, and also 9:30, 930 or 9.30, and 12-hour times as a Mac set to them shows: 2:30 pm, 2:30PM, 2pm, 12:05 a.m.;
+   '' when it is not a time of day */
 function startHHMM(v) {
-  const m = String(v ?? '').trim().match(/^(\d{1,2})[:.h]?(\d{2})$/);
+  const t = String(v ?? '').trim().toLowerCase();
+  const p = t.match(/^(\d{1,2})(?:[:.h]?(\d{2}))?\s*([ap])\.?\s*m?\.?$/);
+  if (p) {
+    const h = +p[1], mm = p[2] ?? '00';
+    if (h < 1 || h > 12 || +mm > 59) return '';
+    return `${String(h % 12 + (p[3] === 'p' ? 12 : 0)).padStart(2, '0')}:${mm}`;
+  }
+  const m = t.match(/^(\d{1,2})[:.h]?(\d{2})$/);
   return m && +m[1] < 24 && +m[2] < 60 ? `${m[1].padStart(2, '0')}:${m[2]}` : '';
 }
 logForm.elements.start.addEventListener('blur', ev => {
@@ -86,7 +117,7 @@ function syncTimes(from, left) {
         : 'End is before Start. An entry cannot run past midnight: end it at 24:00 and log the rest on the next day.';
     }
   } else if (Number.isInteger(m) && m >= 1) {
-    if (m <= most) { const b = m === most ? 1440 : clockAfter(date, a, m); f.end.value = b >= 1440 ? '24:00' : hm(b); say = ''; }
+    if (m <= most) { const b = m === most ? 1440 : clockAfter(date, a, m); f.end.value = b >= 1440 ? '24:00' : hm24(b); say = ''; }
     else if (!left) { f.end.value = '24:00'; say = `An entry cannot run past midnight: from ${s}, ${dur(most)} at most.`; }
     else { setMinutes(most); f.end.value = '24:00'; timesCut = true;
       say = `An entry cannot run past midnight, so it now ends at 24:00: ${dur(most)}. Log the rest on the next day.`; }

@@ -599,6 +599,13 @@ def note(date: str, row: dict, t0: float, history: list = (), run=subprocess.run
     with _lock:
         if sig in _notes:
             return _notes[sig]
+    key = json.dumps(sig[1:], ensure_ascii=False)  # the same stretch and work, asked again after a restart: no new run
+    again = stashed(date, "notes", key)
+    if again is not None and isinstance(again.get("note"), str):
+        again = {"note": again["note"], "why": str(again.get("why") or ""), "cost": 0, "kept": True}
+        with _lock:
+            _notes[sig] = again
+        return again
     work = json.dumps({"steps": said, "commits": made, "their_notes": [n["note"] for n in their_notes(row, history)]},
                       ensure_ascii=False, indent=1)
     prompt = NOTE_PROMPT.format(date=date, start=clock_at(t0, row["s"], tz), end=clock_at(t0, row["e"], tz),
@@ -630,6 +637,7 @@ def note(date: str, row: dict, t0: float, history: list = (), run=subprocess.run
         _notes[sig] = answer
         for old in list(_notes)[:-60]:
             del _notes[old]
+    stash(date, "notes", key, {"note": text, "why": answer["why"]})
     return answer
 
 
@@ -697,10 +705,7 @@ def keep(date: str, answer: dict) -> None:
         os.makedirs(PICKS_DIR, mode=0o700, exist_ok=True)
         config.write_atomic(os.path.join(PICKS_DIR, f"{date}.json"), json.dumps(
             {"format": 1, "date": date, "picks": answer["picks"], "when": time.time()}, ensure_ascii=False))
-        oldest = (datetime.now() - timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%d")
-        for name in os.listdir(PICKS_DIR):
-            if name.endswith(".json") and name[:10] < oldest:
-                os.remove(os.path.join(PICKS_DIR, name))
+        _prune()
     except OSError:
         pass
 
@@ -713,6 +718,64 @@ def kept(date: str):
             else None
     except (OSError, ValueError, KeyError, TypeError):
         return None
+
+
+# What else Claude wrote for a day, beside the picks, so asking again for the same thing costs nothing, also after a
+# restart: the notes drafted for a stretch of work ("notes": askclaude.note) and the last review of the day's plan
+# ("review": server.api_dayplan_review). One file per day and kind, <date>.<kind>.json in PICKS_DIR (owner-only, like
+# the picks), each answer under the key of what it was asked about; kept KEEP_DAYS days like the picks.
+STASH_MAX = 200  # answers kept per day and kind, the newest
+
+
+def _stash_path(date: str, kind: str) -> str:
+    if not (re.fullmatch(r"\d{4}-\d{2}-\d{2}", date or "") and re.fullmatch(r"[a-z]+", kind or "")):
+        raise ValueError("a day (YYYY-MM-DD) and a kind")
+    return os.path.join(PICKS_DIR, f"{date}.{kind}.json")
+
+
+def _stash_read(date: str, kind: str) -> dict:
+    try:
+        with open(_stash_path(date, kind), encoding="utf-8") as fh:
+            doc = json.load(fh)
+        items = doc.get("items") if isinstance(doc, dict) and doc.get("format") == 1 else None
+        return items if isinstance(items, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def stash(date: str, kind: str, key: str, answer: dict) -> None:
+    """Keep `answer` for `date` under `key` (a string that names exactly what was asked), on disk."""
+    try:
+        with _lock:
+            items = _stash_read(date, kind)
+            items.pop(key, None)
+            items[key] = {"answer": answer, "when": time.time()}
+            for old in list(items)[:-STASH_MAX]:
+                del items[old]
+            os.makedirs(PICKS_DIR, mode=0o700, exist_ok=True)
+            os.chmod(PICKS_DIR, 0o700)
+            config.write_atomic(_stash_path(date, kind), json.dumps({"format": 1, "date": date, "items": items},
+                                                                    ensure_ascii=False))
+        _prune()
+    except (OSError, ValueError):
+        pass
+
+
+def stashed(date: str, kind: str, key: str):
+    """The answer kept for `date` under `key`, or None."""
+    try:
+        got = _stash_read(date, kind).get(key)
+    except ValueError:
+        return None
+    return got.get("answer") if isinstance(got, dict) and isinstance(got.get("answer"), dict) else None
+
+
+def _prune() -> None:
+    """Files of days older than KEEP_DAYS go, picks and stashes alike."""
+    oldest = (datetime.now() - timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%d")
+    for name in os.listdir(PICKS_DIR):
+        if name.endswith(".json") and name[:10] < oldest:
+            os.remove(os.path.join(PICKS_DIR, name))
 
 
 def history_span(date: str) -> tuple:

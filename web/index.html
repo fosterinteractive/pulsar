@@ -16,7 +16,7 @@
 </head>
 <body>
 <header>
-  <span class="brand"><a class="home" id="home" href="/" title="Go to the Day view"><svg id="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
+  <span class="brand"><a class="home" id="home" href="/" title="Go to the Day view" draggable="false"><svg id="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
       <defs>
         <radialGradient id="pGlow" cx="16" cy="16" r="9" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffffff"/><stop offset=".3" stop-color="#f0abfc"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0"/></radialGradient>
         <linearGradient id="pUp" x1="16" y1="16" x2="16" y2="0" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#06b6d4"/><stop offset=".6" stop-color="#22d3ee" stop-opacity=".7"/><stop offset="1" stop-color="#22d3ee" stop-opacity="0"/></linearGradient>
@@ -34,17 +34,17 @@
   <span class="daytitle dayonly"><span class="sub dayonly" id="dayname"></span><button type="button" class="weekline" id="weekline" hidden aria-haspopup="dialog"></button></span>
   <span class="spacer"></span>
   <span class="seg dayonly">
-    <button class="btn icon" id="prev" title="Previous day (←)">‹</button>
+    <button class="btn icon" id="prev" title="Previous day (←)" aria-label="Previous day">‹</button>
     <button class="btn" id="today" title="Today (T)">Today</button>
-    <button class="btn icon" id="next" title="Next day (→)">›</button>
+    <button class="btn icon" id="next" title="Next day (→)" aria-label="Next day">›</button>
   </span>
   <input type="date" id="date" class="dayonly">
-  <span class="seg dayonly" id="zoom" title="Zoom">
-    <button data-v="1" title="1 minute rows">1m</button><button data-v="5" title="5 minute rows">5m</button><button data-v="15" title="15 minute rows">15m</button><button data-v="30" title="30 minute rows">30m</button><button data-v="60" title="1 hour rows">1h</button>
-  </span>
+  <span id="zoom" class="dayonly"><select id="zoom-sel" class="zoom-sel" aria-label="Zoom: the time each row of the day shows" title="Zoom">
+    <option value="1">1 min rows</option><option value="5">5 min rows</option><option value="15">15 min rows</option><option value="30">30 min rows</option><option value="60">1 h rows</option>
+  </select><!-- the window's View menu clicks these (native.js) --><button type="button" data-v="1" hidden tabindex="-1"></button><button type="button" data-v="5" hidden tabindex="-1"></button><button type="button" data-v="15" hidden tabindex="-1"></button><button type="button" data-v="30" hidden tabindex="-1"></button><button type="button" data-v="60" hidden tabindex="-1"></button></span>
   <button class="btn icon bordered" id="theme-btn" aria-label="Theme"></button>
   <button class="btn icon" id="refresh" title="Refresh everything" aria-label="Refresh everything">↻</button>
-  <button class="btn bordered logs-btn" id="open-logs" title="Error log">Logs</button>
+  <button class="btn icon bordered logs-btn" id="open-logs" hidden aria-label="Error log">!</button>
   <button class="btn bordered settings-btn" id="open-settings" title="Settings: Productive token, time zone, rules" aria-label="Settings">
     <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
     <span>Settings</span></button>
@@ -61,10 +61,9 @@
           <option value="auto">Auto</option><option value="aw">ActivityWatch</option><option value="memtime">MemTime</option></select></div>
       <div class="colhead likelycol"><b>Likely</b><span id="h-likely">…</span>
         <button class="btn mini2 bordered" id="ask-claude" hidden title="Ask Claude which task each block belongs to">Ask Claude</button></div>
-      <div class="colhead loggedcol"><b>Logged</b><span id="h-logged">…</span>
-        <button class="btn mini2 bordered" id="log-day" title="Propose the whole day from your activity, then review it before anything is logged">Log the day</button>
-        <button class="btn mini2 bordered" id="log-new" title="Log time in Productive (or drag in this column)">+ Log</button>
-        <button class="btn icon mini" id="refresh-logged" title="Refresh logged time from Productive" aria-label="Refresh logged time">↻</button></div>
+      <div class="colhead loggedcol"><div class="ch-t"><b>Logged</b><span id="h-logged">…</span></div>
+        <div class="ch-acts"><button class="btn sm bordered" id="log-new" title="Log time in Productive (or drag in this column). Shortcut: N">+ Log</button>
+        <button class="btn sm bordered" id="log-day" title="Propose the whole day from your activity, then review it before anything is logged. Shortcut: L">Log the day</button></div></div>
     </div>
     <div class="scroll" id="scroll">
       <div class="grid" id="grid">
@@ -157,6 +156,16 @@
             than 10 minutes) to the work next to it. When you log a block of time, its minutes are rounded to it too. Minutes
             you type yourself stay as you typed them.</p>
         </section>
+        <section data-k="dock badge reminder end of day open at login startup window app mac" id="app-sec" hidden>
+          <h3>This Mac</h3>
+          <p class="hint">Pulsar's window: these change at once, no Save needed.</p>
+          <label class="check"><input type="checkbox" id="app-badge"> The Dock icon shows the time not logged today</label>
+          <label class="check"><input type="checkbox" id="app-reminder"> Remind me to log the day at
+            <input type="time" id="app-reminder-time" class="app-time" aria-label="Reminder time"></label>
+          <label class="check"><input type="checkbox" id="app-login"> Open Pulsar when I log in to the Mac</label>
+          <p class="hint" id="app-login-hint" hidden></p>
+          <p class="msg" id="app-msg" role="status"></p>
+        </section>
         <section data-k="personal windows activitywatch memtime tracker afk away">
           <h3>Activity</h3>
           <label class="field"><span>Personal windows</span><textarea name="personal_patterns" rows="5"></textarea></label>
@@ -199,7 +208,7 @@
           <label class="check"><input type="checkbox" name="preview_writes"> Allow this preview to write to Productive</label>
           <p class="hint">Off by default: you can try everything, and logging, changing and deleting entries stop before Productive. Switch it on to test writing for real, then off again.</p>
         </section>
-        <section data-k="version update updates changelog release warp animation codename" id="updates">
+        <section data-k="version update updates changelog release warp animation codename error log logs errors" id="updates">
           <h3>Version and updates</h3>
           <div class="kv"><span>Version</span><span id="upd-version" class="num"></span></div>
           <div class="kv"><span>Installed</span><span id="upd-since"></span></div>
@@ -212,6 +221,8 @@
           <p class="hint">Pulsar looks for a new version every few hours and shows the Update button; it installs one only when
             you click it.</p>
           <label class="check"><input type="checkbox" id="warp-on"> Warp animation on updates and refresh</label>
+          <div class="btnrow"><button type="button" class="btn bordered" id="settings-logs">Error log</button></div>
+          <p class="hint">Errors and warnings of the last 31 days, to send to whoever maintains Pulsar when something goes wrong.</p>
           <p class="hint" id="warp-hint">Option-click the version at the top to see it.</p>
         </section>
       </div>
@@ -228,9 +239,9 @@
       <div class="row3 times">
         <label class="field"><span>Date</span><input name="date" type="date" required></label>
         <label class="field"><span>Start</span><input name="start" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
-          placeholder="HH:MM" maxlength="5" required title="24-hour time, HH:MM"></label>
+          placeholder="HH:MM" maxlength="9" required title="A time: 14:30, or 2:30 pm"></label>
         <label class="field"><span>End</span><input name="end" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
-          placeholder="HH:MM" maxlength="5" required title="24-hour time, HH:MM; 24:00 is midnight" aria-describedby="log-times"></label>
+          placeholder="HH:MM" maxlength="9" required title="A time: 15:30, or 3:30 pm; 24:00 is midnight" aria-describedby="log-times"></label>
         <label class="field"><span>Minutes</span><input name="minutes" type="number" min="1" max="1440" required></label>
       </div>
       <p class="hint warnish" id="log-times" aria-live="polite" hidden></p>
@@ -249,8 +260,10 @@
       <div id="log-range" aria-live="polite" hidden></div>
     </div>
     <p class="msg" id="log-msg" role="status"></p>
-    <div class="df"><button type="button" class="btn bordered" data-close>Cancel</button><button type="submit" class="btn primary" id="log-save">Log in Productive</button>
-      <button type="submit" class="btn bordered" id="log-next" title="Log this, then open the next active stretch with no entry (⌘⇧↩)">Log and next</button>
+    <div class="df"><button type="button" class="btn bordered" data-close>Cancel</button>
+      <button type="button" class="btn bordered" id="log-notwork" hidden title="This time was not work: it stays unlogged and is no longer marked as to log (on this Mac only)">Not work</button>
+      <button type="button" class="btn bordered" id="log-skip" hidden title="Leave this stretch unlogged for now and open the next one">Skip</button><button type="submit" class="btn primary" id="log-save" aria-keyshortcuts="Meta+Enter">Log in Productive</button>
+      <button type="submit" class="btn bordered" id="log-next" title="Log this, then open the next active stretch with no entry (⌘⇧↩)" aria-keyshortcuts="Meta+Shift+Enter">Log and next</button>
       <button type="submit" class="btn bordered" id="log-anyway" title="Log the whole time, over the entries already logged in it" hidden>Log anyway</button></div>
   </form>
 </dialog>
@@ -258,7 +271,7 @@
   <form id="task-form" novalidate>
     <div class="dh"><h2 id="task-title">New task in Productive</h2><button type="button" class="btn icon" data-close aria-label="Close">✕</button></div>
     <div class="scrollarea">
-      <label class="field"><span>Project</span><select name="project"></select></label>
+      <label class="field"><span>Project</span><select name="project" autofocus></select></label>
       <label class="field"><span>Where it goes</span><select name="place"></select></label>
       <label class="field"><span>Title</span><input name="title" maxlength="140" autocomplete="off" spellcheck="true"
         placeholder="The issue or deliverable, e.g. “Area: what”" aria-describedby="task-draft-hint"></label>
@@ -283,7 +296,7 @@
   <form id="rule-form" novalidate>
     <div class="dh"><h2 id="rule-title">New rule</h2><button type="button" class="btn icon" data-close aria-label="Close">✕</button></div>
     <div class="scrollarea">
-      <label class="field"><span>When a window, page or site contains</span><input name="match" autocomplete="off" placeholder="github.com/your-team/your-repo"></label>
+      <label class="field"><span>When a window, page or site contains</span><input name="match" autocomplete="off" placeholder="github.com/your-team/your-repo" autofocus></label>
       <p class="hint" id="rule-preview"></p>
       <div class="field"><span>it belongs to the task</span>
         <input name="q" type="search" placeholder="Search every task in Productive" autocomplete="off" aria-label="Search tasks">
@@ -311,6 +324,21 @@
     <button type="button" class="btn bordered" id="updprompt-later">Not now</button>
     <button type="button" class="btn primary" id="updprompt-go" autofocus>Update</button></div>
 </dialog>
+<dialog id="keysdlg" aria-labelledby="keys-title">
+  <div class="dh"><h2 id="keys-title">Keyboard shortcuts</h2><button type="button" class="btn icon" data-close aria-label="Close">✕</button></div>
+  <div class="scrollarea"><dl>
+    <dt><kbd>L</kbd></dt><dd>Log the day (again to close it)</dd>
+    <dt><kbd>N</kbd></dt><dd>+ Log: the next active time with no entry</dd>
+    <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous or next day</dd>
+    <dt><kbd>T</kbd></dt><dd>Today</dd>
+    <dt><kbd>↩</kbd></dt><dd>On a block or a yellow rail: open it. On the open row of Log the day: tick it and open the next</dd>
+    <dt><kbd>⌘↩</kbd></dt><dd>In the log dialog: log it</dd>
+    <dt><kbd>⌘⇧↩</kbd></dt><dd>In the log dialog: Log and next</dd>
+    <dt><kbd>Esc</kbd></dt><dd>Close a dialog or a popover</dd>
+    <dt><kbd>?</kbd></dt><dd>This list</dd>
+  </dl></div>
+  <div class="df"><button type="button" class="btn primary" data-close>Close</button></div>
+</dialog>
 <dialog id="signin" aria-labelledby="signin-title" aria-describedby="signin-text">
   <h2 id="signin-title">Not signed in</h2>
   <p id="signin-text">This browser is not signed in to Pulsar. Open Pulsar from its app icon and it will sign this browser in. For another browser, see Pulsar's README.</p>
@@ -335,6 +363,7 @@
 <script src="/static/js/flow.js"></script>
 <script src="/static/js/range.js"></script>
 <script src="/static/js/newtask.js"></script>
+<script src="/static/js/ldkeep.js"></script>
 <script src="/static/js/logday.js"></script>
 <script src="/static/js/ldreview.js"></script>
 <script src="/static/js/catchup.js"></script>

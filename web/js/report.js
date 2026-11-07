@@ -21,7 +21,7 @@ const pct = (a, b) => (b ? Math.round(a / b * 100) : 0);
 const hh = h => String(h % 24).padStart(2, '0') + ':00';
 const dayLabel = (d, opts = {weekday: 'short', day: 'numeric', month: 'short'}) => {
   const t = new Date(d + 'T12:00:00Z');
-  return isNaN(t) ? String(d ?? '') : new Intl.DateTimeFormat('en-GB', {...opts, timeZone: 'UTC'}).format(t);
+  return isNaN(t) ? String(d ?? '') : new Intl.DateTimeFormat(DATE_LOCALE, {...opts, timeZone: 'UTC'}).format(t);
 };
 /* sequential: one blue ramp, more is stronger; empty cells stay the neutral well */
 const seq = t => (t <= 0 ? 'var(--seg)' : `color-mix(in oklab, var(--seq-hi) ${Math.round(14 + 86 * Math.min(1, t))}%, var(--seq-lo))`);
@@ -40,7 +40,7 @@ function rangeDates(key) {
   return [at(-29), t];
 }
 function paintFilters() {
-  document.querySelectorAll('#range button').forEach(b => b.classList.toggle('on', b.dataset.v === R.range));
+  document.querySelectorAll('#range button').forEach(b => { b.classList.toggle('on', b.dataset.v === R.range); b.setAttribute('aria-pressed', String(b.dataset.v === R.range)); });
   $('#rfrom').value = R.from; $('#rto').value = R.to; $('#rmsg').textContent = '';
   $('#print-title').textContent = R.from && R.to ? `Pulsar report, ${dayLabel(R.from, {day: 'numeric', month: 'short'})} to ${dayLabel(R.to, {day: 'numeric', month: 'short', year: 'numeric'})}` : 'Pulsar report';
   $('#rlabel').textContent = R.from && R.to

@@ -65,7 +65,8 @@ right-click Pulsar, **Open**, then **Open** again). Only once.
 
 After that, open Pulsar like any other app. If it is already running, its window comes to the front. Downloads
 ask where to save; **Print or save as PDF** in the Report opens the print dialog. Cmd+= and Cmd+- make the page
-bigger or smaller. The window needs Safari 16.2 or newer (macOS 13 has it; on macOS 12, update Safari); on an
+bigger or smaller. Keys: **L** Log the day, **N** + Log, **←** **→** another day, **T** today, **⌘↩** logs in the log
+dialog, **?** lists them all; Tab reaches every button. The window needs Safari 16.2 or newer (macOS 13 has it; on macOS 12, update Safari); on an
 older Safari, Pulsar opens in your browser instead.
 
 - **Open it at login**: **System Settings → General → Login Items** (Login Items & Extensions on newer macOS),
@@ -126,7 +127,7 @@ Code and reconnect Productive. A token of your own never expires, so it is the s
 |---|---|
 | Time zone | this computer's |
 | Daily target | your organization's working day in Productive, else 8 h (Pulsar reads it through Claude Code's connection; with an API token it is 8 h unless you set it) |
-| Round entries to | 5 minutes (or 10 or 15): Log the day's entries start and end on this step, and a block you log is rounded to it |
+| Round entries to | 5 minutes (or 10 or 15): Log the day's entries start and end on this step (or right against an entry already logged), a block you log is rounded to it, and active time shorter than it is not marked as unlogged |
 | Personal windows | Telegram, WhatsApp, YouTube, Netflix, Instagram, Facebook, TikTok, Reddit (one word per line; a window whose app, title or site contains one counts as personal) |
 | ActivityWatch address | `http://localhost:5600` |
 | Likely column | shown when Claude Code sessions are on this computer (`~/.claude/projects`) |
@@ -164,8 +165,9 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   releases behind, it reminds you once every two days; **Skip this release** stops the reminder until a newer one is
   out. Only releases signed with the maintainer's release key are accepted. The repository must stay public: Pulsar downloads without signing in to GitHub, so from a private
   repository it gets nothing (and the Pulsar.zip link stops working too).
-- **Logs.** Errors and warnings are kept for 31 days in `~/.cache/pulsar/logs/`, with tokens removed. **Logs**
-  at the top shows them; its **Download** button saves a text file to send to whoever maintains Pulsar. Productive
+- **Error log.** Errors and warnings are kept for 31 days in `~/.cache/pulsar/logs/`, with tokens removed.
+  **Settings → Updates → Error log** shows them (while there are errors of the last 24 hours, a small **!** at the top
+  opens it too); its **Download** button saves a text file to send to whoever maintains Pulsar. Productive
   not being connected is shown on the page, not logged; a Claude Code token that could not be renewed is.
 - **The warp.** An update draws the page in towards a black hole (a bright one on the light theme) with a ring of
   light around it while it loads, then lets go with a small flash; the refresh button plays a short one. In the
@@ -183,9 +185,12 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   hash of each session title are kept, in `~/.cache/pulsar/likely-days/`).
 - **Claude Code (one switch, off by default).** Switch on **Use Claude Code with Pulsar** in **Settings → Claude**
   and Save. That is all; it turns on:
-  - **Ask Claude** in the Likely column: your own Claude Code suggests a task and a note for each block, and may
-    search Productive (read only; tools that change anything are refused). Pick the model there: Sonnet (default),
-    Haiku or Opus. It takes 15 to 60 seconds. Settings lists each use of Claude with its own model.
+  - **Check my day with Claude**, in Log the day, the one button that runs Claude there: your own Claude Code first
+    suggests a task and a note for each block Pulsar is unsure of (Ask Claude, when the day has no picks yet), then
+    reviews the whole day with FI's rules; you accept or reject each suggestion. Ask Claude may search Productive
+    (read only; tools that change anything are refused). Its tooltip names the models and the most each run may
+    cost; pick the models in **Settings → Claude**: Sonnet (default) for the picks, Haiku for the review. It takes
+    15 to 60 seconds each. Nothing runs by itself.
   - **Notes from the session** in the log dialog: Haiku (or the model you pick) drafts the note of a Likely block from that session and your
     commits in a few seconds; it never replaces what you typed.
   - **Logging from a session:** Pulsar adds itself to Claude Code, so in any new session you can ask "what did I not
@@ -221,14 +226,14 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
 
   **What it costs.** Your Claude usage, not money to Pulsar. Each Ask Claude run may cost at most $0.25 (Haiku),
   $0.75 (Sonnet) or $2 (Opus). When Claude answers with no picks, Pulsar asks once more, so one Ask Claude click may
-  cost up to twice that; the cost shown is what both runs cost together. **Log the day** runs Ask Claude by itself when the switch
-  is on and some entries are unsure. A day with Sonnet has cost about $0.10 to $0.25. A note may cost at most $0.10 with Haiku
+  cost up to twice that; the cost shown is what both runs cost together. Claude runs only when you click **Check my day with Claude**. A day with Sonnet has cost about $0.10 to $0.25. A note may cost at most $0.10 with Haiku
   ($0.30 with Sonnet, $0.80 with Opus) and usually costs under half a cent. Asking again after Pulsar restarted, or
   after the day's blocks changed, asks Claude again and costs again.
 
   **What is kept.** Ask Claude's last answer for each day (the tasks it picked, its reasons and its drafted notes,
-  which come from your sessions' text) is kept on this Mac for 60 days, in `~/.cache/pulsar/claude-picks/`, so the
-  day shows it again after a restart. With the switch off, neither the page nor Log the day uses it.
+  which come from your sessions' text), the notes it drafted for Log the day's rows and the day's last review are kept
+  on this Mac for 60 days, in `~/.cache/pulsar/claude-picks/`: the day shows them again after a restart, and the same
+  question is not asked (or paid for) twice. With the switch off, neither the page nor Log the day uses them.
 
   Switching it off takes back everything it added, and nothing else.
 - **The daily meeting, ready to log.** An entry you log at the same time on most days (a daily scrum) is noticed from
@@ -248,7 +253,8 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   Pulsar's away with it). Only fosterinteractive.com accounts can sign in.
 - **Change what you logged.** Click an entry in Logged: **Edit** opens it in the log dialog, **Delete** asks first
   (Productive keeps deleted entries in its Recycle Bin). Drag an entry's top or bottom edge to make it start or end
-  earlier or later; Pulsar asks before it changes anything. Pulsar does not refuse an approved entry, because a
+  earlier or later; Pulsar asks before it changes anything. After a delete or a drag, **Undo** in the note at the
+  bottom puts it back. Pulsar does not refuse an approved entry, because a
   budget without an approval step approves every entry at once and you can still change it. Where an approver
   approved it, Productive refuses the change and Pulsar shows Productive's reason.
 - **Log the day.** **Log the day** in the Logged column proposes the whole day at once, from your activity, Claude
@@ -262,6 +268,10 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   Claude's draft. A meeting's title is a note only when you or someone of your own company (your Google account's
   domain) organized it and it reads like a meeting's name (not an instruction, a sum or an address); a series renamed
   since you last logged it starts unticked.
+- **Day done, and time that was not work.** A day whose logged time reaches your daily target is done (or click
+  **Mark the day done** under Work time): its yellow rails turn grey and it leaves Earlier days; **Not done** undoes
+  it. **Not work** in the log dialog or on a Log the day row says a stretch was not work: it is no longer marked or
+  proposed (click its grey hatched rail to undo). Both stay on this Mac and are never sent to Productive.
 - **Catching up.** **Earlier days…** in Log the day lists your last workdays with the active time no entry covers.
   Tick the days, and each one opens in turn as Log the day; each is written only when you confirm it.
 - **Ticket flags.** The log dialog and Log the day say when a task is closed, when no budget takes time on that
@@ -289,7 +299,7 @@ one, shown next to the version in Settings and in the release notes:
 
 ## If something goes wrong
 
-1. Click **Logs** at the top of Pulsar, choose how far back (24 hours, 7 or 30 days) and click **Download**. It
+1. Open **Settings → Updates → Error log** (or the **!** at the top, when it shows), choose how far back (24 hours, 7 or 30 days) and click **Download**. It
    saves a text file with the errors, your macOS and Pulsar versions, and no tokens.
 2. Send that file to the person who shared Pulsar with you, with what you did, what you expected and what you saw
    (a screenshot helps).

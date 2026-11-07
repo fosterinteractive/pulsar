@@ -357,8 +357,8 @@ class PageTest(unittest.TestCase):
         """The Logged column drags in 1-minute steps: the dialog keeps those minutes, never "Round entries to"."""
         log = self.read("js/log.js")
         self.assertIn("logStretch(a, b, true)", log)
-        self.assertIn("if (!edit && !exact) minutes = roundMinutes(", log)
-        self.assertRegex(self.read("js/day.js"), r"function logStretch\(a, b, exact = false\)[\s\S]{0,900}range: true, exact\}")
+        self.assertRegex(log, r"if \(!edit && !exact\) \{[\s\S]{0,400}?minutes = roundMinutes\(")  # a drag skips the rounding
+        self.assertRegex(self.read("js/day.js"), r"function logStretch\(a, b, exact = false\)[\s\S]{0,900}range: true, exact, stretch: \{a, b\}\}")
 
     def test_the_split_logs_one_entry_at_a_time_and_never_forces(self):
         code = self.read("js/range.js")
@@ -394,8 +394,8 @@ class PageTest(unittest.TestCase):
         'signin' as well, so it does not stay signed out."""
         log, day, main = self.read("js/log.js"), self.read("js/day.js"), self.read("js/main.js")
         self.assertIn("logStretch(a, b, true)", log)
-        self.assertIn("if (!edit && !exact) minutes = roundMinutes(", log)
-        self.assertIn("range: true, exact});", day)
+        self.assertRegex(log, r"if \(!edit && !exact\) \{[\s\S]{0,400}?minutes = roundMinutes\(")
+        self.assertIn("range: true, exact, stretch: {a, b}});", day)
         reopen = main[main.index("async function reopenSignedIn("):]
         self.assertLess(reopen.index("toApp('reload')"), reopen.index("toApp('signin')"))
 

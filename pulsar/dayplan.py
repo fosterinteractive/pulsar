@@ -696,29 +696,36 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
                  "why": m.get("why") or ""} for m in merged if m["kind"] == "skip"]
     entries = [m for m in merged if m["kind"] != "skip"]
 
-    # lay out: in time order, no overlap with each other or with what is logged, boundaries on the grid
+    # lay out: in time order, no overlap with each other or with what is logged, boundaries on the grid, except
+    # against an entry already logged: an entry starts right where it ends, or stops right where it starts, so the
+    # minutes up to the grid are taken in rather than left as a crumb of "not covered" shorter than a step
     g = o["grid"] or 1
     out, end, unplaced = [], 0, []
     for m in sorted(entries, key=lambda m: m["s"]):
         s = max(int(round(m["s"] / g) * g), end)
         e = int(round((s + m["minutes"]) / g) * g)
-        for a, b in busy:  # an entry already logged: start after it, or stop before it starts (on the grid both)
+        cut = 0  # minutes an entry already logged left no room for
+        for a, b in busy:  # an entry already logged: start right after it, or stop right before it
             if a <= s < b:
                 length = e - s
-                s = int(math.ceil(b / g) * g)
-                e = s + length
+                s = int(math.ceil(b))
+                e = int(math.ceil((s + length) / g) * g)  # the end back on the grid, the length kept at least
             elif s < a < e:
-                stop = max(s, int(a // g * g))
-                unplaced.append({"minutes": e - stop, "task": m.get("task"), "project": m.get("project") or "",
-                                 "why": "no room before an entry already logged"})
+                stop = max(s, int(a))
+                cut += e - stop
                 e = stop
         if s > m["last"]:  # moved past entries already logged beyond its own work: listed, never placed elsewhere
             unplaced.append({"minutes": m["minutes"], "task": m.get("task"), "project": m.get("project") or "",
                              "why": "no room before an entry already logged"})
             continue
         e = min(e, N)
+        room = {"task": m.get("task"), "project": m.get("project") or "", "why": "no room before an entry already logged"}
         if e - s < (5 if m.get("attended") else g):
-            continue  # under half a grid step: rounding
+            if cut:  # squeezed between entries already logged: all of it listed, none placed
+                unplaced.append({"minutes": m["minutes"], **room})
+            continue  # else under half a grid step: rounding
+        if cut:
+            unplaced.append({"minutes": cut, **room})
         end = e
         out.append(_entry(m, s, e, names))
 
@@ -735,6 +742,8 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
 
     def cut_from(e, want: int, why: str) -> int:
         cut = min(e["minutes"], int(math.ceil(want / g) * g))
+        if cut < e["minutes"] and (e["e"] - cut) % g:  # an end against an entry already logged: back on the grid
+            cut = min(e["minutes"], e["e"] - int((e["e"] - cut) // g * g))
         if e["minutes"] - cut < o["min_entry"] and not (e["kind"] == "meeting" and e["minutes"] - cut >= 5):
             cut = e["minutes"]  # too short to stand alone once cut: all of it listed, none placed
         e["minutes"] -= cut
@@ -766,13 +775,13 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     for a, b in busy + [(e["s"], e["e"]) for e in out]:
         for x in range(max(0, int(a)), min(N, int(math.ceil(b)))):
             covered[x] = 1
-    uncovered, start = [], None
+    uncovered, start = [], None  # only stretches of a step or more: a shorter one is rounding, not work to log
     for x in range(N + 1):
         gap = x < N and work[x] and not covered[x]
         if gap and start is None:
             start = x
         if not gap and start is not None:
-            if x - start >= 3:
+            if x - start >= max(3, g):
                 uncovered.append({"s": start, "e": x, "minutes": x - start})
             start = None
     return {"entries": out, "unplaced": unplaced, "skipped": skipped, "uncovered": uncovered,

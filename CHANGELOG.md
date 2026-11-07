@@ -8,6 +8,23 @@ What each Pulsar release changed, newest first.
 
 ## Unreleased
 - Report: a Today range, and it opens on this week.
+- In Pulsar's window: 12-hour times when the Mac uses them (fields take "2:30 pm"), dates in the Mac's region order, weeks from its first weekday.
+- In Pulsar's window: Settings has the Dock badge, the end-of-day reminder and Open at Login; the Mac's accent colour; no wordmark or ✕ the window already gives.
+- Delete asks with Cancel first and a red Delete; the logo pulses only while loading; refresh has no warp; more contrast when macOS asks for it.
+- One Claude button, in Log the day: "Check my day with Claude" picks tasks when needed, then reviews; it names the models and their limits; nothing runs by itself.
+- Day done: a day at its target (or marked done) greys its rails and leaves Earlier days; "Not work" marks a stretch that was not work.
+- Log the day keeps your ticks, tasks, notes and deletions per day while Pulsar is open; Start over forgets them.
+- The day's review and Claude's note drafts are kept for 60 days and reused, so the same work is not asked about twice.
+- A row's note is drafted when you click in it, not when the row opens.
+- Log this time never opens on time already logged; Skip in the log dialog moves on to the next stretch.
+- Undo after deleting an entry or dragging its edge.
+- Logged cards lead with the task; the project is the colour stripe and the second line.
+- Keys: L Log the day, N + Log, ? lists every shortcut; Tab reaches every button; ⌘↩ shows on the Log button.
+- Settings asks before closing with changes not saved; Settings → Claude no longer runs off its edge.
+- The now line moves every minute, and at midnight (or when the Mac wakes) today becomes the new day.
+- Log the day is the main button while time is unlogged, and "Active, not logged" opens it; one zoom menu, one refresh; the error log moved to Settings → Updates.
+- Log the day lists what is still to log; what is logged folds into one line (To review / All).
+- No more crumbs: entries run up to the entry next to them, and stretches shorter than the rounding step are not marked unlogged.
 
 ## 1.5.5 (2026-11-07)
 - Log the day: "Tick all with a task", Enter ticks the open row and opens the next; the confirm step marks Claude's notes and searches.

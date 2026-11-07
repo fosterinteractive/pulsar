@@ -696,7 +696,9 @@ class Run:
             where = f"{hm(e['s'])}-{hm(e['e'])} {e.get('kind')} {e.get('source')}"
             if not (0 <= e["s"] < e["e"] <= 1440) or e["minutes"] != e["e"] - e["s"]:
                 self.fail("plan: an entry outside the day, or minutes that are not its span", where)
-            if e["s"] % GRID or e["e"] % GRID:
+            # on the grid, except an edge right against an entry already logged (it takes in the minutes up to it)
+            if (e["s"] % GRID and not any(int(math.ceil(b)) == e["s"] for _, b in busy)) or \
+                    (e["e"] % GRID and not any(int(a) == e["e"] for a, _ in busy)):
                 self.fail("plan: an entry off the 5-minute grid", where)
             if not (e.get("why") or "").strip():
                 self.fail("plan: an entry with no reason", where)

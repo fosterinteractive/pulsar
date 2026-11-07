@@ -298,7 +298,8 @@ above the blocks, because a 30-minute block can hide a 20-minute break.
 ### 4.2 Logged (`pulsar/productive.py`)
 
 Two connections give the same rows: `{id, date, start, minutes, note, approved, task, taskId, service, serviceId,
-project, budget, billable, billing}`.
+project, budget, billable, billing}`. A card in the Logged column leads with its task (what was logged), with the
+project as its colour stripe and, where the card is tall enough, its second line.
 
 - **API token** (Settings): Productive's REST API (`api.productive.io/api/v2`), with the organization id and your
   person id. Read/Write to log time.
@@ -473,9 +474,12 @@ clients may see notes"; a note Ask Claude drafted comes first. The picked task h
 
 The minutes of a block (a stretch of the rail, an Activity, Likely or meeting block; not a drag in the Logged column,
 which keeps the minutes dragged) are rounded to Settings'
-**Round entries to** (5, 10 or 15 minutes): to the nearest step, and at least one step. When rounding up would run into
-an entry already logged that day, they are rounded down instead, and a block shorter than one step that would still
-run into it keeps its own minutes. Minutes typed in the dialog (or worked out from a typed End), a drag in the Logged
+**Round entries to** (5, 10 or 15 minutes): to the nearest step, and at least one step. Next to an entry already
+logged that day the block runs up to that entry instead, whenever rounding would run into it or leave less than a step
+before it: a 14-minute stretch ending at an entry is logged as 14 minutes, not 10 with a 4-minute crumb left "not
+logged" (`roundMinutes`). A block that starts inside an entry already logged (a Likely block, a meeting) starts
+where that entry ends instead, less those minutes (`freeStart`), so **Log this time** never opens on logged time.
+Minutes typed in the dialog (or worked out from a typed End), a drag in the Logged
 column (in 1-minute steps: the person picked those minutes) and an entry being changed are never rounded.
 
 **Around time already logged.** When the overlap check (5.2) finds entries inside the time asked for, the answer also
@@ -551,7 +555,8 @@ dialog; the dialog's own (around entries already logged) should take its place o
 the next yellow-rail stretch after it, else the first one left in the day, with that stretch's suggestions
 (`leadFor`, as the rail itself) and their first task picked. A line at the top says what was just logged and how
 many stretches are left. Stretches logged from the page in the last ten minutes are left out even before Productive
-shows them. It is offered for new entries in the day on screen only. Clicks to log a whole day again, entry by entry
+shows them. **Skip**, on a dialog opened on a stretch while others are left, leaves that stretch unlogged and opens
+the next one the same way (skipped stretches are left out of the next ones for ten minutes; the rails stay). It is offered for new entries in the day on screen only. Clicks to log a whole day again, entry by entry
 (Nick's own entries, on a simulated empty day): 4 Nov 2026, 21 entries, 57 clicks before and 38 with it; 3 Nov,
 38 entries, 108 and 71 (with ⌘⇧↩, 17 and 33). Entries away from the computer (calls) still need their start typed.
 
@@ -656,7 +661,11 @@ A logged entry's popover has **Edit** (the log dialog, in its own day: task, ser
 name part of that address, so it is taken from links in the person's own Claude sessions
 (`sessions.productive_address`, the newest first, only links whose id is the organization's, only while the Likely
 column may read the sessions); with none seen, there is no link rather than a guessed one. Its top and bottom edges can be dragged in 1-minute
-steps (a drag in the empty column picks a stretch in 1-minute steps too); on release Pulsar asks "Change this entry?" before writing. `POST /api/entry/update` and `/api/entry/delete`
+steps (a drag in the empty column picks a stretch in 1-minute steps too); on release Pulsar asks "Change this entry?" before writing.
+After a delete or an edge drag, the note at the bottom has **Undo** for 10 seconds: a drag goes back to its start and
+length (`POST /api/entry/update`, with the entry as just changed as `seen`, and the overlap check); a delete logs the
+entry again as it was (`POST /api/log`: a new entry, the deleted one stays in the Recycle Bin), except an entry with
+no start or with a formatted note, which the page cannot write back as it was. `POST /api/entry/update` and `/api/entry/delete`
 read the day afresh and refuse an entry that is no longer there. They show overlaps first (Change anyway), take the
 same write lock as logging, and accept `"dry": true`. Both need `seen`, the entry as the page showed it with every
 field (start, minutes, task, service, note): one left out would never be compared. A new start in the hour the clocks
@@ -715,12 +724,15 @@ claim wins:
 
 Pieces of one task in one sitting join, pieces under 10 minutes join a neighbour within 30 minutes in the same sitting
 (never one hours away, which would move it there, never across an entry already logged; a meeting someone attended
-keeps its own time, so nothing before it joins it), boundaries go on a 5-minute grid, a personal window's minutes are
+keeps its own time, so nothing before it joins it), boundaries go on a 5-minute grid except right against an entry
+already logged (an entry starts where that one ends, or stops where it starts, taking in the minutes up to the grid
+instead of leaving them as a crumb; its other end stays on the grid), a personal window's minutes are
 never in an entry, nothing overlaps an entry already logged, and **proposed plus logged never exceeds active time plus
 attended meetings**: the rest is listed as not placed, never placed (what the cap leaves under 10 minutes goes with
 it). The grid and the shortest entry follow Settings' **Round entries to** (`dayplan.opts_for`): 5 minutes keeps the
 5-minute grid and the 10-minute shortest entry, 10 gives 10 and 10, 15 gives quarter hours and 15. Each row shows its
-ticket flags (5.3). A row's task comes from, in this order: a rule, a task link pasted in the session, a ticket key in the title, the
+ticket flags (5.3). "Not covered" lists only stretches of a step or more (`uncovered`, `totals.notCovered`). A
+row's task comes from, in this order: a rule, a task link pasted in the session, a ticket key in the title, the
 tasks logged in the same session, then the same repository (votes from the last 60 days, older days counting half
 every 7 days), the same session earlier that day, and task names that share words with the work (your own name and
 common words such as "not" and "the" do not count). A session's task does not carry over to another client's
@@ -750,7 +762,10 @@ log dialog's **Log this time** on a meeting fills the note in from the same `not
 date (`bookable_services`). With Productive unreadable, nothing is proposed. About 6 seconds for a day the first time,
 under a second after.
 
-**Ask Claude** (only when it is on in Settings): the review shows the plan at once, then sends the day to Claude
+**Ask Claude** (only when it is on in Settings, and only from **Check my day with Claude**, Claude's one button in
+Log the day: it asks for picks when the day has none yet and rows are unsure, then runs the review, 5.4c; its tooltip
+names each model and the most a run may cost, `sgCheck` in `ldreview.js`; nothing runs on opening, and the Likely
+column has no Ask Claude button of its own any more): the review shows the plan at once, then sends the day to Claude
 (every row of ten minutes or more) and fills in the answer as it arrives. Claude's pick replaces only rows the planner
 is not sure of (medium, low), with the planner's guess kept as the first alternative; a row Claude found no task for
 keeps the planner's guess and says so. Claude's pick starts ticked only when it is one of the tasks you logged to in
@@ -762,7 +777,20 @@ note…"; picking another task clears the first, editing the note the second's m
 left alone. An answer that arrives while the confirm step is open waits until it closes (Back to the review); once a
 run has started it is only mentioned. Haiku did as well as Sonnet here, at a small part of the cost.
 
-**Reviewing.** A row needs a look when it is unsure ("check"), has no task or service, or carries something Claude did
+**Kept while the page is open.** Closing the panel or going to another day keeps what the person did there, per
+day (`ldkeep.js`): ticks, tasks, services, times, notes, the rows opened and the rows deleted from the proposal, and
+the review's suggestions with their state. Opening the day again puts them back on a fresh plan, row by row by what
+each row was proposed for (the day, its start as proposed, its repository or meeting, its task as proposed), never by
+its place in the list. A row's work is dropped when that row is no longer proposed or its time is logged in Productive
+now; a row a run wrote stays as the journal says. **Start over** forgets it all for that day. It lives in the page
+only: a reload starts again. The review itself is kept on the server too (8): opening the panel asks for it with
+`kept_only` (never a new run), and **Review again** asks Claude anew (`again`). A row's note is drafted by Claude only
+when its empty note field gets the focus, never by opening the row; the server keeps each draft (8), so the same work
+is not drafted twice, after a restart either.
+
+**Reviewing.** The list shows, by default (**To review**), the rows still to log and the time not covered; what is
+logged, in Productive or by this run, is one line at the top ("6 h 1 min logged, 17 entries"), and **All** shows each
+entry in its place (the choice is kept in this window's storage). The timeline shows everything either way. A row needs a look when it is unsure ("check"), has no task or service, or carries something Claude did
 (a task it found by searching, a note it drafted, no task found). The "N to check" chip counts those not yet looked
 at: a row counts as checked once the person has opened it and it is ticked (one with no task or service cannot be
 ticked, so it stays until it has them). The chip opens the next such row after the open one, in time order, and reads
@@ -808,7 +836,8 @@ time logged when the tracker saw nothing (8%).
 
 ### 5.4b Catching up on earlier days (`web/js/catchup.js`)
 
-**Earlier days…** in Log the day's title row lists the last 7 workdays before today (Monday to Friday; **Show 7
+**Earlier days…** in Log the day's title row lists the last 7 workdays before today that are not done (6: marked
+done, or their logged time reached the target and nobody said not done), less the time marked "not work" (Monday to Friday; **Show 7
 earlier days** gives 14), each with the active time no entry covers, and its logged and active time, from
 `/api/report` (the Report's own numbers). Time logged with no start time is on no timeline, so it counts against the
 active time not covered (as Log the day caps a day): a day logged in full from Productive's timesheet reads "nothing
@@ -1285,14 +1314,51 @@ question) and cannot tell when inside it the work happened.
 - **Where a day opens**: today with the now line in the lower third of the view; another day at the start of its
   first long run of work (activity, entries and meetings less than 15 minutes apart, 30 minutes or more of them), so
   a stray minute at 00:30 does not decide it.
+- **The clock**: the now line moves every minute. At midnight, or when the window comes back on a new day (a Mac
+  that slept), a person who was on today goes to the new today; another day stays where it is. Back in the window
+  after five minutes or more, today is read again. A move waits while a dialog is open or Log the day is writing
+  (`tickClock` in `day.js`). Besides that, today is read again every hour. The app's window sends `pulsar:wake`
+  after a sleep or at midnight; the page takes it (`preventDefault`) and does the same. `window.pulsarUnsaved()`
+  says in a sentence what quitting would lose (Settings not saved, a note typed in the log dialog, Log the day
+  writing), for the window to ask before ⌘Q. The zoom menu keeps hidden `#zoom button[data-v]` for the window's
+  View menu.
 - **The week** (under the day's name): "This week: X h logged of Y h active", Monday to Friday up to today, from
   `/api/report` for that week (kept 15 minutes) with the day on screen as its Logged column shows it now. A click
   lists each day; a day opens it. Where the header is narrow it reads "Week: X h of Y h".
+- **The next step**: while active time is not logged, **Log the day** is the Logged column's main (filled) button,
+  and "Active, not logged" in Work time is a link that opens it. The header keeps the day's controls: one zoom menu
+  (the time each row shows), one ↻ for everything; the error log is in Settings → Updates, with a small **!** in
+  the header only while there are errors of the last 24 hours. The Logged column's title shortens before its
+  buttons ever cover it.
+- **Day done, and time that was not work** (`pulsar/daymarks.py`, `~/.cache/pulsar/day-marks.json`, on this Mac
+  only, never sent to Productive, 120 days). A day is done when its logged time reaches the daily target, unless the
+  person says **Not done**, or when they say **Mark the day done** (Work time). A done day's yellow rails are grey,
+  "Active, not logged" is quiet, Log the day is not the main button, and Earlier days leaves it out. **Not work**, in
+  the log dialog opened on a stretch or on a Log the day row, marks that time as not work: it counts nowhere (no rail,
+  not in "Active, not logged", not proposed by Log the day, less in Earlier days) and shows as a quiet hatched rail; a
+  click on it, or Undo in the note at the bottom, counts it as work again. `GET /api/daymarks?date=` (or `from=&to=`),
+  `POST /api/daymarks` `{date, done | undone | add: [a, b] | remove: [a, b]}`, the page's session only.
+- **In Pulsar's own window** (1.6 and later sets `window.PULSAR_APP`; `theme-early.js` then marks `<html>` with
+  `in-app`): Settings → Time and activity has **This Mac**, the window's own choices, applied at once through
+  `pulsarNative.setNativePrefs` and shown again on each `pulsar:prefs` event: the Dock badge, the end-of-day reminder
+  and its time, and Open at Login (when macOS needs approval, a button opens Login Items; on macOS 12, the steps to
+  do it by hand). The page leaves out what the window does itself: the wordmark, the theme button and the dialogs' ✕
+  (Escape and ⌘W close them); buttons keep the arrow cursor, and the main button and focus rings take the Mac's
+  accent colour (`--mac-accent`). In a browser none of this shows. Everywhere: a Delete asks with Cancel first and a
+  red Delete; the logo pulses only while the day is being read (`html.loading`); ↻ reloads without the warp;
+  `prefers-contrast: more` strengthens secondary text and lines; segmented controls say which is on (`aria-pressed`).
+  The Mac's own formats, from `PULSAR_APP.prefs`: 12-hour times on screen (`hm` in `core.js`; the axis reads "10 PM"
+  and "10:30"), while every request and every time field keeps 24-hour HH:MM (`hm24`), and the fields also take
+  "2:30 pm" (`startHHMM`); dates in English in the order of the Mac's region (`DATE_LOCALE`: en-US writes "Friday,
+  November 6"; British English for a region whose language is not English); the date picker's weeks from the Mac's
+  first weekday (`datepick.js`). Times the server writes into messages (an overlap's start) stay 24-hour.
 - **First run**: when Productive is not connected (or does not know who you are), no tracker answers, or today has
   no activity yet, a short list at the top of the board says what is missing and gives the one action that fixes
   it (Connect Productive, Get or Open ActivityWatch).
-- **Yellow rail**: stretches of at least 3 minutes, mostly active (personal time excluded), with no entry. Its total
-  is "Active, not logged". It is an amber line on the Logged column's left edge, so it runs beside the Likely column's
+- **Yellow rail**: stretches of at least one rounding step (Settings' **Round entries to**, 5 minutes by default),
+  mostly active (personal time excluded), with no entry; a shorter stretch is rounding, not work to log, and counts
+  nowhere. The active share of the rails' minutes is "Active, not logged" (the Report still counts every uncovered
+  active minute). It is an amber line on the Logged column's left edge, so it runs beside the Likely column's
   right edge. A click, or Enter, opens the log dialog on the stretch with its Likely tasks and note (5.1, "A
   stretch"). Closing the dialog gives the rail its focus back; closed from the keyboard (Escape, ⌘↩), the rail shows
   the focus ring, a blue outline around the amber line, until something else is clicked.
@@ -1338,7 +1404,9 @@ estimate, and a table of every day. A day's bar and its row in the tables open t
 | `~/.cache/pulsar/names.json` | Names of projects, budgets, services, tasks; billing types; how many of a project's recent tasks have an estimate (5.3); when each was read. |
 | `~/.cache/pulsar/likely-days/` | Past days' Likely rows for learning: times, repository, title hashes. |
 | `~/.cache/pulsar/likely-full/` | Past days' Likely columns as the page shows them (rows with session titles and first messages), so a day opened again, or after a restart, shows at once; 31 days; ↻ works a day out again. Never a day worked out while no tracker answered. |
-| `~/.cache/pulsar/claude-picks/` | Ask Claude's last answer per day (task ids, reasons, drafted notes), shown again when the day is opened, never asked again by itself; 60 days. |
+| `~/.cache/pulsar/claude-picks/` | Ask Claude's last answer per day (`<date>.json`: task ids, reasons, drafted notes), shown again when the day is opened, never asked again by itself; the notes Claude drafted for a stretch of work (`<date>.notes.json`, under the stretch, its repository and what its session and commits held, so the same work is never drafted twice); the day's last review (`<date>.review.json`, under the plan it reviewed, `server.review_key`, given back while the plan is the same). 60 days. |
+| (the page, while it is open) | Log the day's work per day: ticks, tasks, services, times, notes, the rows opened and deleted, the review's suggestions with their state (`ldkeep.js`). |
+| `~/.cache/pulsar/day-marks.json` | Days marked done (or not done) and time marked "not work", in minutes of the day (6); 120 days. |
 | `~/.cache/pulsar/logday-journal.json` | Log the day: each row a run sent, before it was sent, and what came of it (31 days). |
 | `~/.cache/pulsar/logs/` | The error log, one JSON line per event, 31 days; tokens, keys, OAuth codes, signed addresses, fields named as keys or secrets, bare hex secrets, UUIDs and long opaque strings removed. |
 | `~/Library/Application Support/Pulsar/` | The installed code: `versions/`, `current`, `previous`, `bad-versions`, and `seen-release` (the newest signed `latest.json` believed: its version and expiry). Only code a release signed gets here (section 2). |
@@ -1476,7 +1544,11 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 
 - **`core.js`**: the shared state (`state`: date, zoom, tracker, and each column's data), the session token and
   requests (`getJSON`, `postJSON` add the headers; a 401 shows **Sign in**), formatting, the theme, the toast, the
-  warp, and `todayLocal()` built from date parts (a locale's date format broke macOS 14 once).
+  warp, and `todayLocal()` built from date parts (a locale's date format broke macOS 14 once). Every button, link
+  and summary with no tabindex of its own gets `tabindex="0"`, now and as the page draws new ones (`makeTabbable`):
+  WebKit, the app's window, skips them on Tab unless macOS's keyboard navigation is on. The chrome (header, column
+  heads, the timeline, buttons, dialog bars) is not selectable text (`user-select: none`), so a drag on the timeline
+  selects nothing; notes, popovers, the error log and every field are.
 - **`day.js`**: `load()` asks for the columns, `render()` draws everything from `state` (the axis, the four columns,
   the rails, the side panels), and one click handler opens popovers and the log dialog. The answers draw through
   `drawSoon()` (core.js): the ones of the same frame once, none while the warp pulls in, and `setHTML` leaves a part
@@ -1502,7 +1574,10 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 - **`meetings.js`**: the Meetings column and the Google part of Settings.
 - **`settings.js`**: Settings (a sidebar of categories, each with its own icon, and a search that shows the matching
   sections of every category; the last category open opens again), updates and the reminder, the changelog. Saving
-  asks Productive again only when the connection changed.
+  asks Productive again only when the connection changed. Closing it (✕, Close, Escape, the error log) with a change
+  not saved asks first: Save, Discard or Keep editing. Settings → Updates also opens the error log.
+- **Keys** (`day.js`, the `?` list in `#keysdlg`): L Log the day, N + Log, ← → another day, T today, Enter on a block
+  or a rail opens it; in the log dialog ⌘↩ logs (shown on the button) and ⌘⇧↩ is Log and next.
 - **`report.js`**: the report, its charts (SVG, drawn here) and downloads.
 - **`datepick.js`**: the calendar behind every date field (the native fields stay underneath, hidden, so the rest of
   the code still reads `YYYY-MM-DD`).

@@ -5,14 +5,14 @@ let logsDays = 1;
 
 async function openLogs(days = logsDays) {
   logsDays = days;
-  document.querySelectorAll('#logs-range button').forEach(b => b.classList.toggle('on', +b.dataset.v === days));
+  document.querySelectorAll('#logs-range button').forEach(b => { b.classList.toggle('on', +b.dataset.v === days); b.setAttribute('aria-pressed', String(+b.dataset.v === days)); });
   $('#logs-download').dataset.days = days;
   $('#logs-list').innerHTML = '<p class="hint">Loading…</p>';
   if (!logsDlg.open) logsDlg.showModal();
   const r = await getJSON(`/api/logs?days=${days}`);
   if (days !== logsDays) return;
   const list = r.entries || [];
-  const when = t => new Intl.DateTimeFormat('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: TZ}).format(new Date(t));
+  const when = t => new Intl.DateTimeFormat(DATE_LOCALE, {day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: CLOCK12, timeZone: TZ}).format(new Date(t));
   $('#logs-list').innerHTML = r.error ? `<p class="status warn">${esc(r.error)}</p>`
     : !list.length ? `<p class="hint">No errors ${days === 1 ? 'in the last 24 hours' : `in the last ${days} days`}.</p>`
     : list.map(e => `<div class="lg"><div class="lg-h"><span class="lg-k ${e.kind === 'error' ? 'err' : ''}">${e.kind === 'error' ? 'Error' : 'Warning'}</span>
@@ -22,6 +22,7 @@ async function openLogs(days = logsDays) {
 }
 
 $('#open-logs').onclick = () => openLogs();
+$('#settings-logs').onclick = () => closeSettings(() => openLogs());  // settings.js: asks first about unsaved changes
 document.querySelectorAll('#logs-range button').forEach(b => b.onclick = () => openLogs(+b.dataset.v));
 logsDlg.querySelectorAll('[data-close]').forEach(b => b.onclick = () => logsDlg.close());
 

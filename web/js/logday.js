@@ -4,7 +4,14 @@
    it already sent, and Undo deletes only what this run created (POST /api/entry/delete with the run). */
 
 const LD = {on: false, date: null, plan: null, rows: [], open: null, run: null, writing: false, stop: false,
-            loading: false, undoAsk: false, note: ''};
+            loading: false, undoAsk: false, note: '', view: 'review', deleted: new Set()};
+try { if (localStorage.getItem('pulsar.ldView') === 'all') LD.view = 'all'; } catch {}  // this viewer's last choice
+/* what the person did in Log the day, per day, while the page is open (ldkeep.js): put back on the next fresh plan */
+const LD_KEPT = new Map();
+function ldStash() {
+  if (!LD.date || !LD.plan || LD.plan.error || LD.loading) return;
+  LD_KEPT.set(LD.date, {...ldSnapshot(LD.rows, LD.open, LD.deleted), sg: sgSnapshot()});
+}
 const ldActive = () => LD.on && LD.date === state.date;
 const ldRow = id => LD.rows.find(r => r.id === id);
 /* a test server can show the whole proposal of a day already logged (only PULSAR_READ_ONLY accepts it) */
@@ -38,11 +45,16 @@ function meter(c) {
 }
 
 /* ---------- opening and closing ---------- */
-async function openLogDay() {
+/* fresh: Start over, which forgets what was done on the day; else what was done comes back (ldkeep.js) */
+async function openLogDay({fresh = false} = {}) {
   if (!CONFIG?.productive.active) { toast('Connect Productive in Settings first.', true); openSettings('t-conn'); return; }
+  if (LD.on) ldStash();  // the day open until now (a catch-up moving on, Start over) keeps its work
   const d = state.date;
+  if (fresh) LD_KEPT.delete(d);
+  const kept = LD_KEPT.get(d) || null;
   Object.assign(LD, {on: true, date: d, plan: null, rows: [], open: null, run: null, writing: false, stop: false,
-                     loading: true, undoAsk: false, note: '', lastRun: null, undo: [], confirmed: null, claudeLate: null});
+                     loading: true, undoAsk: false, note: '', lastRun: null, undo: [], confirmed: null, claudeLate: null, picked: false,
+                     deleted: new Set(kept?.deleted || [])});
   closePop();
   document.body.classList.add('rv-on');
   $('#review').hidden = false;
@@ -50,15 +62,16 @@ async function openLogDay() {
   const r = await getJSON(`/api/dayplan?date=${d}&source=${state.source}${LD_IGNORE ? '&ignore_logged=1' : ''}`);
   if (!LD.on || LD.date !== d) return;
   LD.loading = false; LD.plan = r;
-  LD.rows = (r.entries || []).map((e, i) => ({...e, id: 'r' + i, opened: false, edited: false,
+  LD.rows = (r.entries || []).map((e, i) => ({...e, id: 'r' + i, key: ldRowKey(d, e), opened: false, edited: false,
                                                status: e.sent === 'logged' ? 'logged' : e.sent ? 'unknown' : null,
                                                reason: e.sent ? 'A run of this day already sent it.' : ''}));
+  if (kept) { const got = ldReapply(LD.rows, kept, r.ignoreLogged ? [] : state.logged?.entries); LD.rows = got.rows; LD.open = got.open; }
+  LD.rows = LD.rows.filter(x => x.status || !ldNotWork(x));  // time marked "not work" (day.js) is not proposed
   sgFromPlan(r);  // ldreview.js: FI's rules on this plan
+  if (kept?.sg) sgRestore(kept.sg); else sgKept(d);  // the review's suggestions as they were, or the one kept for the day
   renderReview(); render();
   document.body.classList.toggle('rv-ignore', !!r.ignoreLogged);
-  // Ask Claude (when it is on in Settings): the whole day goes to it, its picks fill in unsure rows as they arrive
-  const unsure = LD.rows.some(x => x.confidence !== 'high' && ['focused', 'agent', 'outside'].includes(x.kind));
-  if (!r.error && !r.claude && unsure && CONFIG?.likely?.askClaude && CONFIG.likely.claudeFound) askClaudeForDay(d);
+  // Claude runs only from "Check my day with Claude" (ldreview.js sgCheck), never by itself on opening
 }
 
 /* Claude's pick replaces only rows the planner is not sure of (medium, low): on high rows it was wrong more often
@@ -69,6 +82,7 @@ async function askClaudeForDay(d) {
   LD.asking = false;
   if (!ldActive() || LD.date !== d) return;
   if (ans.error) { LD.askNote = `Ask Claude: ${ans.error}`; renderReview(); return; }
+  LD.picked = true;  // this day has Claude's picks now: "Check again" reviews, it does not pick again
   state.claude = {date: d, picks: ans.picks || {}};
   if (LD.writing) { LD.askNote = "Claude answered while writing; Start over to see its picks."; renderReview(); return; }
   const r = await getJSON(`/api/dayplan?date=${d}&source=${state.source}${LD_IGNORE ? '&ignore_logged=1' : ''}`);
@@ -82,7 +96,7 @@ function ldClaudePlan(d, r, ans) {
   if (ldDlg.open) { LD.claudeLate = [d, r, ans]; return; }
   LD.claudeLate = null;
   if (LD.writing) { LD.askNote = "Claude answered while writing; Start over to see its picks."; renderReview(); return; }
-  const fresh = (r.entries || []).map((e, i) => ({...e, id: 'c' + i, opened: false, edited: false, status: null, reason: ''}));
+  const fresh = (r.entries || []).map((e, i) => ({...e, id: 'c' + i, key: ldRowKey(d, e), opened: false, edited: false, status: null, reason: ''}));
   let changed = 0;
   if (!LD.rows.some(x => x.edited || x.status)) {  // nothing touched yet: the new plan as a whole
     changed = fresh.filter(n => !LD.rows.some(o => o.s === n.s && o.taskId === n.taskId)).length;
@@ -105,6 +119,7 @@ function ldClaudePlan(d, r, ans) {
 }
 function closeLogDay() {
   if (LD.writing) { LD.stop = true; return; }
+  ldStash();
   cuClosed();  // catchup.js: a catch-up ends here, unless it is moving on to its next day
   LD.on = false; LD.open = null;
   document.body.classList.remove('rv-on', 'rv-ignore');
@@ -112,6 +127,7 @@ function closeLogDay() {
   render();
 }
 $('#log-day').onclick = () => (ldActive() ? closeLogDay() : openLogDay());
+$('#worktime').addEventListener('click', ev => { if (ev.target.closest('#wt-logday')) openLogDay(); });
 
 /* ---------- what is drawn on the axis ---------- */
 function ldCoverSpans() { return LD.rows.filter(r => r.checked && r.status !== 'logged').map(r => [r.s, r.e]); }
@@ -168,6 +184,8 @@ function ldTotals() {
 const ldNeedsLook = r => r.confidence === 'low' || !r.taskId || !r.serviceId || r.claudeNone
   || r.flags.includes('claudefound') || (r.flags.includes('claudenote') && r.noteFrom === 'claude' && !r.noteEdited);
 const ldCheck = r => ldPending(r) && ldNeedsLook(r) && !(r.opened && r.checked);
+/* a row or a stretch inside time marked "not work" (day.js notWorkSpans) */
+const ldNotWork = x => notWorkSpans().some(([a, b]) => a <= x.s && (x.e ?? x.s + x.minutes) <= b);
 /* "Tick all with a task": every row that has a task and a service and is not ticked yet, except a task Claude found by
    searching Productive (not one you logged to lately) that nobody opened: what Claude read could have steered it
    there, so it waits for the person, as it always has */
@@ -181,7 +199,7 @@ function ldNextCheck(list) {
 
 /* ---------- the review panel ---------- */
 function dayTitle(d) {
-  return new Intl.DateTimeFormat('en-GB', {weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC'}).format(new Date(d + 'T12:00:00Z'));
+  return new Intl.DateTimeFormat(DATE_LOCALE, {weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC'}).format(new Date(d + 'T12:00:00Z'));
 }
 function renderReview() {
   const el = $('#review');
@@ -217,24 +235,35 @@ function renderReview() {
   const testNote = p.ignoreLogged ? '<p class="rv-test">Test view: worked out as if nothing were logged this day. Nothing can be written from a read-only test server.</p>' : '';
   const historyNote = p.historyProblem ? `<p class="rv-test" role="status">${esc(p.historyProblem)}</p>` : '';
   const results = ldResultsBox();
-  // the list: logged entries (quiet), time not covered, and the proposals, in time order
-  const items = [];
-  if (!p.ignoreLogged) for (const x of state.logged?.entries || []) items.push({at: x.s ?? -1, html: loggedLine(x)});
-  for (const u of p.uncovered || []) items.push({at: u.s, html: `<li class="gr"><span class="e-time num">${hm(u.s)}</span><span class="gt"><b>${dur(u.minutes)}</b> active, not covered</span><span></span></li>`});
-  for (const r of LD.rows) items.push({at: r.s, html: rowHTML(r, ov.get(r.id))});
+  // the list: time not covered and the proposals, in time order; what is logged (in Productive, or by this run) only
+  // in "All", else folded into one line at the top. The timeline shows all of it either way.
+  const items = [], all = LD.view === 'all', step = CONFIG?.roundTo || 5;
+  const inProductive = p.ignoreLogged ? [] : state.logged?.entries || [], loggedRows = LD.rows.filter(r => r.status === 'logged');
+  if (all) for (const x of inProductive) items.push({at: x.s ?? -1, html: loggedLine(x)});
+  for (const u of (p.uncovered || []).filter(u => u.minutes >= step && !ldNotWork(u))) items.push({at: u.s, html: `<li class="gr"><span class="e-time num">${hm(u.s)}</span><span class="gt"><b>${dur(u.minutes)}</b> active, not covered</span><span></span></li>`});
+  for (const r of LD.rows) if (all || r.status !== 'logged') items.push({at: r.s, html: rowHTML(r, ov.get(r.id))});
   items.sort((a, b) => a.at - b.at);
+  const folded = inProductive.length + loggedRows.length;
+  if (!all && folded) {
+    const mins = inProductive.reduce((t, x) => t + x.minutes, 0) + loggedRows.reduce((t, r) => t + r.minutes, 0);
+    items.unshift({at: -2, html: `<li class="gr fold"><span class="e-time num" aria-hidden="true">✓</span><span class="gt"><b>${dur(mins)}</b> logged,
+      ${folded} ${folded === 1 ? 'entry' : 'entries'}${loggedRows.length ? ` (${loggedRows.length} just now)` : ''}</span>
+      <button type="button" class="btn link sm" data-ld-view="all">Show</button></li>`});
+  }
+  const viewSwitch = folded ? `<span class="seg ld-view" role="group" aria-label="Which entries the list shows">
+      <button type="button" data-ld-view="review" aria-pressed="${!all}">To review</button><button type="button" data-ld-view="all" aria-pressed="${all}">All</button></span>` : '';
   const skipped = (p.skipped || []).length ? `<li class="gr quiet"><span class="e-time num">·</span><span class="gt">Left out: ${esc(p.skipped.map(s => `${s.title || s.project} ${dur(s.minutes)} (${s.why})`).join('; '))}</span><span></span></li>` : '';
   const empty = !LD.rows.length ? `<div class="rv-empty"><div class="big-ic" aria-hidden="true">✓</div><h3>${(state.logged?.entries || []).length ? 'Everything is logged' : 'Nothing to log'}</h3>
     <p>${(state.logged?.entries || []).length ? 'Every active stretch of this day already has an entry, or is too short to log.' : 'No activity, Claude sessions or meetings were found for this day.'}</p></div>` : '';
-  const n = T.n, all = LD.writing ? [] : ldTickAllRows(), held = LD.rows.filter(r => ldTickable(r) && !all.includes(r)).length;
-  const tickAll = all.length ? `<div class="rv-tickall"><button type="button" class="btn bordered sm" id="ld-tickall"
-      title="Ticks every row that has a task and a service. The next step lists each entry and its note before anything is written.">Tick all ${all.length} with a task</button>${held
+  const n = T.n, tickRows = LD.writing ? [] : ldTickAllRows(), held = LD.rows.filter(r => ldTickable(r) && !tickRows.includes(r)).length;
+  const tickAll = tickRows.length ? `<div class="rv-tickall"><button type="button" class="btn bordered sm" id="ld-tickall"
+      title="Ticks every row that has a task and a service. The next step lists each entry and its note before anything is written.">Tick all ${tickRows.length} with a task</button>${held
       ? `<span class="hint">${held} found by Claude's search ${held === 1 ? 'stays' : 'stay'} unticked until opened</span>` : ''}</div>` : '';
   el.innerHTML = `<div class="rv-h">${head}
       <div class="rv-sum"><b>${dur(T.minutes)}</b> ticked in ${n} ${n === 1 ? 'entry' : 'entries'} · ${dur(T.billable)} billable · ${dur(T.logged)} logged</div>
       <div class="rv-bar" role="img" aria-label="${esc(`${dur(withThese)} with these, against a target of ${dur(target)}`)}"><i class="lg" style="width:${pct(T.logged)}%"></i><i class="pp" style="width:${pct(T.minutes)}%"></i></div>
       <div class="rv-bl"><span>${dur(withThese)} with these</span><span>target ${dur(target)}</span></div>
-      <div class="rv-iss">${chips}</div>${tickAll}${askLine}${sgHead()}${testNote}${historyNote}${cuStrip()}</div>
+      <div class="rv-iss">${chips}${viewSwitch}</div>${tickAll}${askLine}${sgHead()}${testNote}${historyNote}${cuStrip()}</div>
     ${results}
     ${empty || `<ul class="rv-list" aria-label="Proposed entries">${sgDayHTML()}${items.map(x => x.html).join('')}${skipped}</ul>`}
     <div class="rv-f">${LD.writing
@@ -307,6 +336,7 @@ function noteHint(r) {
   if (r.noteFrom === 'meeting' && !r.noteEdited) return "The meeting's title. Clients may see notes.";
   if (r.noteFrom === 'repeat' && !r.noteEdited) return 'Your usual note for this. Clients may see notes.';
   if (r.noteFrom === 'commits' && !r.noteEdited) return 'From your commits. Clients may see notes.';
+  if (CONFIG?.likely?.askClaude && r.repo && !(r.note || '').trim() && !r.noteTried) return `${CLAUDE_MARK.split('<span')[0]}Click in the note and Claude drafts it from this work's sessions and commits. Clients may see notes.`;
   return 'Clients may see notes: the outcome, in a sentence.';
 }
 const altName = a => a.title || 'task ' + a.taskId;
@@ -323,12 +353,13 @@ function editorHTML(r) {
       ${r.serviceId ? '' : '<option value="">' + (svcs.length ? 'Pick a service' : r.taskId ? 'Loading or none on this date' : 'Pick a task first') + '</option>'}
       ${svcs.map(x => `<option value="${esc(x.id)}"${x.id === r.serviceId ? ' selected' : ''}>${esc(x.name)}${x.budget ? ' · ' + esc(x.budget) : ''}${x.billable ? ' · billable' : x.billable === false ? ' · not billable' : ''}</option>`).join('')}
     </select></label>
-    <div class="tl"><label class="field"><span>Start</span><input type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="5" placeholder="HH:MM" title="24-hour time, HH:MM" data-ld-start value="${hm(r.s)}"></label>
+    <div class="tl"><label class="field"><span>Start</span><input type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="9" placeholder="HH:MM" title="A time: 14:30, or 2:30 pm" data-ld-start value="${hm24(r.s)}"></label>
       <label class="field"><span>Minutes</span><input type="number" min="${CONFIG?.roundTo || 5}" max="720" step="${CONFIG?.roundTo || 5}" data-ld-min value="${r.minutes}"></label>
       <span class="endt">until ${hm(r.s + r.minutes)}</span></div>
     <label class="field"><span>Note</span><textarea rows="2" data-ld-note placeholder="What was done: the outcome, in a sentence">${esc(r.note || '')}</textarea></label>
     <p class="hint ld-note-hint">${noteHint(r)}</p>
     <div class="acts"><button type="button" class="btn bordered" data-ld-del="${r.id}">Delete from the proposal</button>
+      <button type="button" class="btn bordered" data-ld-notwork="${r.id}" title="This time was not work: not proposed again, not marked as to log (on this Mac only)">Not work</button>
       <span class="hint ld-keys"><kbd>↩</kbd> on the row ${r.taskId && r.serviceId ? 'ticks it and opens the next' : 'picks its task'}</span></div></div>`;
 }
 function wireEditor(r) {
@@ -347,7 +378,7 @@ function wireEditor(r) {
   }
   li.querySelector('[data-ld-start]').onchange = ev => {  // 24-hour HH:MM as everywhere in Pulsar (930, 9.30, 9:30 too)
     const t = startHHMM(ev.target.value), m = t && /^(\d\d):(\d\d)$/.exec(t);
-    if (!m) { ev.target.value = hm(r.s); ev.target.setAttribute('aria-invalid', 'true'); return; }
+    if (!m) { ev.target.value = hm24(r.s); ev.target.setAttribute('aria-invalid', 'true'); return; }
     ev.target.removeAttribute('aria-invalid'); ev.target.value = t;
     const s = +m[1] * 60 + +m[2]; r.s = s; r.e = Math.min(1440, s + r.minutes); r.minutes = r.e - r.s; ldChanged(r);
   };
@@ -355,6 +386,7 @@ function wireEditor(r) {
     const v = Math.round(+ev.target.value); if (!(v >= 1 && v <= 1440 - r.s)) { ev.target.value = r.minutes; return; }
     r.minutes = v; r.e = r.s + v; ldChanged(r);
   };
+  li.querySelector('[data-ld-note]').onfocus = () => ldDraftNote(r);
   li.querySelector('[data-ld-note]').oninput = ev => { r.note = ev.target.value; r.noteEdited = true; r.edited = true;
     const h = li.querySelector('.ed .hint'); if (h) h.innerHTML = noteHint(r); };
   li.querySelector('[data-ld-svc]').onchange = ev => {
@@ -366,9 +398,11 @@ function wireEditor(r) {
 }
 function ldChanged(r) { r.edited = true; if (r.status === 'refused') { r.status = null; r.reason = ''; } renderReview(); render(); }
 
-/* a row opened with no note, while the Claude Code switch is on: Claude drafts one from its sessions and commits, as
-   the log dialog does (POST /api/likely/note). The note is about the work, not the task, so picking another task
-   keeps it. Asked once per row; what the person typed meanwhile is never replaced. */
+/* a row's empty note, focused while the Claude Code switch is on: Claude drafts one from its sessions and commits, as
+   the log dialog does (POST /api/likely/note). Only on focus, never by opening the row: walking through ten rows asked
+   ten times. The note is about the work, not the task, so picking another task keeps it. Asked once per row (kept
+   with the day's work, ldkeep.js; the server keeps the draft too, so the same work is never drafted twice); what the
+   person typed meanwhile is never replaced. */
 async function ldDraftNote(r) {
   if (!CONFIG?.likely?.askClaude || !r.repo || (r.note || '').trim() || r.noteDrafting || r.noteTried || LD.writing) return;
   r.noteDrafting = true; r.noteTried = true; renderReview();
@@ -379,7 +413,10 @@ async function ldDraftNote(r) {
   if (!(row.note || '').trim()) {  // nothing typed: the draft goes in, and the panel is drawn again
     if (got.note) Object.assign(row, {note: got.note, noteFrom: 'session', noteEdited: false});
     else row.noteError = got.error || got.why || '';
-    return renderReview();
+    const had = document.activeElement?.matches?.(`#review [data-row="${row.id}"] [data-ld-note]`);
+    renderReview();
+    if (had) { const n = $(`#review [data-row="${row.id}"] [data-ld-note]`); n?.focus(); n?.setSelectionRange(n.value.length, n.value.length); }
+    return;
   }
   // typed meanwhile: only the hint changes, so the field keeps its focus
   const hint = $(`#review [data-row="${row.id}"] .ld-note-hint`); if (hint) hint.innerHTML = noteHint(row);
@@ -388,7 +425,6 @@ function ldOpen(id, scroll = false) {
   const r = ldRow(id); if (!r || LD.writing) return;
   LD.open = LD.open === id && !scroll ? null : id; r.opened = true;
   renderReview(); render();
-  if (LD.open === id) ldDraftNote(r);
   if (scroll) {
     const li = $(`#review [data-row="${id}"]`);
     li?.scrollIntoView({block: 'nearest', behavior: 'smooth'});
@@ -404,8 +440,7 @@ async function ldSetTask(r, t) {
                     ticket: []});  // the new task's flags come with its services
   r.flags = r.flags.filter(f => !['notask', 'low', 'noservice', 'claudefound'].includes(f));
   if (r.noteFrom === 'claude' && !r.noteEdited) { r.note = ''; r.noteFrom = ''; r.flags = r.flags.filter(f => f !== 'claudenote'); }  // Claude wrote it for another task
-  renderReview(); render();
-  if (LD.open === r.id) ldDraftNote(r);  // its note went with the old task: one from the work itself
+  renderReview(); render();  // its note, if Claude's for the old task, went: a new draft when the note field is focused
   const [list, sug] = await Promise.all([getJSON(`/api/services?task=${r.taskId}&date=${LD.date}&flags=1`), suggestions(LD.date)]);
   if (r.taskId !== String(t.taskId)) return;
   if (list.error) { r.serviceProblem = list.error; renderReview(); return; }
@@ -452,8 +487,9 @@ $('#review').addEventListener('click', ev => {
   const t = ev.target.closest('button, input'); if (!t) return;
   if (t.id === 'ld-close') return closeLogDay();
   if (LD.writing && t.id !== 'ld-stop') { ev.preventDefault(); return; }  // a run (or Undo) is writing: rows stay as confirmed
-  if (t.id === 'ld-redo') return openLogDay();
+  if (t.id === 'ld-redo') return openLogDay({fresh: true});
   if (t.id === 'ld-go') return openConfirm();
+  if (t.dataset.ldView) { LD.view = t.dataset.ldView; try { localStorage.setItem('pulsar.ldView', LD.view); } catch {} renderReview(); return; }
   if (t.id === 'ld-tickall') { for (const r of ldTickAllRows()) { r.checked = true; r.edited = true; } renderReview(); render(); return; }
   if (t.id === 'ld-stop') { LD.stop = true; renderReview(); return; }
   if (t.dataset.ldGoto) return ldOpen(t.dataset.ldGoto, true);
@@ -466,7 +502,15 @@ $('#review').addEventListener('click', ev => {
                         onCreated: (task, serviceHint) => ldRow(r.id) && ldSetTask(ldRow(r.id), {...task, serviceHint})});
   }
   if (t.dataset.ldAlt != null) { const r = ldRow(LD.open); return ldSetTask(r, r.alts[+t.dataset.ldAlt]); }
-  if (t.dataset.ldDel) { LD.rows = LD.rows.filter(r => r.id !== t.dataset.ldDel); LD.open = null; renderReview(); render(); return; }
+  if (t.dataset.ldDel) { const k = ldRow(t.dataset.ldDel)?.key; if (k) LD.deleted.add(k); LD.rows = LD.rows.filter(r => r.id !== t.dataset.ldDel); LD.open = null; renderReview(); render(); return; }
+  if (t.dataset.ldNotwork) {  // the row's time was not work: it leaves the proposal, and comes back with Undo
+    const r = ldRow(t.dataset.ldNotwork); if (!r) return;
+    LD.rows = LD.rows.filter(x => x !== r); LD.open = null; renderReview(); render();
+    markDay({add: [r.s, r.e ?? r.s + r.minutes]}, `${hm(r.s)}–${hm(r.e ?? r.s + r.minutes)} marked as not work.`, {label: 'Undo', run: async () => {
+      if (await markDay({remove: [r.s, r.e ?? r.s + r.minutes]}) && ldActive() && !LD.rows.includes(r)) { LD.rows.push(r); LD.rows.sort((a, b) => a.s - b.s); renderReview(); render(); }
+    }});
+    return;
+  }
   if (t.id === 'ld-undo') { LD.undoAsk = true; renderReview(); return; }
   if (t.id === 'ld-undo-no') { LD.undoAsk = false; renderReview(); return; }
   if (t.id === 'ld-undo-yes') return undoRun();
@@ -530,7 +574,7 @@ ldDlg.addEventListener('click', ev => {
 });
 ldDlg.addEventListener('close', () => { if (LD.claudeLate) ldClaudePlan(...LD.claudeLate); });
 
-const rowBody = r => ({date: LD.date, start: hm(r.s), minutes: r.minutes, taskId: r.taskId, serviceId: r.serviceId,
+const rowBody = r => ({date: LD.date, start: hm24(r.s), minutes: r.minutes, taskId: r.taskId, serviceId: r.serviceId,
                        note: (r.note || '').trim(), run: LD.run, row: r.id});
 function newRun() {
   const hex = [...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('');
@@ -608,7 +652,7 @@ function ldResultsBox() {
   return `<div class="rv-res${failed.length ? ' warn' : ''}" tabindex="-1" role="status"><p>${head}</p>
     <p>${n ? 'Undo deletes only what this run wrote, and only as it wrote it.' : ''}</p>
     ${LD.undoAsk ? `<p>Delete the ${n} ${n === 1 ? 'entry' : 'entries'} this run logged? ${n === 1 ? 'It goes' : 'They go'} to Productive's Recycle Bin.</p>
-      <div class="btnrow"><button type="button" class="btn primary sm" id="ld-undo-yes">Delete the ${n}</button><button type="button" class="btn bordered sm" id="ld-undo-no">Cancel</button></div>`
+      <div class="btnrow"><button type="button" class="btn bordered sm" id="ld-undo-no">Cancel</button><button type="button" class="btn danger sm" id="ld-undo-yes">Delete the ${n}</button></div>`
     : `<div class="btnrow">${failed.length + left ? `<button type="button" class="btn bordered sm" id="ld-retry">Try the ${failed.filter(r => r.status === 'refused').length + left} again</button>` : ''}
       ${n ? `<button type="button" class="btn bordered sm" id="ld-undo">Undo this run (${n})</button>` : ''}</div>`}</div>`;
 }

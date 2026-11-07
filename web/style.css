@@ -5,7 +5,7 @@
   --seg: rgba(0,0,0,.05); --seg-on: #ffffff;
   /* charts: billable blue, not billable orange (validated as a pair, light and dark, colour-blind safe); billing
      Productive does not show this person in grey, set apart from the grey of active time behind it */
-  --accent: #2a78d6; --accent2: #eb6834; --unknown: #7d7c76; --warp-core: 255, 255, 255; --deemph: #c4c3bc; --seq-lo: #e6effa; --seq-hi: #104281; --grid: #e1e0d9; --axis: #c3c2b7; --weekend: rgba(0,0,0,.025);
+  --accent: var(--mac-accent, #2a78d6); --accent2: #eb6834; --unknown: #7d7c76; --warp-core: 255, 255, 255; --deemph: #c4c3bc; --seq-lo: #e6effa; --seq-hi: #104281; --grid: #e1e0d9; --axis: #c3c2b7; --weekend: rgba(0,0,0,.025);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -14,7 +14,7 @@
     --text: #f2f2f4; --muted: #9b9ba2; --faint: #5c5c63; --hover: rgba(255,255,255,.05);
     --gap: #f0a833; --gap-text: #f0a833; --now: #ff453a; --shadow: 0 12px 40px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
     --seg: rgba(255,255,255,.06); --seg-on: #3a3a3f;
-    --accent: #3987e5; --accent2: #d95926; --unknown: #9a9993; --warp-core: 0, 0, 0; --deemph: #4a4a46; --seq-lo: #1c2736; --seq-hi: #9ec5f4; --grid: #2c2c2a; --axis: #383835; --weekend: rgba(255,255,255,.025);
+    --accent: var(--mac-accent, #3987e5); --accent2: #d95926; --unknown: #9a9993; --warp-core: 0, 0, 0; --deemph: #4a4a46; --seq-lo: #1c2736; --seq-hi: #9ec5f4; --grid: #2c2c2a; --axis: #383835; --weekend: rgba(255,255,255,.025);
     color-scheme: dark;
   }
 }
@@ -24,7 +24,7 @@
   --text: #f2f2f4; --muted: #9b9ba2; --faint: #5c5c63; --hover: rgba(255,255,255,.05);
   --gap: #f0a833; --gap-text: #f0a833; --now: #ff453a; --shadow: 0 12px 40px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
   --seg: rgba(255,255,255,.06); --seg-on: #3a3a3f;
-  --accent: #3987e5; --accent2: #d95926; --unknown: #9a9993; --warp-core: 0, 0, 0; --deemph: #4a4a46; --seq-lo: #1c2736; --seq-hi: #9ec5f4; --grid: #2c2c2a; --axis: #383835; --weekend: rgba(255,255,255,.025);
+  --accent: var(--mac-accent, #3987e5); --accent2: #d95926; --unknown: #9a9993; --warp-core: 0, 0, 0; --deemph: #4a4a46; --seq-lo: #1c2736; --seq-hi: #9ec5f4; --grid: #2c2c2a; --axis: #383835; --weekend: rgba(255,255,255,.025);
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -324,7 +324,8 @@ ul.hint { padding-left: 18px; display: grid; gap: 2px; }
 .cu-m select { font: inherit; font-size: 12.5px; color: var(--text); background: var(--bg); border: 1px solid var(--line);
   border-radius: 7px; padding: 3px 6px; }
 .cu-m select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.cu-m small { color: var(--muted); font-size: 11px; }
+.cu-m small { color: var(--muted); font-size: 11px; white-space: normal; max-width: 100%; }  /* wraps inside its column */
+.cu-m select { max-width: 100%; }
 @media (max-width: 640px) { .cu { grid-template-columns: 1fr; } .cu-m { justify-items: start; text-align: left; width: auto; } }
 .sub.warnish { color: var(--gap-text); }
 /* the edges of a logged entry that can change: drag to move its start or end */
@@ -457,8 +458,7 @@ header { flex-wrap: wrap; row-gap: 8px; }
 .lg-m { margin-top: 3px; overflow-wrap: anywhere; }
 .lg pre { white-space: pre-wrap; font-size: 11px; color: var(--muted); background: var(--seg); padding: 8px; border-radius: 6px; max-height: 240px; overflow: auto; }
 .lg summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-top: 4px; }
-.logs-btn.has-errors { position: relative; }
-.logs-btn.has-errors::after { content: ""; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--gap); }
+.logs-btn { color: var(--gap-text); font-weight: 700; }
 /* report download menu */
 .dl { position: relative; margin-left: auto; }
 .dl summary { list-style: none; cursor: pointer; }
@@ -509,7 +509,7 @@ dialog#signin::backdrop { background: rgba(0,0,0,.45); }
   header { padding: 10px 16px; gap: 8px; row-gap: 6px; }
   #dayname { display: none; }
   .settings-btn span { display: none; }
-  #zoom button { padding: 4px 7px; }
+  .zoom-sel { padding: 4px 4px; }
   #dayview { padding: 0 16px 16px; }
   #report { padding: 0 16px 24px; }
 }
@@ -524,12 +524,13 @@ html.warp-held body { transform: scale(.94); transform-origin: 50% 45vh; }
     rgba(120,220,255,.32) 24%, rgba(160,110,255,.16) 48%, rgba(255,90,200,.06) 68%, transparent 92%); }
 @media (prefers-reduced-motion: reduce) { html.warp-held body { transform: none; } .warp-flash, .warp-core { display: none; } }
 
-/* the logo pulses like a pulsar: core and beams flash together once a turn and fade; faster while Pulsar is loading */
-#logo .p-glow, #logo .p-beam { transform-box: view-box; transform-origin: 16px 16px; animation: p-pulse 2.2s cubic-bezier(.2, .7, .3, 1) infinite; }
-#logo .p-beam { animation-name: p-beam; }
+/* the logo pulses like a pulsar while Pulsar is reading the day (html.loading, day.js load), and is still otherwise:
+   core and beams flash together once a turn and fade */
+#logo .p-glow, #logo .p-beam { transform-box: view-box; transform-origin: 16px 16px; }
+html.loading #logo .p-glow, html.loading #logo .p-beam { animation: p-pulse .9s cubic-bezier(.2, .7, .3, 1) infinite; }
+html.loading #logo .p-beam { animation-name: p-beam; }
 @keyframes p-pulse { 0% { opacity: .7; transform: scale(.92); } 7% { opacity: 1; transform: scale(1.14); } 45%, 100% { opacity: .7; transform: scale(.92); } }
 @keyframes p-beam { 0% { opacity: .75; } 7% { opacity: 1; } 45%, 100% { opacity: .75; } }
-body:has(#refresh.busy) #logo .p-glow, body:has(#refresh.busy) #logo .p-beam { animation-duration: .9s; }
 @media (prefers-reduced-motion: reduce) { #logo .p-glow, #logo .p-beam { animation: none; } }
 
 /* the reminder to update, after several releases were left out */
@@ -592,3 +593,71 @@ dialog#updprompt::backdrop { background: rgba(0,0,0,.35); }
 .dp-grid td:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .dp-grid td[aria-selected="true"]:focus-visible { outline-offset: 2px; }
 .dp-f { display: flex; margin-top: 4px; padding: 8px 2px 0; border-top: 1px solid var(--line2); }
+
+/* the Logged column's head: the title takes what the buttons leave and shortens, never under them */
+.colhead.loggedcol { display: flex; align-items: flex-start; gap: 8px; }
+.loggedcol .ch-t { flex: 1 1 auto; min-width: 0; }
+.loggedcol .ch-acts { flex: none; display: flex; gap: 4px; align-items: center; margin-top: -2px; }
+.loggedcol .ch-acts .btn { font-size: 11.5px; padding: 2px 8px; }
+@container (max-width: 250px) { .colhead.loggedcol { flex-wrap: wrap; } .loggedcol .ch-acts { flex-basis: 100%; margin-top: 4px; } }
+#log-day.primary { font-weight: 600; }
+/* zoom: one menu instead of five buttons */
+.zoom-sel { font: inherit; font-size: 12px; color: var(--text); background: var(--seg); border: 1px solid transparent; border-radius: 8px; padding: 4px 6px; }
+.zoom-sel:hover { background: var(--hover); }
+/* Work time: "Active, not logged" opens Log the day */
+#worktime .kv.go { width: 100%; border: 0; background: none; font: inherit; color: inherit; padding: 0; cursor: pointer; text-align: left; }
+#worktime .kv.go:hover span:first-child { text-decoration: underline; }
+#worktime .kv.go:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+.msg.ask-discard { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* the app's chrome is not text to select: a drag on the timeline or a double-click on a button selects nothing. What
+   people copy stays selectable: notes, popovers, the error log, dialogs' text and every field. */
+header, .colhead, #axis, .lane, aside h2, .seg, .btn, button, .tabs, .rv-h, .rv-f, .df, .dh, .iss, .toast { -webkit-user-select: none; user-select: none; }
+.lane .n, .pop, #logsdlg .scrollarea, input, textarea, select, [contenteditable] { -webkit-user-select: text; user-select: text; }
+/* ⌘↩ on the log dialog's Log button: the shortcut that logs from anywhere in it */
+#log-save::after { content: "⌘↩"; margin-left: 8px; font-size: 11px; opacity: .6; font-weight: 400; }
+/* the keyboard shortcuts (the ? key) */
+#keysdlg { width: min(420px, calc(100vw - 32px)); }
+#keysdlg dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 4px 0 0; font-size: 13px; }
+#keysdlg dt { text-align: right; white-space: nowrap; }
+#keysdlg dd { margin: 0; color: var(--muted); }
+kbd { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; background: var(--panel); color: var(--text); }
+.toast.act.on { pointer-events: auto; }
+.toast .toast-act { flex: none; margin-left: 4px; }
+/* the day done: its rails grey, the not-logged figure quiet; time marked "not work": a quiet hatched rail */
+.gaprail.done { background: linear-gradient(90deg, transparent 3px, var(--faint) 3px, var(--faint) 6px, transparent 6px); }
+.kv.gap.done span:last-child { color: var(--muted); }
+.daydone { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 12px; color: var(--muted); padding: 2px 0 4px; }
+.daydone:empty { display: none; }
+.linkbtn { border: 0; background: none; padding: 0; font: inherit; color: var(--accent); cursor: pointer; }
+.linkbtn:hover { text-decoration: underline; }
+.nwrail { position: absolute; left: -4px; width: 9px; border-radius: 3px; cursor: pointer; z-index: 2;
+  background: repeating-linear-gradient(135deg, var(--faint) 0 2px, transparent 2px 5px); opacity: .8; }
+.nwrail:hover { opacity: 1; }
+.nwrail:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.app-time { font: inherit; font-size: 12.5px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px; margin-left: 2px; }
+.app-time:disabled { opacity: .5; }
+
+/* a Mac's settings for more contrast (Accessibility, Display): stronger secondary text and lines */
+@media (prefers-contrast: more) {
+  :root { --muted: #48484d; --faint: #6e6e73; --line: rgba(0,0,0,.18); --line2: rgba(0,0,0,.1); --gap-text: #7a4d00; }
+  :root[data-theme="dark"] { --muted: #c7c7cc; --faint: #98989f; --line: rgba(255,255,255,.2); --line2: rgba(255,255,255,.12); --gap-text: #ffc04d; }
+}
+@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --muted: #c7c7cc; --faint: #98989f; --line: rgba(255,255,255,.2); --line2: rgba(255,255,255,.12); --gap-text: #ffc04d; }
+}
+/* a destructive button: red, after Cancel */
+.btn.danger { background: #d70015; color: #fff; }
+.btn.danger:hover { background: #d70015; opacity: .9; }
+/* in Pulsar's own window (html.in-app): the window draws its title, menus (View > Appearance, Help > Error Log) and
+   closes dialogs with Escape and Cmd+W, so the page leaves out its wordmark, theme button and the dialogs' ✕; buttons
+   keep the arrow, as Mac buttons do; the main button takes the Mac's accent colour */
+html.in-app header .brand h1, html.in-app #theme-btn { display: none; }
+html.in-app dialog .dh .btn.icon[aria-label="Close"], html.in-app dialog .dh [data-ld-x] { display: none; }
+html.in-app button, html.in-app .btn, html.in-app summary, html.in-app .card, html.in-app .gaprail, html.in-app .awayband, html.in-app .nwrail { cursor: default; }
+html.in-app .btn.primary { background: var(--accent); color: #fff; }
+html.in-app .btn.primary:hover { background: var(--accent); }
+/* Settings > Updates: "Reinstall Pulsar" (native.js) as a box of its own */
+#app-reinstall { margin-top: 14px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent); }
+#app-reinstall h3 { margin-top: 0; }

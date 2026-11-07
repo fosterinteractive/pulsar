@@ -2,7 +2,8 @@
    Each <input type="date"> stays in the page, hidden, and keeps what the views rely on: its value is YYYY-MM-DD, a pick
    sets it and fires input and change, code that sets .value repaints the button, and a disabled field disables it. The keys follow the WAI-ARIA
    date picker dialog: arrows by day and week, PageUp/PageDown by month (with Shift by year), Home/End to the week's
-   Monday and Sunday, Enter or Space picks, Escape closes and goes back to the button. Weeks start on Monday. */
+   first and last day, Enter or Space picks, Escape closes and goes back to the button. Weeks start on Monday, or on
+   the Mac's first weekday in Pulsar's window (PULSAR_APP.prefs.firstWeekday, 1 = Sunday). */
 (() => {
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -15,6 +16,12 @@ const ICON = '<svg class="dp-ic" viewBox="0 0 16 16" width="14" height="14" aria
 /* the words are built from the date's parts, not from a locale's format, which changes between macOS versions */
 const parts = d => d.split('-').map(Number);
 const weekday = d => (new Date(d + 'T12:00:00Z').getUTCDay() + 6) % 7;  // Monday 0 ... Sunday 6
+/* the week's first day as Date.getUTCDay counts (0 Sunday ... 6 Saturday), and a day's column in the calendar */
+const FIRST = (f => Number.isInteger(f) && f >= 1 && f <= 7 ? f - 1 : 1)(window.PULSAR_APP?.prefs?.firstWeekday);
+const col = d => (new Date(d + 'T12:00:00Z').getUTCDay() - FIRST + 7) % 7;
+const ORDER = [0, 1, 2, 3, 4, 5, 6].map(i => (FIRST + i) % 7);  // the columns, as getUTCDay numbers
+const WEEKEND = n => n === 0 || n === 6;
+const NAME = n => DAYS[(n + 6) % 7];
 const shortLabel = d => {
   const [y, m, day] = parts(d);
   return `${DAYS[weekday(d)].slice(0, 3)} ${day} ${MONTHS[m - 1].slice(0, 3)}${y !== +todayLocal().slice(0, 4) ? ' ' + y : ''}`;
@@ -35,19 +42,19 @@ pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-modal', 'true');
 pop.innerHTML = `<div class="dp-h"><div class="dp-title" id="dp-title" aria-live="polite"></div>
   <button type="button" class="btn icon" data-step="-1" aria-label="Previous month" title="Previous month (Page Up)">‹</button>
   <button type="button" class="btn icon" data-step="1" aria-label="Next month" title="Next month (Page Down)">›</button></div>
-  <table class="dp-grid" role="grid" aria-labelledby="dp-title"><thead><tr>${DAYS.map((n, i) =>
-    `<th scope="col" abbr="${n}"${i > 4 ? ' class="we"' : ''}>${n.slice(0, 2)}</th>`).join('')}</tr></thead><tbody></tbody></table>
+  <table class="dp-grid" role="grid" aria-labelledby="dp-title"><thead><tr>${ORDER.map(n =>
+    `<th scope="col" abbr="${NAME(n)}"${WEEKEND(n) ? ' class="we"' : ''}>${NAME(n).slice(0, 2)}</th>`).join('')}</tr></thead><tbody></tbody></table>
   <div class="dp-f"><button type="button" class="btn bordered sm" data-today>Today</button></div>`;
 const body = pop.querySelector('tbody'), title = pop.querySelector('.dp-title');
 let cur = null;  // the open field: {input, btn, focus: the day with the keyboard focus, month: the month drawn}
 
-/* the month of the focused day, Monday to Sunday; other months' days are left blank */
+/* the month of the focused day, a week a row from the first weekday; other months' days are left blank */
 function draw() {
   const month = cur.focus.slice(0, 7);
   if (cur.month !== month) {
     cur.month = month;
-    const [y, m] = parts(month + '-01'), first = month + '-01', start = shiftDate(first, -weekday(first));
-    const weeks = Math.ceil((weekday(first) + new Date(Date.UTC(y, m, 0, 12)).getUTCDate()) / 7);
+    const [y, m] = parts(month + '-01'), first = month + '-01', start = shiftDate(first, -col(first));
+    const weeks = Math.ceil((col(first) + new Date(Date.UTC(y, m, 0, 12)).getUTCDate()) / 7);
     const today = todayLocal(), sel = cur.input.value;
     title.textContent = `${MONTHS[m - 1]} ${y}`;
     let rows = '';
@@ -56,7 +63,7 @@ function draw() {
       for (let i = 0; i < 7; i++) {
         const d = shiftDate(start, w * 7 + i);
         rows += d.slice(0, 7) !== month ? '<td class="dp-out"></td>'
-          : `<td tabindex="-1" data-date="${d}"${i > 4 ? ' class="we"' : ''} aria-label="${longLabel(d)}" aria-selected="${d === sel}"`
+          : `<td tabindex="-1" data-date="${d}"${WEEKEND(ORDER[i]) ? ' class="we"' : ''} aria-label="${longLabel(d)}" aria-selected="${d === sel}"`
             + `${d === today ? ' aria-current="date"' : ''}>${+d.slice(8)}</td>`;
       }
       rows += '</tr>';
@@ -107,7 +114,7 @@ function pick(d) {
 
 const KEYS = {
   ArrowLeft: d => shiftDate(d, -1), ArrowRight: d => shiftDate(d, 1), ArrowUp: d => shiftDate(d, -7), ArrowDown: d => shiftDate(d, 7),
-  Home: d => shiftDate(d, -weekday(d)), End: d => shiftDate(d, 6 - weekday(d)),
+  Home: d => shiftDate(d, -col(d)), End: d => shiftDate(d, 6 - col(d)),
   PageUp: (d, ev) => addMonths(d, ev.shiftKey ? -12 : -1), PageDown: (d, ev) => addMonths(d, ev.shiftKey ? 12 : 1),
 };
 /* every key stays in the calendar: the day view's own arrows and T, and a dialog's Escape, wait until it is closed */

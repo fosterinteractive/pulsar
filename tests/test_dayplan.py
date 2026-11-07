@@ -447,11 +447,27 @@ class PlannerTest(unittest.TestCase):
         self.assertFalse(any(e["s"] < 618 and e["e"] > 568 for e in p["entries"]), p["entries"])
         self.assertIn(4, [u["minutes"] for u in p["unplaced"]])  # the session's four minutes
 
-    def test_an_entry_stopped_by_one_already_logged_ends_on_the_grid(self):
+    def test_an_entry_stopped_by_one_already_logged_ends_right_before_it(self):
+        # 10:05 would leave four minutes "not covered" before the entry at 10:09: the entry takes them in
         p = dayplan.plan(day(items=[work(540, 640)], rows=[row(540, 640)], logged=[{"s": 609, "minutes": 31, "taskId": "9"}]),
                          self.ctx)
         [e] = p["entries"]
-        self.assertEqual((e["s"], e["e"]), (540, 605))
+        self.assertEqual((e["s"], e["e"]), (540, 609))
+        self.assertEqual(p["uncovered"], [])
+
+    def test_an_entry_after_one_already_logged_starts_right_after_it(self):
+        p = dayplan.plan(day(items=[work(540, 640)], rows=[row(540, 640)], logged=[{"s": 540, "minutes": 26, "taskId": "9"}]),
+                         self.ctx)
+        [e] = p["entries"]
+        self.assertEqual(e["s"], 566)  # not 09:30, which left 09:26 to 09:30 uncovered
+        self.assertEqual(e["e"] % 5, 0)  # its end on the grid
+
+    def test_stretches_shorter_than_a_step_are_not_listed_as_not_covered(self):
+        # a 4-minute crumb between two entries already logged: nothing to log there, so not "not covered" either
+        logged = [{"s": 540, "minutes": 30, "taskId": "9"}, {"s": 574, "minutes": 26, "taskId": "9"}]
+        p = dayplan.plan(day(items=[work(540, 600)], rows=[], logged=logged), self.ctx)
+        self.assertEqual(p["uncovered"], [])
+        self.assertEqual(p["totals"]["notCovered"], 0)
 
     def test_the_cap_leaves_no_entry_under_ten_minutes(self):
         # 70 active minutes, 5 logged with no start: the cap takes 5 from the least sure entry, a lone 10 minutes

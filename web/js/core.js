@@ -90,7 +90,27 @@ function dur(m) {
   m = Math.round(m); if (m < 60) return `${m} min`;
   const h = Math.floor(m / 60), r = m % 60; return r ? `${h} h ${r} min` : `${h} h`;
 }
-function hm(m) { m = Math.round(m) % 1440; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; }
+/* a minute of the day as HH:MM, 24-hour: what the server reads and the time fields hold */
+function hm24(m) { m = Math.round(m) % 1440; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; }
+/* the same minute for the eye: 2:30 PM when the Mac shows 12-hour times (Pulsar's window gives PULSAR_APP.prefs), else
+   HH:MM. Never sent anywhere: requests and the time fields use hm24 */
+let CLOCK12 = !!window.PULSAR_APP?.prefs?.hour12;
+function hm(m) {
+  if (!CLOCK12) return hm24(m);
+  m = Math.round(m) % 1440;
+  const h = Math.floor(m / 60);
+  return `${(h + 11) % 12 + 1}:${String(m % 60).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
+/* dates in words in English, in the order of the Mac's region (Pulsar's window gives PULSAR_APP.prefs.locale: en-US
+   writes "Friday, November 6"); British English otherwise, and for a region whose language is not English, since the
+   rest of the page is in English */
+const DATE_LOCALE = (l => /^en(-|$)/i.test(l || '') ? l : 'en-GB')(window.PULSAR_APP?.prefs?.locale);
+/* "HH:MM" from the server (an overlap's start, a split's piece) for the eye */
+const hmText = t => /^\d\d:\d\d$/.test(t || '') ? hm(+t.slice(0, 2) * 60 + +t.slice(3)) : t;
+addEventListener('pulsar:prefs', ev => {
+  const on = !!ev.detail?.prefs?.hour12;
+  if (on !== CLOCK12) { CLOCK12 = on; if (typeof render === 'function') { if (typeof forgetHTML === 'function') document.querySelectorAll('.lane').forEach(forgetHTML); render(); } }
+});
 /* each project of the day gets its own hue, in name order, so the same day always looks the same */
 function assignHues(names) { projectHue = new Map([...new Set(names)].sort().map((n, i) => [n, HUES[i % HUES.length]])); }
 function color(name) { return `hsl(${projectHue.get(name) ?? 220} 45% 50%)`; }
@@ -312,12 +332,15 @@ const CLAUDE_MARK = '<svg class="cl-mark" viewBox="0 0 16 16" aria-hidden="true"
   + '<span class="vh">Claude suggests: </span>';
 /* a short note at the bottom after a refresh: what changed in the logged time */
 let toastTimer;
-function toast(text, warn = false) {
+/* action: {label, run} adds a button (Undo): the note then stays 10 seconds, and the button works once */
+function toast(text, warn = false, action = null) {
   if (signedOut) return;  // the sign-in notice says it all
   const t = $('#toast');
-  t.innerHTML = `<span class="ic">${warn ? '!' : '✓'}</span><span>${esc(text)}</span>`;
-  t.classList.toggle('warn', warn); t.classList.add('on');
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), warn ? 7000 : 3500);
+  t.innerHTML = `<span class="ic">${warn ? '!' : '✓'}</span><span>${esc(text)}</span>`
+    + (action ? `<button type="button" class="btn sm bordered toast-act">${esc(action.label)}</button>` : '');
+  t.classList.toggle('warn', warn); t.classList.toggle('act', !!action); t.classList.add('on');
+  if (action) t.querySelector('.toast-act').onclick = ev => { ev.currentTarget.disabled = true; t.classList.remove('on'); action.run(); };
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), action ? 10000 : warn ? 7000 : 3500);
 }
 function loggedChange(before, after) {
   if (after.error) return {text: `Logs not updated: ${after.error}`, warn: true, changed: false};
@@ -350,3 +373,15 @@ function applyTheme(t) {
 }
 $('#theme-btn').onclick = () => applyTheme({system: 'light', light: 'dark', dark: 'system'}[$('#theme-btn').dataset.v]);
 applyTheme(document.documentElement.dataset.theme);
+
+/* Tab reaches every button and link. WebKit (the app's window) skips them unless macOS's keyboard navigation is on,
+   so each one with no tabindex of its own gets 0, now and whenever the page draws new ones; a tabindex already set
+   (a tab list's -1, a card's 0) stays as it is. */
+const TABBABLE = 'button:not([tabindex]), a[href]:not([tabindex]), summary:not([tabindex])';
+function makeTabbable(root) {
+  if (root.matches?.(TABBABLE)) root.tabIndex = 0;
+  root.querySelectorAll?.(TABBABLE).forEach(el => { el.tabIndex = 0; });
+}
+makeTabbable(document);
+new MutationObserver(list => { for (const m of list) for (const n of m.addedNodes) if (n.nodeType === 1) makeTabbable(n); })
+  .observe(document.body, {childList: true, subtree: true});

@@ -199,7 +199,7 @@ function resetForce() {
 /* the time asked for, less what is logged in it (server.pieces_around): the main button logs those pieces, one entry
    each with the same task, service and note; Log anyway stays, second */
 let logSplit = null;  // {pieces: [{start, minutes}], tooShort}
-const pieceText = p => `${p.start}–${hm(+p.start.slice(0, 2) * 60 + +p.start.slice(3) + p.minutes)} (${dur(p.minutes)})`;
+const pieceText = p => `${hmText(p.start)}–${hm(+p.start.slice(0, 2) * 60 + +p.start.slice(3) + p.minutes)} (${dur(p.minutes)})`;
 const andList = xs => xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
 /* the entries in the way: each one, or from three on their span and projects */
 function overlapText(os) {
@@ -236,8 +236,9 @@ logForm.elements.date.addEventListener('change', () => {
 /* while the dialog edits an entry that is already logged: {id, taskId, serviceId, service, budget, title, noteRich,
    seen (the entry as the page showed it), orig (the fields as the dialog opened)} */
 let logEdit = null;
-async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = [], note = '', lead = null, edit = null, drafted = null, range = false, exact = false} = {}) {
+async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = [], note = '', lead = null, edit = null, drafted = null, range = false, exact = false, stretch = null} = {}) {
   logEdit = edit; logOpened++; logDrafting = 0;
+  logStretchNow = stretch && !edit && date === state.date ? stretch : null;  // flow.js: Skip goes on from it
   $('#log-title').textContent = edit ? 'Change a logged entry' : 'Log time in Productive';
   logForm.elements.date.disabled = !!edit;  // an entry changes within its own day
   if (!CONFIG?.productive.active) { toast('Connect Productive in Settings first.', true); openSettings('t-conn'); return; }
@@ -246,8 +247,12 @@ async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = 
   // its own length: the dialog never moves it by itself
   start = edit ? Math.max(0, Math.min(1439, Math.floor(start))) : Math.max(0, Math.min(1435, Math.round(start)));
   minutes = Math.max(1, Math.min(realMinutes(date, start, 1440), Math.round(minutes)));
-  if (!edit && !exact) minutes = roundMinutes(date, start, minutes);  // a drag to the minute stays as it was picked
-  f.date.value = date; f.start.value = hm(start); f.minutes.value = minutes; f.note.value = note || '';
+  if (!edit && !exact) {  // a drag to the minute stays as it was picked
+    const free = freeStart(date, start);  // a block that starts inside a logged entry starts where that entry ends
+    if (free > start && minutes - (free - start) >= 1) { minutes -= free - start; start = free; }
+    minutes = roundMinutes(date, start, minutes);
+  }
+  f.date.value = date; f.start.value = hm24(start); f.minutes.value = minutes; f.note.value = note || '';
   if (edit) edit.orig = {start: f.start.value, minutes, note: f.note.value};
   logDrafted = drafted?.note && drafted.note === note ? drafted : null;
   logFilled = !edit && !logDrafted && !!f.note.value.trim();
@@ -264,16 +269,27 @@ async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = 
   rangeOpen(range && !edit ? {date, start, minutes} : null);  // range.js: what a picked stretch holds
 }
 
-/* a block's minutes on the step of Settings' "Round entries to" (5, 10 or 15): the nearest step, at least one. When
-   rounding up would run into an entry already logged that day, down instead; a block shorter than one step that
-   would still run into it keeps its own minutes. Minutes typed in the dialog are never rounded. */
+/* where a block's time is free: a start inside an entry already logged that day moves to that entry's end (and on
+   past the next one, if they touch), so "Log this time" never opens on time that is logged */
+function freeStart(date, start) {
+  if (date !== state.date) return start;
+  let s = start;
+  for (let moved = true; moved;) {
+    moved = false;
+    for (const x of state.logged?.entries || []) if (x.s != null && x.e != null && x.s <= s && s < x.e) { s = Math.ceil(x.e); moved = true; }
+  }
+  return Math.min(s, 1435);
+}
+/* a block's minutes on the step of Settings' "Round entries to" (5, 10 or 15): the nearest step, at least one. Next
+   to an entry already logged that day it runs up to that entry instead, whenever rounding would run into it or leave
+   less than a step before it: those minutes are taken in, never left as a crumb "not logged". Minutes typed in the
+   dialog are never rounded. */
 function roundMinutes(date, start, minutes) {
   const step = CONFIG?.roundTo || 5;
   let m = Math.max(step, Math.round(minutes / step) * step);
-  if (m > minutes) {
-    const next = date === state.date ? Math.min(1440, ...(state.logged?.entries || []).filter(x => x.s != null && x.s > start).map(x => x.s)) : 1440;
-    if (start + m > next) m = Math.floor(minutes / step) * step || minutes;
-  }
+  const next = date === state.date ? Math.min(1440, ...(state.logged?.entries || []).filter(x => x.s != null && x.s > start).map(x => x.s)) : 1440;
+  const room = Math.floor(next - start);
+  if (next < 1440 && room >= 1 && (m > room || room - m < step)) m = room;
   return Math.max(1, Math.min(m, 1440 - start));
 }
 
@@ -376,7 +392,7 @@ logForm.addEventListener('submit', async ev => {
     return setLogMsg('Minutes are a whole number from 1 to 1440.', true);
   }
   f.minutes.removeAttribute('aria-invalid');
-  if (!startHHMM(f.start.value)) { f.start.setAttribute('aria-invalid', 'true'); f.start.focus(); return setLogMsg('Write the start as HH:MM, 24-hour: 09:30 or 14:05.', true); }
+  if (!startHHMM(f.start.value)) { f.start.setAttribute('aria-invalid', 'true'); f.start.focus(); return setLogMsg('Write the start as a time: 09:30, 14:05 or 2:05 pm.', true); }
   f.start.value = startHHMM(f.start.value);
   const btn = $('#log-save'), btns = [btn, $('#log-next'), $('#log-anyway')], had = document.activeElement;
   btns.forEach(b => { b.disabled = true; }); setLogMsg(logEdit ? 'Checking the day, then saving…' : 'Checking the day, then logging…');

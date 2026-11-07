@@ -8,8 +8,10 @@ function newest(kind) {
 }
 
 /* Day view: one day on one time axis (activity, likely, logged) */
+let loading = 0;  // reads under way: the logo pulses while there are any (style.css html.loading)
 function load({fresh = false, keepScroll = false} = {}) {
   const d = state.date, act = newest('activity'), logged = newest('entries'), likely = newest('proposal');
+  document.documentElement.classList.add('loading'); loading++;
   if (!keepScroll) { state.act = state.likely = state.logged = state.repeats = null; render(); }
   loadRepeats();
   return Promise.all([
@@ -20,6 +22,8 @@ function load({fresh = false, keepScroll = false} = {}) {
       return x;
     }),
     loadMeetings(d, fresh),  // meetings.js
+    // the day done, time not work (daymarks.py): said on this Mac, never sent to Productive
+    getJSON(`/api/daymarks?date=${d}`).then(x => { if (d === state.date) { state.marks = x.error ? {date: d} : {...x, date: d}; drawSoon(); } return x; }),
     // Ask Claude's picks for this day, kept from an earlier ask (this run or on disk): shown again, never asked again
     CONFIG?.likely?.askClaude && state.claude?.date !== d ? getJSON(`/api/likely/picks?date=${d}`).then(x => {
       if (d === state.date && x.picks && Object.keys(x.picks).length && state.claude?.date !== d) {
@@ -27,7 +31,7 @@ function load({fresh = false, keepScroll = false} = {}) {
       }
       return x;
     }) : null,
-  ]);
+  ]).finally(() => { if (--loading <= 0) { loading = 0; document.documentElement.classList.remove('loading'); } });
 }
 
 /* the Likely rows came before your Productive history was read, or before their sessions' tasks and commits were
@@ -167,7 +171,7 @@ function logStretch(a, b, exact = false) {
   // holds (GET /api/range: meetings and work outside Claude too), leads with its main task and asks Claude for the note
   const hint = rulesInRange(a, b), {work} = stretchWork(a, b, hint), draft = work ? rowTasks(work.rows).draft : null;
   openLog({start: a, minutes: realMinutes(state.date, a, b), hint, lead: leadFor(a, b, hint), note: draft?.note || '',
-           drafted: draft, range: true, exact});
+           drafted: draft, range: true, exact, stretch: {a, b}});
 }
 
 /* the active minutes inside [a, b): from the first active minute, as long as the activity was (not the slot) */
@@ -284,11 +288,11 @@ function render() {
 
   // header
   const noon = new Date(state.date + 'T12:00:00Z');  // a date it cannot read shows as written, instead of stopping the page
-  const label = isNaN(noon) ? String(state.date || '') : new Intl.DateTimeFormat('en-GB', {weekday: 'long', day: 'numeric',
+  const label = isNaN(noon) ? String(state.date || '') : new Intl.DateTimeFormat(DATE_LOCALE, {weekday: 'long', day: 'numeric',
     month: 'long', year: 'numeric', timeZone: 'UTC'}).format(noon);
   setText($('#dayname'), label.charAt(0).toUpperCase() + label.slice(1));
   $('#date').value = state.date;
-  document.querySelectorAll('#zoom button').forEach(b => b.classList.toggle('on', +b.dataset.v === Z));
+  $('#zoom-sel').value = String(Z);
   $('#source-select').value = state.source;
 
   // axis and rules
@@ -297,7 +301,9 @@ function render() {
   const labelEvery = LABEL_EVERY[Z] || 30, ruleEvery = Z === 1 ? 5 : Z;
   for (let m = 0; m <= end; m += ruleEvery) {
     const hour = m % 60 === 0;
-    if (m % labelEvery === 0) axis += `<div class="${hour ? 'h' : ''} num" style="top:${m * ppm}px">${m ? hm(m) : ''}</div>`;
+    // 12-hour: "10 PM" on the hour, "10:30" between, so a label fits the axis on one line
+    const label = !CLOCK12 ? hm(m) : m % 60 ? hm(m).split(' ')[0] : `${(Math.floor(m / 60) + 11) % 12 + 1} ${m < 720 ? 'AM' : 'PM'}`;
+    if (m % labelEvery === 0) axis += `<div class="${hour ? 'h' : ''} num" style="top:${m * ppm}px">${m ? label : ''}</div>`;
     rules += `<div class="rule${hour ? ' h' : ''}" style="top:${m * ppm}px"></div>`;
   }
   setHTML($('#axis'), axis);
@@ -359,8 +365,7 @@ function render() {
   else {
     likelyCache = likelyBlocks(likely.entries, Z, end);
     setText($('#h-likely'), `Claude sessions · ${dur(likely.proposed || 0)}`);
-    const ask = $('#ask-claude');
-    ask.hidden = !(CONFIG?.likely?.askClaude && CONFIG.likely.claudeFound && likely.entries.length);
+    $('#ask-claude').hidden = true;  // Claude's one way in is Log the day's "Check my day with Claude" (ldreview.js)
     setHTML(laneLikely, likelyCache.length ? likelyCache.map((b, i) => {
       const x = {s: b.start * Z, e: b.end * Z}, h = (x.e - x.s) * ppm;
       return `<div class="card likely${b.parallel ? ' parallel' : ''}" data-k="likely" data-i="${i}" style="${place(x, ppm, 18)}"
@@ -396,8 +401,8 @@ function render() {
       const rz = x.s == null ? '' : '<i class="rz rz-t" data-rz="t" title="Drag to change the start"></i><i class="rz rz-b" data-rz="b" title="Drag to change the end"></i>';
       return `<div class="card logged" data-k="logged" data-i="${i}" style="--c:${color(x.project)};${place(x, ppm, 18)}"
         tabindex="0" role="button" aria-label="${esc(`Logged ${hm(x.s)}–${hm(x.e)}${x.fromClaudeCode ? ' from Claude Code' : ''}: ${x.project}${x.task ? ', ' + x.task : ''}, ${dur(x.minutes)}`)}"${x.fromClaudeCode ? ' title="Logged from Claude Code (Pulsar in Claude Code)"' : ''}>
-        <div class="row"><span class="t">${esc(x.project)}</span>${x.billable ? `<span class="bill" title="Billable${x.billing ? ': ' + esc(x.billing) : ''}">$</span>` : ''}<span class="m num">${dur(x.minutes)}</span></div>
-        ${h > 34 ? `<div class="d">${esc(x.task)}</div>` : ''}
+        <div class="row"><span class="t">${esc(x.task || x.project)}</span>${x.billable ? `<span class="bill" title="Billable${x.billing ? ': ' + esc(x.billing) : ''}">$</span>` : ''}<span class="m num">${dur(x.minutes)}</span></div>
+        ${h > 34 && x.task ? `<div class="d">${esc(x.project)}</div>` : ''}
         ${lines ? `<div class="n" style="-webkit-line-clamp:${lines}">${esc(x.note)}</div>` : ''}${rz}</div>`;
     }).join('') + repeatCache.map((x, i) => {
       const h = (x.e - x.s) * ppm, why = `Logged at about ${hm(x.at)} on ${x.days} days; ${x.seen} seen today. Click to log it.`;
@@ -406,8 +411,9 @@ function render() {
         <div class="row"><span class="t">${esc(x.title)}</span><span class="m num">${dur(x.minutes)}</span></div>
         ${h > 34 ? `<div class="d">Usual · ${esc(x.seen)} seen · click to log</div>` : ''}</div>`;
     }).join('');
-    // active minutes (not personal) with no entry on them. The number counts each minute's active share, as the
-    // report does; the amber rails mark stretches of at least 3 mostly-active minutes, for the eye and the click.
+    // active minutes (not personal) with no entry on them: the amber rails mark stretches of mostly-active minutes as
+    // long as one rounding step at least (Settings' "Round entries to"; a shorter one is rounding, not work to log),
+    // and the number counts each of their minutes' active share. Crumbs under a step count nowhere.
     if (act && !act.error) {
       const active = new Float32Array(end + 1), covered = new Uint8Array(end + 1);
       for (const it of act.items) {
@@ -416,13 +422,21 @@ function render() {
       }
       for (const e of ldActive() && LD.plan?.ignoreLogged ? [] : logged.entries) if (e.s != null) for (let m = Math.floor(e.s); m < Math.floor(e.s) + e.minutes && m < end; m++) covered[m] = 1;
       for (const [a, b] of ldActive() ? ldCoverSpans() : []) for (let m = Math.floor(a); m < b && m < end; m++) covered[m] = 1;  // ticked proposals
-      for (let m = 0; m < end; m++) if (!covered[m]) gapMin += Math.min(1, active[m]);
+      for (const [a, b] of notWorkSpans()) {  // marked "not work": counted nowhere, drawn quiet, a click counts it again
+        for (let m = a; m < b && m < end; m++) covered[m] = 1;
+        html += `<div class="nwrail" data-nw-a="${a}" data-nw-b="${b}" style="top:${a * ppm}px;height:${(b - a) * ppm}px"
+          title="Not work (you said so): ${hm(a)}–${hm(b)}. Click to count it as work again." tabindex="0" role="button"
+          aria-label="Not work, ${hm(a)}–${hm(b)}: count it as work again"></div>`;
+      }
+      const doneDay = !!dayDone();
       let runStart = -1;
+      const shortest = Math.max(3, CONFIG?.roundTo || 5);
       for (let m = 0; m <= end; m++) {
         const gap = m < end && active[m] >= 0.5 && !covered[m];
         if (gap && runStart < 0) runStart = m;
         if (!gap && runStart >= 0) {
-          if (m - runStart >= 3) html += `<div class="gaprail" data-a="${runStart}" data-b="${m}" style="top:${runStart * ppm}px;height:${(m - runStart) * ppm}px"
+          if (m - runStart >= shortest) for (let x = runStart; x < m; x++) gapMin += Math.min(1, active[x]);
+          if (m - runStart >= shortest) html += `<div class="gaprail${doneDay ? ' done' : ''}" data-a="${runStart}" data-b="${m}" style="top:${runStart * ppm}px;height:${(m - runStart) * ppm}px"
             title="Active, not logged: ${hm(runStart)}–${hm(m)}. Click to log it." tabindex="0" role="button"
             aria-label="Active, not logged ${hm(runStart)}–${hm(m)}, ${dur(m - runStart)}: log this time"></div>`;
           runStart = -1;
@@ -455,6 +469,11 @@ function scrollToNow(smooth = true) {
 
 function renderAside(gapMin) {
   const act = state.act, logged = state.logged, likely = state.likely;
+  // the day's next step: Log the day is the main button while active time is not logged
+  const done = dayDone();
+  $('#log-day').classList.toggle('primary', !!(logged && !logged.error && act && !act.error && gapMin >= 1 && !ldActive() && !done));
+  $('#log-day').classList.toggle('bordered', !$('#log-day').classList.contains('primary'));
+  $('#log-day').setAttribute('aria-pressed', String(ldActive()));
   const work = act && !act.error ? act.items.filter(x => x.cat !== 'personal').reduce((s, x) => s + x.e - x.s, 0) : null;
   const personal = act && !act.error ? act.items.filter(x => x.cat === 'personal').reduce((s, x) => s + x.e - x.s, 0) : null;
   const sum = logged && !logged.error ? logged.entries.reduce((s, x) => s + x.minutes, 0) : null;
@@ -468,7 +487,12 @@ function renderAside(gapMin) {
     ${sum && sum > (bill ? bill.yes + bill.no : 0) && bill ? `<div class="kv"><span>Billing unknown</span><span class="num">${dur(sum - bill.yes - bill.no)}</span></div>` : ''}
     <div class="kv"><span>Active, work</span><span class="num">${v(work)}</span></div>
     ${personal ? `<div class="kv"><span>Personal</span><span class="num">${dur(personal)}</span></div>` : ''}
-    ${logged && act && !logged.error && !act.error ? `<div class="kv gap"><span>Active, not logged</span><span class="num">${dur(gapMin)}</span></div>` : ''}
+    ${logged && act && !logged.error && !act.error ? (gapMin >= 1 && !ldActive() && !done
+      ? `<button type="button" class="kv gap go" id="wt-logday" title="Open Log the day to log it"><span>Active, not logged</span><span class="num">${dur(gapMin)} →</span></button>`
+      : `<div class="kv gap${done ? ' done' : ''}"><span>Active, not logged</span><span class="num">${dur(gapMin)}</span></div>`) : ''}
+    ${logged && !logged.error ? `<div class="daydone">${done
+      ? `<span>✓ Day done${done === 'target' ? ': target reached' : ''}</span><button type="button" class="linkbtn" data-day-mark="notdone" title="Show the time not logged as still to do">Not done</button>`
+      : gapMin >= 1 ? `<button type="button" class="linkbtn" data-day-mark="done" title="The rest of today's active time stays unlogged, and this day leaves Earlier days">Mark the day done</button>` : ''}</div>` : ''}
     ${act?.away?.some(x => !x.off) ? `<div class="kv"><span>Away, breaks</span><span class="num">${dur(act.away.filter(x => !x.off).reduce((s, x) => s + x.e - x.s, 0))}</span></div>` : ''}
     <div class="bar"><i style="width:${Math.min(100, (sum || 0) / TARGET * 100)}%"></i></div>
     <div class="kv"><span>Daily target</span><span class="num">${dur(TARGET)}</span></div>`);
@@ -641,16 +665,21 @@ function activateByKey(el) {
 document.addEventListener('keydown', ev => {
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName) || ev.target.closest('dialog')) return;
   if (state.view === 'report') { if (ev.key === 'Escape') tipEl.classList.remove('on'); return; }
+  if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.matches?.('.nwrail')) { ev.preventDefault(); ev.target.click(); return; }
   if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.matches?.('.card[data-k], .gaprail, .awayband')) {
     ev.preventDefault(); activateByKey(ev.target); return;
   }
   if (ev.key === 'Escape') closePop(true);
+  if (ev.key === '?' && !ev.metaKey && !ev.ctrlKey && !ev.altKey) { ev.preventDefault(); $('#keysdlg').showModal(); return; }
   if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey) return;  // Cmd+← and friends belong to the browser
+  if (ev.code === 'KeyL') { ev.preventDefault(); $('#log-day').click(); return; }  // on any layout, as T
+  if (ev.code === 'KeyN') { ev.preventDefault(); $('#log-new').click(); return; }
   if (ev.key === 'ArrowLeft') go(shiftDate(state.date, -1));
   if (ev.key === 'ArrowRight') go(shiftDate(state.date, 1));
   if (ev.code === 'KeyT') go(todayLocal());  // the T key on any layout
 });
 
+$('#keysdlg').querySelectorAll('[data-close]').forEach(b => b.onclick = () => $('#keysdlg').close());
 function go(date) { if (!validDate(date)) return; if (ldActive()) closeLogDay(); state.date = date; closePop(); syncURL(); load(); }
 $('#prev').onclick = () => go(shiftDate(state.date, -1));
 $('#next').onclick = () => go(shiftDate(state.date, 1));
@@ -661,7 +690,6 @@ $('#date').onchange = e => {
 };
 $('#date').addEventListener('blur', e => { if (e.target.value !== state.date) e.target.value = state.date; });
 $('#refresh').onclick = async () => {
-  warp();  // one short warp while the reload starts; holding it until the data is back made redrawing lag
   if (state.view === 'report') return loadReport(true);
   const btn = $('#refresh'), before = state.logged, d = state.date;
   btn.classList.add('busy');
@@ -687,31 +715,51 @@ $('#ask-claude').onclick = async () => {
   toast(r.warning ? `${said} ${r.warning}` : said, !!r.warning);
   askEnd(n ? 'picked' : 'none');
 };
-/* logged time only: one Productive read, the other columns stay as they are */
-$('#refresh-logged').onclick = async () => {
-  const btn = $('#refresh-logged'), d = state.date, before = state.logged;
-  btn.classList.add('busy');
-  const x = await refreshLogged();
-  btn.classList.remove('busy');
-  if (d !== state.date) return;
-  const c = loggedChange(before, x);
-  toast(c.warn ? c.text : `Logs updated: ${c.text}`, c.warn);
-};
 /* folded projects stay folded when the page redraws */
 const folded = new Set();
 document.addEventListener('toggle', ev => {
   const p = ev.target.dataset?.p; if (p == null) return;
   ev.target.open ? folded.delete(p) : folded.add(p);
 }, true);
-document.querySelectorAll('#zoom button').forEach(b => b.onclick = () => {
+function setZoom(z) {
   const sc = $('#scroll'), top = sc.scrollTop / ppmOf(state.zoom);  // keep the same minute at the top
-  state.zoom = +b.dataset.v; syncURL(); render(); sc.scrollTop = top * ppmOf(state.zoom);
-});
+  state.zoom = +z; syncURL(); render(); sc.scrollTop = top * ppmOf(state.zoom);
+}
+$('#zoom-sel').addEventListener('change', ev => setZoom(ev.target.value));
+document.querySelectorAll('#zoom button[data-v]').forEach(b => b.onclick = () => setZoom(b.dataset.v));
 $('#source-select').addEventListener('change', ev => {
   state.source = ev.target.value; syncURL(); state.act = null; render();
   const d = state.date, mine = newest('activity');
   getJSON(`/api/activity?date=${d}&source=${state.source}`).then(x => { if (mine()) { state.act = x; render(); } });
   loadRepeats();  // the call is looked for in the tracker shown
+});
+/* The clock. Every minute the now line moves to the current minute. At midnight, or when the Mac wakes on another
+   day, a person who was looking at today goes to the new today; another day stays where it is. Coming back after five
+   minutes or more away from the window, today is read again (the Mac may have slept). A move waits while a dialog is
+   open or Log the day is writing, and is tried again the next minute. */
+let shownToday = todayLocal(), hiddenAt = 0;
+function tickClock(back = false) {
+  const today = todayLocal();
+  if (today !== shownToday) {
+    if (state.view === 'day' && state.date === shownToday) {
+      if (document.querySelector('dialog[open]') || (typeof LD !== 'undefined' && LD.writing)) return;
+      shownToday = today; go(today); return;
+    }
+    shownToday = today;
+  }
+  if (state.view !== 'day' || state.date !== today) return;
+  const now = $('#grid .now');
+  if (now) now.style.top = `${nowMin() * ppmOf(state.zoom)}px`; else render();
+  if (back) load({keepScroll: true});
+}
+setInterval(() => { if (document.visibilityState === 'visible') tickClock(); }, 60 * 1000);
+// the app's window says when the Mac woke or midnight passed (native.js): handled here, so it does not move on itself
+addEventListener('pulsar:wake', ev => { ev.preventDefault(); tickClock(state.date === todayLocal()); });
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+  const away = hiddenAt ? Date.now() - hiddenAt : 0;
+  hiddenAt = 0;
+  tickClock(away >= 5 * 60 * 1000);
 });
 // today: refresh everything once an hour; the ↻ buttons do it on demand
 setInterval(async () => {
@@ -722,10 +770,37 @@ setInterval(async () => {
 }, 60 * 60 * 1000);
 
 
+/* ---------- the day done, and time that was not work (pulsar/daymarks.py: this Mac only) ---------- */
+function notWorkSpans() { return state.marks?.date === state.date ? state.marks.notWork || [] : []; }
+/* 'said' (marked done), 'target' (logged time reached the daily target and nobody said "not done"), or '' */
+function dayDone() {
+  const m = state.marks?.date === state.date ? state.marks : {};
+  if (m.done === true) return 'said';
+  if (m.done === false || !state.logged || state.logged.error) return '';
+  return state.logged.entries.reduce((s, x) => s + x.minutes, 0) >= TARGET ? 'target' : '';
+}
+async function markDay(change, said = '', undo = null) {
+  const d = state.date, r = await postJSON('/api/daymarks', {date: d, ...change});
+  if (r.error) { toast(r.error, true); return false; }
+  if (d === state.date) { state.marks = {...r, date: d}; render(); if (ldActive()) renderReview(); }
+  if (said) toast(said, false, undo);
+  return true;
+}
+document.addEventListener('click', ev => {
+  const nw = ev.target.closest('.nwrail');
+  if (nw) { const a = +nw.dataset.nwA, b = +nw.dataset.nwB; markDay({remove: [a, b]}, `${hm(a)}–${hm(b)} counts as work again.`); return; }
+  const dm = ev.target.closest('[data-day-mark]');
+  if (dm) markDay({done: dm.dataset.dayMark === 'done'}, dm.dataset.dayMark === 'done' ? 'Day done: its rails are grey and it leaves Earlier days.' : '');
+});
+/* "Not work" from the log dialog or a Log the day row: [a, b) counts nowhere, with Undo */
+function markNotWork(a, b) {
+  return markDay({add: [a, b]}, `${hm(a)}–${hm(b)} marked as not work.`, {label: 'Undo', run: () => markDay({remove: [a, b]})});
+}
+
 /* ---------- changing a logged entry: Edit (the log dialog), Delete (asked first), drag an edge (asked first) ---------- */
 /* the entry as the page shows it: the server changes nothing if Productive has it otherwise now. The start is the
    minute it falls in, as the server reads it. */
-const seenOf = x => ({start: x.s == null ? null : hm(Math.floor(x.s)), minutes: x.minutes, taskId: x.taskId || '',
+const seenOf = x => ({start: x.s == null ? null : hm24(Math.floor(x.s)), minutes: x.minutes, taskId: x.taskId || '',
                       serviceId: x.serviceId || '', note: x.note || ''});
 function editEntry(x) {
   openLog({date: state.date, start: x.s, minutes: x.minutes, note: x.note || '',
@@ -737,15 +812,26 @@ function askDelete(x, ev) {
   popEntry = x;
   openPop(`<h3>Delete this entry?</h3><div class="sub">${hm(x.s)}–${hm(x.e)} · ${dur(x.minutes)} · ${esc(x.project)}</div>
     <p>${esc(x.task || '')}</p><p class="sub">It goes to Productive's Recycle Bin, where it can be restored.</p>
-    <div class="btnrow"><button class="btn primary sm" data-del-yes>Delete</button><button class="btn bordered sm" data-rz-no>Cancel</button></div>`, ev);
+    <div class="btnrow"><button class="btn bordered sm" data-rz-no>Cancel</button><button class="btn danger sm" data-del-yes>Delete</button></div>`, ev);
 }
 async function deleteEntry(x, btn) {
   btn.disabled = true;
   const r = await postJSON('/api/entry/delete', {id: x.id, date: state.date, seen: seenOf(x)});
   closePop();
   if (r.error) { toast(r.error, true); refreshLogged(); return; }
-  toast(`Deleted ${dur(x.minutes)} of ${x.task || x.project}.`);
+  // Undo logs it again, as it was (a new entry: the deleted one stays in Productive's Recycle Bin). Not for an entry
+  // with no start or a formatted note, which the page cannot write back as it was.
+  const back = x.s != null && x.taskId && x.serviceId && !x.noteRich;
+  toast(`Deleted ${dur(x.minutes)} of ${x.task || x.project}.${back ? '' : " It is in Productive's Recycle Bin."}`, false,
+        back ? {label: 'Undo', run: () => undoDelete(x, state.date)} : null);
   refreshLogged();
+}
+async function undoDelete(x, date) {
+  const r = await postJSON('/api/log', {date, start: hm24(Math.floor(x.s)), minutes: x.minutes, taskId: x.taskId,
+                                        serviceId: x.serviceId, note: x.note || ''});
+  if (date === state.date) refreshLogged();
+  if (r.error || r.overlap) return toast(r.error || 'Not logged again: the time is taken by another entry now.', true);
+  toast(`Logged again: ${hm(Math.floor(x.s))}, ${dur(x.minutes)}, ${x.task || x.project}.`);
 }
 /* drag the top or bottom edge of a logged card: 1-minute steps, the card follows, then "Change to …?" */
 (function resizeEntries() {
@@ -795,12 +881,20 @@ async function saveResize(btn, force) {
   const x = popEntry, start = btn.dataset.start === '' ? null : +btn.dataset.start, minutes = +btn.dataset.minutes;
   if (!x) return;
   btn.disabled = true;
-  const r = await postJSON('/api/entry/update', {id: x.id, date: state.date, ...(start == null ? {} : {start: hm(start)}),
+  const r = await postJSON('/api/entry/update', {id: x.id, date: state.date, ...(start == null ? {} : {start: hm24(start)}),
                                                  minutes, force, seen: seenOf(x)});
   if (r.overlap) { const at = btn.getBoundingClientRect(); askResize(x, start, minutes, {clientX: at.left, clientY: at.top - 60}, r.overlap); return; }
   closePop();
   if (r.error) { toast(r.error, true); refreshLogged(); return; }
-  const s = start ?? x.s;
-  toast(`Changed to ${hm(s)}–${hm(s + minutes)}, ${dur(minutes)}.`);
+  const s = start ?? x.s, d = state.date;
+  // Undo puts the start and the length back as they were (the server checks the entry is still as just changed)
+  const undo = async () => {
+    const back = await postJSON('/api/entry/update', {id: x.id, date: d, ...(start == null ? {} : {start: hm24(Math.floor(x.s))}),
+      minutes: x.minutes, seen: {...seenOf(x), start: hm24(Math.floor(s)), minutes}});
+    if (d === state.date) refreshLogged();
+    if (back.overlap) return toast(`Not changed back: it would overlap ${back.overlap.map(o => `${o.start} ${o.project}`).join(', ')}.`, true);
+    toast(back.error ? back.error : `Back to ${hm(x.s)}–${hm(x.e)}, ${dur(x.minutes)}.`, !!back.error);
+  };
+  toast(`Changed to ${hm(s)}–${hm(s + minutes)}, ${dur(minutes)}.`, false, {label: 'Undo', run: undo});
   refreshLogged();
 }
