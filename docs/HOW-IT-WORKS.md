@@ -298,7 +298,8 @@ above the blocks, because a 30-minute block can hide a 20-minute break.
 ### 4.2 Logged (`pulsar/productive.py`)
 
 Two connections give the same rows: `{id, date, start, minutes, note, approved, task, taskId, service, serviceId,
-project, budget, billable, billing}`.
+project, budget, billable, billing}`. A card in the Logged column leads with its task (what was logged), with the
+project as its colour stripe and, where the card is tall enough, its second line.
 
 - **API token** (Settings): Productive's REST API (`api.productive.io/api/v2`), with the organization id and your
   person id. Read/Write to log time.

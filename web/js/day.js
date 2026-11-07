@@ -396,8 +396,8 @@ function render() {
       const rz = x.s == null ? '' : '<i class="rz rz-t" data-rz="t" title="Drag to change the start"></i><i class="rz rz-b" data-rz="b" title="Drag to change the end"></i>';
       return `<div class="card logged" data-k="logged" data-i="${i}" style="--c:${color(x.project)};${place(x, ppm, 18)}"
         tabindex="0" role="button" aria-label="${esc(`Logged ${hm(x.s)}–${hm(x.e)}${x.fromClaudeCode ? ' from Claude Code' : ''}: ${x.project}${x.task ? ', ' + x.task : ''}, ${dur(x.minutes)}`)}"${x.fromClaudeCode ? ' title="Logged from Claude Code (Pulsar in Claude Code)"' : ''}>
-        <div class="row"><span class="t">${esc(x.project)}</span>${x.billable ? `<span class="bill" title="Billable${x.billing ? ': ' + esc(x.billing) : ''}">$</span>` : ''}<span class="m num">${dur(x.minutes)}</span></div>
-        ${h > 34 ? `<div class="d">${esc(x.task)}</div>` : ''}
+        <div class="row"><span class="t">${esc(x.task || x.project)}</span>${x.billable ? `<span class="bill" title="Billable${x.billing ? ': ' + esc(x.billing) : ''}">$</span>` : ''}<span class="m num">${dur(x.minutes)}</span></div>
+        ${h > 34 && x.task ? `<div class="d">${esc(x.project)}</div>` : ''}
         ${lines ? `<div class="n" style="-webkit-line-clamp:${lines}">${esc(x.note)}</div>` : ''}${rz}</div>`;
     }).join('') + repeatCache.map((x, i) => {
       const h = (x.e - x.s) * ppm, why = `Logged at about ${hm(x.at)} on ${x.days} days; ${x.seen} seen today. Click to log it.`;
