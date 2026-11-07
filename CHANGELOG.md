@@ -6,6 +6,11 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## 1.5.2 (2026-11-07)
+- Log the day: the confirm step shows every entry again, ticking a row keeps the list where it was, the Likely column stays beside it, and a row can create its task.
+- Signed with the Touch ID release key; the install line checks Pulsar.zip with it.
+- Writes Productive answers unclearly are held, never resent; pulsar_log on a long day answers in time; clock-change nights count real minutes.
+
 ## 1.5.1 (2026-11-07)
 - Two more release keys are trusted: a Touch ID key in the publisher's Mac, which signs the next releases, and an offline reserve.
 - Pulsar.zip is signed, and the install line checks it with the Mac's own openssl before it unpacks anything.
