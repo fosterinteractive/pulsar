@@ -79,8 +79,8 @@ older Safari, Pulsar opens in your browser instead.
   taking the keyboard from what you are doing.
 - **Updates**: when a new version is out, **Settings → Update** installs it in a few seconds; you never download
   Pulsar again. It installs nothing by itself. Now and then a release needs a newer Pulsar app (its window and
-  menus): **Update** then does that too, after the code, with one restart; on its own it is **Update the app** in
-  **Settings → Updates**. It downloads the app, checks it like an update and puts it in Applications; Pulsar quits and
+  menus): the button then says so, **Update to 1.x and restart**, and does the app too, after the code, with one
+  restart; when only the app is behind it reads **Update and restart**. It downloads the app, checks it like an update and puts it in Applications; Pulsar quits and
   opens again (an app older than 1.6 asks you to press Cmd+Q). If Pulsar
   cannot change the app in Applications (another account installed it), it shows the install line above instead.
 - **What changed**: [CHANGELOG.md](CHANGELOG.md), also under **Settings → Updates → Changelog**.

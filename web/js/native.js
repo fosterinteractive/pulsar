@@ -31,7 +31,11 @@
     send({action: 'signin'});
   }).observe(q('#signin'), {attributes: true, attributeFilter: ['open']});
 
-  /* ---------- "Reinstall Pulsar": a newer app than this window (pulsar/appupdate.py) ---------- */
+  /* ---------- a newer app than this window (pulsar/appupdate.py), through Settings' own Update button ----------
+     The button says when Pulsar restarts: "Update to X and restart" when the release also brings a new window (the
+     code first, then the app by itself once the new code has loaded: sessionStorage pulsar-update-app, set by
+     settings.js), "Update and restart" when only the app is behind, "Restart Pulsar" once the new app waits in
+     Applications. A window of 1.5 or older cannot quit by itself: there the person quits it (Cmd+Q). */
   function appOffer() {
     const u = typeof CONFIG !== 'undefined' && CONFIG ? CONFIG.update : null, a = u?.app;
     if (!u || !u.installed || !a || CONFIG.preview) return null;
@@ -39,53 +43,69 @@
     if (!a.min || !a.version || a.failed === a.version || !older(SHELL?.version || '0', a.min)) return null;
     return {version: a.version, mine: SHELL?.version || ''};
   }
-  function paintApp() {
-    const panel = q('#p-upd'), offer = appOffer();
-    let box = q('#app-reinstall');
-    if (!panel || !offer) { box?.remove(); return; }
-    if (!box) {
-      box = document.createElement('section');
-      box.id = 'app-reinstall';
-      box.dataset.k = 'reinstall app window launcher applications';
-      const upd = q('#updates');
-      upd ? upd.after(box) : panel.append(box);
-    }
-    if (box.dataset.busy) return;
-    const finish = SHELL ? 'Pulsar then quits and opens again by itself.'
-      : 'Then quit Pulsar (Cmd+Q): it opens again by itself, as the new app.';
-    box.innerHTML = offer.pending
-      ? `<h3>Pulsar app</h3><p class="status">Pulsar ${esc(offer.version)} is in Applications. ${SHELL ? '' : 'Quit Pulsar (Cmd+Q) to finish: it opens again by itself.'}</p>
-         ${SHELL ? '<div class="btnrow"><button type="button" class="btn primary" data-app-restart>Restart Pulsar</button></div>' : ''}`
-      : `<h3>Pulsar app</h3>
-         <p class="hint">The window and menus are new in ${esc(offer.version)}${offer.mine ? ` (this app is ${esc(offer.mine)})` : ''}. Updating the app restarts Pulsar once; settings and data stay.</p>
-         <p class="status" id="app-reinstall-msg" role="status" hidden></p>
-         <div class="btnrow"><button type="button" class="btn bordered" data-app-reinstall>Update the app</button></div>`;
+  let appBusy = false;
+  function appHint(text) {
+    let h = q('#app-hint');
+    if (!text) { h?.remove(); return; }
+    if (!h) { h = document.createElement('p'); h.className = 'hint'; h.id = 'app-hint'; q('#update-status')?.after(h); }
+    h.textContent = text;
   }
-  document.addEventListener('click', async ev => {
-    if (ev.target.closest('[data-app-restart]')) { send({action: 'quit'}); return; }
-    const btn = ev.target.closest('[data-app-reinstall]');
-    if (!btn) return;
-    const box = q('#app-reinstall'), msg = q('#app-reinstall-msg');
-    box.dataset.busy = '1'; btn.disabled = true; msg.hidden = false;
-    msg.textContent = 'Downloading and checking the new Pulsar app…';
+  function paintApp() {
+    const now = q('#update-now'), st = q('#update-status'), u = CONFIG?.update, offer = appOffer();
+    if (!now || !st || !u || appBusy) return;
+    delete now.dataset.app;
+    if (!offer) { appHint(''); return; }
+    q('#open-settings')?.classList.add('has-update');
+    if (offer.pending) {
+      st.textContent = `Pulsar ${offer.version} is in Applications.` + (SHELL ? '' : ' Quit Pulsar (Cmd+Q) to finish: it opens again by itself.');
+      appHint('');
+      if (SHELL) { now.hidden = false; now.textContent = 'Restart Pulsar'; now.dataset.app = 'restart'; }
+      return;
+    }
+    const after = SHELL ? 'Pulsar restarts once; settings and data stay.'
+      : 'Then quit Pulsar (Cmd+Q): it opens again by itself, as the new app. Settings and data stay.';
+    if (!now.hidden) {  // a newer release too (settings.js): the code first, then the app by itself
+      if (u.status !== 'ready' && SHELL) now.textContent = `Update to ${u.latest} and restart`;
+      appHint(`${u.latest} also brings a new window and menus. ${after}`);
+      return;
+    }
+    now.hidden = false; now.dataset.app = 'reinstall';
+    now.textContent = SHELL ? 'Update and restart' : 'Update the app';
+    if (!st.classList.contains('warn')) st.textContent = `A new Pulsar app is ready: ${offer.version}${offer.mine ? ` (this one is ${offer.mine})` : ''}.`;
+    appHint(`The window and menus are new. ${after}`);
+  }
+  async function reinstall(auto) {
+    const now = q('#update-now'), st = q('#update-status');
+    if (appBusy || !now || !st) return;
+    appBusy = true; now.disabled = true; q('#app-line')?.remove();
+    st.classList.remove('warn'); st.textContent = 'Downloading and checking the new Pulsar app…';
+    if (auto) toast('Updating the Pulsar app: Pulsar restarts in a moment.');
     const r = await postJSON('/api/update/app', {});
-    delete box.dataset.busy; btn.disabled = false;
+    appBusy = false; now.disabled = false;
     if (r.error) {
-      msg.textContent = r.error;
+      st.textContent = r.error; st.classList.add('warn');
+      if (auto) toast(`The Pulsar app was not updated: ${r.error}`, true);
       if (r.installLine) {
-        msg.insertAdjacentHTML('afterend', `<p class="hint">In Terminal, this line downloads Pulsar, checks its signature and puts it in Applications:</p>
-          <textarea class="app-line" readonly rows="4" style="width:100%;font:11px/1.4 ui-monospace,Menlo,monospace">${esc(r.installLine)}</textarea>
-          <div class="btnrow"><button type="button" class="btn bordered" data-app-copy>Copy the line</button></div>`);
+        st.insertAdjacentHTML('afterend', `<div id="app-line"><p class="hint">In Terminal, this line downloads Pulsar, checks its signature and puts it in Applications:</p>
+          <textarea readonly rows="4" style="width:100%;font:11px/1.4 ui-monospace,Menlo,monospace">${esc(r.installLine)}</textarea>
+          <div class="btnrow"><button type="button" class="btn bordered" data-app-copy>Copy the line</button></div></div>`);
       }
       return;
     }
-    if (SHELL) { msg.textContent = 'Pulsar quits and opens again as the new app…'; setTimeout(() => send({action: 'quit'}), 800); }
-    else msg.textContent = 'The new Pulsar is in Applications. Quit Pulsar (Cmd+Q) to finish: it opens again by itself.';
-    btn.hidden = true;
-  });
+    now.hidden = true; appHint('');
+    if (SHELL) { st.textContent = 'Pulsar quits and opens again as the new app…'; setTimeout(() => send({action: 'quit'}), 800); }
+    else st.textContent = 'The new Pulsar is in Applications. Quit Pulsar (Cmd+Q) to finish: it opens again by itself.';
+  }
+  // before settings.js's own click on Update (which installs the code): the app's two cases are this file's
+  document.addEventListener('click', ev => {
+    const b = ev.target.closest('#update-now');
+    if (!b?.dataset.app) return;
+    ev.stopPropagation(); ev.preventDefault();
+    if (b.dataset.app === 'restart') send({action: 'quit'}); else reinstall(false);
+  }, true);
   document.addEventListener('click', ev => {
     if (!ev.target.closest('[data-app-copy]')) return;
-    const t = q('#app-reinstall .app-line'); t.select();
+    const t = q('#app-line textarea'); t.select();
     try { document.execCommand('copy'); toast('Copied. Paste it in Terminal and press Return.'); } catch (e) {}
   });
   if (fn(window.paintUpdate)) {
@@ -93,12 +113,13 @@
     window.paintUpdate = function (u) {
       const out = paint.apply(this, arguments);
       paintApp();
-      const offer = appOffer();
+      const offer = appOffer(), go = q('#updprompt-go');
+      if (go) go.textContent = offer && !offer.pending && SHELL ? 'Update and restart' : 'Update';
       let asked = '';
       try { asked = sessionStorage.getItem('pulsar-update-app') || ''; } catch (e) {}
       if (asked) {  // the person clicked Update: the app follows by itself, one restart, no second click
         try { sessionStorage.removeItem('pulsar-update-app'); } catch (e) {}
-        if (offer && !offer.pending && SHELL) { setTimeout(() => q('[data-app-reinstall]')?.click(), 1500); return out; }
+        if (offer && !offer.pending && SHELL) { setTimeout(() => reinstall(true), 1500); return out; }
       }
       if (offer && !offer.pending) {  // once a day, a word outside Settings too
         let said = '';
@@ -106,7 +127,7 @@
         const day = new Date().toISOString().slice(0, 10);
         if (said !== day) {
           try { localStorage.setItem('pulsar-app-offer', day); } catch (e) {}
-          setTimeout(() => toast(`A new Pulsar app is ready: Settings, Updates, Update the app.`), 2500);
+          setTimeout(() => toast(`A new Pulsar app is ready: Settings, Updates, ${SHELL ? 'Update and restart' : 'Update the app'}.`), 2500);
         }
       }
       return out;

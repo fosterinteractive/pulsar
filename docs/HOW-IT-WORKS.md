@@ -1550,9 +1550,11 @@ sequenceDiagram
   needs a newer one says so in its signed `latest.json`: `app: {version, min, url, sha256}`, where `min` is
   `MIN_APP` in `pulsar/appupdate.py` and `sha256` that of the release's Pulsar.zip. The page compares `min` with the
   version the window injects (`window.PULSAR_APP`; a window of 1.5 or older injects none, and counts as older) and
-  offers **Update the app** in Settings, Updates (and once a day in a toast). After a click on **Update**, the page
-  remembers it (`sessionStorage` `pulsar-update-app`) and, once the new code has loaded, does the app as well by
-  itself: one click, one more restart. Only after such a click,
+  says so on Settings' own Update button (`web/js/native.js`; once a day also in a toast): **Update to X and
+  restart** when a newer release is there too, **Update and restart** when only the app is behind, **Restart
+  Pulsar** once the new app waits in Applications (a window of 1.5 or older reads **Update the app** and asks for
+  Cmd+Q). After a click on Update the page remembers it (`sessionStorage` `pulsar-update-app`) and, once the new code
+  has loaded, does the app as well by itself: one click, one more restart. Only after such a click,
   `POST /api/update/app` (page session only; `pulsar/appupdate.py`):
   1. refuses in Preview, from source, for an app that is not `com.fosterinteractive.pulsar`, for one macOS runs
      translocated, and for a version that did not start here before;
