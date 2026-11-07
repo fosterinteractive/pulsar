@@ -12,7 +12,8 @@
 #   ~/Library/Application Support/Pulsar/
 #     versions/<X.Y.Z>/   full copies of the code (pulsar.py, pulsar/, web/, README.md)
 #     current, previous   relative symlinks into versions/, switched atomically
-#     bad-versions        versions that failed to start, one per line; never switched to again
+#     bad-versions        versions that failed to start (or, from the updater, their self-test twice), one per line;
+#                         never switched to again
 #
 # The app carries one version (B). The first time, or when B is newer than the installed one (C), B is
 # copied into versions/ and becomes current, but only when a release signed it: Resources/app.manifest.json lists
@@ -99,7 +100,7 @@ fail_dialog() {
   local choice
   choice="$(dialog "$1
 
-The details are in the log: ~/Library/Logs/Pulsar.log" "Show log" "OK")"
+The details are in the log: ${LOG/#$HOME/~}" "Show log" "OK")"
   [ "$choice" = "Show log" ] && /usr/bin/open -a Console "$LOG"
   exit 1
 }
@@ -317,7 +318,7 @@ if [ -n "$PREVIEW_DIR" ]; then
     0) open_page; exit 0 ;;
     2) fail_dialog "Pulsar Preview could not start: another program is using port $PORT." ;;
   esac
-  fail_dialog "Pulsar Preview could not start. Its log is ~/Library/Logs/Pulsar-Preview.log."
+  fail_dialog "Pulsar Preview could not start."
 fi
 
 # 2. Install or upgrade from the app's own copy, only as a release signed it (install_bundled). Code changed after the

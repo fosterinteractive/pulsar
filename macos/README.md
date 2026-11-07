@@ -1,7 +1,7 @@
 # Pulsar.app (macOS)
 
 A double-clickable Pulsar for colleagues who never open Terminal. The app is a window (`PulsarWindow.swift`,
-about 400 lines, the Mac's own WebKit) and a bash launcher: the launcher installs the code the app carries and
+about 680 lines, the Mac's own WebKit) and a bash launcher: the launcher installs the code the app carries and
 starts it with the Mac's own Python, and the window shows the page. It needs macOS 12 Monterey or newer, Apple
 Silicon or Intel (macOS 11's developer tools come with Python 3.8, and Pulsar needs 3.9), and Safari 16.2 or
 newer for the window (older: the window hands the page to the default browser).
@@ -183,14 +183,15 @@ code>` instead of opening a browser; the window loads it and the page signs in. 
    not as signed, is not installed: a dialog says why, and C opens (or, with nothing installed, Pulsar stops). When C
    is newer (the app has updated itself since this bundle was built), C stays. Versions compare numerically (1.10.0
    > 1.9.0).
-3. **Already running?** If `/api/config` answers with C's version, or the server was not started by the app
+3. **Already running?** If `/api/version` answers with C's version and the server proves it holds this user's
+   key (`/api/whoami`, `is_ours`), or the server was not started by the app
    (for example `python3 pulsar.py` from a checkout, which is never stopped), it opens the page and exits. A
    server the app started with another version is asked to quit (`POST /api/quit`) and C starts instead. If
    another program holds the port, it says so and changes nothing.
 4. **Start.** It runs `python3 -B <real path of current>/pulsar.py --no-open --port 5610` with `nohup`, in a
    new session, so the server outlives the launcher. `-B` writes no `__pycache__`. Output is appended to
    `~/Library/Logs/Pulsar.log`, together with what the launcher decided.
-5. **Check and roll back.** It waits up to 15 seconds for `/api/config`, then opens the page. If the server
+5. **Check and roll back.** It waits up to 15 seconds for `/api/version` and `is_ours`, then opens the page. If the server
    exits or never answers and `previous` is another version, C goes into `bad-versions`, `current` goes back
    to `previous`, and that starts. Only if that fails too does a dialog point to the log. A server that exits 98
    (`pulsar.py`: the port is taken) is started again, five times a second apart; if the port stays taken, a dialog

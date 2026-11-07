@@ -1,7 +1,7 @@
 // Pulsar.app's window: Pulsar's page in a window of its own instead of a browser tab.
 //
 // This is the app's executable (build_app.sh compiles it to Pulsar.app/Contents/MacOS/Pulsar for Apple Silicon and
-// Intel). It runs the launcher, Contents/Resources/launcher.sh, with PULSAR_WINDOW=1: the launcher installs or
+// Intel). It runs the launcher, Contents/Resources/launcher.sh, with --window: the launcher installs or
 // upgrades the code, starts the server and prints "PULSAR_URL <address with a one-time sign-in code>" instead of
 // opening a browser. The window loads that address, so it is signed in at once.
 //
