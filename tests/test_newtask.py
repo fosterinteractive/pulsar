@@ -431,7 +431,9 @@ class DraftTest(unittest.TestCase):
         newtask._cache.clear()
         with mock.patch.object(productive, "_claude_binary", lambda: "/bin/claude-fake"), \
                 mock.patch.object(askclaude, "steps", lambda *a, **k: steps):
-            got = newtask.claude_draft("2026-10-15", self.ROWS, 0, [{"task": "Hero images", "project": "P"}], "P", run=run)
+            got = newtask.claude_draft("2026-10-15", self.ROWS, 0, [
+                {"task": "Hero images", "project": "P", "date": "2026-10-10"},
+                {"task": "Menu fixes from August", "project": "P", "date": "2026-08-20"}], "P", run=run)
         self.assertEqual((got["title"], got["description"]), ("Lists: numbering in Firefox", ""))
         self.assertIn("description had a file path", got["why"])
         [(argv, kw)] = runs
@@ -449,6 +451,30 @@ class DraftTest(unittest.TestCase):
         for said in ("Numbering restarts per list now.", "Lists: restart numbering per list", "Hero images", "from 10:00 to 11:00"):
             self.assertIn(said, kw["input"])
         self.assertNotIn("IMPORTANT!", kw["input"])
+        self.assertNotIn("Menu fixes from August", kw["input"])  # only the person's tasks of the last 30 days
+
+    def test_a_draft_naming_another_client_or_the_person_is_left_out(self):
+        """As for a note (askclaude.foreign_name): a client may read the task (review 4, A5)."""
+        def run_with(title, description):
+            def run(argv, **kw):
+                out = {"structured_output": {"title": title, "description": description}}
+                return subprocess.CompletedProcess(argv, 0, json.dumps(out), "")
+            return run
+        history = [{"task": "Hero images", "project": "Acme Support", "date": "2026-10-10"},
+                   {"task": "Login fixes", "project": "Globex Build", "date": "2026-10-11"}]
+        steps = [{"typed": "fix the lists", "reply": "Numbering restarts per list now."}]
+        with mock.patch.object(productive, "_claude_binary", lambda: "/bin/claude-fake"), \
+                mock.patch.object(askclaude, "steps", lambda *a, **k: steps), \
+                mock.patch.object(askclaude, "_person", lambda: "Nick Example"):
+            for title, desc, want in (("Lists: numbering for Globex", "Numbering fixed.", ("", "Numbering fixed.")),
+                                      ("Lists: numbering in Firefox", "Same fix as on Globex.", ("Lists: numbering in Firefox", "")),
+                                      ("Lists: numbering in Firefox", "Reviewed with Nick.", ("Lists: numbering in Firefox", "")),
+                                      ("Acme lists: numbering", "Numbering fixed.", ("Acme lists: numbering", "Numbering fixed."))):
+                newtask._cache.clear()
+                got = newtask.claude_draft("2026-10-15", self.ROWS, 0, history, "Acme Support", run=run_with(title, desc))
+                self.assertEqual((got["title"], got["description"]), want, (title, desc))
+                if want != (title, desc):
+                    self.assertIn("a name from another project", got["why"])
 
     def test_nothing_to_go_on_runs_nothing(self):
         def run(*a, **k):

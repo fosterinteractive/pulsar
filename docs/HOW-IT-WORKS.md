@@ -544,13 +544,18 @@ whether one fits is the person's call. It opens a small form over the dialog:
   rows, as the session note takes them. At once, on this Mac (`local_draft`): the first commit subject made then is
   the title, and all of them a list. With the Claude Code switch on, Claude then drafts both (`claude_draft`, with the
   model chosen for "New task", Haiku by default: 5.7) from the same rows' steps (what was typed, Claude's replies,
-  `askclaude.steps`), commits and session titles, with up to 8 titles of tasks logged to lately, the same project's first, as examples of the style. It runs as the session note
+  `askclaude.steps`), commits and session titles, with up to 8 titles of the person's own tasks of the last 30 days
+  (their own time entries; the same project's first) as examples of the style: a task's name is anyone's words in
+  Productive, so no other task's title goes to Claude. It runs as the session note
   does (5.7): no tools, no MCP server, none of the person's settings, auto memory off, a JSON schema. A draft replaces
-  only a field the person has not typed in. A meeting's title is the draft when the time was a meeting and no work was
-  seen in it; Claude is not asked then. The title goes through the note's checks (`guard_title`: no path, web address,
-  token, code, tool's name or remark on the time, one sentence). The description is checked line by line, cut at a
+  only a field the person has not typed in, and **Create in Productive** is off while Claude drafts and for a second
+  after its draft fills the form, so a click never sends text that changed under it. A meeting's title is the draft
+  when the time was a meeting and no work was seen in it; Claude is not asked then. The title goes through the note's
+  checks (`guard_title`: no path, web address, token, code, tool's name, sum of money, look-alike or invisible
+  character, or remark on the time, one sentence). The description is checked line by line the same way, cut at a
   sentence to 700 characters, and a sentence about the time itself ("the review time is logged as billable") is left
-  out.
+  out. Claude's title or description that names another client's project, or the person, is left out
+  (`askclaude.foreign_name`, as for a note).
 - **Status, estimate and service**, proposed for the place picked (`GET /api/task/fields`, `newtask.propose`), each
   with a line saying why, and editable. The form opens at once; they fill in when they arrive, and a status or service
   the person picked, or an estimate they typed, stays when the place changes (while the new place offers it). The
