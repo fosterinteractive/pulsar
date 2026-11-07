@@ -240,8 +240,8 @@ async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = 
   // inside the day: hm() would wrap 24:00 to 00:00. An entry shows the minute it starts in, as Productive does, and
   // its own length: the dialog never moves it by itself
   start = edit ? Math.max(0, Math.min(1439, Math.floor(start))) : Math.max(0, Math.min(1435, Math.round(start)));
-  minutes = Math.max(1, Math.min(1440 - start, Math.round(minutes)));
-  if (!edit && !exact) minutes = roundMinutes(date, start, minutes);
+  minutes = Math.max(1, Math.min(realMinutes(date, start, 1440), Math.round(minutes)));
+  if (!edit && !exact) minutes = roundMinutes(date, start, minutes);  // a drag to the minute stays as it was picked
   f.date.value = date; f.start.value = hm(start); f.minutes.value = minutes; f.note.value = note || '';
   if (edit) edit.orig = {start: f.start.value, minutes, note: f.note.value};
   logDrafted = drafted?.note && drafted.note === note ? drafted : null;
@@ -451,14 +451,14 @@ $('#log-new').onclick = () => {
     const a = Math.min(start, m), b = Math.max(start, m);
     Object.assign(sel.style, {top: a * ppm + 'px', height: Math.max(2, (b - a) * ppm) + 'px'});
     sel.dataset.a = a; sel.dataset.b = b;
-    sel.textContent = b > a ? `${hm(a)}–${hm(b)} · ${dur(b - a)}` : '';
+    sel.textContent = b > a ? `${hm(a)}–${hm(b)} · ${dur(realMinutes(state.date, a, b))}` : '';
   }
   lane.addEventListener('pointermove', move);
   lane.addEventListener('pointerup', () => {
     if (start == null) return;
     const a = +sel.dataset.a, b = +sel.dataset.b;
     sel.remove(); start = null;
-    if (b - a >= 1 && a >= 0 && b <= DAY_END) logStretch(a, b, true);  // day.js; the minutes dragged, not rounded
+    if (b - a >= 1 && a >= 0 && b <= DAY_END) logStretch(a, b, true);  // day.js: the minutes picked, never rounded
   });
   lane.addEventListener('pointercancel', () => { if (start == null) return; sel.remove(); start = null; });
 })();

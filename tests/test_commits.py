@@ -130,7 +130,7 @@ class Attach(unittest.TestCase):
                "SIGNATURE-----\n\nSigned by nobody\n").encode()
         sha = subprocess.run(["git", "-C", self.repo, "hash-object", "-t", "commit", "-w", "--stdin"], input=raw,
                              capture_output=True, check=True).stdout.strip().decode()
-        self.git("update-ref", "refs/heads/main", sha)
+        self.git("update-ref", "HEAD", sha)  # whatever the default branch is called (no system git settings here)
         subprocess.run(["git", "-C", self.repo, "log", "-1", "--format=%s"], capture_output=True)  # the trap, armed
         if not os.path.exists(marker):
             self.skipTest("this git does not run gpg.program for log.showSignature")

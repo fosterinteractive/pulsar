@@ -161,11 +161,13 @@ function leadFor(a, b, hint = []) {
 /* the log dialog for such a stretch: leadFor's tasks first, and the note drafted as for a Likely block, from that
    project's rows in it: Claude's pick's note, else your commits; then, with Claude Code on, Claude's note from the
    sessions, saying which project when others worked in the stretch too */
-function logStretch(a, b, exact = false) {  // exact: a drag picked these minutes, they are not rounded
+/* exact: minutes the person picked to the minute (a drag in the Logged column), never rounded to "Round entries to" */
+function logStretch(a, b, exact = false) {
   // the note at once from what the page knows (Claude's pick, the commits); range.js then works out what the stretch
   // holds (GET /api/range: meetings and work outside Claude too), leads with its main task and asks Claude for the note
   const hint = rulesInRange(a, b), {work} = stretchWork(a, b, hint), draft = work ? rowTasks(work.rows).draft : null;
-  openLog({start: a, minutes: b - a, hint, lead: leadFor(a, b, hint), note: draft?.note || '', drafted: draft, range: true, exact});
+  openLog({start: a, minutes: realMinutes(state.date, a, b), hint, lead: leadFor(a, b, hint), note: draft?.note || '',
+           drafted: draft, range: true, exact});
 }
 
 /* the active minutes inside [a, b): from the first active minute, as long as the activity was (not the slot) */
@@ -773,7 +775,7 @@ async function deleteEntry(x, btn) {
     if (Math.round(d.s) === Math.round(d.x.s) && Math.round(d.e) === Math.round(d.x.e)) { forgetHTML(lane); render(); return; }
     const r = d.card.getBoundingClientRect();
     // only the edge that moved changes: the other keeps its exact time (an entry's start can hold seconds)
-    askResize(d.x, d.s === d.x.s ? null : d.s, Math.round(d.e - d.s), {clientX: r.right - 8, clientY: r.top + 10});
+    askResize(d.x, d.s === d.x.s ? null : d.s, realMinutes(state.date, d.s, d.e), {clientX: r.right - 8, clientY: r.top + 10});
   });
   lane.addEventListener('pointercancel', () => { if (drag) { drag = null; forgetHTML(lane); render(); } });
   // the click that ends a drag must not open the card's popover over the question
@@ -783,7 +785,7 @@ async function deleteEntry(x, btn) {
 function askResize(x, start, minutes, at, overlap = null) {
   popEntry = x;
   const s = start ?? x.s;
-  openPop(`<h3>Change this entry?</h3><div class="sub">${hm(x.s)}–${hm(x.e)} → <b>${hm(s)}–${hm(s + minutes)}</b> · ${dur(minutes)}</div>
+  openPop(`<h3>Change this entry?</h3><div class="sub">${hm(x.s)}–${hm(x.e)} → <b>${hm(s)}–${hm(clockAfter(state.date, s, minutes))}</b> · ${dur(minutes)}</div>
     <p>${esc(x.task || x.project)}</p>
     ${overlap ? `<p class="sub warnish">It would overlap ${esc(overlap.map(o => `${o.start} ${dur(o.minutes)} ${o.project}`).join('; '))}.</p>` : ''}
     <div class="btnrow"><button class="btn primary sm" data-rz-yes data-start="${start ?? ''}" data-minutes="${minutes}" data-force="${overlap ? 1 : 0}">${overlap ? 'Change anyway' : 'Change'}</button>

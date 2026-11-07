@@ -131,6 +131,9 @@ def analyse(keep: dict, s: float, e: float, opts: dict | None = None) -> dict:
             "confidence": conf, "confidenceWords": dayplan.CONF_WORDS.get(conf, ""),
             "why": lead.get("why") or "", "source": lead.get("source") or "",
             "note": noted[0]["note"] if noted else "", "noteFrom": (noted[0].get("noteFrom") or "") if noted else "",
+            # Claude's pick of a task found by searching Productive: as Log the day, never logged in one click
+            "claudeFound": bool(tid) and any(claims[c].get("claudeFound") and str(claims[c].get("task") or "") == tid
+                                             for c in g["claims"]),
             "alts": [{"taskId": str(t), "title": names.get(str(t), ("", ""))[0], "project": names.get(str(t), ("", ""))[1],
                       "why": (lead.get("altWhy") or {}).get(t) or ""}
                      for t in lead.get("alts") or [] if t and str(t) != tid and names.get(str(t), ("", ""))[0]][:3],
@@ -146,9 +149,12 @@ def analyse(keep: dict, s: float, e: float, opts: dict | None = None) -> dict:
     for st, n, gk, w in split:
         g = by_gk[gk]
         kept[g["key"]] += w
+        # real minutes: the night the clocks go forward, the hour they skip is on the clock but never happened
+        n -= sum(max(0, min(st + n, ge) - max(st, gs)) for gs, ge in keep.get("gone") or [])
         entries.append({"s": st, "minutes": n, "start": _hm(st), "group": g["key"], "taskId": g["taskId"],
                         "title": g["title"], "project": g["project"], "label": g["label"], "kind": g["kind"],
-                        "note": g["note"], "noteFrom": g["noteFrom"], "confidence": g["confidence"], "why": g["why"]})
+                        "note": g["note"], "noteFrom": g["noteFrom"], "confidence": g["confidence"], "why": g["why"],
+                        "claudeFound": g["claudeFound"]})
     # mixed, as the split would make it: a short piece that joins its neighbour is part of it
     top = max(kept.values(), default=0) / (sum(kept.values()) or 1)
     mixed = len(kept) >= 2 and (top < MIXED_SHARE or sum(1 for w in kept.values() if w >= MIXED_MIN) >= 2)

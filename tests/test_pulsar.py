@@ -1013,6 +1013,13 @@ class AskClaudeTest(unittest.TestCase):
                          (os.environ["HOME"], os.environ["PATH"], "en_CA.UTF-8", "/Users/x/.claude-work"))
         self.assertEqual((env["ENABLE_CLAUDEAI_MCP_SERVERS"], env["CLAUDE_CODE_DISABLE_AUTO_MEMORY"]), ("false", "1"))
         self.assertTrue(set(env) <= set(askclaude_keep()) | {"ENABLE_CLAUDEAI_MCP_SERVERS", "CLAUDE_CODE_DISABLE_AUTO_MEMORY"})
+        # the list itself, written out here: one added to the code (NODE_OPTIONS runs code inside Claude Code's node,
+        # DYLD_* inside any program) must be added here too, on purpose
+        self.assertEqual(askclaude_keep(), ("HOME", "PATH", "USER", "LOGNAME", "SHELL", "LANG", "LC_ALL", "LC_CTYPE",
+                                            "TMPDIR", "TZ", "CLAUDE_CONFIG_DIR", "ANTHROPIC_API_KEY",
+                                            "CLAUDE_CODE_OAUTH_TOKEN", "HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY",
+                                            "https_proxy", "http_proxy", "no_proxy", "NODE_EXTRA_CA_CERTS",
+                                            "SSL_CERT_FILE"))
 
     def test_claude_codes_own_errors_are_said(self):
         from pulsar import askclaude
@@ -2722,6 +2729,15 @@ class GuardTest(unittest.TestCase):
             self.assertEqual((status, json_load(body)), (200, {"tool": "pulsar_day"}))
         with mock.patch.object(server, "api_settings", lambda body: {"ok": True}):
             self.assertEqual(post("/api/settings", {}, page)[0], 200)
+        stopped = []  # the launcher quits Pulsar with the key alone; this test's server is not shut down for it
+        with mock.patch.object(self.httpd, "shutdown", lambda: stopped.append(1)):
+            status, _, body = post("/api/quit", {}, key)
+            for _ in range(100):
+                if stopped:
+                    break
+                time.sleep(0.01)
+        self.assertEqual((status, json_load(body), stopped), (200, {"ok": True}, [1]))
+        self.assertIsNone(server.key_refusal("/api/quit", {}))
 
     def test_the_changelog_is_for_signed_in_pages(self):
         from pulsar import __version__
@@ -3211,9 +3227,6 @@ class SilentFailureTest(unittest.TestCase):
                         self.assertIn(words, server.api_estimates({"ids": "5"})["error"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class ReadOnlyKeychainTest(unittest.TestCase):
     """A read-only test server shares the keychain with the real Pulsar: it never saves or removes a secret there,
@@ -3304,3 +3317,7 @@ class PlainRefusalTest(unittest.TestCase):
         self.assertTrue(got.startswith("Productive refused the change:"))
         self.assertIn("(budget_limit_overrun)", got)
         self.assertEqual(productive.plain_refusal("something else", "it"), "Productive refused it: something else")
+
+
+if __name__ == "__main__":
+    unittest.main()

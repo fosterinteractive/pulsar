@@ -20,3 +20,5 @@
 #log-range .rg-note:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #log-range .rg-small { margin: 0 0 6px; }
 #log-range .rg-act { display: flex; gap: 8px; flex-wrap: wrap; }
+#log-range .rg-inc { display: flex; gap: 6px; align-items: baseline; font-size: 12px; color: var(--text); }
+#log-range .rg-why { color: var(--muted); }

@@ -180,6 +180,7 @@
           <p class="hint" id="claude-account"></p>
           <p class="hint" id="claude-deny"><b>Pulsar's folders are kept out:</b> deny rules in Claude Code's settings stop its file tools reading or changing Pulsar's key, sign-in code and settings, and the file commands it recognizes in a shell (cat, head, a redirection); a script that opens the files itself is stopped only with <a href="https://code.claude.com/docs/en/sandboxing" target="_blank" rel="noopener noreferrer">Claude Code's sandbox</a> on. Pulsar does not turn the sandbox on.</p>
           <label class="check"><input type="checkbox" name="claude_ask_productive"> Ask before any Claude Code session changes Productive</label>
+          <p class="hint warnish" id="claude-ask-off" hidden>Not in effect while “Use Claude Code with Pulsar” is off: the rules are added when you switch it on and Save.</p>
           <p class="hint">Adds “ask” rules to Claude Code's own settings for the Productive connection named “productive”. They apply to <b>every</b> Claude Code session on this Mac, not only to Pulsar: each one then asks you before it creates, changes or deletes anything in Productive. Off by default.</p>
         </section>
       </div>

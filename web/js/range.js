@@ -20,7 +20,7 @@ async function rangeOpen(r) {
   rangeDraw();
   if (!r) return;
   const ignore = typeof LD_IGNORE !== 'undefined' && LD_IGNORE;  // logday.js: a read-only test server's whole-day view
-  const res = await getJSON(`/api/range?date=${r.date}&s=${r.start}&e=${r.start + r.minutes}&source=${state.source}`
+  const res = await getJSON(`/api/range?date=${r.date}&s=${r.start}&e=${clockAfter(r.date, r.start, r.minutes)}&source=${state.source}`
     + (ignore ? '&ignore_logged=1' : '')).catch(() => null);
   if (rangeNow?.opened !== mine || mine !== logOpened || !logDlg.open) return;  // another dialog by now
   if (!res || res.error) return;  // the dialog works as it did: nothing to add
@@ -66,15 +66,18 @@ function rangeNote(res) {
 }
 
 /* the line under the note: what the stretch mixes, and the split, when it is worth it */
-const rgSpan = x => `${x.start}–${hm(x.s + x.minutes)}`;
+const rgSpan = x => `${x.start}–${hm(clockAfter(rangeNow?.res?.date || state.date, x.s, x.minutes))}`;  // real minutes
 const rgLoggable = x => x.taskId && x.serviceId && !x.done;
+/* as Log the day: a task Claude found by searching Productive, or a note Claude drafted, waits for a tick */
+const rgClaude = x => x.claudeFound || (x.noteFrom === 'claude' && x.note && !x.noteEdited);
+const rgSends = x => rgLoggable(x) && (x.include ?? !rgClaude(x));
 function rangeDraw() {
   const el = rgBox(), res = rangeNow?.res;
   const show = !!res?.mixed && !rangeNow.stale && res.split.length >= 2;
   el.hidden = !show;
   if (!show) { el.innerHTML = ''; return; }
   const kinds = res.groups.filter(g => g.split > 0).sort((p, q) => q.split - p.split);
-  const can = res.split.filter(rgLoggable);
+  const can = res.split.filter(rgLoggable), send = res.split.filter(rgSends);
   const line = `This range mixes ${kinds.length} kinds of work: ${kinds.map(g => `${esc(g.label)} ${dur(g.split)}`).join(', ')}.`;
   if (!rangeNow.open) {
     el.innerHTML = `<p class="rg-line">${line}${can.length >= 2 ? ` <button type="button" class="rg-link" data-rg-open>Split into ${res.split.length} entries?</button>` : ''}</p>`;
@@ -87,11 +90,14 @@ function rangeDraw() {
         <span class="rg-proj">${x.done ? 'logged' : !x.taskId ? 'log it on its own afterwards'
           : x.serviceId ? esc([x.project, x.service].filter(Boolean).join(' · ')) : esc(x.serviceProblem || 'no service')}</span></div>
       ${rgLoggable(x) ? `<input class="rg-note" data-rg-note="${i}" value="${esc(x.note || '')}" placeholder="Note"
-        aria-label="Note for ${rgSpan(x)}" autocomplete="off" spellcheck="true">` : ''}</li>`).join('')}</ol>
+        aria-label="Note for ${rgSpan(x)}" autocomplete="off" spellcheck="true">
+      <label class="rg-inc"><input type="checkbox" data-rg-inc="${i}"${rgSends(x) ? ' checked' : ''}> Log this one${
+        rgClaude(x) ? `<span class="rg-why"> · ${esc(x.claudeFound ? 'Claude found this task by searching Productive: check it.'
+          : 'Claude drafted the note: read it first.')}</span>` : ''}</label>` : ''}</li>`).join('')}</ol>
     <p class="rg-small">Each is checked like any entry: one that overlaps another stops the rest, nothing is forced.
       Notes filled in for you may reach clients; check them.</p>
-    <div class="rg-act"><button type="button" class="btn bordered sm" data-rg-log${rangeNow.busy || !can.length ? ' disabled' : ''}>Log ${
-      can.length === 1 ? 'this entry' : `these ${can.length} entries`}</button>
+    <div class="rg-act"><button type="button" class="btn bordered sm" data-rg-log${rangeNow.busy || !send.length ? ' disabled' : ''}>Log ${
+      send.length === 1 ? 'this entry' : `these ${send.length} entries`}</button>
       <button type="button" class="btn sm" data-rg-close>Keep one entry</button></div>`;
 }
 
@@ -103,7 +109,13 @@ rgBox().addEventListener('click', ev => {
 });
 rgBox().addEventListener('input', ev => {
   const i = ev.target.dataset?.rgNote;
-  if (i != null && rangeNow?.res) rangeNow.res.split[+i].note = ev.target.value;
+  if (i != null && rangeNow?.res) Object.assign(rangeNow.res.split[+i], {note: ev.target.value, noteEdited: true});
+});
+rgBox().addEventListener('change', ev => {
+  const i = ev.target.dataset?.rgInc;
+  if (i == null || !rangeNow?.res) return;
+  rangeNow.res.split[+i].include = ev.target.checked;
+  rangeDraw(); rgBox().querySelector(`[data-rg-inc="${i}"]`)?.focus();
 });
 /* Enter in a split note must not log the one entry of the dialog */
 rgBox().addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.matches('.rg-note') && !ev.metaKey && !ev.ctrlKey) ev.preventDefault(); });
@@ -114,7 +126,7 @@ for (const name of ['date', 'start', 'minutes'])
     logForm.elements[name].addEventListener(type, () => { if (rangeNow && !rangeNow.busy) { rangeNow.stale = true; rangeDraw(); } });
 
 async function rangeLogSplit() {
-  const res = rangeNow.res, mine = rangeNow.opened, todo = res.split.filter(rgLoggable);
+  const res = rangeNow.res, mine = rangeNow.opened, todo = res.split.filter(rgSends);
   if (!todo.length || rangeNow.busy) return;
   rangeNow.busy = true; rangeDraw();
   const main = [$('#log-save'), $('#log-next')];  // one way of logging at a time
@@ -134,7 +146,8 @@ async function rangeLogSplit() {
   const done = res.split.filter(x => x.done), left = res.split.filter(x => !x.done);
   if (res.date === state.date) refreshLogged();
   suggestCache = null;
-  const said = `Logged ${done.length} of ${res.split.length}. ${stop}.${unclear ? ' Pulsar did not hear back, so check the Logged column first.' : ''}`;
+  const said = `Logged ${done.length} of ${res.split.length}.${stop ? ` ${stop}.` : ' The rest wait for a tick, or a task.'}${
+    unclear ? ' Pulsar did not hear back, so check the Logged column first.' : ''}`;
   if (mine !== logOpened || !logDlg.open) return toast(stop ? said : `Logged ${done.length} entries.`, !!stop);  // closed meanwhile
   if (!stop && !left.some(rgLoggable)) {
     logDlg.close();
@@ -142,5 +155,5 @@ async function rangeLogSplit() {
     return toast(`Logged ${done.length} entries: ${done.map(x => `${rgSpan(x)} ${x.title}`).join('; ')}.${rest}`);
   }
   rangeDraw();
-  setLogMsg(said, true);
+  setLogMsg(said, !!stop);
 }

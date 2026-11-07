@@ -274,6 +274,60 @@ class RangeAPITest(unittest.TestCase):
         self.assertEqual([(p["kind"], p["label"], p["minutes"]) for p in res["parts"]], [("claude", "repo", 60)])
 
 
+class ClockChangeTest(unittest.TestCase):
+    """The night the clocks go forward, the hour they skip is on the page's clock but never happened: a split entry
+    across it is that much shorter, so it never runs into the next one (the fourth review, C10)."""
+
+    def test_a_split_entry_across_the_skipped_hour_counts_real_minutes(self):
+        def day(gone):
+            return {"items": [work(60, 300, app="Code")], "logged": [{"s": 140, "e": 160, "minutes": 20, "taskId": "33"}],
+                    "rows": [dict(row(60, 150, "acme"), tasks=["11"]), dict(row(150, 300, "globex"), tasks=["22"])],
+                    "gone": gone}
+        ctx = dayplan.learn("2026-03-08", [], {}, lambda d: 0)
+        got = {}
+        for name, gone in (("normal", []), ("spring", [{"s": 120, "e": 180}])):
+            keep: dict = {}
+            dayplan.plan(day(gone), ctx, OPTS, keep=keep)
+            got[name] = [(x["s"], x["minutes"], x["taskId"]) for x in ranges.analyse(keep, 60, 300, OPTS)["split"]]
+        self.assertEqual(got["normal"], [(60, 80, "11"), (160, 140, "22")])
+        self.assertEqual(got["spring"], [(60, 60, "11"), (180, 120, "22")])  # 01:00-03:00 on the clock is one hour
+
+    def test_the_page_counts_real_minutes_from_the_clock(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is not installed")
+        with open(os.path.join(WEB, "js", "core.js"), encoding="utf-8") as fh:
+            src = fh.read()
+
+        def body(name):  # one function of core.js, whole
+            i = src.index(f"function {name}(")
+            j, depth = src.index("{", i), 0
+            while True:
+                depth += {"{": 1, "}": -1}.get(src[j], 0)
+                if not depth:
+                    return src[i:j + 1]
+                j += 1
+        code = "\n".join(body(n) for n in ("validDate", "zoneOffset", "clockMoment", "realMinutes", "clockAfter"))
+        script = code + """
+const out = [];
+for (const [tz, d] of [['America/Toronto', '2026-03-08'], ['America/Toronto', '2026-11-01'], ['Europe/Kyiv', '2026-03-29'],
+                       ['America/Toronto', '2026-06-01']]) {
+  TZ = tz;
+  out.push([realMinutes(d, 90, 210), realMinutes(d, 0, 1440), clockAfter(d, 90, 60)].join(' '));
+}
+console.log(out.join(','));"""
+        got = subprocess.run([node, "-e", "let TZ;\n" + script], capture_output=True, text=True, timeout=30)
+        # Toronto spring: 01:30-03:30 is 60 min, the day 23 h; autumn: 180 min, 25 h; Kyiv spring (03:00 -> 04:00): 120
+        self.assertEqual(got.stdout.strip(), "60 1380 210,180 1500 150,120 1380 150,120 1440 150", got.stderr)
+        flow = self.read_js("flow.js")
+        self.assertIn("setMinutes(realMinutes(date, a, b))", flow)  # End sets real minutes
+        self.assertIn("realMinutes(state.date, a, b)", self.read_js("day.js") + self.read_js("log.js"))
+
+    def read_js(self, name):
+        with open(os.path.join(WEB, "js", name), encoding="utf-8") as fh:
+            return fh.read()
+
+
 class PageTest(unittest.TestCase):
     """The page side (web/js/range.js): small hooks in log.js, loaded after log.js and flow.js, never forcing a write."""
 
@@ -298,6 +352,13 @@ class PageTest(unittest.TestCase):
         day = self.read("js/day.js")
         self.assertRegex(day, r"function logStretch[\s\S]{0,600}range: true")  # every stretch goes through range.js
         self.assertIn("logBtn.dataset.likely == null) { logStretch(a, b)", day)  # rails, Activity blocks
+
+    def test_a_drag_to_the_minute_is_not_rounded_again(self):
+        """The Logged column drags in 1-minute steps: the dialog keeps those minutes, never "Round entries to"."""
+        log = self.read("js/log.js")
+        self.assertIn("logStretch(a, b, true)", log)
+        self.assertIn("if (!edit && !exact) minutes = roundMinutes(", log)
+        self.assertRegex(self.read("js/day.js"), r"function logStretch\(a, b, exact = false\)[\s\S]{0,900}range: true, exact\}")
 
     def test_the_split_logs_one_entry_at_a_time_and_never_forces(self):
         code = self.read("js/range.js")

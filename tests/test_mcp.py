@@ -6,6 +6,7 @@
 import io
 import json
 import os
+import re
 import socket
 import sys
 import tempfile
@@ -17,6 +18,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from isolation import SCRATCH as _SCRATCH  # noqa: E402,F401  first: nothing real is reachable (isolation.py)
+import isolation  # noqa: E402
 
 from pulsar import __version__, askclaude, config, dayplan, learn, likely, logbook, mcp, mcptools, productive, server  # noqa: E402
 
@@ -124,6 +126,12 @@ class McpTest(unittest.TestCase):
         today = mock.patch.object(mcptools, "_today", lambda tz_name: TODAY)  # DATE stays within the last 120 days
         today.start()
         self.addCleanup(today.stop)
+        # behind PULSAR_TESTS_OFFLINE: a test that writes fakes create_entry itself (_create); any other that reaches it
+        # is refused, and the run fails, whatever the code under test catches (isolation.RealWorld)
+        unfaked = mock.patch.object(productive, "create_entry",
+                                    lambda e, s: isolation._refuse("productive.create_entry in a test that did not fake it"))
+        unfaked.start()
+        self.addCleanup(unfaked.stop)
         mcptools._pending.clear()
         mcptools._calls.clear()
         server._just_logged.clear()  # the server's one-minute guard against the same entry twice
@@ -249,6 +257,24 @@ class McpTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {"PULSAR_MCP_SESSION_ID": "", "CLAUDE_CODE_SESSION_ID": ""}):
             data, err = self.call("pulsar_session", {"date": DATE})
         self.assertTrue(err)
+
+    def test_a_source_that_failed_is_said_never_dropped(self):
+        """A read tool that leaves a source out says so: an answer without the meetings is not "no meetings"."""
+        def broken(q):
+            raise productive.ProductiveError("Productive answered HTTP 503.")
+        with mock.patch.object(server, "api_calendar", lambda q: {"events": [], "error": "Google answered HTTP 500"}), \
+                mock.patch.object(server, "api_repeats", lambda q: {"repeats": [], "error": "Productive timed out."}), \
+                mock.patch.object(server.logbook, "record"):
+            day, _ = self.call("pulsar_day", {"date": DATE})
+            self.assertTrue(any(w.startswith("Meetings:") for w in day["warnings"]), day["warnings"])
+            self.assertTrue(any(w.startswith("Usual meetings:") for w in day["warnings"]), day["warnings"])
+            with mock.patch.object(server, "api_proposal", broken), mock.patch.object(server, "api_activity", broken):
+                sug, _ = self.call("pulsar_suggest", {"date": DATE, "start": "09:00", "minutes": 30})
+                plan, _ = self.call("pulsar_propose", {"date": DATE})
+        for source in ("Likely:", "Meetings:", "Usual meetings:", "Activity:"):
+            self.assertTrue(any(w.startswith(source) for w in sug["warnings"]), (source, sug["warnings"]))
+        self.assertTrue(any("HTTP 503" in w for w in plan["warnings"]), plan["warnings"])  # no repositories: said
+        self.assertNotIn("Google", json.dumps(day["warnings"]))  # in Pulsar's fixed words only
 
     def test_time_logged_with_no_start_is_never_offered_again_as_ready(self):
         """2 h of the session's task logged by duration only: no overlap check sees them, so the session's stretch on
@@ -969,6 +995,19 @@ class McpTest(unittest.TestCase):
         self.assertEqual(len(seen), 10)  # two dry runs and two writes, then two dry runs per client
         self.assertEqual(set(seen), {mcptools.VIA})
 
+    def test_pulsar_writes_only_for_claude_code_whatever_reached_it(self):
+        """The proxy refuses pulsar_log in other apps; Pulsar checks it again, for a request that did not come
+        through the proxy (a key holder can still say "claude-code" itself: HOW-IT-WORKS, Security)."""
+        with self._create():
+            dry, _ = self.call("pulsar_preview", self.ARGS)
+            for client in ("cursor", "", None, 5):
+                status, answer = mcptools.call("pulsar_log", {"args": {"code": dry["code"], "summary": dry["summary"]},
+                                                              "client": client})
+                self.assertEqual(status, 400, client)
+                self.assertIn("only in Claude Code", answer.get("error", ""), client)
+        self.assertEqual(self.day.created, [])
+        self.assertIn(dry["code"], mcptools._pending)  # not used up
+
     def test_rate_limit_and_dates(self):
         for i in range(10):
             code, _ = mcptools.call("pulsar_log", {"args": {"code": "0" * 16, "summary": "x"}, "client": "claude-code"})
@@ -1090,9 +1129,6 @@ class McpTest(unittest.TestCase):
         self.assertTrue(log["_meta"]["anthropic/requiresUserInteraction"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class ReasonAllowListTest(unittest.TestCase):
     """Whatever Pulsar's reason says, Claude Code gets a fixed phrase and digits: an instruction hidden in a meeting's
@@ -1105,11 +1141,15 @@ class ReasonAllowListTest(unittest.TestCase):
                              (f"you logged it while in {attack} (40%)", "repo"), (attack, ""), (attack, "nonsense"),
                              (f"logged while in {attack}: 2 h 5 min", "")]:
             got = mcptools.reason(text, source)
-            self.assertNotIn("IGNORE", got.upper().replace("IGNORE", "IGNORE") if False else got)
-            for word in ("IGNORE", "INSTRUCTIONS", "rm -rf", "run"):
-                self.assertNotIn(word.lower(), got.lower().replace("run", "") if word == "run" else got.lower(), (text, got))
+            for word in ("ignore", "instructions", "rm -rf", "previous"):
+                self.assertNotIn(word, got.lower(), (text, got))
+            self.assertIsNone(re.search(r"\brun\b", got.lower()), (text, got))  # "run" as a word, not inside one
             self.assertIn(got.split(" (")[0], set(mcptools.BY_SOURCE.values()) | {p for _, p in mcptools.BY_TEXT} | {"Pulsar's suggestion"})
 
     def test_names_lose_control_and_invisible_characters(self):
         self.assertEqual(mcptools.name_out("Fix\u202e the\x1b[31m search\n\nnow"), "Fix the[31m search now")
         self.assertEqual(len(mcptools.name_out("x" * 500)), 120)
+
+
+if __name__ == "__main__":
+    unittest.main()

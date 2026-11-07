@@ -28,10 +28,10 @@ logForm.elements.date.addEventListener('change', () => prepareNext(logForm.eleme
 /* after a successful log (log.js): remember it, and with Log and next open the next stretch after it (else the day's
    first one left). True when it took care of saying so; false leaves the toast to log.js. */
 function afterLog(date, start, minutes, said, andNext) {
-  const a = +start.slice(0, 2) * 60 + +start.slice(3, 5);
-  loggedHere.push({date, a, b: a + minutes, at: Date.now()});
+  const a = +start.slice(0, 2) * 60 + +start.slice(3, 5), b = clockAfter(date, a, minutes);  // its end on the clock
+  loggedHere.push({date, a, b, at: Date.now()});
   if (!andNext || date !== state.date) return false;
-  const left = openStretches(), s = left.find(x => x.a >= a + minutes) || left[0];
+  const left = openStretches(), s = left.find(x => x.a >= b) || left[0];
   if (!s) { toast(`${said} No active time is left without an entry.`); return true; }
   logStretch(s.a, s.b);  // day.js: the stretch's tasks and note, as from its rail
   const more = left.length - 1;
@@ -57,7 +57,8 @@ logForm.elements.start.addEventListener('input', ev => ev.target.removeAttribute
 /* End is Start plus Minutes, for the eye: only start and minutes are sent. A new Start keeps Minutes and moves End, so
    what is logged stays the same, as before End existed and as calendars do; End changes Minutes; Minutes moves End.
    Typed values are never rounded. An entry stays in its day: End is 24:00 at the latest. While typing, the other
-   fields follow each time the value is a time; a value left (Tab, Enter, a click away) is also checked and said. */
+   fields follow each time the value is a time; a value left (Tab, Enter, a click away) is also checked and said.
+   Minutes are real minutes, End a time on the clock: the night the clocks change they differ (core.js realMinutes). */
 /* an end as HH:MM, '' when it is not one; midnight is the end of the day, 24:00 (typed 24:00 or 00:00) */
 function endHHMM(v) {
   const t = /^24[:.h]?00$/.test(String(v ?? '').trim()) ? '24:00' : startHHMM(v);
@@ -69,7 +70,7 @@ let timesCut = false;   // Minutes were cut at midnight: the next Log stops once
 function syncTimes(from, left) {
   const f = logForm.elements, s = startHHMM(f.start.value), m = Number(f.minutes.value), e = endHHMM(f.end.value);
   if (!s) return;  // the start's own check says what is wrong with it
-  const a = clockMin(s), setMinutes = v => {  // as if typed, so whatever follows Minutes (a new overlap check) follows
+  const date = f.date.value, a = clockMin(s), most = realMinutes(date, a, 1440), setMinutes = v => {  // as if typed, so whatever follows Minutes (a new overlap check) follows
     if (+f.minutes.value === v) return;
     timesBusy = true; f.minutes.value = v; f.minutes.removeAttribute('aria-invalid');
     f.minutes.dispatchEvent(new Event('input', {bubbles: true})); timesBusy = false;
@@ -78,17 +79,17 @@ function syncTimes(from, left) {
   if (from === 'end') {
     const b = e ? clockMin(e) : -1;
     if (left && e) f.end.value = e;
-    if (b > a) { setMinutes(b - a); say = ''; }
+    if (b > a) { setMinutes(realMinutes(date, a, b)); say = ''; }
     else if (left) {
       bad = true;
       say = !e ? 'Write the end as HH:MM, 24-hour: 17:30, or 24:00 for midnight.' : b === a ? 'End is the same as Start.'
         : 'End is before Start. An entry cannot run past midnight: end it at 24:00 and log the rest on the next day.';
     }
   } else if (Number.isInteger(m) && m >= 1) {
-    if (a + m <= 1440) { f.end.value = a + m === 1440 ? '24:00' : hm(a + m); say = ''; }
-    else if (!left) { f.end.value = '24:00'; say = `An entry cannot run past midnight: from ${s}, ${dur(1440 - a)} at most.`; }
-    else { setMinutes(1440 - a); f.end.value = '24:00'; timesCut = true;
-      say = `An entry cannot run past midnight, so it now ends at 24:00: ${dur(1440 - a)}. Log the rest on the next day.`; }
+    if (m <= most) { const b = m === most ? 1440 : clockAfter(date, a, m); f.end.value = b >= 1440 ? '24:00' : hm(b); say = ''; }
+    else if (!left) { f.end.value = '24:00'; say = `An entry cannot run past midnight: from ${s}, ${dur(most)} at most.`; }
+    else { setMinutes(most); f.end.value = '24:00'; timesCut = true;
+      say = `An entry cannot run past midnight, so it now ends at 24:00: ${dur(most)}. Log the rest on the next day.`; }
   }
   if (say == null) return;
   if (!say) timesCut = false;  // typed again since the cut: it has been seen
@@ -103,7 +104,7 @@ for (const name of ['start', 'end', 'minutes'])
 function timesProblem() {
   const f = logForm.elements, s = startHHMM(f.start.value), m = Number(f.minutes.value);
   if (!s || !Number.isInteger(m) || m < 1) return '';
-  if (clockMin(s) + m > 1440) syncTimes('minutes', true);  // ⌘↩ sends without a change event: cut here
+  if (m > realMinutes(f.date.value, clockMin(s), 1440)) syncTimes('minutes', true);  // ⌘↩ sends without a change event: cut here
   const e = endHHMM(f.end.value);
   if (!timesCut && e && clockMin(e) > clockMin(s)) return '';
   if (!timesCut) syncTimes('end', true);  // says what is wrong with End

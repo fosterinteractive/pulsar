@@ -406,5 +406,19 @@ class SessionNote(unittest.TestCase):
         self.assertEqual(got["note"], "")
 
 
+class AskProductiveBoxTest(unittest.TestCase):
+    """The box does nothing while the switch is off (claudelink adds its rules only with it): the page says so."""
+
+    def test_the_box_waits_for_the_switch_and_says_so(self):
+        web = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
+        with open(os.path.join(web, "js", "settings.js"), encoding="utf-8") as fh:
+            code = fh.read()
+        with open(os.path.join(web, "index.html"), encoding="utf-8") as fh:
+            html = fh.read()
+        self.assertIn("f.claude_ask_productive.disabled = off;", code)
+        self.assertIn("form.elements.ask_claude.addEventListener('change', paintAskProductive)", code)
+        self.assertIn('id="claude-ask-off" hidden>Not in effect while', html)
+
+
 if __name__ == "__main__":
     unittest.main()
