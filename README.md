@@ -254,7 +254,9 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
 - **Log the day.** **Log the day** in the Logged column proposes the whole day at once, from your activity, Claude
   sessions, meetings, daily repeats, rules and what you logged before, and lists it in the side panel for review:
   each entry with its task, service, how sure Pulsar is and why. Unsure entries start unticked; you can change the
-  task, service, start, length and note, or remove an entry. Nothing is written until you confirm; then the entries
+  task, service, start, length and note, or remove an entry. **Tick all with a task** ticks every entry that has a
+  task (one whose task Claude found by searching Productive waits until you open it), and Enter on an open entry
+  ticks it and opens the next. Nothing is written until you confirm; then the entries
   go to Productive one at a time, stopping at the first one that is refused, and **Undo this run** deletes only what
   that run wrote. Notes come only from a meeting's title, your usual note for a repeat, your commits, or Ask
   Claude's draft. A meeting's title is a note only when you or someone of your own company (your Google account's

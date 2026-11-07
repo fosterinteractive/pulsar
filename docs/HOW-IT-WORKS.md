@@ -443,7 +443,11 @@ covered half of it at the zoom on screen: it changed with the zoom and could nam
 
 After the first group come **From your rules**, **You logged to these lately** (tasks of your last 30 days, with the
 service you used last) and **Assigned to you** (open tasks in active projects, the urgent ones first: overdue, due
-today, blocked or in progress, then the rest by due date). The search box searches every task you can see. The first
+today, blocked or in progress, then the rest by due date). The search box searches every task you can see, yours
+first (`server.rank_search`): tasks you logged to in the 30 days before the day being logged (newest first), then open
+tasks assigned to you, then everyone else's in Productive's order, closed tasks last; each of yours says "yours, logged
+lately" or "assigned to you", and one of yours whose title holds the words is added when Productive's first page left
+it out. In a company where everyone has a "Scrum - Name" task, yours is then first, not twelfth. The first
 task of the first group is picked for you; nothing is logged until you click.
 
 The service list is the task's project's services that take time on that date (`bookable_services`); the one you
@@ -757,6 +761,17 @@ note…"; picking another task clears the first, editing the note the second's m
 2026), 1 of Claude's 30 picks with a task was one not logged to in the 30 days before, and 25 carried a note. An empty answer is asked once more. Rows the person changed meanwhile are
 left alone. An answer that arrives while the confirm step is open waits until it closes (Back to the review); once a
 run has started it is only mentioned. Haiku did as well as Sonnet here, at a small part of the cost.
+
+**Reviewing.** A row needs a look when it is unsure ("check"), has no task or service, or carries something Claude did
+(a task it found by searching, a note it drafted, no task found). The "N to check" chip counts those not yet looked
+at: a row counts as checked once the person has opened it and it is ticked (one with no task or service cannot be
+ticked, so it stays until it has them). The chip opens the next such row after the open one, in time order, and reads
+"All checked" when none is left (`ldNeedsLook`, `ldCheck` in `logday.js`). **Tick all N with a task** ticks every row
+that has a task and a service, except one whose task Claude found by searching Productive (not one you logged to in the
+last 30 days) that nobody opened: that rule stays, for the reason above, and the panel says how many it held back.
+Enter on the open row (its line or its tick box) ticks it and opens the next row still to log; on a row with no task
+or service it opens the task picker. The confirm step is the check for all of them: it lists every entry with its
+note, marks a note Claude drafted ("Claude's note:") and a task Claude found by searching.
 
 **Writing.** The confirm step shows the totals, overlaps, unopened rows marked "check", and active time left
 unlogged; **Dry run** sends every row with `"dry": true` and shows exactly what would be sent. The confirm step keeps
@@ -1433,7 +1448,7 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `GET /api/calendar?date=[&fresh=1]` | Meetings. `GET /api/calendar/status` while signing in. |
 | `GET /api/repeats?date=&source=` | Repeats seen today. |
 | `GET /api/meeting-tasks?date=&uid=&title=` | A meeting's tasks. |
-| `GET /api/tasks/suggest?date=` | Recent and assigned tasks. `/api/tasks/search?q=`, `/api/tasks/estimates?ids=`. |
+| `GET /api/tasks/suggest?date=` | Recent and assigned tasks. `/api/tasks/search?q=&date=` (yours first), `/api/tasks/estimates?ids=`. |
 | `GET /api/services?task=&date=[&flags=1]` | Services that take time on that date; with `flags=1`, the task's ticket flags (5.3). |
 | `GET /api/report?from=&to=` | A range in numbers. |
 | `GET /api/logs?days=`, `/api/logs/download` | The error log. |

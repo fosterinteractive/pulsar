@@ -543,6 +543,7 @@ dialog#updprompt::backdrop { background: rgba(0,0,0,.35); }
 
 /* the log dialog's task notes: overdue, due today, blocked stand out (the words say it, the colour helps) */
 .pk .pk-warn { color: var(--gap-text); font-weight: 600; }
+.pk .pk-mine { color: var(--accent); font-weight: 600; }
 
 /* the changelog in Settings: closed until asked for, each release folds (settings.js) */
 #changelog { margin: 6px 0 8px; font-size: 12.5px; }
