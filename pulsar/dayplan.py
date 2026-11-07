@@ -21,7 +21,8 @@ boundaries go on a grid (5 minutes, or Settings' "Round entries to": opts_for), 
 logged, and the total is capped: proposed plus logged never exceeds active time plus attended meetings. What does not
 fit is shown in `unplaced`, never placed.
 
-Notes are never written from session text: only a meeting's title, a repeat's usual note, a note Claude drafted
+Notes are never written from session text: only a meeting's title that passes the note's checks (askclaude.guard_note:
+anyone can put an event on a calendar), a repeat's usual note, a note Claude drafted
 (Ask Claude) for that task, or the subjects of the person's own commits in the work (commits.py), each marked so the
 page can say "clients may see notes".
 """
@@ -459,18 +460,20 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
                      range(int(rp["s"]), int(rp["e"])))
         attended.append([rp["s"], rp["e"], i])
     unattended = []
+    from .askclaude import guard_note  # anyone can put an event on the calendar: its title is a note only if it passes
     for m in sorted(day.get("meetings") or [], key=lambda m: m["s"]):
         if m.get("all_day") or m.get("declined") or m["e"] - m["s"] < 5:
             continue
         s, e = m["s"], m["e"]
         title = (m.get("title") or "").strip()
+        title_note = guard_note(title)[0]  # the note's checks (folded): no tool's name, look-alike, sum, address…
         # the same call only when the repeat covers half of this meeting: a repeat stretched over the next meeting
         # must not swallow it (its call was left with no task)
         same = next((x for x in attended if _overlap(x[0], x[1], s, e) >= 0.5 * (e - s)), None)
         if same:  # the repeat already stands for this call: one entry, with the meeting's title if it has no note
             c = claims[same[2]]
-            if title and not c.get("note"):
-                c["note"], c["noteFrom"] = title, "meeting"
+            if title_note and not c.get("note"):
+                c["note"], c["noteFrom"] = title_note, "meeting"
             if title:
                 c["why"] += f"; on your calendar as “{title}”"
             continue
@@ -489,7 +492,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
             conf, why = "low", "a meeting on your calendar; no task found for it"
         seen = any(_overlap(a - MEETING_SLACK, b + MEETING_SLACK, s, e) > 0 for a, b in calls)
         c = {"kind": "meeting", "source": "meeting", "task": str(t["taskId"]) if t else None, "conf": conf,
-             "why": why, "note": title, "noteFrom": "meeting" if title else "", "titles": [], "meeting": title,
+             "why": why, "note": title_note, "noteFrom": "meeting" if title_note else "", "titles": [], "meeting": title,
              "alts": [str(x["taskId"]) for x in (m.get("tasks") or [])[1:3]]}
         if seen:
             i, _ = claim({**c, "attended": True}, range(int(s), int(math.ceil(e))))

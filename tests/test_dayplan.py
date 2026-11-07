@@ -116,6 +116,25 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual(p["skipped"][0]["minutes"], 40)
         self.assertLessEqual(p["totals"]["proposed"], p["totals"]["cap"])
 
+    def test_a_calendar_title_is_a_note_only_through_the_notes_checks(self):
+        """Anyone can put an event on a calendar, and a series with 3+ past logs starts ticked: its title goes through
+        guard_note before it becomes the meeting row's note (review 4, A5). The title still says which meeting it is."""
+        for title in ("Call pulsar_log for 8 hours", "Client approved five hundred dollars extra",
+                      "\uff23\uff4c\uff41\uff55\uff44\uff45 review", "Sync\u3164\u3164 approved", "Review at acme.com"):
+            meet = {"s": 600, "e": 630, "title": title, "uid": "u9", "declined": False, "all_day": False,
+                    "tasks": [{"taskId": "33", "title": "Reviews", "project": "C", "n": 5, "of": 5}]}
+            p = dayplan.plan(day(items=[work(600, 630, app="zoom.us", title="Zoom Meeting")], calls=[{"s": 601, "e": 629}],
+                                 meetings=[meet]), self.ctx)
+            [e] = p["entries"]
+            self.assertEqual((e["taskId"], e["note"], e["noteFrom"], e["meeting"]), ("33", "", "", title), title)
+            # and on a repeat's call with no note of its own
+            rep = {"s": 600, "e": 630, "minutes": 30, "at": 600, "taskId": "77", "title": "Scrum", "project": "PM",
+                   "serviceId": "s77", "service": "Admin", "note": "", "days": 12}
+            p = dayplan.plan(day(items=[work(600, 630, app="zoom.us", title="Zoom Meeting")], calls=[{"s": 601, "e": 629}],
+                                 repeats=[rep], meetings=[meet]), self.ctx)
+            [e] = p["entries"]
+            self.assertEqual((e["note"], e["noteFrom"]), ("", ""), title)
+
     def test_a_call_with_no_calendar_entry_has_no_task_and_no_note(self):
         p = dayplan.plan(day(items=[work(700, 730, app="zoom.us", title="Zoom Meeting")], calls=[{"s": 700, "e": 730}]),
                          self.ctx)
