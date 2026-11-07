@@ -336,13 +336,17 @@ async function loadServices(task) {
   }
   // the service you used last on this task; else one of the same name in a newer budget; else, for a task just
   // created (newtask.js), the one its form picked; else the task's own
-  const recent = (await suggestions(date)).recent?.find(t => t.taskId === task.taskId);
+  const sug = await suggestions(date), recent = sug.recent?.find(t => t.taskId === task.taskId);
+  // a task you never logged to: the service you used last in its project (the list is newest first)
+  const near = recent ? null : sug.recent?.find(t => t.project && t.project === task.project);
   if (logPicker.selected?.taskId !== task.taskId || f.date.value !== date) return;
   const pick = (own ? list.find(x => x.id === own.id) : null)
     || list.find(x => x.id === recent?.serviceId)
     || list.find(x => recent?.service && x.name.trim() === recent.service.trim())
     || list.find(x => task.serviceHint && x.id === task.serviceHint)
-    || list.find(x => x.id === r.task?.serviceId) || (list.length === 1 ? list[0] : null);
+    || list.find(x => x.id === r.task?.serviceId)
+    || list.find(x => x.id === near?.serviceId) || list.find(x => near?.service && x.name.trim() === near.service.trim())
+    || (list.length === 1 ? list[0] : null);
   f.service.innerHTML = (pick ? '' : '<option value="">Pick a service</option>') + list.map(x =>
     `<option value="${esc(x.id)}"${pick?.id === x.id ? ' selected' : ''}>${esc(x.name.trim())}${x.budget ? ' · ' + esc(x.budget) : ''}${
       x.billable ? ' · billable' : x.billable === false ? ' · not billable' : ''}${x.gone ? ' · takes no new time on this date' : ''}</option>`).join('');

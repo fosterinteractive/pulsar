@@ -373,7 +373,9 @@ async function ldSetTask(r, t) {
   const recent = (sug.recent || []).find(x => x.taskId === r.taskId);
   const pick = r.services.find(x => t.serviceHint && x.id === t.serviceHint) || r.services.find(x => x.id === recent?.serviceId)
     || r.services.find(x => recent?.service && x.name === recent.service.trim())
-    || r.services.find(x => x.id === list.task?.serviceId) || (r.services.length === 1 ? r.services[0] : null);
+    || r.services.find(x => x.id === list.task?.serviceId)
+    || (recent ? null : r.services.find(x => x.id === (sug.recent || []).find(y => y.project && y.project === r.project)?.serviceId))
+    || (r.services.length === 1 ? r.services[0] : null);
   if (pick) Object.assign(r, {serviceId: pick.id, service: pick.name, billable: pick.billable, budget: pick.budget});
   r.checked = !!(r.serviceId && !r.flags.includes('agent') && !r.flags.includes('unattended'));
   renderReview(); render();

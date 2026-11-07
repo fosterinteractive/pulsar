@@ -162,16 +162,18 @@ def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_L
             for k in row.get("k") or []:
                 sess[k][task] += m * w
             repo[row.get("p") or ""][task] += m * w
-    service, names, last = {}, {}, {}
+    service, names, last, project_service = {}, {}, {}, {}
     for r in sorted(before, key=lambda r: (r["date"], r.get("start") or 0)):
         t = str(r["taskId"])
         service[t] = (str(r.get("serviceId") or "") or None, r.get("service") or "")
+        if r.get("project"):  # the newest per project: a task never logged to yet takes it (pick_service)
+            project_service[r["project"]] = service[t]
         names[t] = {"task": r.get("task") or "", "project": r.get("project") or ""}
         last[t] = r["date"]
     lo30 = (day0 - timedelta(days=RECENT_DAYS)).strftime("%Y-%m-%d")
     recent = [t for t, d in sorted(last.items(), key=lambda kv: kv[1], reverse=True) if d >= lo30]
     never = {p for p in seen if p and seen[p] >= 60 and logged[p] / seen[p] < 0.1}
-    return {"sess": sess, "repo": repo, "service": service, "names": names, "recent": recent, "never_logged": never,
+    return {"sess": sess, "repo": repo, "service": service, "project_service": project_service, "names": names, "recent": recent, "never_logged": never,
             "skip": set(WORD.findall((person or "").lower()))}
 
 
@@ -835,9 +837,10 @@ def _entry(m: dict, s: int, e: int, names: dict) -> dict:
 
 # ---- the service: the one last used on the task, if it still takes time on that date ------------------------------
 
-def pick_service(services: list, last_id=None, last_name: str = "", task_service=None):
-    """The service you used last on the task; else one of the same name (a newer budget); else the task's own; else
-    the only one. None when it has to be picked (the log dialog does the same)."""
+def pick_service(services: list, last_id=None, last_name: str = "", task_service=None, project_last=None):
+    """The service you used last on the task; else one of the same name (a newer budget); else the task's own; else,
+    for a task you never logged to, the one you used last in its project (`project_last`: (id, name)); else the only
+    one. None when it has to be picked (the log dialog does the same)."""
     by = {str(s["id"]): s for s in services}
     if last_id and str(last_id) in by:
         return by[str(last_id)]
@@ -847,6 +850,13 @@ def pick_service(services: list, last_id=None, last_name: str = "", task_service
             return same[0]
     if task_service and str(task_service) in by:
         return by[str(task_service)]
+    if project_last and not (last_id or last_name):
+        pid, pname = project_last
+        if pid and str(pid) in by:
+            return by[str(pid)]
+        same = [s for s in services if pname and (s.get("name") or "").strip() == pname.strip()]
+        if same:
+            return same[0]
     return services[0] if len(services) == 1 else None
 
 
@@ -1002,7 +1012,8 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
         e["title"] = e["title"] or task.get("title") or ""
         e["project"] = e["project"] or task.get("project") or ""
         last_id, last_name = ctx["service"].get(e["taskId"], (None, ""))
-        svc = pick_service(b.get("services") or [], e.get("serviceId") or last_id, last_name, task.get("serviceId"))
+        svc = pick_service(b.get("services") or [], e.get("serviceId") or last_id, last_name, task.get("serviceId"),
+                           ctx.get("project_service", {}).get(e["project"]))
         e["services"] = [{"id": x["id"], "name": (x.get("name") or "").strip(), "budget": x.get("budget") or "",
                           "billable": x.get("billable")} for x in b.get("services") or []]
         if svc:

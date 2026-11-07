@@ -23,6 +23,7 @@ function sgRowFor(s) {
 }
 
 async function sgAsk() {
+  if (SG.asking) return;  // the button stays live while it turns (a disabled one would be dimmed), so a second click waits
   const d = LD.date;
   SG.asking = true; SG.note = ''; renderReview();
   const ans = await postJSON('/api/dayplan/review', {date: d, source: state.source, ...(LD_IGNORE ? {ignore_logged: true} : {})});
@@ -71,7 +72,9 @@ function sgRowHTML(r) {
 function sgHead() {
   const can = CONFIG?.likely?.askClaude && CONFIG.likely.claudeFound;
   const model = {haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus'}[(CONFIG?.claude?.uses || []).find(u => u.id === 'review')?.model] || 'Claude';
-  const btn = can && !LD.writing ? `<button type="button" class="btn sm bordered" id="sg-ask"${SG.asking ? ' disabled' : ''}>${CLAUDE_MARK.split('<span')[0]}${SG.asking ? 'Reviewing…' : SG.items.some(s => s.source === 'claude') ? 'Review again' : 'Review with Claude'}</button>` : '';
+  // while Claude reviews, the button wears Ask Claude's ring, beams and glow (ask.css)
+  const anim = SG.asking ? '<span class="ask-ring" aria-hidden="true"><span class="ask-beam"></span><span class="ask-flash"></span></span><span class="ask-glow" aria-hidden="true"></span>' : '';
+  const btn = can && !LD.writing ? `<button type="button" class="btn sm bordered${SG.asking ? ' asking' : ''}" id="sg-ask"${SG.asking ? ' aria-disabled="true"' : ''}>${anim}${CLAUDE_MARK.split('<span')[0]}${SG.asking ? 'Reviewing…' : SG.items.some(s => s.source === 'claude') ? 'Review again' : 'Review with Claude'}</button>` : '';
   const line = SG.asking ? `${model} is reviewing the day with FI's rules (about a minute). You can review meanwhile.` : SG.note;
   const open = SG.items.filter(s => s.state === 'open' && (!s.row || sgRowFor(s))).length;
   return `<div class="sg-head">${btn}${line ? `<p class="rv-ask" role="status">${esc(line)}</p>` : ''}

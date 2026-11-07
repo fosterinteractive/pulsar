@@ -53,6 +53,22 @@ def day(**kw):
     return {**base, **kw}
 
 
+class ProjectServiceTest(unittest.TestCase):
+    """dayplan.pick_service: a task never logged to takes the service last used in its project, before "pick one";
+    the task's own service and the one used on the task itself still come first."""
+
+    S = [{"id": "1", "name": "AI Research"}, {"id": "2", "name": "Meetings"}]
+
+    def test_a_new_task_takes_the_projects_last_service(self):
+        self.assertEqual(dayplan.pick_service(self.S, project_last=("2", "Meetings"))["id"], "2")
+        self.assertEqual(dayplan.pick_service(self.S, project_last=("99", "AI Research"))["id"], "1")  # by name
+        self.assertIsNone(dayplan.pick_service(self.S))  # nothing to go by: picked by hand
+
+    def test_the_tasks_own_history_and_service_come_first(self):
+        self.assertEqual(dayplan.pick_service(self.S, "1", "AI Research", None, ("2", "Meetings"))["id"], "1")
+        self.assertEqual(dayplan.pick_service(self.S, task_service="1", project_last=("2", "Meetings"))["id"], "1")
+
+
 class PlannerTest(unittest.TestCase):
     def setUp(self):
         self.ctx = history_for({"Fix the importer": "11", "Hero video": "22"})

@@ -6,6 +6,10 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- A task you never logged to takes the service you used last in its project, in the log dialog and in Log the day.
+- Log the day's "Review with Claude" turns like Ask Claude while Claude reviews the day.
+
 ## 1.5.3 (2026-11-07)
 - A bridge release: copies older than 1.5.1, which ignored 1.5.2 ("not signed with the release key"), update to this one and from then on trust the Touch ID key too. No other change.
 

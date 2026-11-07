@@ -258,7 +258,8 @@ def with_services(res: dict, ctx: dict, bookable) -> None:
         x["title"] = x.get("title") or task.get("title") or ""
         x["project"] = x.get("project") or task.get("project") or ""
         last_id, last_name = (ctx.get("service") or {}).get(tid, (None, ""))
-        svc = dayplan.pick_service(b.get("services") or [], last_id, last_name, task.get("serviceId"))
+        svc = dayplan.pick_service(b.get("services") or [], last_id, last_name, task.get("serviceId"),
+                                   (ctx.get("project_service") or {}).get(x["project"]))
         if svc:
             x["serviceId"], x["service"] = str(svc["id"]), (svc.get("name") or "").strip()
             x["budget"], x["billable"] = svc.get("budget") or "", svc.get("billable")

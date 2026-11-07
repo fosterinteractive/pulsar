@@ -23,65 +23,65 @@
 }
 
 /* the parts ask.js puts in the button; .colhead span would make every span a muted block, so reset that here */
-#ask-claude span:not(.vh) { overflow: visible; font-size: inherit; color: inherit; }
-#ask-claude .ask-lab { display: inline-grid; vertical-align: top; }
+:is(#ask-claude, #sg-ask) span:not(.vh) { overflow: visible; font-size: inherit; color: inherit; }
+:is(#ask-claude, #sg-ask) .ask-lab { display: inline-grid; vertical-align: top; }
 /* one label goes, then the other comes: never both at once */
-#ask-claude .ask-lab > span { grid-area: 1 / 1; display: inline-flex; align-items: center; justify-content: center;
+:is(#ask-claude, #sg-ask) .ask-lab > span { grid-area: 1 / 1; display: inline-flex; align-items: center; justify-content: center;
   transition: opacity .22s ease .14s, visibility 0s; }
-#ask-claude .ask-busy, #ask-claude.asking .ask-idle { opacity: 0; visibility: hidden; transition: opacity .14s ease, visibility 0s .14s; }
-#ask-claude.asking .ask-busy { opacity: 1; visibility: visible; transition: opacity .22s ease .14s, visibility 0s; }
+:is(#ask-claude, #sg-ask) .ask-busy, :is(#ask-claude, #sg-ask).asking .ask-idle { opacity: 0; visibility: hidden; transition: opacity .14s ease, visibility 0s .14s; }
+:is(#ask-claude, #sg-ask).asking .ask-busy { opacity: 1; visibility: visible; transition: opacity .22s ease .14s, visibility 0s; }
 /* after an answer the mark's last flash shows first */
-#ask-claude.ask-done .ask-busy { transition: opacity .14s ease .36s, visibility 0s .5s; }
-#ask-claude.ask-done .ask-idle { transition: opacity .22s ease .44s, visibility 0s; }
-#ask-claude .ask-busy > span:not(.vh) { display: inline-flex; align-items: center; }
-#ask-claude .ask-busy .cl-mark { margin-right: 4px; }
+:is(#ask-claude, #sg-ask).ask-done .ask-busy { transition: opacity .14s ease .36s, visibility 0s .5s; }
+:is(#ask-claude, #sg-ask).ask-done .ask-idle { transition: opacity .22s ease .44s, visibility 0s; }
+:is(#ask-claude, #sg-ask) .ask-busy > span:not(.vh) { display: inline-flex; align-items: center; }
+:is(#ask-claude, #sg-ask) .ask-busy .cl-mark { margin-right: 4px; }
 
 /* a narrow column puts the button under the title (style.css); it still holds its own ring and glow */
-@container (max-width: 230px) { .colhead #ask-claude { position: relative; top: auto; right: auto; } }
+@container (max-width: 230px) { .colhead :is(#ask-claude, #sg-ask) { position: relative; top: auto; right: auto; } }
 
 /* the glow sits behind the button, which is filled with the panel's colour: a halo around it, not a tint inside.
    The header holds the glow's layer, so the board's own background never covers it. */
 .colhead.likelycol { isolation: isolate; }
-#ask-claude:is(.asking, .ask-done, .ask-stop), #ask-claude:is(.asking, .ask-done, .ask-stop):hover { background: var(--panel); }
-#ask-claude.asking { color: var(--text); border-color: rgb(var(--ask-v) / .3); cursor: progress; }
+:is(#ask-claude, #sg-ask):is(.asking, .ask-done, .ask-stop), :is(#ask-claude, #sg-ask):is(.asking, .ask-done, .ask-stop):hover { background: var(--panel); }
+:is(#ask-claude, #sg-ask).asking { color: var(--text); border-color: rgb(var(--ask-v) / .3); cursor: progress; }
 
 /* the edge: a ring the width of the border, through which a square of two comet beams turns */
-#ask-claude .ask-ring { position: absolute; inset: -1px; border-radius: 6px; padding: 1.5px; pointer-events: none;
+:is(#ask-claude, #sg-ask) .ask-ring { position: absolute; inset: -1px; border-radius: 6px; padding: 1.5px; pointer-events: none;
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
-#ask-claude .ask-beam, #ask-claude .ask-flash { position: absolute; display: block; opacity: 0; }
-#ask-claude .ask-beam { left: 50%; top: 50%; width: 160%; aspect-ratio: 1; transform: translate(-50%, -50%);
+:is(#ask-claude, #sg-ask) .ask-beam, :is(#ask-claude, #sg-ask) .ask-flash { position: absolute; display: block; opacity: 0; }
+:is(#ask-claude, #sg-ask) .ask-beam { left: 50%; top: 50%; width: 160%; aspect-ratio: 1; transform: translate(-50%, -50%);
   transition: opacity .5s ease;
   /* clockwise, so each head leads: a long fading tail, a bright head, then nothing */
   background: conic-gradient(transparent 0 110deg, rgb(var(--ask-c) / 0) 110deg, rgb(var(--ask-c) / .85) 168deg,
     rgb(var(--ask-ch)) 176deg, transparent 178deg 290deg, rgb(var(--ask-p) / 0) 290deg, rgb(var(--ask-p) / .85) 348deg,
     rgb(var(--ask-ph)) 356deg, transparent 358deg); }
-#ask-claude.asking .ask-beam { opacity: 1; }
-#ask-claude:is(.asking, .ask-done, .ask-stop) .ask-beam { animation: ask-turn 3.2s linear infinite; }
-#ask-claude .ask-flash { inset: 0;
+:is(#ask-claude, #sg-ask).asking .ask-beam { opacity: 1; }
+:is(#ask-claude, #sg-ask):is(.asking, .ask-done, .ask-stop) .ask-beam { animation: ask-turn 3.2s linear infinite; }
+:is(#ask-claude, #sg-ask) .ask-flash { inset: 0;
   background: linear-gradient(90deg, rgb(var(--ask-c)), rgb(var(--ask-v)) 50%, rgb(var(--ask-p))); }
 
 /* the glow behind: violet at the heart, cyan and pink to either side, breathing slowly */
 /* every gradient fades out before the element's edge, so the halo has no sides */
-#ask-claude .ask-glow { position: absolute; display: block; inset: -9px -14px; z-index: -1; pointer-events: none; opacity: 0;
+:is(#ask-claude, #sg-ask) .ask-glow { position: absolute; display: block; inset: -9px -14px; z-index: -1; pointer-events: none; opacity: 0;
   background: radial-gradient(28% 50% at 28% 50%, rgb(var(--ask-c) / var(--ask-glow)), transparent),
     radial-gradient(28% 50% at 72% 50%, rgb(var(--ask-p) / var(--ask-glow)), transparent),
     radial-gradient(closest-side, rgb(var(--ask-v) / var(--ask-glow-v)) 40%, transparent); }
-#ask-claude.asking .ask-glow { animation: ask-glow-in .6s ease-out both, ask-breathe 4.8s ease-in-out .6s infinite; }
+:is(#ask-claude, #sg-ask).asking .ask-glow { animation: ask-glow-in .6s ease-out both, ask-breathe 4.8s ease-in-out .6s infinite; }
 
 /* Claude's mark: still between beams, then a flash and an eighth of a turn as one passes (its eight rays make an
    eighth of a turn look the same, so the turns add up without a jump). A beam crosses the left edge, where the mark
    sits, at about 26 % and 76 % of a turn: twice a turn, peaking about halfway through each half. */
-#ask-claude.asking .ask-busy .cl-mark { animation: ask-twinkle 1.6s linear infinite; }
+:is(#ask-claude, #sg-ask).asking .ask-busy .cl-mark { animation: ask-twinkle 1.6s linear infinite; }
 
 /* the end: a bloom in the logo's colours (an answer with picks), or a quiet fade (none, an error, another day) */
-#ask-claude.ask-done .ask-flash { animation: ask-ring-flash .9s ease-out both; }
-#ask-claude.ask-done .ask-glow { animation: ask-bloom .9s cubic-bezier(.15, .7, .3, 1) both; }
-#ask-claude.ask-done .ask-busy .cl-mark { animation: ask-spark .5s ease-out both; }
-#ask-claude.ask-stop .ask-glow { animation: ask-out .5s ease-out both; }
+:is(#ask-claude, #sg-ask).ask-done .ask-flash { animation: ask-ring-flash .9s ease-out both; }
+:is(#ask-claude, #sg-ask).ask-done .ask-glow { animation: ask-bloom .9s cubic-bezier(.15, .7, .3, 1) both; }
+:is(#ask-claude, #sg-ask).ask-done .ask-busy .cl-mark { animation: ask-spark .5s ease-out both; }
+:is(#ask-claude, #sg-ask).ask-stop .ask-glow { animation: ask-out .5s ease-out both; }
 
 /* hidden window: nothing turns (ask.js sets this) */
-#ask-claude.ask-paused :is(.ask-beam, .ask-glow, .cl-mark) { animation-play-state: paused !important; }
+:is(#ask-claude, #sg-ask).ask-paused :is(.ask-beam, .ask-glow, .cl-mark) { animation-play-state: paused !important; }
 
 /* the Likely header says what is going on while it works, in place of its summary: same line, same size */
 .colhead .ask-status { display: none; color: color-mix(in srgb, rgb(var(--ask-v)) 45%, var(--muted)); }
@@ -122,13 +122,18 @@
 /* Reduce motion: nothing turns or breathes. A still ring in the logo's colours and a still glow say it is working;
    the status line says what; the end and the lit blocks only fade. */
 @media (prefers-reduced-motion: reduce) {
-  #ask-claude .ask-beam { display: none; }
-  #ask-claude.asking .ask-flash { opacity: .7; }
-  #ask-claude.asking .ask-glow { animation: none; opacity: .8; }
-  #ask-claude.asking .ask-busy .cl-mark, #log-note-hint.drafting::before { animation: none; }
-  #ask-claude.ask-done .ask-flash { animation: ask-out .5s ease-out both; }
-  #ask-claude.ask-done .ask-glow { animation: ask-out .5s ease-out both; }
-  #ask-claude.ask-done .ask-busy .cl-mark, .card.likely.ask-lit .pick .cl-mark { animation: none; }
+  :is(#ask-claude, #sg-ask) .ask-beam { display: none; }
+  :is(#ask-claude, #sg-ask).asking .ask-flash { opacity: .7; }
+  :is(#ask-claude, #sg-ask).asking .ask-glow { animation: none; opacity: .8; }
+  :is(#ask-claude, #sg-ask).asking .ask-busy .cl-mark, #log-note-hint.drafting::before { animation: none; }
+  :is(#ask-claude, #sg-ask).ask-done .ask-flash { animation: ask-out .5s ease-out both; }
+  :is(#ask-claude, #sg-ask).ask-done .ask-glow { animation: ask-out .5s ease-out both; }
+  :is(#ask-claude, #sg-ask).ask-done .ask-busy .cl-mark, .card.likely.ask-lit .pick .cl-mark { animation: none; }
   .card.likely.ask-lit::after { transform: none; background: rgb(var(--ask-v) / .1);
     animation: ask-wash 1.2s ease-out both; }
 }
+
+/* Log the day's "Review with Claude" (js/ldreview.js) wears the same ring, beams and glow while Claude reviews the day */
+.sg-head { isolation: isolate; }
+#sg-ask { position: relative; }
+#sg-ask.asking .cl-mark { animation: ask-twinkle 1.6s linear infinite; }
