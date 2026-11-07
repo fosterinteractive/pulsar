@@ -250,7 +250,8 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   Pulsar's away with it). Only fosterinteractive.com accounts can sign in.
 - **Change what you logged.** Click an entry in Logged: **Edit** opens it in the log dialog, **Delete** asks first
   (Productive keeps deleted entries in its Recycle Bin). Drag an entry's top or bottom edge to make it start or end
-  earlier or later; Pulsar asks before it changes anything. Pulsar does not refuse an approved entry, because a
+  earlier or later; Pulsar asks before it changes anything. After a delete or a drag, **Undo** in the note at the
+  bottom puts it back. Pulsar does not refuse an approved entry, because a
   budget without an approval step approves every entry at once and you can still change it. Where an approver
   approved it, Productive refuses the change and Pulsar shows Productive's reason.
 - **Log the day.** **Log the day** in the Logged column proposes the whole day at once, from your activity, Claude

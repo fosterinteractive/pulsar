@@ -621,3 +621,5 @@ header, .colhead, #axis, .lane, aside h2, .seg, .btn, button, .tabs, .rv-h, .rv-
 #keysdlg dt { text-align: right; white-space: nowrap; }
 #keysdlg dd { margin: 0; color: var(--muted); }
 kbd { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; background: var(--panel); color: var(--text); }
+.toast.act.on { pointer-events: auto; }
+.toast .toast-act { flex: none; margin-left: 4px; }

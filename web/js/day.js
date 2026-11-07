@@ -772,8 +772,19 @@ async function deleteEntry(x, btn) {
   const r = await postJSON('/api/entry/delete', {id: x.id, date: state.date, seen: seenOf(x)});
   closePop();
   if (r.error) { toast(r.error, true); refreshLogged(); return; }
-  toast(`Deleted ${dur(x.minutes)} of ${x.task || x.project}.`);
+  // Undo logs it again, as it was (a new entry: the deleted one stays in Productive's Recycle Bin). Not for an entry
+  // with no start or a formatted note, which the page cannot write back as it was.
+  const back = x.s != null && x.taskId && x.serviceId && !x.noteRich;
+  toast(`Deleted ${dur(x.minutes)} of ${x.task || x.project}.${back ? '' : " It is in Productive's Recycle Bin."}`, false,
+        back ? {label: 'Undo', run: () => undoDelete(x, state.date)} : null);
   refreshLogged();
+}
+async function undoDelete(x, date) {
+  const r = await postJSON('/api/log', {date, start: hm(Math.floor(x.s)), minutes: x.minutes, taskId: x.taskId,
+                                        serviceId: x.serviceId, note: x.note || ''});
+  if (date === state.date) refreshLogged();
+  if (r.error || r.overlap) return toast(r.error || 'Not logged again: the time is taken by another entry now.', true);
+  toast(`Logged again: ${hm(Math.floor(x.s))}, ${dur(x.minutes)}, ${x.task || x.project}.`);
 }
 /* drag the top or bottom edge of a logged card: 1-minute steps, the card follows, then "Change to …?" */
 (function resizeEntries() {
@@ -828,7 +839,15 @@ async function saveResize(btn, force) {
   if (r.overlap) { const at = btn.getBoundingClientRect(); askResize(x, start, minutes, {clientX: at.left, clientY: at.top - 60}, r.overlap); return; }
   closePop();
   if (r.error) { toast(r.error, true); refreshLogged(); return; }
-  const s = start ?? x.s;
-  toast(`Changed to ${hm(s)}–${hm(s + minutes)}, ${dur(minutes)}.`);
+  const s = start ?? x.s, d = state.date;
+  // Undo puts the start and the length back as they were (the server checks the entry is still as just changed)
+  const undo = async () => {
+    const back = await postJSON('/api/entry/update', {id: x.id, date: d, ...(start == null ? {} : {start: hm(Math.floor(x.s))}),
+      minutes: x.minutes, seen: {...seenOf(x), start: hm(Math.floor(s)), minutes}});
+    if (d === state.date) refreshLogged();
+    if (back.overlap) return toast(`Not changed back: it would overlap ${back.overlap.map(o => `${o.start} ${o.project}`).join(', ')}.`, true);
+    toast(back.error ? back.error : `Back to ${hm(x.s)}–${hm(x.e)}, ${dur(x.minutes)}.`, !!back.error);
+  };
+  toast(`Changed to ${hm(s)}–${hm(s + minutes)}, ${dur(minutes)}.`, false, {label: 'Undo', run: undo});
   refreshLogged();
 }

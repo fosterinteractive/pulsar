@@ -312,12 +312,15 @@ const CLAUDE_MARK = '<svg class="cl-mark" viewBox="0 0 16 16" aria-hidden="true"
   + '<span class="vh">Claude suggests: </span>';
 /* a short note at the bottom after a refresh: what changed in the logged time */
 let toastTimer;
-function toast(text, warn = false) {
+/* action: {label, run} adds a button (Undo): the note then stays 10 seconds, and the button works once */
+function toast(text, warn = false, action = null) {
   if (signedOut) return;  // the sign-in notice says it all
   const t = $('#toast');
-  t.innerHTML = `<span class="ic">${warn ? '!' : '✓'}</span><span>${esc(text)}</span>`;
-  t.classList.toggle('warn', warn); t.classList.add('on');
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), warn ? 7000 : 3500);
+  t.innerHTML = `<span class="ic">${warn ? '!' : '✓'}</span><span>${esc(text)}</span>`
+    + (action ? `<button type="button" class="btn sm bordered toast-act">${esc(action.label)}</button>` : '');
+  t.classList.toggle('warn', warn); t.classList.toggle('act', !!action); t.classList.add('on');
+  if (action) t.querySelector('.toast-act').onclick = ev => { ev.currentTarget.disabled = true; t.classList.remove('on'); action.run(); };
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), action ? 10000 : warn ? 7000 : 3500);
 }
 function loggedChange(before, after) {
   if (after.error) return {text: `Logs not updated: ${after.error}`, warn: true, changed: false};
