@@ -12,7 +12,8 @@ normal use; a session with full access to the computer can get around any confir
 
 - **Day**: one time axis with up to four columns: your meetings (Meetings, once Google Calendar is connected), what
   was on screen (Activity), what you most likely worked on (Likely, for Claude Code users), and your Productive
-  entries (Logged). A yellow rail marks active time with no entry, a hatched rail time away from the computer, and a
+  entries (Logged). A yellow rail marks active time with no entry, a hatched rail a pause or time away (named, never proposed
+  for logging), and a
   dashed card an entry you log at this time most days. On the side: work time against your daily target, totals per
   project and budget, and the day's tasks against their estimates.
 - **Report**: today, this week (where it opens), last week, this or last month, 30 days, or any range up to 93 days: logged against active time by day, time by project, top apps and sites,

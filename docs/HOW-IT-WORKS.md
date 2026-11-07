@@ -327,7 +327,8 @@ Both readers return the same items: `{s, e, app, title, host, url, cat, icon}`, 
 
 The column groups items into blocks per zoom slot (1 to 60 minutes): each slot shows the window with most time in it,
 and equal neighbours join (`activityBlocks` in `day.js`). Away time is drawn as a hatched rail on the column's edge,
-above the blocks, because a 30-minute block can hide a 20-minute break.
+above the blocks, because a 30-minute block can hide a 20-minute break, and named (Pause, Away, Off) with its length
+at the first place in it no block covers.
 
 ### 4.2 Logged (`pulsar/productive.py`)
 
@@ -480,7 +481,6 @@ It opens from many places, each with the time already filled in:
 |---|---|---|
 | Dragging in the Logged column | the dragged stretch; note as for a stretch (below) | as for a stretch |
 | The yellow rail (active, not logged) | the stretch; note as for a stretch | as for a stretch |
-| The hatched rail (away) | the stretch; note as for a stretch | as for a stretch |
 | An Activity block, **Log this time** | its active minutes; note as for a stretch | as for a stretch |
 | A Likely block, **Log this time** | the block; note = Claude's draft, if it wrote one | "For this work": Claude's pick, task links, learned tasks |
 | A meeting, **Log this time** | the meeting; note = its title | "For this meeting" |
@@ -1452,7 +1452,9 @@ question) and cannot tell when inside it the work happened.
   right edge. A click, or Enter, opens the log dialog on the stretch with its Likely tasks and note (5.1, "A
   stretch"). Closing the dialog gives the rail its focus back; closed from the keyboard (Escape, ⌘↩), the rail shows
   the focus ring, a blue outline around the amber line, until something else is clicked.
-- **Hatched rail**: away from the computer, on the Activity column's left edge; a click logs it the same way.
+- **Hatched rail**: a pause, away or off (under an hour, up to three hours, longer), on the Activity column's left
+  edge, named with its length where no card covers it. A click only says what it is: away time is never proposed
+  for logging; an entry for it is added by hand.
 - **Dragging in the Logged column**: from an empty spot, up or down, in 1-minute steps (across entries too); letting
   go opens the log dialog on that stretch with those minutes, never rounded, which says what the stretch holds and
   offers a split when it mixes work

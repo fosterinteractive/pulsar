@@ -254,6 +254,9 @@ function likelyBlocks(entries, Z, end) {
   return blocks;
 }
 
+/* away from the computer, by length (server.py away()): under an hour, up to three hours, longer */
+const AWAY_WORD = {pause: 'Pause', away: 'Away', off: 'Off'};
+
 /* the agents' background work (sessions.py): one thin dashed rail per stretch of minutes some agent ran while other
    work was in front, with the repositories and their minutes in its title. Never a card: the minutes are the work in
    front's. */
@@ -356,15 +359,22 @@ function render() {
     setText($('#h-act'), problem ? problem : !total && !other ? 'No activity recorded' : `${src} · ${dur(total)}`);
     $('#h-act').classList.toggle('warn', !!problem);
     // away from the computer: a hatched rail on the column's left edge, above the cards (a 30-minute card can hide a
-    // 20-minute break), and its length in words where no card covers it. A click logs it (a call away from the desk).
-    const covered = (a, b) => blocksCache.some(k => k.start * Z < b && k.end * Z > a);
+    // 20-minute break), named by its kind and length at the first place in it no card covers. Never proposed for
+    // logging: a click only says what it is (its own logging is the person's, by hand).
+    const labelAt = (a, b) => {
+      const need = 16 / ppm, spans = blocksCache.map(k => [k.start * Z, Math.max(k.end * Z, k.start * Z + 20 / ppm)])
+        .sort((p, q) => p[0] - q[0]);
+      let t = a;
+      for (const [s0, e0] of spans) { if (e0 <= t) continue; if (s0 >= t + need) break; t = Math.max(t, e0); }
+      return t + need <= b ? t : null;
+    };
     const awayHTML = (act.away || []).map(x => {
       const kind = x.kind || (x.off ? 'off' : 'away');
-      const h = (x.e - x.s) * ppm, len = dur(x.e - x.s), word = kind === 'off' ? 'Off' : kind === 'pause' ? 'Pause' : 'Away';
-      return `<div class="awayband ${kind}" data-a="${Math.round(x.s)}" data-b="${Math.round(x.e)}" style="top:${x.s * ppm}px;height:${h}px"
-        title="${word} from the computer ${hm(x.s)}–${hm(x.e)}, ${len}. Click to log it." tabindex="0" role="button"
-        aria-label="${word} ${hm(x.s)}–${hm(x.e)}, ${len}: log this time"></div>`
-        + (h >= 18 && !covered(x.s, x.e) ? `<div class="awaylabel" style="top:${x.s * ppm + 4}px">${word} · ${len}</div>` : '');
+      const h = (x.e - x.s) * ppm, len = dur(x.e - x.s), word = AWAY_WORD[kind] || 'Away', at = labelAt(x.s, x.e);
+      return `<div class="awayband ${kind}" data-a="${Math.round(x.s)}" data-b="${Math.round(x.e)}" data-kind="${kind}" style="top:${x.s * ppm}px;height:${h}px"
+        title="${word} ${hm(x.s)}–${hm(x.e)}, ${len}: not proposed for logging" tabindex="0" role="button"
+        aria-label="${word} ${hm(x.s)}–${hm(x.e)}, ${len}, not proposed for logging"></div>`
+        + (at != null ? `<div class="awaylabel" style="top:${at * ppm + 2}px">${word} · ${len}</div>` : '');
     }).join('');
     setHTML(laneAct, (blocksCache.length ? blocksCache.map((b, i) => {
       const x = {s: b.start * Z, e: b.end * Z};
@@ -585,7 +595,14 @@ function openPop(html, ev) {
   pop.style.top = Math.max(12, Math.min(ev.clientY - 20, innerHeight - r.height - 12)) + 'px';
 }
 document.addEventListener('click', ev => {
-  const logBtn = ev.target.closest('[data-log-a], .gaprail, .awayband');
+  const band = ev.target.closest('.awayband');
+  if (band) {  // a pause or time away: what it is, and no offer to log it
+    const a = +band.dataset.a, b = +band.dataset.b, word = AWAY_WORD[band.dataset.kind] || 'Away';
+    openPop(`<div class="ph"><div><h3>${word}</h3><div class="sub">${hm(a)}–${hm(b)} · ${dur(b - a)} without input</div></div></div>
+      <p>Not counted as work, and never proposed for logging. To log it anyway, add an entry by hand.</p>`, ev);
+    return;
+  }
+  const logBtn = ev.target.closest('[data-log-a], .gaprail');
   if (logBtn) {
     let a = +(logBtn.dataset.logA ?? logBtn.dataset.a), b = +(logBtn.dataset.logB ?? logBtn.dataset.b);
     if (logBtn.dataset.likely != null) {  // a Likely block: its own minutes, not the slots it spans at this zoom

@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Pauses and time away are named on the day ("Pause · 12 min", "Away · 1h 20m") wherever no card covers them, and a click on one only says what it is: Pulsar never offers to log away time.
 - Update also updates the Pulsar app when the window has changed: one click, one restart, and the button says so ("Update to 1.6.4 and restart"). No separate app box in Settings > Updates any more.
 
 ## 1.6.3 (2026-11-07)
