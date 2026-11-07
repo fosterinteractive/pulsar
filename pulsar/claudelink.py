@@ -16,7 +16,7 @@ On, it does three things, so nothing else needs setting up:
    can also remove the rules from the settings file. They are a speed bump for Claude's own tools, not a wall.
 A second setting, off by default, "Ask before any Claude Code session changes Productive", adds "ask" rules for the
 create, update, delete and action tools of the Productive server named "productive": every Claude Code session then
-asks before each such change, not only Pulsar's, so it is the person's choice. Pulsar 1.2 added them with the switch;
+asks before each such change, not only Pulsar's, so it is the person's choice. Pulsar 1.3 and 1.4 added them with the switch;
 tidy() takes back the ones Pulsar added unless that setting is on.
 Off, the switch takes away what it added, and only that: rules the person had already are never removed. A server
 named "pulsar" that Pulsar did not add (another command, or its own env) is left as it is.
@@ -247,7 +247,7 @@ def remove_rules(added: list, denied: list = ()) -> str | None:
 
 
 def tidy(settings: dict) -> dict | None:
-    """Take back the Productive ask rules this copy added (Pulsar 1.2 added them with the switch), unless the person
+    """Take back the Productive ask rules this copy added (1.3 and 1.4 added them with the switch), unless the person
     chose "Ask before any Claude Code session changes Productive". Only the ones its own list says it added: a rule
     the person had is never touched. Run when Pulsar starts and when Settings are saved. None when nothing changed,
     else {"rulesAdded": the list to keep, "message"}."""
@@ -345,8 +345,8 @@ def disconnect(settings: dict) -> dict:
 
 
 def tidy_saved() -> None:
-    """tidy() on the saved settings, when Pulsar starts: a copy updated from 1.2 takes back the Productive rules it
-    added. Never stops Pulsar from starting."""
+    """tidy() on the saved settings, when Pulsar starts: a copy updated from 1.3 or 1.4 takes back the Productive rules
+    they added. Never stops Pulsar from starting."""
     from . import logbook
     try:
         got = tidy(config.load())

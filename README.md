@@ -6,7 +6,9 @@ Your working day as your computer saw it, next to what you logged in Productive.
 what, and which active time has no entry yet. It runs on your own computer, and window titles never leave it. Parts
 of your Claude Code sessions go to Anthropic only if you switch on Claude Code in Settings (see below).
 It writes to Productive only when you ask it to, and each time you confirm first: logging time, changing or deleting
-an entry, Log the day and its Undo, or a Claude Code session logging time for you.
+an entry, Log the day and its Undo, creating a task, or a Claude Code session logging time for you. That is so in
+normal use; a session with full access to the computer can get around any confirmation, as with any other app (see
+**Only you can use your Pulsar** below).
 
 - **Day**: one time axis with up to four columns: your meetings (Meetings, once Google Calendar is connected), what
   was on screen (Activity), what you most likely worked on (Likely, for Claude Code users), and your Productive
@@ -70,7 +72,7 @@ older Safari, Pulsar opens in your browser instead.
   click **+** under *Open at Login* and choose Pulsar. It then starts when you log in and opens its window.
 - **Updates**: when a new version is out, **Settings → Update** installs it in a few seconds; you never download
   Pulsar again. It installs nothing by itself.
-- **What changed**: [CHANGELOG.md](CHANGELOG.md), also under **Settings → Version and updates → Changelog**.
+- **What changed**: [CHANGELOG.md](CHANGELOG.md), also under **Settings → Updates → Changelog**.
 - **Stop it**: close the window or press Cmd+Q. Nothing keeps running in the background. (If Pulsar went to your
   browser because Safari is too old, it keeps running after you close the tab; logging out stops it.)
 - **If it says it could not start**: click **Show log** and send what it shows to the person who shared
@@ -141,12 +143,13 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   ActivityWatch after its AFK timeout (3 minutes by default; 30 is closer to how people work). The day view's
   Activity column can switch tracker; each Report day uses the one that saw more of it.
 - **If Productive is unreachable**, the day view and the report show the last copy fetched for each day, and say so.
-  A read that Productive drops without answering is tried once more; time you log is never sent twice.
+  A read that Productive drops without answering is tried up to twice more; time you log is never sent twice.
 - **Only you can use your Pulsar.** It listens on 127.0.0.1 only. Its data and actions need a session key that only
   your account can read (`~/.config/pulsar/secret`); the app signs its window in when it opens. Other
   websites, other accounts on the Mac and containers (Docker, DDEV) get nothing. Programs you run yourself are
   another matter, a Claude Code session included: they can read that key. With the key alone Pulsar only answers
-  Pulsar in Claude Code's tools (the same cut-down answers, never window titles, meetings or notes) and quits; its one
+  Pulsar in Claude Code's tools (the same cut-down answers, never window titles, meetings or the notes of logged
+  entries) and quits; its one
   write is a previewed new entry, never over another one, shown as "from Claude Code" in the Logged column. Reading
   the day as the page shows it, changing or deleting an entry, settings and updates need Pulsar's window. A program
   set on it could still get further (for example by signing a window in itself), so treat a session in bypass mode
@@ -168,7 +171,7 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   light around it while it loads, then lets go with a small flash; the refresh button plays a short one. In the
   Pulsar window the page really bends around it: the window draws it with Core Image on the graphics card, so it stays
   smooth on any Mac (a Pulsar.app downloaded before 1.0.12 shows the version without the bend; download Pulsar.zip
-  again to get it). In a browser it is the version without the bend. Turn it off in **Settings → Version and updates**; it is off anyway while macOS has
+  again to get it). In a browser it is the version without the bend. Turn it off in **Settings → Updates**; it is off anyway while macOS has
   **Reduce motion** on.
 - **Likely, for Claude Code users.** Pulsar reads your Claude Code sessions (`~/.claude/projects`, on this Mac
   only) and shows, minute by minute, which session you were most likely working in: the one whose title your editor
@@ -189,8 +192,9 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
     log today?" or "log the time of this session". The session reads your day from Pulsar and shows the entries;
     Claude Code asks you before each write, showing Pulsar's own summary of it. One write may hold up to 40
     entries, so one yes can log a whole day: read the summary. Pulsar must be open.
-  - **Claude Code asks first** before Pulsar's log tool, and its file tools are kept out of Pulsar's folders (an ask
-    rule and deny rules in `~/.claude/settings.json`; a backup of that file is kept beside it). The deny rules stop
+  - **Claude Code asks first** before Pulsar's log tool, and its file tools are kept out of Pulsar's settings
+    folders, which hold its key, sign-in code and settings (an ask rule and deny rules in `~/.claude/settings.json`;
+    a backup of that file is kept beside it). Pulsar's cache and the window's own data are not covered. The deny rules stop
     Claude Code's file tools and the file commands it recognizes in a shell; a script is stopped only with Claude
     Code's sandbox on.
   - **Ask before any Claude Code session changes Productive** (a separate box, off by default): ask rules for the
@@ -203,7 +207,12 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
     to 15 of your messages (400 characters each) with Claude's reply at the end of each step (900 characters), up to
     10 commit subjects, and up to 5 of your earlier notes on its likely tasks. Also the tasks you logged to in the
     last 30 days, with their projects and minutes. Window titles, other apps and meetings are not sent.
-  - A note: the same for that one block.
+  - A note: the same for that one block. With the switch on the log dialog asks for one by itself for any stretch
+    you pick in the Day view (a drag, a rail, **+ Log**, **Log and next**, an Activity block), from the session that
+    holds most of it.
+  - A new task's draft: opening **Create a task** asks Haiku (or the model you pick) at once for a title and a
+    description, from that time's messages, Claude's replies and your commits, the session titles, and up to 8 of
+    your recent task titles. Nothing is created until you click **Create in Productive**.
   - Logging from a session: what the session reads from Pulsar becomes part of that session, like anything else you
     show Claude Code: your entries' times, projects and tasks (not their notes), unlogged time, the session's own
     title and note drafts. Never window titles, other sessions or meeting titles.
@@ -212,7 +221,7 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
 
   **What it costs.** Your Claude usage, not money to Pulsar. Each Ask Claude run may cost at most $0.25 (Haiku),
   $0.75 (Sonnet) or $2 (Opus). When Claude answers with no picks, Pulsar asks once more, so one Ask Claude click may
-  cost up to twice that; the cost shown is the last run's. **Log the day** runs Ask Claude by itself when the switch
+  cost up to twice that; the cost shown is what both runs cost together. **Log the day** runs Ask Claude by itself when the switch
   is on and some entries are unsure. A day with Sonnet has cost about $0.10 to $0.25. A note may cost at most $0.10 with Haiku
   ($0.30 with Sonnet, $0.80 with Opus) and usually costs under half a cent. Asking again after Pulsar restarted, or
   after the day's blocks changed, asks Claude again and costs again.
@@ -226,7 +235,9 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   your last four weeks in Productive. When the tracker sees a call near that time (Zoom, Meet, Teams, a Slack huddle),
   the Logged column shows it as a dashed card with the task, the usual note and the call's length. One click opens it
   in the log dialog; nothing is logged until you click **Log in Productive**.
-- **No task for the work yet.** The log dialog can create one, drafted from the work, on a click, and pick it.
+- **No task for the work yet.** The log dialog can create one, drafted from the work, on a click, and pick it. If
+  Productive gives no clear answer, the task may exist: Pulsar will not create the same title in that project again
+  for ten minutes, so search for it first.
 - **Time that runs into an entry already logged.** The log dialog shows the free time around it and offers to log
   that instead (**Log 2 entries around it**); **Log anyway** is still there.
 - **Google Calendar.** In **Settings → Google Calendar**, **Connect** opens Google's sign-in; after **Allow**, a
@@ -312,7 +323,8 @@ Code** above).
    run `claude mcp remove pulsar --scope user` (and `pulsar-preview` for Pulsar Preview) and remove the
    `mcp__productive__…` and `…pulsar_log` ask rules and the `Read(~/.config/pulsar…)` and `Edit(~/.config/pulsar…)`
    deny rules from `~/.claude/settings.json` yourself. Pulsar's copy of that
-   file from before its first change, `~/.claude/settings.json.pulsar-backup`, stays until you delete it.
+   file from before its first change, `~/.claude/settings.json.pulsar-backup`, stays until you delete it (when
+   `settings.json` is a link to a file elsewhere, such as a dotfiles folder, the copy is beside that file).
 2. Quit Pulsar (Cmd+Q), and Pulsar Preview if you have it.
 3. Drag **Pulsar** (and **Pulsar Preview**) from Applications to the Trash. If you added it to **Login Items**,
    remove it there too.
@@ -343,7 +355,8 @@ own uninstallers.
 Python standard library only, no build step. How everything works, piece by piece: [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md).
 
 ```
-pulsar.py          start the server (--self-test, --signin-url, --no-open, --port)
+pulsar.py          start the server (--self-test, --signin-url, --no-open, --port; --mcp for Claude Code,
+                   --instance preview for Pulsar Preview)
 pulsar/
   config.py            settings, time zone, the tokens (keychain or private file), session key, sign-in codes
   trackers.py          ActivityWatch and MemTime readers
@@ -352,8 +365,17 @@ pulsar/
   likely.py            the Likely column: sessions.py, or the fi-time-from-activity skill where it is installed
   sessions.py          Claude Code sessions -> which project each minute of work went to; task links typed in them
   learn.py             tasks for Likely rows, learned from what you logged in the same session or repository
+  commits.py           your commits during a Likely row, for the note (git run inertly)
   askclaude.py         Ask Claude and notes from a session (claude -p, Productive read only)
+  claudeuses.py        everything Pulsar asks Claude: what each sends, its model and its cost limit
   claudelink.py        the one Claude Code switch: Pulsar in Claude Code, its ask and deny rules
+  mcp.py               Pulsar in Claude Code: the MCP server over stdio, a thin proxy to the running Pulsar
+  mcptools.py          the Claude Code tools' answers, computed in Pulsar, and pulsar_preview / pulsar_log
+  dayplan.py           Log the day: the whole day proposed, the journal of what each run wrote, Undo
+  dayreview.py         Log the day with Claude: FI's rules and Claude's review of the plan
+  ranges.py            what a stretch picked in the Day view holds, and its split into entries
+  newtask.py           a new task from the log dialog: its draft and where it can go
+  flags.py             ticket flags: closed, no budget, no estimate (read only)
   calendar.py          Google Calendar: sign-in (OAuth, PKCE), a day's meetings, their history
   google_client.json   the Google sign-in client: placeholders in git, the real one only in releases
   changelog.py         CHANGELOG.md for Settings and release.sh
@@ -364,7 +386,7 @@ pulsar/
   release_sig.py       the release keys and the signature checks: latest.json, and the code Pulsar.app installs
   logbook.py           the error log
 web/
-  index.html, style.css, meetings.css
+  index.html, style.css and one stylesheet per part (meetings, flow, range, newtask, logday, ask)
   js/theme-early.js    the saved theme before the first paint
   js/core.js           state, formatting, theme, toast
   js/datepick.js       the calendar behind every date field
@@ -373,6 +395,13 @@ web/
   js/report.js         the report, its charts and downloads
   js/settings.js       the settings dialog and updates
   js/log.js            logging time and rules
+  js/flow.js           Log and next, Start and End, links to Productive, the first-run checklist
+  js/range.js          what a picked stretch holds, and its split
+  js/newtask.js        Create a task in the log dialog
+  js/logday.js         Log the day: review, confirm, write, Undo
+  js/ldreview.js       Log the day with Claude's suggestions
+  js/catchup.js        Earlier days: catching up on several days
+  js/ask.js            Ask Claude while it works
   js/logs.js           the error log dialog
   js/main.js           views and start-up
 macos/                 the app: its window (Swift), its launcher, the icon and the release script (see macos/README.md)

@@ -21,9 +21,9 @@ boundaries go on a grid (5 minutes, or Settings' "Round entries to": opts_for), 
 logged, and the total is capped: proposed plus logged never exceeds active time plus attended meetings. What does not
 fit is shown in `unplaced`, never placed.
 
-Notes are never written from session text: only a meeting's title that passes the note's checks (askclaude.guard_note:
+Notes are never copied from session text: only a meeting's title that passes the note's checks (askclaude.guard_note:
 anyone can put an event on a calendar), a repeat's usual note, a note Claude drafted
-(Ask Claude) for that task, or the subjects of the person's own commits in the work (commits.py), each marked so the
+(Ask Claude, from the session's messages; its row starts unticked) for that task, or the subjects of the person's own commits in the work (commits.py), each marked so the
 page can say "clients may see notes".
 """
 
@@ -919,7 +919,9 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
     def suggest():
         try:
             return server.api_suggest({"date": date}).get("assigned") or []
-        except Exception:
+        except Exception as exc:  # a hint only: the plan goes on without your assigned tasks, and Logs says why
+            logbook.record("log the day", f"Your assigned tasks could not be read: {type(exc).__name__}: {exc}",
+                           kind="warning", once_per=600)
             return []
 
     with ThreadPoolExecutor(8) as pool:

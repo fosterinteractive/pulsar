@@ -457,7 +457,8 @@ def _delete_secret(account: str, path: str) -> None:
 
 # ---- who may use the API --------------------------------------------------------------------------------
 # Two secrets, never the same:
-# * the key in SECRET_FILE (owner-only) never leaves this user's files. The launcher proves it holds it (whoami, quit).
+# * the key in SECRET_FILE (owner-only) never leaves this user's files. The server proves it holds it (whoami); the
+#   launcher and Pulsar in Claude Code send it (quit, the Claude Code tools) only after that proof.
 # * a browser gets a session token of its own: the launcher or pulsar.py writes a one-time sign-in code, the page
 #   trades it for a token (POST /api/session) and keeps it in localStorage, which belongs to Pulsar's own address and
 #   port only. Every API call carries it in a header. Unlike a cookie, no other service on 127.0.0.1 ever receives it.

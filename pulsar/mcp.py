@@ -1,7 +1,7 @@
 """Pulsar for Claude Code: an MCP server over stdio, a thin proxy to the running Pulsar.
 
     python3 pulsar.py --mcp [--port 5610]
-    claude mcp add pulsar -- /usr/bin/python3 -E -s -B "$HOME/Library/Application Support/Pulsar/current/pulsar.py" --mcp
+    claude mcp add --scope user pulsar -- /usr/bin/python3 -E -s -B "$HOME/Library/Application Support/Pulsar/current/pulsar.py" --mcp --port 5610
 
 MCP over stdio: JSON-RPC 2.0, one message per line (the MCP SDK needs Python 3.10+; this is the standard library).
 

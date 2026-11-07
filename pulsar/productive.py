@@ -149,9 +149,10 @@ def https(method: str, url: str, body: Optional[bytes] = None, headers: Optional
           timeout: float = 60, write: bool = False, head: Optional[dict] = None) -> Tuple[int, bytes]:
     """One HTTPS request. Redirects are never followed, so a token only ever goes to the address it was meant for.
     `head`, if given, gets the answer's headers (names in lower case).
-    Reads reuse a kept-alive connection per host (a new TLS connection to Productive costs ~160 ms) and retry once
-    on a fresh one if the server had dropped it, or had closed a fresh one without answering. A write always uses a
-    new connection and is never retried: a second attempt could log the same time twice."""
+    Reads reuse a kept-alive connection per host (a new TLS connection to Productive costs ~160 ms) and try again on a
+    fresh one if the server had dropped it, or had closed a fresh one without answering: three tries at most, never
+    after a timeout. A write always uses a new connection and is never retried: a second attempt could log the same
+    time twice."""
     if config.tests_offline():
         raise ProductiveError("A test tried to reach the network; tests must fake it.")
     u = urllib.parse.urlsplit(url)
@@ -1260,7 +1261,9 @@ def delete_entry(entry_id: str, settings: dict) -> None:
 
 
 def create_entry(entry: dict, settings: dict) -> dict:
-    """Writes one time entry, as the person in Settings. Called only from an explicit click in the page."""
+    """Writes one time entry, as the person in Settings, from server.api_log: the log dialog's button, Log the day's
+    confirm step, or pulsar_log from Claude Code after its preview (mcptools). Only an answer that names the new entry
+    is "created"; any other after sending is ProductiveUnclear (it may exist), never a refusal."""
     if config.writes_blocked():  # tests, demos, and a preview not allowed to write: nothing may reach Productive
         raise ProductiveError(config.writes_blocked())
     conn = _need(settings)

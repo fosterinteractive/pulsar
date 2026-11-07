@@ -1443,7 +1443,9 @@ def api_range(q: dict) -> dict:
     def bookable(tid):
         try:
             return dayplan._bookable(tid, date, s)
-        except Exception:  # the entry says so; the person picks the service when logging
+        except Exception as exc:  # the entry says so; the person picks the service when logging; Logs has why
+            logbook.record("log dialog", f"The services of task {tid} could not be read for the split: "
+                           f"{type(exc).__name__}: {exc}", kind="warning", once_per=600)
             return None
 
     ranges.with_services(res, keep["ctx"], bookable)
@@ -1922,7 +1924,7 @@ def serve(port: int) -> ThreadingHTTPServer:
     PORT[0] = port
     config.ensure_dirs()
     config.session_secret()  # created before anyone needs it (the launcher reads it)
-    claudelink.tidy_saved()  # Pulsar 1.2's Productive ask rules go, unless chosen in Settings (claudelink.tidy)
+    claudelink.tidy_saved()  # the Productive ask rules of 1.3 and 1.4 go, unless chosen in Settings (claudelink.tidy)
     httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
     UPDATER.start()
     return httpd

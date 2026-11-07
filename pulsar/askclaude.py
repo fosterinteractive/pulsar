@@ -2,8 +2,9 @@
 switched on in Settings.
 
 It runs the person's own Claude Code (`claude -p`), with their own subscription, and gives it, for each row of at
-least ten minutes, the time, the repository, the session titles and what they typed then; and the tasks they logged
-to in the last 30 days. Claude may search Productive through the person's own Productive connection, read only: the
+least ten minutes, the time, the repository, the session titles, what they typed then with Claude's reply at the end
+of each step, the subjects of their own commits, and up to 5 of their earlier notes on its likely tasks; and the tasks
+they logged to in the last 30 days. Claude may search Productive through the person's own Productive connection, read only: the
 tools that change anything are refused, and no other tool is allowed. It is started with that one connection and
 none of the person's settings (--strict-mcp-config, --setting-sources ""): no other MCP server, no tool their settings
 allow, no hook that would receive the prompt, no CLAUDE.md. Auto memory is not a setting, so it is switched off in the

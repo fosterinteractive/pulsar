@@ -276,6 +276,14 @@ class McpTest(unittest.TestCase):
         self.assertTrue(any("HTTP 503" in w for w in plan["warnings"]), plan["warnings"])  # no repositories: said
         self.assertNotIn("Google", json.dumps(day["warnings"]))  # in Pulsar's fixed words only
 
+    def test_a_preview_says_when_it_picked_a_service_without_your_history(self):
+        with mock.patch.object(server, "api_suggest", lambda q: {"recent": [], "assigned": [],
+                                                                 "historyError": "Your last 30 days could not be read"}):
+            dry, _ = self.call("pulsar_preview", self.ARGS)
+        self.assertTrue(any("could not be read" in w for w in dry.get("warnings", [])), dry)
+        dry, _ = self.call("pulsar_preview", self.ARGS)
+        self.assertNotIn("warnings", dry)
+
     def test_time_logged_with_no_start_is_never_offered_again_as_ready(self):
         """2 h of the session's task logged by duration only: no overlap check sees them, so the session's stretch on
         that task waits for a yes, and the summary the person approves names them."""

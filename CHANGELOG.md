@@ -23,14 +23,14 @@ What each Pulsar release changed, newest first.
 - Settings > Claude lists everything Pulsar asks Claude and what each sends, with a model to pick for each.
 - Log dialog, Create a task: the status, estimate and service for this time are proposed, each with why; the service is never sent with the task.
 - Dragging in the Logged column moves in 1-minute steps, not 5, so short entries can be changed.
-- Log dialog: Create a task when none fits the work, with a drafted title and description; it is then picked.
+- Log dialog: Create a task in Productive, assigned to you, when none fits the work, with a drafted title and description (by Haiku with Claude Code on); it is then picked.
 - Pulsar in Claude Code: the tools are answered inside Pulsar; the key alone opens nothing else and writes only previewed entries, marked "from Claude Code".
 - Pulsar in Claude Code: errors are fixed phrases, and a note in the summary cannot pass for another entry.
 - A full budget and a closed service are said in plain words when Productive refuses an entry.
 - Log dialog: an End time, kept in step with Start and Minutes; an entry cannot run past midnight.
 - Pulsar in Claude Code: reasons are fixed phrases only, names are cleaned, and Ask Claude's note drafts come back only when safe.
 - Log dialog: time that runs into an entry already logged can be logged around it, as one or more entries.
-- Logging from the yellow rail, a drag, + Log or Log and next drafts the note too, from the Likely work in that time.
+- Logging from the yellow rail, a drag, + Log or Log and next drafts the note too, from the Likely work in that time (with Claude Code on, Claude drafts it from that session).
 - A dragged or picked stretch leads with Log the day's task and note for its main work, and offers a split when it mixes work.
 - Log the day: a row whose note Claude drafted, or whose task Claude found by searching Productive, starts unticked.
 - Ask Claude: the work it reads is data, never instructions; it may only search Productive's tasks.
@@ -38,7 +38,7 @@ What each Pulsar release changed, newest first.
 - Notes from commits: only commits whose author and committer are you, by your own git settings.
 - Claude Code runs for Ask Claude get a short list of Pulsar's environment, and no claude.ai connectors.
 - The Claude Code switch keeps Claude Code's file tools out of Pulsar's folders (deny rules).
-- Asking before every Claude Code session changes Productive is now a separate setting, off by default; Pulsar takes back the rules it added for it.
+- Asking before every Claude Code session changes Productive is now a separate setting, off by default; Pulsar takes back the rules 1.3 and 1.4 added for it, so tick it to keep that protection.
 - Settings > Claude: says when managed settings block Pulsar's rules or server, and which Claude account and plan Ask Claude uses.
 - Pulsar.app installs the code it carries only when Pulsar's release key signed it, and says so when not.
 - An update's description expires 60 days after its release, so an old one served again is ignored.
@@ -46,11 +46,25 @@ What each Pulsar release changed, newest first.
 - A port held for a moment while Pulsar starts no longer marks a good version bad.
 - The error log also removes bare keys and tokens, UUIDs, and fields named as keys or secrets.
 - The install line downloads into a private temporary folder and calls curl and ditto by their full paths.
+- Pulsar in Claude Code and the launcher check that the server holds this user's key for their own port before they show it.
+- Create a task: after an answer that is not clear the task may exist, so the same title is held for ten minutes; search for it first.
+- A failure behind Productive's MCP (a server error, a timeout) and a created answer without the new entry are "may exist", never "refused".
+- Pulsar in Claude Code: pulsar_log answers within five minutes with what it wrote, and never says "Open Pulsar" while it may be writing.
+- Pulsar in Claude Code: time logged with no start time is never offered again as ready, and the summary names it.
+- Pulsar in Claude Code: a source that could not be read is said in the warnings.
+- Log dialog: a task just created stays picked when the stretch's answer comes later; a drag keeps its exact minutes.
+- The night the clocks change, End, a drag, a dragged edge and the split count real minutes.
+- The split: a task Claude found by searching, or a note Claude drafted, waits for a tick.
+- Task refusals keep Productive's own words after the plain sentence.
+- Earlier days: time logged with no start counts, and a tracker that gave nothing is said.
+- Likely: a past day worked out while no tracker answered is worked out again once one does.
+- Settings: "Ask before any Claude Code session changes Productive" says it waits for the Claude Code switch.
+- Ask Claude: the cost shown counts both runs when Claude was asked twice.
 
 ## 1.4.0 (2026-11-06)
 - Log the day: Earlier days, to catch up on several days one after another.
 - Ticket flags: a closed task, no budget on that date, or no estimate.
-- Round entries to 5, 10 or 15 minutes; new tasks found from the day's work.
+- Round entries to 5, 10 or 15 minutes; new tasks suggested from the day's work (Pulsar never creates them).
 - Likely and Ask Claude's picks stay with their day, across day changes and restarts.
 - Fixes from a full interface test, and safer test runs.
 
@@ -58,7 +72,7 @@ What each Pulsar release changed, newest first.
 - Log the day: the whole day proposed for review, written one entry at a time, with Undo.
 - Edit, delete and resize logged entries.
 - Pulsar in Claude Code (MCP): ask a session what is not logged, or to log it; it asks before each write.
-- One Claude Code switch in Settings; notes drafted from your commits and sessions.
+- One Claude Code switch in Settings: it adds Pulsar to Claude Code (`~/.claude.json`) and rules to `~/.claude/settings.json` that bind every Claude Code session; notes drafted from your commits and sessions.
 - Better task suggestions, a safer Ask Claude, and many fixes.
 
 ## 1.2.1 (2026-11-06)
