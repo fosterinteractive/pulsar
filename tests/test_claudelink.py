@@ -385,8 +385,8 @@ class SessionNote(unittest.TestCase):
         """The log dialog's note has no task yet: the projects of the block's likely tasks, and those named like its
         repository, are its own; any other project of the person's history is another client's."""
         history = [{"taskId": "7", "task": "Events", "project": "EV-OS Eventsite Ongoing Support", "date": "2026-11-02"},
-                   {"taskId": "8", "task": "Sitemap", "project": "FG-OS Fengate Ongoing Support", "date": "2026-11-01"}]
-        drafts = iter(["Eventsite pages show the right time zone again.", "Same fix as on Fengate."])
+                   {"taskId": "8", "task": "Sitemap", "project": "GX-OS Globex Ongoing Support", "date": "2026-11-01"}]
+        drafts = iter(["Eventsite pages show the right time zone again.", "Same fix as on Globex."])
 
         def run(cmd, **kw):
             return mock.Mock(stdout=json.dumps({"structured_output": {"note": next(drafts)}}), stderr="")

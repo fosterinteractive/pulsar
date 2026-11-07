@@ -1172,18 +1172,18 @@ class ClaudeNoteTest(unittest.TestCase):
         """A note goes to the client of its task: another client's name, from the projects of the task list, never
         does; nor the person's own name (who did the work)."""
         from pulsar import askclaude
-        entries = self.ENTRIES + [{"taskId": "8", "task": "Sitemap", "project": "FG-OS Fengate Ongoing Support",
+        entries = self.ENTRIES + [{"taskId": "8", "task": "Sitemap", "project": "GX-OS Globex Ongoing Support",
                                    "minutes": 30, "date": "2026-11-02"},
-                                  {"taskId": "9", "task": "Ops", "project": "CNIB-OS CNIB Ongoing Support",
+                                  {"taskId": "9", "task": "Ops", "project": "INI-OS Initech Ongoing Support",
                                    "minutes": 30, "date": "2026-11-02"},
-                                  {"taskId": "10", "task": "Hosting", "project": "NL-OS Northleaf Ongoing Support",
+                                  {"taskId": "10", "task": "Hosting", "project": "HL-OS Hooli Ongoing Support",
                                    "minutes": 30, "date": "2026-11-01"}]
         cases = {"Event pages show the right time zone again.": "",
-                 "Event pages fixed, as on Fengate.": "a name from another project",
-                 "CNIB events copied into Acme.": "a name from another project",
+                 "Event pages fixed, as on Globex.": "a name from another project",
+                 "Initech events copied into Acme.": "a name from another project",
                  "Events reviewed with Nick.": "a name from another project",
                  "Support pages fixed; the ongoing work goes on.": "",   # words every project has
-                 "fengate-style menu built.": ""}                        # lower case: not the name as written
+                 "globex-style menu built.": ""}                        # lower case: not the name as written
         for draft, why in cases.items():
             out = {"structured_output": {"picks": [{"id": 0, "tasks": ["7"], "why": "events", "note": draft}]}}
             askclaude._cache.clear()
@@ -1195,8 +1195,8 @@ class ClaudeNoteTest(unittest.TestCase):
             self.assertEqual((pick["note"], got["notesBlocked"]), ("" if why else draft, [why] if why else []), draft)
             self.assertEqual(pick["tasks"][0]["taskId"], "7")  # the task stays
         # the picked task's own project may be named
-        self.assertIsNone(askclaude.foreign_name("Fengate sitemap fixed.", ["FG-OS Fengate Ongoing Support", "Sitemap"],
-                                                 ["FG-OS Fengate Ongoing Support", "Acme"]))
+        self.assertIsNone(askclaude.foreign_name("Globex sitemap fixed.", ["GX-OS Globex Ongoing Support", "Sitemap"],
+                                                 ["GX-OS Globex Ongoing Support", "Acme"]))
 
     def test_a_stretch_from_the_rail_gets_its_projects_whole_rows(self):
         """The yellow rail, a drag or Log and next ask for a stretch, not a block: the note is drafted from the rows

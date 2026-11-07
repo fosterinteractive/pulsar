@@ -962,7 +962,7 @@ not a verdict.
   token, code or a log, Claude, Pulsar or an agent, a sum of money (a currency sign or code next to a number, or a
   number of dollars, euros or cents), a remark on how the time was spent, or more than two sentences. Then
   `askclaude.foreign_name` blanks a draft that names another project than its task's (so another client): a word of a
-  project name in the 30 days' task list, capitalised as there (Fengate, CNIB, UTLaw), in neither the picked task's
+  project name in the 30 days' task list, capitalised as there (Globex, Initech, Umbrella), in neither the picked task's
   project nor its title, not a common word and in fewer than three of the names (Ongoing, Support); and the person's
   own first or last name (who did the work). Pulsar has no list of Productive's people, so other people's names are
   only asked against, in the prompt. For the session note, which has no task yet, the projects of the block's likely
@@ -1498,7 +1498,7 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 - `CLAUDE_CONFIG_DIR` set only in a shell is not in the environment of a Pulsar started from the Dock: Pulsar then
   adds itself and its rules to `~/.claude`, which that Claude Code does not read, and cannot tell.
 - A drafted note naming another client is caught only by the words of the task list's project names, as written
-  ("Fengate", not "fengate"); Pulsar has no list of Productive's people, so other people's names are only asked
+  ("Globex", not "globex"); Pulsar has no list of Productive's people, so other people's names are only asked
   against in the prompt.
 - Commits by you: with no email in your own git settings, a per-repository email counts when two repositories of the
   day set it; two repositories from the same outside source that both name the same author would pass.

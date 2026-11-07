@@ -204,7 +204,7 @@ _NAME_WORD = re.compile(r"\b[^\W\d_][^\W_]{2,}\b")
 
 def foreign_name(note: str, own: list, others: list, person: str = ""):
     """The first word of a drafted note that names a project (so a client) other than the note's own, or the person
-    themselves, else None. A name word is one of another project's name, capitalised as there (Fengate, CNIB, UTLaw),
+    themselves, else None. A name word is one of another project's name, capitalised as there (Globex, Initech, Umbrella),
     in none of `own` (the task's project and title), not a common word and in fewer than three of the names (Ongoing,
     Support); the person's first and last name count too. Compared as written: "music" is not "Music"."""
     names = [str(x or "") for x in others]
@@ -635,7 +635,7 @@ def _person() -> str:
 
 def _own_projects(row: dict, history: list) -> list:
     """The projects a block's note may name: those of its likely tasks (learned, linked) and those named like its
-    repository ("utlaw" and "UTLaw-OS Faculty of Law Ongoing Support"), with the tasks' titles."""
+    repository ("umbrella" and "UMB-OS Umbrella Ongoing Support"), with the tasks' titles."""
     likely = {str(t.get("taskId")) for t in row.get("learned") or []} | {str(x) for x in row.get("tasks") or []}
     repo = re.sub(r"[^a-z0-9]", "", str(row.get("project") or "").split(" / ")[0].lower())
     own = [t.get("project") for t in row.get("learned") or []] + [t.get("title") for t in row.get("learned") or []]
