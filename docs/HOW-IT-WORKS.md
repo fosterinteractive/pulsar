@@ -276,10 +276,11 @@ project, budget, billable, billing}`.
 - **Creating a task** (`create_task`, only from **Create in Productive**, 5.1). Productive needs a title (at most 140
   characters), a project, and a task list or none: `task_list` null puts the task straight in the project, and is also
   how a subtask is made (`parent_task`). A subtask cannot have subtasks ("invalid level of subtasks"). Pulsar sends the
-  title, the description, the project, the parent or the list, and the person as assignee. It never sends a service,
-  a status or an estimate: the status is the workflow's first, and a PM sets the service and the estimate
-  (fi-productive-process: a developer may create a task but not set its service). A time entry takes its own service
-  anyway, from the project's budgets (5.1). Through Claude Code's connection it is `create_resource` with bare ids, as
+  title, the description, the project, the parent or the list, the person as assignee, and the status and estimate
+  picked in the form (`workflow_status`; `initial_estimate`, minutes through the token, "90 min" through Claude Code's
+  connection). With no status, Productive puts the task in its workflow's first. It never sends a service: a
+  developer's role does not set a task's service, a PM does (fi-productive-process, and below). A time entry takes its
+  own service anyway, from the project's budgets (5.1). Through Claude Code's connection it is `create_resource` with bare ids, as
   Claude Code sessions create tasks; only Productive's sentence "task created (ID: n)" or "Created 1 task (ID: n)"
   counts as created, "Failed to create task …" is a refusal said in plain words, and any other answer may have
   created it (said so, never tried again). Through the token it is a JSON:API `POST /tasks` with relationships, as
@@ -287,6 +288,15 @@ project, budget, billable, billing}`.
   tasks from 22 September to 4 November 2026, in 12 projects (10 of clients), 29 of them as subtasks, through Claude
   Code; Productive's own permission is "Add, edit, and delete tasks", and a role without it in a project gets "your role
   may not add tasks to this project".
+- **Who sets what on a new task**, read from Productive on 7 November 2026 (tasks created since July, their activity
+  feeds, the time entries on them): of 73 tasks created with the Staff role (44 by one person, 29 by three other Staff
+  accounts), none carried a service when created. All 28 service changes on the first person's tasks were made by the
+  two people with the PM role (Profitability Manager), and the other Staff accounts' 140 changes since 15 September
+  include no service. The Staff role's permissions, as Productive lists them, include adding and editing tasks but not
+  seeing budgets or service types. So the service is never sent. The first person set 10 estimates and 9 statuses on
+  tasks they had created, and 3 tasks had an estimate when created: a developer sets both.
+- **The project's statuses** (`workflow_statuses`): the project's workflow, then its statuses, two reads kept 10
+  minutes; the open ones (not started, then started) are offered, in the workflow's order.
 - **Where a new task can go** (`project_places`, `newtask.places`): the project's open top-level tasks and its active
   task lists, two reads. Offered first: the period's contingency task, as the parent, when the project has one (FI's
   maintenance projects put each issue under it, `newtask.PERIOD_TASK`; the one named for the entry's month first, else
@@ -496,13 +506,41 @@ whether one fits is the person's call. It opens a small form over the dialog:
   token, code, tool's name or remark on the time, one sentence). The description is checked line by line, cut at a
   sentence to 700 characters, and a sentence about the time itself ("the review time is logged as billable") is left
   out.
-- One line says what will happen: "Creates “…” in <project>, in the task list “To Do”, assigned to you. A PM sets its
-  service and estimate."
+- **Status, estimate and service**, proposed for the place picked (`GET /api/task/fields`, `newtask.propose`), each
+  with a line saying why, and editable. The form opens at once; they fill in when they arrive, and a status or service
+  the person picked, or an estimate they typed, stays when the place changes (while the new place offers it). The
+  rules come from what Productive showed on 7 November 2026 (4.2), on tasks created since July:
+  - **Status**: a subtask starts in the workflow's first status (Backlog), a task in a task list or the project in
+    "To Do". Of 36 subtasks created by people with the Staff role, 33 started in Backlog; of 26 top-level tasks, 18
+    started in To Do and 8 in Backlog. (A shared QA account's 11 subtasks, made in QA or Client QA by a bot, are left
+    out.) Closed statuses are not offered.
+  - **Estimate**: empty when the parent carries one, since a subtask may then have none (fi-productive-process); else
+    the median of the project's recent tasks of the same kind that have one (its subtasks for a subtask; its
+    top-level tasks, containers such as core updates left out, otherwise), to the nearest 5 minutes, from the same
+    read as the "no estimate" flag (`project_estimates`, kept a day); with fewer than 2 to go by, none. Typed as
+    minutes ("90") or hours ("1h 30m", "1.5 h"), up to 500 hours; empty is allowed. Of the 200 subtasks created most
+    recently in the organization (of 1,226 since 15 September), 13 of their 73 parents carried an estimate, and 160
+    had none anywhere in the chain, so an empty estimate under a parent with none is allowed but said in the line.
+    The budget's hours minus one for PM work (fi-productive-process) cannot be read: a Staff role sees no budget
+    fields (4.2, flags).
+  - **Service for this time**: the parent task's service when it takes time on that date; else, under a period's
+    task, the budget's contingency line on that date ("Contingency", then "Service request" or "Support request",
+    never "Overage" or "Rollover"; with two such budgets open, the one named for the month); else the only service
+    that takes time then; else none. It is not sent with the task: once created, the log dialog picks it for the
+    time. Of 64 entries one person logged to the 28 subtasks they had created, 57 went to "Service Request /
+    Contingency", 3 to Rollover, 2 to Maintenance Updates, 1 to an upgrade's own line and 1 to an overage line; of
+    the 48 recent subtasks whose parent had a service, 34 had the same one. The service a PM later set on the task
+    itself differed from the entries' in 37 of the 47 entries where both are known, so the form says this one is for
+    the time only.
+- One line says everything that will be set: "Creates “…” in <project>, as a subtask of “…”, assigned to you, in
+  “Backlog”, with an estimate of 1 h 10 min. Its service is left to a PM; this time then goes to “Service Request /
+  Contingency · …”."
 
 **Create in Productive** sends it (`POST /api/task/create`). Read-only and Preview refuse it before anything is sent,
 and the form says so when it opens. The same title in the same project within a minute is refused: a second click
 would create a second task. A refusal is said in plain words and the form stays open. Once created, the form closes,
-and the task is first in the dialog's list, under "Just created", and picked; its services load as for any task.
+and the task is first in the dialog's list, under "Just created", and picked; its services load as for any task,
+with the form's service picked.
 
 **Local or Claude?** Measured on 14 ranges of one person's work (22 September to 2 November 2026) where a task was
 really created from the session doing that work, each draft's title read against the title created. On the whole
@@ -1137,8 +1175,9 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `POST /api/likely/note` | `{date, s, e, project}`: the log dialog's note for a Likely block, from its session and commits (Haiku; only with the Claude Code switch on, 5.7). |
 | `GET /api/task/projects?date=[&hint=][&repo=]` | Active projects for a new task, those logged to lately first, and the likeliest (5.1). |
 | `GET /api/task/places?project=&date=` | Where in a project a new task can go, and which first (4.2). |
+| `GET /api/task/fields?project=&date=&place=[&title=]` | For a new task at `place` (`parent:<id>`, `list:<id>` or `none`): the project's open statuses and the services that take time on the date, and the status, estimate and service proposed, each with why (5.1). Read only. |
 | `POST /api/task/draft` | `{date, s, e[, meeting]}`: a new task's title and description from the work in that time; with `claude` and `projectName`, Haiku's (the switch on, 5.1). |
-| `POST /api/task/create` | `{projectId, parentId or taskListId, title, description}`: one task, assigned to you (the page only). |
+| `POST /api/task/create` | `{projectId, parentId or taskListId, title, description[, statusId][, estimate]}`: one task, assigned to you, never with a service (the page only). |
 | `POST /api/calendar/connect`, `/disconnect` | Google Calendar. |
 | `POST /api/update/check`, `/install`, `/apply` | Updates. |
 | `POST /api/productive/test`, `/api/client-error`, `/api/quit` | Test the connection; log a page error; stop (launcher). |
@@ -1164,8 +1203,8 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   and the places that open the dialog on a stretch pass `range: true`.
 - **`catchup.js`**: Earlier days in Log the day (5.4b), its list of workdays and the line that moves on to the next
   day. `logday.js` calls it at four places (`cuRender`, `cuButton`, `cuStrip`, `cuClosed`).
-- **`newtask.js`** (and `newtask.css`): Create a task in the log dialog (5.1). `log.js` has two small hooks marked
-  "newtask.js": the picker's `pick` and the link hidden while an entry is changed.
+- **`newtask.js`** (and `newtask.css`): Create a task in the log dialog (5.1). `log.js` has three small hooks marked
+  "newtask.js": the picker's `pick`, the link hidden while an entry is changed, and the service the form picked.
 - **`ask.js`** (and `ask.css`): Ask Claude while it works. The button turns into a small pulsar (beams sweep its
   edge, a glow breathes, Claude's mark flashes), the Likely header says what is going on by the time only, and the
   blocks that got a task are lit once. `day.js` calls `askStart()` and `askEnd()` around the request. CSS on transform

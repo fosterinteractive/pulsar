@@ -1019,15 +1019,22 @@ def search_tasks(q: str, settings: dict) -> list:
 
 def bookable_services(task_id: str, date: str, settings: dict, names: Optional[Names] = None) -> dict:
     """The services of the task's project that take time on that date (a budget that has ended does not)."""
-    conn = _need(settings)
     reasons: dict = {}
     task = task_details([task_id], settings, reasons).get(task_id)  # raises when the connection is the reason
     if not task or not task.get("projectId"):
         reason = reasons.get(task_id) or ("it has no project" if task else "")
         raise ProductiveError("Productive did not return that task" + (f" ({reason})." if reason else "."))
+    return {"task": task, "services": project_services(task["projectId"], date, settings, names)}
+
+
+def project_services(project_id: str, date: str, settings: dict, names: Optional[Names] = None) -> list:
+    """The services of a project that take time on that date, [{id, name, budget, billable…}]. Read only."""
+    if not str(project_id or "").isdigit():
+        raise ProductiveError("no project")
+    conn = _need(settings)
     names = names or shared_names()
     if conn["kind"] == "token":
-        status, doc = rest_get("/services", {"filter[project_id]": task["projectId"], "filter[bookable_date]": date,
+        status, doc = rest_get("/services", {"filter[project_id]": str(project_id), "filter[bookable_date]": date,
                                              "include": "deal", "page[size]": 200}, conn["token"], settings.get("org_id"))
         if status != 200 or not isinstance(doc, dict):
             raise ProductiveError(f"Productive did not list the services ({why(status, doc)}).")
@@ -1038,7 +1045,7 @@ def bookable_services(task_id: str, date: str, settings: dict, names: Optional[N
     else:
         d = parse_mcp(mcp_text("query_resources", {
             "resource_type": "services", "limit": 100, "include_fields": ["name", "deal", "deal.name"],
-            "filters": {"op": "and", "conditions": [{"field": "project", "operator": "eq", "value": task["projectId"]},
+            "filters": {"op": "and", "conditions": [{"field": "project", "operator": "eq", "value": str(project_id)},
                                                     {"field": "bookable_date", "operator": "eq", "value": date}]}}, conn["token"]))
         cols, inc = d["items"]["columns"], d.get("included") or {}
         deals = {f"{r[0]}:{r[1]}": dict(zip(inc.get("columns", []), r)).get("name") for r in inc.get("rows", [])}
@@ -1047,16 +1054,17 @@ def bookable_services(task_id: str, date: str, settings: dict, names: Optional[N
         _mcp_billing([f"services:{r['id']}" for r in rows], conn["token"], names)
         services = [{"id": str(r["id"]), "name": r.get("name") or "", "budget": deals.get(r.get("deal") or "") or "",
                      **billable_of(names.get(f"billing:services:{r['id']}"))} for r in rows]
-    return {"task": task, "services": services}
+    return services
 
 
 ESTIMATE_SAMPLE = 100  # a project's most recently active tasks, read to tell whether it uses estimates
 
 
 def project_estimates(project_id: str, settings: dict) -> dict:
-    """{"n": tasks read, "with": ids of those with an estimate}: the project's most recently active tasks (its first
-    ones through the token, which has no such order), for the flag "no estimate, while others in the project have
-    one" (flags.py). Read only; raises ProductiveError when it cannot be read."""
+    """{"n": tasks read, "with": ids of those with an estimate, "sizes": [[minutes, 1 for a subtask else 0, title]] of
+    those}: the project's most recently active tasks (its first ones through the token, which has no such order), for
+    the flag "no estimate, while others in the project have one" (flags.py) and the estimate offered for a new task
+    (newtask.propose). Read only; raises ProductiveError when it cannot be read."""
     if not str(project_id or "").isdigit():
         raise ProductiveError("no project")
     conn = _need(settings)
@@ -1065,16 +1073,61 @@ def project_estimates(project_id: str, settings: dict) -> dict:
                                conn["token"], settings.get("org_id"))
         if status != 200 or not isinstance(doc, dict):
             raise ProductiveError(f"Productive did not list the project's tasks ({why(status, doc)}).")
-        rows = [(str(d.get("id")), _attr(d, "initial_estimate")) for d in doc.get("data") or [] if isinstance(d, dict)]
+        rows = [(str(d.get("id")), _attr(d, "initial_estimate"), bool(_rel(d, "parent_task")), _attr(d, "title"))
+                for d in doc.get("data") or [] if isinstance(d, dict)]
     else:
         d = parse_mcp(mcp_text("query_resources", {
             "resource_type": "tasks", "limit": ESTIMATE_SAMPLE, "sort": ["-last_activity_at"],
-            "include_fields": ["initial_estimate"],
+            "include_fields": ["initial_estimate", "title", "parent_task"],
             "filters": {"op": "and", "conditions": [{"field": "project", "operator": "eq", "value": str(project_id)}]}},
             conn["token"]))
         cols = d["items"]["columns"]
-        rows = [(str(r.get("id")), r.get("initial_estimate")) for r in (dict(zip(cols, x)) for x in d["items"]["rows"])]
-    return {"n": len(rows), "with": [i for i, est in rows if est not in (None, "") and minutes_of(est) > 0]}
+        rows = [(str(r.get("id")), r.get("initial_estimate"), bool(r.get("parent_task")), r.get("title"))
+                for r in (dict(zip(cols, x)) for x in d["items"]["rows"])]
+    rows = [(i, minutes_of(est) if est not in (None, "") else 0, sub, title) for i, est, sub, title in rows]
+    return {"n": len(rows), "with": [i for i, m, _, _ in rows if m > 0],
+            "sizes": [[round(m), int(sub), str(title or "")[:80]] for _, m, sub, title in rows if m > 0]}
+
+
+def workflow_statuses(project_id: str, settings: dict) -> list:
+    """The statuses a task of the project can take, in the workflow's order: [{id, name, category, position}], the
+    category "1" not started, "2" started, "3" closed. Two reads: the project's workflow, then its statuses. Read
+    only; raises ProductiveError when they cannot be read."""
+    if not str(project_id or "").isdigit():
+        raise ProductiveError("Pick a project.")
+    conn = _need(settings)
+    if conn["kind"] == "token":  # REST spellings not yet tried against Productive
+        status, doc = rest_get(f"/projects/{int(project_id)}", {}, conn["token"], settings.get("org_id"))
+        if status != 200 or not isinstance(doc, dict):
+            raise ProductiveError(f"Productive did not return the project ({why(status, doc)}).")
+        workflow = _rel(doc.get("data") or {}, "workflow") or ""
+        if not workflow.isdigit():
+            raise ProductiveError("Productive did not say which workflow the project uses.")
+        status, doc = rest_get("/workflow_statuses", {"filter[workflow_id]": workflow, "page[size]": 200},
+                               conn["token"], settings.get("org_id"))
+        if status != 200 or not isinstance(doc, dict):
+            raise ProductiveError(f"Productive did not list the workflow's statuses ({why(status, doc)}).")
+        rows = [(d.get("id"), _attr(d, "name"), _attr(d, "category_id"), _attr(d, "position"))
+                for d in doc.get("data") or [] if isinstance(d, dict)]
+    else:
+        item = parse_mcp(mcp_text("load_resource", {"resource_type": "projects", "id": str(project_id),
+                                                    "include_fields": ["workflow"]}, conn["token"])).get("item") or {}
+        ref = (item.get("fields") or {}).get("workflow")
+        workflow = str((ref.get("id") if isinstance(ref, dict) else _id_of(ref)) or "")
+        if not workflow.isdigit():
+            raise ProductiveError("Productive did not say which workflow the project uses.")
+        found, _ = _mcp_items(parse_mcp(mcp_text("query_resources", {
+            "resource_type": "workflow_statuses", "limit": 200, "include_fields": ["name", "position", "workflow_status_category"],
+            "filters": {"op": "and", "conditions": [{"field": "workflow", "operator": "eq", "value": workflow}]}},
+            conn["token"])))
+        rows = [(r.get("id"), r.get("name"), r.get("workflow_status_category"), r.get("position")) for r in found]
+    out = []
+    for sid, name, category, position in rows:  # the MCP gives the category's label, REST its number
+        category = {"not started": "1", "started": "2", "closed": "3"}.get(str(category or "").strip().lower(), str(category or ""))
+        if str(sid).isdigit() and name and category in ("1", "2", "3"):
+            out.append({"id": str(sid), "name": str(name), "category": category,
+                        "position": position if isinstance(position, (int, float)) and not isinstance(position, bool) else 0})
+    return sorted(out, key=lambda x: (x["category"], x["position"]))
 
 
 def _write_conn(settings: dict) -> dict:
@@ -1370,19 +1423,28 @@ TASK_UNCLEAR = ("No clear answer from Productive ({}), so the task may or may no
                 "list before creating it again.")
 
 
+ESTIMATE_MAX = 500 * 60  # minutes: the largest estimate a new task may be given (500 h)
+
+
 def create_task(task: dict, settings: dict) -> dict:
     """Creates one task, assigned to you: its title, description and project, and either a parent task (a subtask, as
-    FI puts each issue under the period's contingency task), a task list, or neither (directly in the project). Never
-    a service, estimate or status: a PM sets the service (fi-productive-process), the status is the workflow's first.
-    Called only from an explicit click in the page. {"taskId"}."""
+    FI puts each issue under the period's contingency task), a task list, or neither (directly in the project); and,
+    when given, its workflow status (else Productive puts it in the workflow's first) and its estimate in minutes.
+    Never a service: a developer's role may not set it, a PM does (fi-productive-process; HOW-IT-WORKS 4.2). Called
+    only from an explicit click in the page. {"taskId"}."""
     conn = _write_conn(settings)
     person = str(settings.get("person_id") or "")
     if not person.isdigit():
         raise ProductiveError("Pulsar does not know your Productive person ID yet, so nothing was created. Open "
                               "Settings: it fills in by itself once Productive answers, or type it there.")
-    project, parent, task_list = (str(task.get(k) or "") for k in ("project_id", "parent_id", "task_list_id"))
+    project, parent, task_list, status_id = (str(task.get(k) or "") for k in ("project_id", "parent_id", "task_list_id",
+                                                                              "status_id"))
     if not project.isdigit() or (parent and not parent.isdigit()) or (task_list and not task_list.isdigit()):
         raise ProductiveError("Pick a project, and where in it the task goes.")
+    estimate = task.get("estimate")
+    if (status_id and not (status_id.isascii() and status_id.isdigit())) or (estimate is not None and (
+            isinstance(estimate, bool) or not isinstance(estimate, int) or not 1 <= estimate <= ESTIMATE_MAX)):
+        raise ProductiveError("The status or the estimate is not one Productive takes, so nothing was created.")
     title, description = str(task.get("title") or "").strip(), str(task.get("description") or "").strip()
     if conn["kind"] == "token":
         rels = {"project": {"data": {"type": "projects", "id": project}},
@@ -1391,7 +1453,10 @@ def create_task(task: dict, settings: dict) -> dict:
             rels["parent_task"] = {"data": {"type": "tasks", "id": parent}}
         if task_list:
             rels["task_list"] = {"data": {"type": "task_lists", "id": task_list}}
-        attrs = {"title": title, **({"description": _description_html(description)} if description else {})}
+        if status_id:
+            rels["workflow_status"] = {"data": {"type": "workflow_statuses", "id": status_id}}
+        attrs = {"title": title, **({"description": _description_html(description)} if description else {}),
+                 **({"initial_estimate": estimate} if estimate else {})}  # minutes, as REST keeps it
         body = {"data": {"type": "tasks", "attributes": attrs, "relationships": rels}}
         try:
             status, raw = https("POST", API + "/tasks", json.dumps(body).encode("utf-8"), _rest_headers(conn, settings),
@@ -1416,6 +1481,10 @@ def create_task(task: dict, settings: dict) -> dict:
         item["parent_task"] = parent
     if description:
         item["description"] = description
+    if status_id:
+        item["workflow_status"] = status_id
+    if estimate:
+        item["initial_estimate"] = f"{estimate} min"  # the MCP's time format, as for a time entry
     try:
         text = mcp_text("create_resource", {"resource_type": "tasks", "items": [item]}, conn["token"])
     except ProductiveUnclear:
