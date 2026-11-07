@@ -6,6 +6,9 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- The menu bar shows today's active and logged time ("6:12 · 4:48"), with a menu to open Pulsar, log the day or add an entry; on by default, in Settings > This Mac. It needs no permission, unlike the Dock badge, which macOS hides for an app not signed by Apple.
+
 ## 1.6.2 (2026-11-07)
 - The warp plays on ↻ (and ⌘R) again, as before 1.6.0.
 - The Dock badge asks macOS once for permission to badge the icon: recent macOS shows it only then (Reinstall Pulsar to get it).

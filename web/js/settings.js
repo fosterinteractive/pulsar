@@ -158,6 +158,8 @@ function paintApp(n = appNative()) {
   const sec = $('#app-sec'), can = !!(n && window.pulsarNative?.setNativePrefs);
   sec.hidden = !can;
   if (!can) return;
+  $('#app-menubar-row').hidden = n.menubar === undefined;  // a window older than 1.6.3 has no menu bar item
+  $('#app-menubar').checked = n.menubar !== false;
   $('#app-badge').checked = !!n.badge;
   $('#app-reminder').checked = !!n.reminder;
   $('#app-reminder-time').value = /^\d\d:\d\d$/.test(n.reminderTime || '') ? n.reminderTime : '17:30';
@@ -177,6 +179,7 @@ async function refreshApp() {
   if (got?.native) paintApp(got.native);
 }
 function setApp(change) { $('#app-msg').textContent = ''; window.pulsarNative?.setNativePrefs(change); }
+$('#app-menubar').onchange = ev => setApp({menubar: ev.target.checked});
 $('#app-badge').onchange = ev => setApp({badge: ev.target.checked});
 $('#app-reminder').onchange = ev => { $('#app-reminder-time').disabled = !ev.target.checked; setApp({reminder: ev.target.checked}); };
 $('#app-reminder-time').onchange = ev => { if (/^\d\d:\d\d$/.test(ev.target.value)) setApp({reminderTime: ev.target.value}); };

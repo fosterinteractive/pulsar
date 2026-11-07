@@ -98,7 +98,7 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
     // MARK: start
 
     func applicationWillFinishLaunching(_ note: Notification) {
-        defaults.register(defaults: ["badge": true, "reminder": true, "reminderTime": "17:30", "pageZoom": 1.0])
+        defaults.register(defaults: ["menubar": true, "badge": true, "reminder": true, "reminderTime": "17:30", "pageZoom": 1.0])
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         let logDay = UNNotificationAction(identifier: "logday", title: "Log the Day", options: [.foreground])
@@ -373,7 +373,7 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
     }
 
     private func nativePrefs() -> [String: Any] {
-        ["badge": defaults.bool(forKey: "badge"), "reminder": defaults.bool(forKey: "reminder"),
+        ["menubar": defaults.bool(forKey: "menubar"), "badge": defaults.bool(forKey: "badge"), "reminder": defaults.bool(forKey: "reminder"),
          "reminderTime": defaults.string(forKey: "reminderTime") ?? "17:30", "login": loginStatus()]
     }
 
@@ -723,6 +723,60 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
 
     @objc private func replyTerminate() { NSApp.reply(toApplicationShouldTerminate: true) }
 
+    // MARK: today in the menu bar
+
+    private var statusItem: NSStatusItem?
+    private var todayNumbers: (active: Int, logged: Int, notLogged: Int)?
+
+    /// Today's active work and logged time in the menu bar, as ActivityWatch shows its own there: "6:12 · 4:48", with a
+    /// menu of the three numbers and the day's commands. It needs no permission, so it works in an app with no
+    /// developer signature, where macOS hides the Dock badge (native.js sends the numbers: the "today" message).
+    private func showToday(_ body: [String: Any]) {
+        let n = { (k: String) in max(0, (body[k] as? NSNumber)?.intValue ?? 0) }
+        todayNumbers = (n("active"), n("logged"), n("notLogged"))
+        paintStatusItem()
+    }
+
+    private func paintStatusItem() {
+        guard defaults.bool(forKey: "menubar"), let t = todayNumbers else {
+            if let item = statusItem { NSStatusBar.system.removeStatusItem(item); statusItem = nil }
+            return
+        }
+        if statusItem == nil {
+            statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            if #available(macOS 11.0, *) {
+                let image = NSImage(systemSymbolName: "clock", accessibilityDescription: "Pulsar")
+                image?.isTemplate = true
+                statusItem?.button?.image = image
+                statusItem?.button?.imagePosition = .imageLeading
+            }
+        }
+        let hm = { (m: Int) in String(format: "%d:%02d", m / 60, m % 60) }
+        let words = { (m: Int) in m >= 60 ? "\(m / 60) h" + (m % 60 > 0 ? " \(m % 60) min" : "") : "\(m) min" }
+        statusItem?.button?.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        statusItem?.button?.title = " \(hm(t.active)) · \(hm(t.logged))"
+        statusItem?.button?.toolTip = "Today: \(words(t.active)) active, \(words(t.logged)) logged"
+        let menu = NSMenu()
+        for line in ["Active today: \(words(t.active))", "Logged: \(words(t.logged))", "Not logged: \(words(t.notLogged))"] {
+            let it = NSMenuItem(title: line, action: nil, keyEquivalent: "")
+            it.isEnabled = false
+            menu.addItem(it)
+        }
+        menu.addItem(.separator())
+        let open = NSMenuItem(title: "Open Pulsar", action: #selector(bringBack), keyEquivalent: "")
+        open.target = self
+        menu.addItem(open)
+        for (title, run) in [("Log the Day…", "logDay"), ("New Entry…", "newEntry")] {
+            let it = NSMenuItem(title: title, action: #selector(pageCommand(_:)), keyEquivalent: "")
+            it.target = self
+            it.representedObject = ["run": run, "arg": NSNull()] as [String: Any]
+            menu.addItem(it)
+        }
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "Quit Pulsar", action: #selector(NSApplication.terminate(_:)), keyEquivalent: ""))
+        statusItem?.menu = menu
+    }
+
     // MARK: the Dock badge, the reminder, Open at Login
 
     /// Today's active time with no entry, on the Dock icon: "45m", "3h". Nothing under a quarter of an hour.
@@ -927,6 +981,7 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
             if let title = body["title"] as? String, !title.isEmpty { window.title = String(title.prefix(120)) }
             applyTheme(body["theme"] as? String ?? "system", background: body["bg"] as? String)
         case "badge": badge((body["minutes"] as? NSNumber)?.intValue ?? 0)
+        case "today": showToday(body)
         case "menu": popUpMenu(body)
         case "quit":   // "Reinstall Pulsar": the new app opens once this one has quit (pulsar/appupdate.py)
             quitAsked = true
@@ -948,6 +1003,7 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
             defaults.set(on, forKey: "badge")
             if !on { NSApp.dockTile.badgeLabel = nil }
         }
+        if let on = set["menubar"] as? Bool { defaults.set(on, forKey: "menubar"); paintStatusItem() }
         if let on = set["reminder"] as? Bool { defaults.set(on, forKey: "reminder") }
         if let time = set["reminderTime"] as? String, time.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil {
             defaults.set(time, forKey: "reminderTime")

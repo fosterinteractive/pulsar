@@ -305,6 +305,7 @@
         if (state.date === todayLocal() && state.logged && !state.logged.error && state.act && !state.act.error) {
           lastGap = {minutes: Math.round(gapMin), at: Date.now()};
           send({action: 'badge', minutes: lastGap.minutes, date: state.date});
+          if (typeof todayLater === 'function') todayLater();
         }
       } catch (e) {}
       return out;
@@ -324,6 +325,18 @@
   setTimeout(badge, 20 * 1000);
   setInterval(badge, 30 * 60 * 1000);
 
+  /* ---------- today in the menu bar: active work and logged time (the window's status item) ---------- */
+  let todaySoon = 0;
+  async function todayLine() {
+    const d = todayLocal(), r = await getJSON(`/api/report?from=${d}&to=${d}`);
+    const day = r && !r.error && r.days ? r.days[0] : null;
+    if (day) send({action: 'today', date: d, active: Math.round(day.active || 0), logged: Math.round(day.logged || 0),
+                   notLogged: Math.round(day.notLogged || 0)});
+  }
+  const todayLater = (ms = 3000) => { clearTimeout(todaySoon); todaySoon = setTimeout(todayLine, ms); };
+  todayLater(8 * 1000);
+  setInterval(todayLine, 3 * 60 * 1000);
+
   /* ---------- after a sleep, or at midnight: the day it is now ---------- */
   function wake() {
     const ev = new CustomEvent('pulsar:wake', {cancelable: true});
@@ -333,6 +346,7 @@
     }
     report();
     setTimeout(badge, 5000);
+    setTimeout(todayLine, 5000);
   }
 
   /* ---------- the bridge: what the window calls (PulsarWindow.swift, callPage) ---------- */

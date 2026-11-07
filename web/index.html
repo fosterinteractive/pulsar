@@ -153,10 +153,11 @@
           <p class="hint">Log the day starts and ends entries on this step. A block you click to log is rounded to it, or runs up
             to the next entry; a drag or minutes you type stay as they are.</p>
         </section>
-        <section data-k="dock badge reminder end of day open at login startup window app mac" id="app-sec" hidden>
+        <section data-k="menu bar status dock badge reminder end of day open at login startup window app mac" id="app-sec" hidden>
           <h3>This Mac</h3>
           <p class="hint">Pulsar's window: these change at once, no Save needed.</p>
-          <label class="check"><input type="checkbox" id="app-badge"> The Dock icon shows the time not logged today</label>
+          <label class="check" id="app-menubar-row"><input type="checkbox" id="app-menubar"> The menu bar shows today's active and logged time</label>
+          <label class="check"><input type="checkbox" id="app-badge"> The Dock icon shows the time not logged today (macOS may hide it: Pulsar is not signed by Apple)</label>
           <label class="check"><input type="checkbox" id="app-reminder"> Remind me to log the day at
             <input type="time" id="app-reminder-time" class="app-time" aria-label="Reminder time"></label>
           <label class="check"><input type="checkbox" id="app-login"> Open Pulsar when I log in to the Mac</label>
