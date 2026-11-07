@@ -238,7 +238,9 @@ class Updater:
             since = time.strftime("%d %b %Y, %H:%M", time.localtime(stamp))
         except OSError:
             since = ""
-        return {**self.state, "installed": installed(self.root), "since": since}
+        from . import appupdate
+        app = {**(self.state.get("app") or {}), **appupdate.status(self.root)}  # the app itself (appupdate.py)
+        return {**self.state, "installed": installed(self.root), "since": since, "app": app}
 
     def _set(self, status: str, message: str = "", **extra) -> dict:
         self.state.update(status=status, message=message, **extra)
@@ -295,6 +297,9 @@ class Updater:
                 from . import logbook
                 logbook.record("updater", stale, kind="warning", once_per=86400)
                 return self._set("stale", stale)
+            # the app around the code (window and launcher): a release may ask for a newer one (appupdate.py)
+            from . import appupdate
+            self.state["app"] = appupdate.manifest_app(manifest)
             # how many releases are newer than this copy: the signed list of every version, when the release has one
             listed = [v for v in manifest.get("versions") or [] if isinstance(v, str) and VERSION_RE.fullmatch(v)]
             behind = len({v for v in listed + [latest] if vtuple(v) > vtuple(__version__)})

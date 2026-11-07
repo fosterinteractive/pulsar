@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, askclaude, calendar, claudelink, claudeuses, config, daymarks, dayplan, dayreview, flags, learn, likely, logbook, mcptools, newtask, productive, ranges, report, sessions, trackers, updater, names
+from . import __version__, appupdate, askclaude, calendar, claudelink, claudeuses, config, daymarks, dayplan, dayreview, flags, learn, likely, logbook, mcptools, newtask, productive, ranges, report, sessions, trackers, updater, names
 from .mcp import whoami_proof
 
 UPDATER = updater.Updater()
@@ -551,6 +551,18 @@ def api_likely_note(body: dict) -> dict:
     except askclaude.AskError as exc:
         logbook.record("ask claude", str(exc), kind="warning")
         return {"note": "", "error": str(exc)}
+
+
+def api_app_reinstall() -> dict:
+    """"Reinstall Pulsar": the newer app the latest release describes, in place of this one (appupdate.py). Only on
+    the person's click; when this account cannot change the app's folder, the install line to run instead."""
+    try:
+        return {"app": appupdate.reinstall(UPDATER.state.get("app") or {})}
+    except appupdate.NotWritable as exc:
+        return {"error": str(exc), "installLine": appupdate.install_line()}
+    except Exception as exc:  # a download, a check or the swap failed: nothing was changed, say why
+        logbook.record("updater", f"Reinstalling Pulsar.app failed: {exc}")
+        return {"error": str(exc)}
 
 
 def api_report(q: dict) -> dict:
@@ -1897,6 +1909,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json({"error": "No update is ready."}, 400)
                 threading.Timer(0.5, UPDATER.apply).start()  # answer first, then restart into the new version
                 return self.send_json({"ok": True})
+            if urlparse(self.path).path == "/api/update/app":  # "Reinstall Pulsar": the app itself (appupdate.py)
+                return self.send_json(api_app_reinstall())
+            if urlparse(self.path).path == "/api/app/started":  # a new app's page says it started (appupdate.py)
+                return self.send_json(appupdate.started(str(body.get("version") or "")[:20]))
             if urlparse(self.path).path == "/api/log":
                 return self.send_json(api_log(body))
             if urlparse(self.path).path == "/api/entry/update":

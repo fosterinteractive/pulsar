@@ -32,6 +32,11 @@ What each Pulsar release changed, newest first.
 - Task search puts yours first: tasks you logged to lately, then those assigned to you; closed tasks last.
 - Log the day: a row opened with no note gets one drafted by Claude from its sessions and commits, and picking another task keeps it.
 - Log the day: entries already in Productive have a green bar, a green wash and a check, apart from what is still to log.
+- The Pulsar app (a new install, or Settings, Updates, Reinstall Pulsar): full menus with shortcuts (New Entry Cmd+N, Day Cmd+1, Report Cmd+2, Today Cmd+T, Previous and Next Day Cmd+Left and Cmd+Right, Refresh Cmd+R, Print Cmd+P, Help), and Cmd+W closes an open dialog before the window.
+- The Pulsar app: closing the window keeps Pulsar in the Dock, with today's time not logged on its icon and a reminder at 17:30 on working days; Cmd+Q asks first when something would be lost.
+- The Pulsar app: right-click an entry, an activity block or a gap for its own menu; the title bar takes the page's colours and theme; a pinch changes the rows; after a sleep the day moves on to today.
+- The Pulsar app: its first-start dialogs are sheets on its window, with a spinner while it starts, and it goes on by itself once Apple's developer tools are installed.
+- A release can ask for a newer Pulsar app: Settings, Updates offers Reinstall Pulsar, checked like an update, and the old app comes back if the new one does not start.
 
 ## 1.5.4 (2026-11-07)
 - A task you never logged to takes the service you used last in its project, in the log dialog and in Log the day.
