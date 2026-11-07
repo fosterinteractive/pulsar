@@ -6,6 +6,14 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- Two more release keys are trusted: a Touch ID key in the publisher's Mac, which signs the next releases, and an offline reserve.
+- Pulsar.zip is signed, and the install line checks it with the Mac's own openssl before it unpacks anything.
+- release.sh signs only main as it is on GitHub; an update older than one already seen is refused.
+- Calendar titles become notes only through the note checks, only from your own company's organizers; a renamed series starts unticked.
+- Claude's note drafts go only to the session they came from; the note checks see look-alike and invisible letters, tool names and sums in words.
+- Tests can no longer touch a real git repository or your git settings.
+
 ## 1.5.0 (2026-11-07)
 - After an update, a window from an older Pulsar.app signs in again instead of staying signed out.
 - The install line replaces an older Pulsar.app instead of unpacking over it.

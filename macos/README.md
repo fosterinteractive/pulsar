@@ -69,7 +69,8 @@ private repository every download answers 404: Settings then says no release is 
 copy writes a warning to its error log once a day.
 
 **The release keys.** Installed copies trust only releases signed with one of the ECDSA P-256 keys listed in
-`PUBLIC_KEYS` in `pulsar/release_sig.py`: the main key, then a reserve key. The same keys sign the code inside
+`PUBLIC_KEYS` in `pulsar/release_sig.py`. Since 1.5.1 there are three: the old key file (until the move below is
+finished), the Touch ID key (made 2026-11-07 on the publisher's Mac) and the reserve key. The same keys sign the code inside
 Pulsar.app, and the app's launcher checks it with its own copy of that file before it installs anything.
 
 - **Main key**: best a Touch ID key, `~/.config/pulsar-release/update-signing-key.se` (below): its private half lives in
@@ -78,10 +79,11 @@ Pulsar.app, and the app's launcher checks it with its own copy of that file befo
   (owner-only, never in the repo). `release.sh` uses the `.se` key when there is one, else the `.pem`
   (`PULSAR_SIGNING_KEY` points elsewhere), signs through `macos/sign.sh`, and refuses a key that is not listed, or
   that the newest released version does not list (people would not get the release).
-  Keep a copy in the team's 1Password vault, so another maintainer can publish and a lost Mac loses nothing.
-  Encrypted (`openssl ec -aes256 -in key.pem -out key.enc.pem`), `release.sh` asks for its passphrase (twice: for
-  `latest.json` and for the app), so publishing then needs a person at a terminal.
-- **Reserve key**: kept only in 1Password, never on a laptop. If the main key is lost or leaks, sign one release with
+  A Touch ID key cannot be copied, so it is lost with its Mac: that is what the reserve is for. A key file, while
+  one is used, is best encrypted (`openssl ec -aes256 -in key.pem -out key.enc.pem`); `release.sh` then asks for its
+  passphrase for each signature, so publishing needs a person at a terminal.
+- **Reserve key**: encrypted with its own passphrase, kept only in the publisher's password manager (a LastPass
+  secure note, made 2026-11-07), never on a laptop. If the main key is lost or leaks, sign one release with
   the reserve (`PULSAR_SIGNING_KEY=<reserve file> macos/release.sh …`) whose `PUBLIC_KEYS` drops the old main key and
   adds a new one; every installed copy accepts it and from then on trusts the new list, with no reinstall.
   Create it on the Mac of whoever keeps it, so the private half is never seen anywhere else:
@@ -91,8 +93,8 @@ Pulsar.app, and the app's launcher checks it with its own copy of that file befo
   /usr/bin/openssl ec -in ~/Desktop/pulsar-reserve-key.pem -pubout     # the public half: add it to PUBLIC_KEYS
   ```
 
-  Put the file and its passphrase in 1Password, delete the file from the Desktop, and publish a release that lists
-  the public half. A key can only be added by a release signed with a key already listed, so the reserve has to be
+  Put the file in the password manager (its passphrase best kept apart), delete the file from the Desktop, and
+  publish a release that lists the public half. A key can only be added by a release signed with a key already listed, so the reserve has to be
   in place before people install.
 
 **Moving to a Touch ID key** (a Mac with Touch ID or a keyboard with it, and Apple's Command Line Tools):
@@ -106,9 +108,13 @@ Pulsar.app, and the app's launcher checks it with its own copy of that file befo
    sign this release with the new key: the version people have does not list it yet.)
 4. From the next release on, `macos/release.sh …` signs with the Touch ID key: a fingerprint for each signature
    (the update and the app's code), in a dialog that names what is signed and the start of its SHA-256. The terminal
-   prints the full SHA-256 first: compare it before you touch.
+   prints the full SHA-256 first: compare it before you touch. That first release also puts the Touch ID key's public
+   half in README.md's install line (the `printf` lines), since Pulsar.zip is then signed with it: `release.sh`
+   refuses a Pulsar.zip the line's key does not verify.
 5. Once a release signed with the Touch ID key is out, drop the old main key from `PUBLIC_KEYS` in a release and
-   delete the `.pem` file (and its copy in 1Password). Keep the reserve key: a new Mac, or a wiped one, cannot use the
+   delete the `.pem` file (and any copy of it).
+
+Where this stands: steps 1 and 2 done on 2026-11-07, step 3 is 1.5.1; 4 and 5 are the next releases. Keep the reserve key: a new Mac, or a wiped one, cannot use the
    Touch ID key, and the reserve is then the only way to move on.
 
 Any enrolled finger signs, so enrolling another (which needs the Mac's password) does not lose the key. What it does
@@ -120,7 +126,7 @@ it, and releases are immutable once published (repository setting), so nobody ca
 release. A Pulsar.zip in such a release still reaches whoever downloads it: its code would not install through
 Pulsar's own launcher, but a whole app built from scratch carries a launcher of its own. Hence the steps in
 `docs/HOW-IT-WORKS.md`, section 9, "What the maintainer must do": protect `main`, limit who can release, the reserve
-key, the key encrypted. For the first release of a version (for example 1.0.0 before any tag exists) `release.sh` accepts the
+key, the Touch ID key. For the first release of a version (for example 1.0.0 before any tag exists) `release.sh` accepts the
 version already in `__init__.py`.
 
 **Where it is installed.** `~/Library/Application Support/Pulsar/`:

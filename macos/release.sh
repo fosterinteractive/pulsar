@@ -198,7 +198,7 @@ PULSAR_BUNDLE_SIGNING_KEY="$KEY" "$ROOT/macos/build_app.sh" >/dev/null
 
 # Pulsar.zip itself, signed as one file, so a new install can check it before anything in it runs: README.md's
 # install line verifies this signature with the Mac's own /usr/bin/openssl and the public key written in the line.
-/usr/bin/openssl dgst -sha256 -sign "$KEY" -out dist/Pulsar.zip.sig dist/Pulsar.zip
+"$ROOT/macos/sign.sh" "$KEY" dist/Pulsar.zip dist/Pulsar.zip.sig "Pulsar $VERSION, the install zip"
 # ...and it must pass that very check: the key in the line must be one of PUBLIC_KEYS and must verify this signature,
 # so a README out of step with the keys is caught here and not by a new colleague.
 python3 -E -s - "$ROOT" dist/Pulsar.zip dist/Pulsar.zip.sig <<'PY' || die "README.md's install line would refuse this Pulsar.zip: its public key is not the one that signed it, or not one of PUBLIC_KEYS"

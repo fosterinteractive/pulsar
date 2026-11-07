@@ -1369,11 +1369,12 @@ publishes; none of them is done yet unless noted in section 13.
    in a browser would install it.
 3. **Create the reserve key** (`macos/README.md`, "The release keys"), add its public half to `PUBLIC_KEYS` in
    `pulsar/release_sig.py`, and ship a release with it, before more people install. A key can only be added by a
-   release signed with a key already listed.
+   release signed with a key already listed. **Done 2026-11-07**: kept encrypted in the publisher's LastPass, listed
+   from 1.5.1.
 4. **Move the release key to Touch ID** (`macos/README.md`, "Moving to a Touch ID key"): `macos/sign.sh keygen`
    makes it in the Mac's Secure Enclave, where no program can copy it, and each signature then needs a fingerprint.
-   Until then, encrypt the key file at rest (`openssl ec -aes256 -in update-signing-key.pem -out
-   update-signing-key.enc.pem`, then use the encrypted file), and keep a copy only in the team's 1Password vault.
+   **Under way**: the key was made on 2026-11-07 and is listed from 1.5.1 (signed with the old key file); the next
+   release is signed with it, and the release after drops the old key, whose file is then deleted.
 5. **Release at least every 60 days**, or installed copies stop seeing updates until the next release (`expires`).
 
 ## 10. The API
@@ -1494,8 +1495,9 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   flag counts the project's first 100 tasks as Productive lists them, not the most recently active.
 - No ticket flag for a budget nearly used up: Productive does not show budgets to a Staff role (5.3).
 - The app is ad-hoc signed, not with an Apple Developer ID: macOS asks for confirmation on first open (Open Anyway).
-- The reserve release key has not been created yet, `main` is not protected, and the release key is not encrypted
-  at rest (section 9, "What the maintainer must do").
+- `main` is not protected and who may publish a release is not limited yet; the old release key file still exists,
+  unencrypted, until the move to the Touch ID key is finished (section 9, "What the maintainer must do"). The reserve
+  key and the Touch ID key were made on 2026-11-07.
 - The app around the code, its window and launcher, is not covered by the release key: Apple's ad-hoc signature does
   not say who built it, and the launcher's check of the code belongs to the very app it checks. A Pulsar.zip built
   from scratch by someone who can publish on the repository installs whatever it likes when it is downloaded in a
