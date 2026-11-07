@@ -136,7 +136,9 @@ yours.
     holds neither. `pulsar_log` takes that code, exactly, and that summary, word for word, and no other argument. It
     writes new entries only, as a Log the day run (journalled, never sent twice, never `force`, never the dialog's
     pieces), and the journal marks each row `via: "claude-code"`: the Logged column says "from Claude Code" on those
-    entries (`server.from_claude_code`).
+    entries (`server.from_claude_code`). The server sets that mark on every write made through these tools, whatever
+    the request says: its `client` field is the caller's own word (a script with the key can send "claude-code"),
+    and nothing in a request can remove the mark.
 
   Everything else with the key alone is refused with 403: every GET with data (`/api/entries`, `/api/activity`,
   `/api/config`, `/api/logs`, icons, …), `POST /api/log`, changing or deleting an entry, settings (the token,

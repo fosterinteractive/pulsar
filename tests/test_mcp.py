@@ -844,6 +844,40 @@ class McpTest(unittest.TestCase):
         self.assertEqual({x["id"] for x in got["entries"] if x.get("fromClaudeCode")}, ids)
         self.assertNotIn("e600", {x["id"] for x in got["entries"] if x.get("fromClaudeCode")})
 
+    def test_the_server_marks_every_key_write_from_claude_code_whatever_the_client_says(self):
+        """The client's name is the caller's own word (a script with the key can say "claude-code"), so the mark
+        cannot come from it: every call the tools make to api_log carries the server's own mark, and no field of
+        the request can carry another (review 4, A3). No write is made: api_log itself is replaced."""
+        seen = []
+
+        def fake_log(body, via=""):
+            seen.append(via)
+            return {"ok": True} if body.get("dry") else {"created": {"id": "901"}}
+        key = {"X-Pulsar-Key": config.session_secret(), "X-Pulsar": "1"}
+        with mock.patch.object(server, "api_log", fake_log):
+            status, body = self.ask_http("/api/mcp/pulsar_preview", "POST", key,
+                                         {"args": self.ARGS, "client": "claude-code"})
+            self.assertEqual(status, 200, body)
+            dry = json.loads(body)
+            status, body = self.ask_http("/api/mcp/pulsar_log", "POST", key,
+                                         {"args": {"code": dry["code"], "summary": dry["summary"]}, "client": "claude-code"})
+            self.assertEqual(status, 200, body)
+            self.assertEqual(json.loads(body)["written"], 2)
+            for extra in ({"via": ""}, {"via": "page"}, {"from": "page"}):  # nothing in the request can set it
+                self.assertEqual(self.ask_http("/api/mcp/pulsar_preview", "POST", key,
+                                               {"args": self.ARGS, "client": "claude-code", **extra})[0], 400, extra)
+                self.assertEqual(self.ask_http("/api/mcp/pulsar_preview", "POST", key,
+                                               {"args": {**self.ARGS, **extra}, "client": "claude-code"})[0], 400, extra)
+                entries = [{**e, **extra} for e in self.ARGS["entries"]]
+                status, body = self.ask_http("/api/mcp/pulsar_preview", "POST", key,
+                                             {"args": {"date": DATE, "entries": entries}, "client": "claude-code"})
+                self.assertTrue(status == 400 or json.loads(body)["code"] is None, (extra, body))
+            for client in ("", "cursor", "page"):  # the preview takes any client: its dry runs are marked all the same
+                self.assertEqual(self.ask_http("/api/mcp/pulsar_preview", "POST", key,
+                                               {"args": self.ARGS, "client": client})[0], 200, client)
+        self.assertEqual(len(seen), 10)  # two dry runs and two writes, then two dry runs per client
+        self.assertEqual(set(seen), {mcptools.VIA})
+
     def test_rate_limit_and_dates(self):
         for i in range(10):
             code, _ = mcptools.call("pulsar_log", {"args": {"code": "0" * 16, "summary": "x"}, "client": "claude-code"})

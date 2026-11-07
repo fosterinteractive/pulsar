@@ -133,7 +133,9 @@ def fetch(calls: dict) -> dict:
 
 def post(path: str, body: dict) -> dict:
     """POST /api/log, called directly and marked as Claude Code's: server.api_log's answer, or its error as the page
-    would get it ({"error", "_status"}, and "unclear" when it may have been written)."""
+    would get it ({"error", "_status"}, and "unclear" when it may have been written). The mark is the server's own, on
+    every call: the request's "client" is the caller's word (a script with the key can say "claude-code"), so nothing
+    in the request sets or removes it."""
     from . import server
     if path != "/api/log":
         raise ToolError("Pulsar in Claude Code writes only new entries.")
