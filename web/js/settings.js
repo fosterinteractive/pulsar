@@ -56,7 +56,6 @@ function paintWarp() {
 }
 $('#warp-on').addEventListener('change', ev => {
   try { ev.target.checked ? localStorage.removeItem(WARP_KEY) : localStorage.setItem(WARP_KEY, 'off'); } catch (e) {}
-  toast(ev.target.checked ? 'The warp is on.' : 'The warp is off.');
 });
 
 /* tabs: Connections, Time and activity, Claude, Rules, Updates. The one last open opens again (a per-browser
@@ -227,13 +226,10 @@ function paintLink(l) {
   const on = !!l.askClaude, m = k.managed || {};
   el.classList.remove('warn');
   if (!l.claudeFound) el.textContent = 'Claude Code was not found on this Mac.';
-  else if (!on) el.textContent = 'Off. Switch it on and Save: Pulsar adds itself to Claude Code, and takes it all back when switched off.';
+  else if (!on) el.textContent = 'Turns on Claude’s task picks, notes and task drafts, and logging from a Claude Code session. Switching it off takes it all back.';
   else if (k.registered && k.current) {
-    el.textContent = `On. Pulsar is in Claude Code as “${k.name}”` + (k.rules
-      ? ', Claude Code asks before a session logs through Pulsar, and its file tools are kept out of Pulsar’s folders.'
-      : ', but Claude Code’s settings lack some of its rules (ask before logging through Pulsar, keep out of Pulsar’s folders'
-        + (l.askProductive ? ', ask before changing Productive' : '') + ').') +
-      ' New sessions see it; a session already open sees it after /mcp.';
+    el.textContent = k.rules ? 'On. New Claude Code sessions can read your day and log through Pulsar, asking you first.'
+      : 'On, but some of Pulsar’s rules are missing in Claude Code. Add them again below.';
     if (!k.rules) el.classList.add('warn');
   }
   else { el.textContent = k.registered ? 'On, but Claude Code starts an older copy of Pulsar.' : 'On, but Pulsar is not in Claude Code.';
@@ -257,7 +253,7 @@ let claudeUses = [];
 function paintUses(uses, off) {
   claudeUses = uses;
   $('#claude-uses').innerHTML = uses.map(u => `<div class="cu" role="listitem" data-use="${esc(u.id)}">
-    <p class="cu-t"><b>${esc(u.name)}</b> ${esc(u.does)} <span class="cu-s">${esc(u.sends)}</span></p>
+    <div class="cu-t"><b>${esc(u.name)}</b> ${esc(u.does)}<details class="cu-s"><summary>What it sends</summary>${esc(u.sends)}</details></div>
     <div class="cu-m">${u.model ? `<select data-use="${esc(u.id)}" aria-label="Model for ${esc(u.name)}"${off ? ' disabled' : ''}>
       ${Object.keys(u.caps).map(m => `<option value="${esc(m)}"${m === u.model ? ' selected' : ''}>${esc(MODEL_NAMES[m] || m)}${m === u.default ? ' (default)' : ''}</option>`).join('')}
       </select><small class="cu-cap"></small><small class="cu-spent"></small>` : '<small>Your session’s own model</small>'}</div></div>`).join('');
@@ -281,10 +277,10 @@ function paintAccount(k, on) {
   el.classList.remove('warn'); el.replaceChildren();
   if (!on || !a) { el.hidden = true; return; }
   el.hidden = false;
-  el.append(`They use Claude Code's sign-in: ${a.email ? a.email + ', ' : ''}${a.plan}.`);
+  el.append(`Claude Code is signed in as ${a.email ? a.email + ', ' : ''}${a.plan}${a.consumer ? '' : '.'}`);
   if (a.consumer) {
     el.classList.add('warn');
-    el.append(' This is a consumer plan: Anthropic may use these chats, with your session text, to train its models if that setting is on for the account. ');
+    el.append(', a consumer plan: Anthropic may train on these chats if that is on for your account. ');
     const link = document.createElement('a');
     link.href = k.dataUsage; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = 'How Claude Code uses data';
     el.append(link, '.');
@@ -376,7 +372,7 @@ function waitForVersion() {
     if (Date.now() - t0 > 60 * 1000) {
       clearInterval(waitingForVersion); warpRelease();
       toast('Pulsar did not come back. Close it and open it again.', true);
-      const st = $('#update-status'); st.textContent = 'Pulsar did not come back. Close and open it again.'; st.classList.add('warn');
+      const st = $('#update-status'); st.textContent = 'Pulsar did not come back. Close it and open it again.'; st.classList.add('warn');
     }
   }, 1500);
 }
@@ -414,8 +410,7 @@ function maybeRemind(u = CONFIG?.update) {
   if (u.skip === u.latest || Date.now() / 1000 - (u.asked || 0) < REMIND_EVERY) return;
   if (signedOut || document.querySelector('dialog[open]')) return;
   $('#updprompt-title').textContent = `Pulsar ${u.latest} is out`;
-  $('#updprompt-text').textContent = `This copy is ${u.current}, ${u.behind} releases behind. Updating takes a few seconds: `
-    + 'Pulsar downloads the new version, checks it and restarts into it.';
+  $('#updprompt-text').textContent = `You have ${u.current}, ${u.behind} releases behind. Updating takes a few seconds.`;
   $('#updprompt-notes').textContent = u.notes || '';
   remindDlg.showModal();
   const now = Math.floor(Date.now() / 1000);

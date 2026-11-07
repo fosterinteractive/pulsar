@@ -417,7 +417,7 @@ class AskProductiveBoxTest(unittest.TestCase):
             html = fh.read()
         self.assertIn("f.claude_ask_productive.disabled = off;", code)
         self.assertIn("form.elements.ask_claude.addEventListener('change', paintAskProductive)", code)
-        self.assertIn('id="claude-ask-off" hidden>Not in effect while', html)
+        self.assertIn('id="claude-ask-off" hidden>Waits for “Use Claude Code with Pulsar”', html)
 
 
 if __name__ == "__main__":

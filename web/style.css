@@ -320,6 +320,7 @@ ul.hint { padding-left: 18px; display: grid; gap: 2px; }
 .cu-t { margin: 0; font-size: 12px; color: var(--muted); }
 .cu-t b { color: var(--text); font-weight: 600; }
 .cu-s { display: block; margin-top: 2px; }
+.cu-s summary { cursor: pointer; width: max-content; }
 .cu-m { display: grid; gap: 2px; justify-items: end; text-align: right; width: 132px; }
 .cu-m select { font: inherit; font-size: 12.5px; color: var(--text); background: var(--bg); border: 1px solid var(--line);
   border-radius: 7px; padding: 3px 6px; }

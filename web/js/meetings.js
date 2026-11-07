@@ -62,12 +62,12 @@ function openMeeting(i, ev) {
 /* ---------- Settings: connect in the browser (Google's own sign-in), disconnect here ---------- */
 function paintCalendar(c) {
   const g = c?.calendar || {}, st = $('#gcal-status'), connect = $('#gcal-connect');
-  st.textContent = !g.configured ? 'Not set up in this copy of Pulsar yet: it needs the organization\'s Google sign-in first.'
+  st.textContent = !g.configured ? 'Not available in this copy of Pulsar.'
     : g.connected ? `Connected as ${g.account || 'your Google account'}.` : 'Not connected.';
   st.classList.toggle('warn', !g.configured);
   connect.hidden = !!g.connected;
   connect.disabled = !g.configured;
-  connect.title = g.configured ? '' : 'Not set up in this copy of Pulsar yet';
+  connect.title = g.configured ? '' : 'Not available in this copy of Pulsar';
   $('#gcal-disconnect').hidden = !g.connected;
   if (g.connected) $('#gcal-link').hidden = true;
 }

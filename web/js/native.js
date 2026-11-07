@@ -57,9 +57,8 @@
       ? `<h3>Pulsar app</h3><p class="status">Pulsar ${esc(offer.version)} is in Applications. ${SHELL ? '' : 'Quit Pulsar (Cmd+Q) to finish: it opens again by itself.'}</p>
          ${SHELL ? '<div class="btnrow"><button type="button" class="btn primary" data-app-restart>Restart Pulsar</button></div>' : ''}`
       : `<h3>Pulsar app</h3>
-         <p class="hint">This Mac's Pulsar app${offer.mine ? ' (' + esc(offer.mine) + ')' : ''} is older than the one Pulsar now needs for
-           its window and menus. Reinstalling puts the app of Pulsar ${esc(offer.version)} in its place, checked like any update
-           (the release's signature, its checksum, macOS's own signature check). Settings and data stay. ${finish}</p>
+         <p class="hint">This Mac's Pulsar app${offer.mine ? ' (' + esc(offer.mine) + ')' : ''} is too old for the new window and menus.
+           Reinstalling puts the ${esc(offer.version)} app in its place, checked like any update; settings and data stay. ${finish}</p>
          <p class="status" id="app-reinstall-msg" role="status" hidden></p>
          <div class="btnrow"><button type="button" class="btn primary" data-app-reinstall>Reinstall Pulsar</button></div>`;
   }

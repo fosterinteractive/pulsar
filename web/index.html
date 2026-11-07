@@ -125,19 +125,18 @@
               <option value="claude-code">Claude Code's connection</option>
             </select></label>
           <label class="field"><span>API token</span><input type="password" name="token" autocomplete="off" spellcheck="false"></label>
-          <p class="hint">In Productive: Settings, then API integrations, then Generate new token, with Read/Write access (read-only shows your time but cannot log it). The token stays on this computer (in the keychain on a Mac) and is never shown again.</p>
+          <p class="hint">From Productive: Settings, API integrations, Generate new token, with Read/Write access. Kept in this Mac's keychain.</p>
           <div class="row2">
             <label class="field"><span>Organization ID</span><input name="org_id" inputmode="numeric" placeholder="found automatically"></label>
             <label class="field"><span>Your person ID</span><input name="person_id" inputmode="numeric" placeholder="found automatically"></label>
           </div>
-          <p class="hint">Only if Pulsar asks for them. The organization ID is the number at the start of your Productive address (app.productive.io/<b>12345</b>-company/…); your person ID is the number in the address of your own profile.</p>
+          <p class="hint">Only if Pulsar asks: the number in your Productive address (app.productive.io/<b>12345</b>-…), and the one in your profile's address.</p>
           <button type="button" class="btn bordered" id="remove-token">Remove the saved token</button>
         </section>
         <section data-k="meetings events google calendar oauth sign in connect disconnect" id="gcal">
           <h3>Google Calendar</h3>
           <p class="status" id="gcal-status"></p>
-          <p class="hint">Your meetings, in their own column next to your activity. Pulsar reads the events of your main
-            calendar and nothing else; Google asks you to allow it. The access stays on this computer (in the keychain on a Mac).</p>
+          <p class="hint">Shows your meetings in the Day view. Pulsar only reads your main calendar; the access is kept in this Mac's keychain.</p>
           <div class="btnrow"><button type="button" class="btn primary" id="gcal-connect">Connect Google Calendar</button>
             <button type="button" class="btn bordered" id="gcal-disconnect" hidden>Disconnect</button></div>
           <p class="hint" id="gcal-link" hidden></p>
@@ -148,7 +147,6 @@
           <h3>Time</h3>
           <label class="field"><span>Time zone</span><input name="timezone" list="zones" autocomplete="off"></label>
           <datalist id="zones"></datalist>
-          <p class="hint">Leave it empty to use this computer's time zone.</p>
           <label class="field"><span>Daily target, hours</span><input name="target_hours" type="number" min="0.5" max="24" step="0.25"></label>
           <label class="field"><span>Round entries to</span>
             <select name="round_to"><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option></select></label>
@@ -168,14 +166,14 @@
         <section data-k="personal windows activitywatch memtime tracker afk away">
           <h3>Activity</h3>
           <label class="field"><span>Personal windows</span><textarea name="personal_patterns" rows="5"></textarea></label>
-          <p class="hint">One word per line. A window whose app, title or site contains one of them counts as personal time, not work.</p>
+          <p class="hint">One word per line. A window that contains one counts as personal, not work.</p>
           <label class="field"><span>ActivityWatch address</span><input name="activitywatch_url" placeholder="http://localhost:5600"></label>
         </section>
       </div>
       <div role="tabpanel" id="p-claude" aria-labelledby="t-claude" hidden>
         <section data-k="likely column ask claude sessions sonnet haiku opus model models ai suggestions mcp connect notes new task draft log from a session deny sandbox account plan cost usage productive ask rules">
           <h3>Claude Code</h3>
-          <p class="hint">Pulsar reads your Claude Code sessions on this Mac to show which project each stretch of work went to (the Likely column), and learns from what you log which tasks belong to them. Nothing leaves this Mac unless you switch on Claude Code below.</p>
+          <p class="hint">The Likely column reads your Claude Code sessions on this Mac. Nothing is sent anywhere unless you switch on Claude Code below.</p>
           <label class="field"><span>“Likely” column</span>
             <select name="likely"><option value="auto">Show it when Claude Code sessions are found</option><option value="off">Hide it</option></select></label>
           <p class="hint" id="likely-hint"></p>
@@ -186,10 +184,10 @@
           <div class="cu-list" id="claude-uses" role="list" aria-labelledby="claude-uses-h"></div>
           <p class="hint">Runs your own Claude Code, on your plan. Haiku is fastest and cheapest, Opus slowest and dearest; a run stops at its limit. Task picks with Sonnet cost about $0.10 to $0.25 a day.</p>
           <p class="hint" id="claude-account"></p>
-          <p class="hint" id="claude-deny">With it on, Claude Code's file tools are kept out of Pulsar's folders; a script can still read them unless <a href="https://code.claude.com/docs/en/sandboxing" target="_blank" rel="noopener noreferrer">Claude Code's sandbox</a> is on.</p>
+          <p class="hint" id="claude-deny">With the switch on, Claude Code's file tools are kept out of Pulsar's folders; a script can still read them unless <a href="https://code.claude.com/docs/en/sandboxing" target="_blank" rel="noopener noreferrer">Claude Code's sandbox</a> is on.</p>
           <label class="check"><input type="checkbox" name="claude_ask_productive"> Ask before any Claude Code session changes Productive</label>
-          <p class="hint warnish" id="claude-ask-off" hidden>Not in effect while “Use Claude Code with Pulsar” is off: the rules are added when you switch it on and Save.</p>
-          <p class="hint">Adds “ask” rules to Claude Code's own settings for the Productive connection named “productive”. They apply to <b>every</b> Claude Code session on this Mac, not only to Pulsar: each one then asks you before it creates, changes or deletes anything in Productive. Off by default.</p>
+          <p class="hint warnish" id="claude-ask-off" hidden>Waits for “Use Claude Code with Pulsar”.</p>
+          <p class="hint"><b>Every</b> Claude Code session on this Mac, not only Pulsar's, will ask you before it changes anything in Productive.</p>
         </section>
       </div>
       <div role="tabpanel" id="p-rules" aria-labelledby="t-rules" hidden>
@@ -213,12 +211,10 @@
           <div class="kv"><span>Installed</span><span id="upd-since"></span></div>
           <div class="kv"><span>Last check</span><span id="upd-checked"></span></div>
           <details id="changelog"><summary>Changelog</summary><div id="changelog-list"></div></details>
-          <p class="hint">Pulsars are among the most precise clocks in the universe, hence the name.</p>
           <p class="status" id="update-status"></p>
           <div class="btnrow"><button type="button" class="btn bordered" id="update-check">Check for updates</button>
             <button type="button" class="btn primary" id="update-now" hidden>Update</button></div>
-          <p class="hint">Pulsar looks for a new version every few hours and shows the Update button; it installs one only when
-            you click it.</p>
+          <p class="hint">Checks every 6 hours; installs only when you click Update.</p>
           <label class="check"><input type="checkbox" id="warp-on"> Warp animation on updates</label>
           <p class="hint" id="warp-hint">Option-click the version at the top to see it.</p>
           <div class="btnrow"><button type="button" class="btn bordered" id="settings-logs">Error log</button></div>
