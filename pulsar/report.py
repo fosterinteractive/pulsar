@@ -71,10 +71,13 @@ def build(dates: list, bounds: list, sources: dict, entries: list, today: str, s
                 cs = int((x["start"] - a) / 60)
                 for m in range(max(0, cs), min(length, cs + int(x["minutes"]))):
                     covered[m] = 1
+        # time logged with no start is on no timeline: it may be any of the active time, so it counts against it (as
+        # Log the day caps a day), and a day logged in full by duration does not read as not logged
+        no_start = sum(x["minutes"] for x in day_entries if x.get("start") is None)
         days.append({
             "date": date, "weekday": weekday, "source": src if (work or personal) else None,
-            "active": round(work), "personal": round(personal),
-            "notLogged": round(sum(min(1.0, active[m]) for m in range(length) if not covered[m])),
+            "active": round(work), "personal": round(personal), "noStart": no_start,
+            "notLogged": max(0, round(sum(min(1.0, active[m]) for m in range(length) if not covered[m]) - no_start)),
             "logged": sum(x["minutes"] for x in day_entries),
             "approved": sum(x["minutes"] for x in day_entries if x.get("approved")),
             "billable": sum(x["minutes"] for x in day_entries if x.get("billable")),

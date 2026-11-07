@@ -468,6 +468,13 @@ def _renew_claude_code(name: str) -> bool:
 
 
 WRITE_TOOLS = {"create_resource", "update_resource", "delete_resource", "perform_action"}
+# JSON-RPC errors that mean the tool never ran: not parsed, not a request, no such method, bad parameters
+NEVER_RAN = (-32700, -32600, -32601, -32602)
+# a failure behind Productive's MCP server, passed on as its own error text: a server error (5xx), a timeout, a dropped
+# connection. The write may have reached Productive before it, so it is never read as a refusal
+UPSTREAM = re.compile(r'"status"\s*:\s*"?5\d\d\b|\b(?:HTTP|status(?: code)?|error|code)\W{0,3}5\d\d\b|bad gateway|'
+                      r"service unavailable|gateway time-?out|internal server error|timed out|\btime-?out\b|"
+                      r"\bE(?:CONN\w+|TIMEDOUT|AI_AGAIN|PIPE)\b|fetch failed|socket hang up|network error", re.I)
 
 
 _mcp_slots = threading.BoundedSemaphore(4)  # Productive's MCP endpoint hangs up when asked too much at once
@@ -513,9 +520,14 @@ def mcp_text(tool: str, args: dict, token: str, session: Optional[str] = None) -
             msg = json.loads(line[5:])
     msg = msg or json.loads(text)
     if msg.get("error"):
-        raise ProductiveError(msg["error"].get("message", "MCP error"))
+        said = str(msg["error"].get("message") or "MCP error")
+        if tool in WRITE_TOOLS and msg["error"].get("code") not in NEVER_RAN:  # it may have run before it failed
+            raise ProductiveUnclear(UNCLEAR_SAID.format(said[:300]))
+        raise ProductiveError(said)
     content = "".join(c.get("text", "") for c in msg.get("result", {}).get("content", []))
     if msg.get("result", {}).get("isError"):  # the tool ran and failed: its text is the reason, never a result
+        if tool in WRITE_TOOLS and UPSTREAM.search(content):  # failed behind the MCP server, maybe after the write
+            raise ProductiveUnclear(UNCLEAR_SAID.format(content[:300]))
         raise ProductiveError(plain_refusal(content, "it"))
     return content
 
@@ -1276,8 +1288,14 @@ def create_entry(entry: dict, settings: dict) -> dict:
             text = raw[:600].decode("utf-8", "replace")
             raise ProductiveError(plain_refusal(text) if any(c in text for c in REFUSALS) else
                                   f"Productive refused the entry (HTTP {status}): {text[:300]}")
-        doc = json.loads(raw or b"{}")
-        return {"id": str((doc.get("data") or {}).get("id") or "")}
+        try:  # created (2xx): only an answer that names the new entry counts as logged
+            new_id = str((((json.loads(raw or b"{}") or {}).get("data") or {}).get("id")) or "")
+        except (ValueError, AttributeError):
+            new_id = ""
+        if not new_id.isdigit():
+            raise ProductiveUnclear(f"Productive answered HTTP {status} without the new entry in it, so the entry may or "
+                                    "may not exist. Check the Logged column (it has been refreshed) before logging again.")
+        return {"id": new_id}
     item = {"date": entry["date"], "time": f"{int(entry['minutes'])} min", "started_at": entry["started_at"],
             "note": entry.get("note") or "", "person": str(settings.get("person_id")),
             "service": str(entry["service_id"]), "task": str(entry["task_id"])}
@@ -1380,21 +1398,24 @@ def project_places(project_id: str, settings: dict) -> dict:
     return {"tasks": [t for t in tasks if t["taskId"].isdigit()], "lists": [x for x in lists if x["id"].isdigit()]}
 
 
-# Productive's refusals of a new task, in words the person can act on
+# Productive's refusals of a new task, in words the person can act on: by its codes and status, not by any English
+# phrase ("Assignee is not allowed", "not allowed under a closed task" are other reasons)
 TASK_REFUSALS = (
     (re.compile(r"invalid level of subtasks", re.I),
      "a subtask cannot have subtasks of its own. Put it under another task, or in a task list"),
     (re.compile(r"task_list is required", re.I), "this project needs a task list for it: pick one"),
-    (re.compile(r"\b403\b|forbidden|not (?:authori[sz]ed|allowed|permitted)|permission", re.I),
+    (re.compile(r"\b403\b|\bforbidden\b", re.I),
      "your role may not add tasks to this project. Ask its PM, or pick another project"),
 )
 
 
 def task_refusal(text: str) -> str:
+    """The refusal in plain words when it is a known one, followed by Productive's own words: the page and Logs keep
+    the original, which may say more (a read-only token, a member missing from the project)."""
     raw = re.sub(r"\s+", " ", str(text or "")).strip()
     for rx, said in TASK_REFUSALS:
         if rx.search(raw):
-            return f"Productive did not create the task: {said}."
+            return f"Productive did not create the task: {said}. Productive said: {raw[:300]}"
     return f"Productive did not create the task: {raw[:300]}"
 
 
@@ -1487,8 +1508,8 @@ def create_task(task: dict, settings: dict) -> dict:
         item["initial_estimate"] = f"{estimate} min"  # the MCP's time format, as for a time entry
     try:
         text = mcp_text("create_resource", {"resource_type": "tasks", "items": [item]}, conn["token"])
-    except ProductiveUnclear:
-        raise
+    except ProductiveUnclear as exc:  # a server error or a timeout behind the MCP: it may exist
+        raise ProductiveUnclear(TASK_UNCLEAR.format(str(exc).split("Productive said: ")[-1][:200]))
     except ProductiveError as exc:  # the tool said no (isError): nothing was created
         raise ProductiveError(task_refusal(str(exc).replace("Productive refused it: ", "")))
     except (OSError, http.client.HTTPException, ValueError) as exc:
@@ -1497,7 +1518,7 @@ def create_task(task: dict, settings: dict) -> dict:
     ids = re.findall(r"(?:\btask created|\bcreated 1 tasks?) \(IDs?:\s*(\d+)", text, re.I)
     if ids:
         return {"taskId": ids[0]}
-    if re.match(r"\s*(?:Failed to create|Item 1: Invalid)", text):  # a refusal in plain text: nothing was created
-        raise ProductiveError(task_refusal(text))
+    if re.match(r"\s*(?:Failed to create|Item 1: Invalid)", text) and not UPSTREAM.search(text):  # a refusal in plain
+        raise ProductiveError(task_refusal(text))  # text: nothing was created
     raise ProductiveUnclear("Productive's answer was unclear, so the task may or may not exist. Search for it in the "
                            "task list before creating it again. Productive said: " + text[:200])

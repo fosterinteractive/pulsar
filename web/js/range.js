@@ -25,6 +25,7 @@ async function rangeOpen(r) {
   if (rangeNow?.opened !== mine || mine !== logOpened || !logDlg.open) return;  // another dialog by now
   if (!res || res.error) return;  // the dialog works as it did: nothing to add
   rangeNow.res = res;
+  if (rangeNow.stale) return rangeDraw();  // the person changed the day or time meanwhile: this was about the old one
   const g = rangeLead(r.date);
   if (g) logPicker.lead(g);
   rangeNote(res);

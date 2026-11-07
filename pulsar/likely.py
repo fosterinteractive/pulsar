@@ -58,9 +58,12 @@ TODAY_FOR = 180  # seconds a proposal for today is reused: the script reads ever
 def proposal(date: str, tz_name: str, today: str, fresh: bool, settings: dict | None = None, keep: bool = True,
              quick: bool = False) -> dict:
     """The proposal for a day: a past day once, today again after three minutes (or on ↻). A day worked out while it
-    was still today is worked out again once it is over, never kept as it was at that hour. One run per day at a time;
-    a request that arrives while it runs waits for it instead of starting another. keep=False (learning's 60 past
-    days, which it stores on disk) leaves the days in memory, the ones the page shows, where they are.
+    was still today is worked out again once it is over, never kept as it was at that hour. So is a past day worked
+    out while no tracker answered (ActivityWatch not up yet at login): it is reused for three minutes, as today is, and
+    never kept on disk, so it is worked out again once a tracker answers (learn.warm does the same with its days). One
+    run per day at a time; a request that arrives while it runs waits for it instead of starting another. keep=False
+    (learning's 60 past days, which it stores on disk) leaves the days in memory, the ones the page shows, where they
+    are, and never takes one of them that is not final.
 
     The rows' hints (the tasks linked in their sessions and the commits made during them: reading every session of
     the day and running git, a second or more) are added in the background. quick=True (the page's first ask) gets
@@ -68,13 +71,15 @@ def proposal(date: str, tz_name: str, today: str, fresh: bool, settings: dict | 
     key = (date, tz_name)
     lock = _locks.setdefault(key, threading.Lock())
     with lock:
-        cached = _cache.get(key)  # (when, proposal, whether the day was over when it was worked out)
+        # (when, proposal, OVER: worked out once the day was over, final / TODAY: before / BLIND: over, no tracker)
+        cached = _cache.get(key)
         if not cached and not fresh and keep and date < today:  # a past day worked out before: from disk, at once
             stored = _load_day(date, tz_name)
             if stored is not None:
-                _cache[key] = cached = (time.time(), stored, True)
+                _cache[key] = cached = (time.time(), stored, OVER)
         got = cached[1] if cached else None
-        if not (cached and not fresh and (cached[2] or (date >= today and time.time() - cached[0] < TODAY_FOR))):
+        recent = cached and time.time() - cached[0] < TODAY_FOR
+        if not (cached and not fresh and (cached[2] == OVER or (recent and (date >= today or (keep and cached[2] == BLIND))))):
             settings = settings or config.load()
             result = _run(date, tz_name, config.tz(settings)) if own_script() else _built_in(date, settings)
             if result.get("error"):
@@ -83,7 +88,8 @@ def proposal(date: str, tz_name: str, today: str, fresh: bool, settings: dict | 
                 _with_tasks(result, date, settings, False)
                 return result
             done, got = threading.Event(), result
-            _cache[key], _hints[key] = (time.time(), result, date < today), done
+            state = TODAY if date >= today else BLIND if _blind(result, settings) else OVER
+            _cache[key], _hints[key] = (time.time(), result, state), done
             threading.Thread(target=_add_hints, args=(key, result, date, settings, done), daemon=True,
                              name="pulsar-hints").start()
     while True:  # the hints of the newest run (a ↻ meanwhile starts another)
@@ -98,6 +104,15 @@ def proposal(date: str, tz_name: str, today: str, fresh: bool, settings: dict | 
 
 
 _hints = config.Newest(16)  # (date, time zone) -> set once the cached proposal carries its hints
+OVER, TODAY, BLIND = "over", "today", "blind"  # what a cached day is (proposal)
+
+
+def _blind(result: dict, settings: dict) -> bool:
+    """Worked out with no tracker's data while no tracker answers: the rows are the sessions alone, not the day."""
+    if result.get("tracker") != "no tracker":
+        return False
+    from . import trackers
+    return not trackers.answering(settings.get("activitywatch_url") or config.DEFAULTS["activitywatch_url"])
 
 
 def _add_hints(key: tuple, result: dict, date: str, settings: dict, done: threading.Event) -> None:
@@ -110,7 +125,7 @@ def _add_hints(key: tuple, result: dict, date: str, settings: dict, done: thread
             now = _cache.get(key)
             if now and now[1] is result:  # not replaced by a newer run meanwhile
                 _cache[key] = (now[0], {**result, "entries": rows}, now[2])
-                if now[2]:  # a day that was over: it will not change, so it is kept on disk too
+                if now[2] == OVER:  # a day that was over, seen by a tracker: it will not change, so it is kept on disk
                     _save_day(date, key[1], {**result, "entries": rows})
     finally:
         done.set()

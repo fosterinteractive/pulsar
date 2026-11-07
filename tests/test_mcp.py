@@ -250,6 +250,26 @@ class McpTest(unittest.TestCase):
             data, err = self.call("pulsar_session", {"date": DATE})
         self.assertTrue(err)
 
+    def test_time_logged_with_no_start_is_never_offered_again_as_ready(self):
+        """2 h of the session's task logged by duration only: no overlap check sees them, so the session's stretch on
+        that task waits for a yes, and the summary the person approves names them."""
+        self.day.entries.append({**entry(0, 120), "id": "e-untimed", "s": None, "e": None, "start": None})
+        data, _ = self.call("pulsar_session", {"date": DATE})
+        self.assertEqual(data["notLoggedYet"], [])
+        self.assertEqual([(x["start"], x["taskId"]) for x in data["maybeLoggedWithoutStart"]], [("09:00", "11")])
+        self.assertEqual((data["rows"][0]["suggested"]["loggedWithoutStartMinutes"],
+                          data["rows"][0]["suggested"]["pulsarWouldTick"]), (120, False))
+        self.assertTrue(any("120 min of task 11" in w for w in data["warnings"]), data["warnings"])
+        with self._create():
+            dry, _ = self.call("pulsar_preview", self.ARGS)
+        self.assertTrue(dry["code"])  # not refused: more time on that task may be right
+        self.assertEqual([e.get("loggedWithoutStartMinutes") for e in dry["entries"]], [120, 120])
+        self.assertIn("This task already has 120 min logged that day with no start time", dry["summary"].splitlines()[0])
+        self.day.entries.pop()
+        data, _ = self.call("pulsar_session", {"date": DATE})
+        self.assertEqual([x["start"] for x in data["notLoggedYet"]], ["09:00"])
+        self.assertTrue(data["rows"][0]["suggested"]["pulsarWouldTick"])
+
     # ---- writing -------------------------------------------------------------------------------------------
 
     def _create(self):
@@ -340,6 +360,52 @@ class McpTest(unittest.TestCase):
         self.assertEqual((done["written"], len(self.day.created)), (1, 1))
         self.assertEqual([r["status"] for r in done["results"]], ["logged", "not known", "not sent"])
         self.assertIn("ValueError", done["results"][1]["why"])
+
+    def test_a_slow_day_returns_what_was_written_before_the_proxy_gives_up(self):
+        """Past LOG_BUDGET no new entry starts: the answer comes back with what was written, the rest "not sent"."""
+        with self._create(), mock.patch.object(mcptools, "LOG_BUDGET", 0):
+            dry, _ = self.call("pulsar_preview", self.ARGS3)
+            done, err = self.call("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})
+        self.assertFalse(err, done)
+        self.assertEqual([r["status"] for r in done["results"]], ["logged", "not sent", "not sent"])
+        self.assertIn("preview it again", done["results"][1]["why"])
+        self.assertEqual((done["written"], done["of"], done["stopped"], len(self.day.created)), (1, 3, True, 1))
+        self.assertLess(mcptools.LOG_BUDGET + 120, mcp.LOG_WAIT)  # room for the last entry: a read and a create
+
+    def test_no_answer_to_pulsar_log_is_not_known_never_open_pulsar(self):
+        """The proxy stops waiting while Pulsar writes on: Claude Code must not hear "Open Pulsar", nor any fault."""
+        with self._create():
+            dry, _ = self.call("pulsar_preview", self.ARGS)
+        started, release = threading.Event(), threading.Event()
+        real = mcptools.pulsar_log
+
+        def slow(args):
+            started.set()
+            release.wait(10)
+            return real(args)
+        with self._create(), mock.patch.dict(mcptools.HANDLERS, {"pulsar_log": slow}), \
+                mock.patch.object(mcp, "LOG_WAIT", 0.5):
+            got, err = self.call("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})
+            self.assertTrue(started.is_set())
+            release.set()
+            for _ in range(100):  # Pulsar carries on and writes them
+                if len(self.day.created) == 2:
+                    break
+                threading.Event().wait(0.05)
+        self.assertTrue(err)
+        self.assertIn("Not known", got["error"])
+        self.assertIn("pulsar_day", got["error"])
+        self.assertNotIn("Open Pulsar", got["error"])
+        self.assertEqual(len(self.day.created), 2)
+        dry, _ = self.call("pulsar_preview", self.ARGS)
+        with mock.patch.dict(mcptools.HANDLERS, {"pulsar_log": lambda args: 1 / 0}), mock.patch.object(server.logbook, "record"):
+            got, err = self.call("pulsar_log", {"code": dry["code"] or "0" * 16, "summary": dry["summary"] or ""})
+        self.assertTrue(err)
+        self.assertIn("Not known", got["error"])  # a fault in Pulsar mid-run: some may be written
+        with self._create(), mock.patch.object(mcp, "LOG_WAIT", 0.5):  # a read tool that is slow: as before
+            with mock.patch.object(mcp, "_request", wraps=mcp._request) as req:
+                self.call("pulsar_day", {"date": DATE})
+        self.assertEqual([c.kwargs.get("timeout") for c in req.call_args_list if "/api/mcp/" in c.args[0]], [120])
 
     def test_a_day_that_has_not_begun_is_never_logged(self):
         with mock.patch.object(mcptools, "_today", lambda tz_name: DATE):

@@ -144,5 +144,62 @@ class LearnTrackerTest(unittest.TestCase):
         self.assertEqual(learn._stored(self.yesterday), [])
 
 
+class LikelyTrackerTest(unittest.TestCase):
+    """The Likely column of a past day worked out while no tracker answered is not final either: it is never kept on
+    disk, it is worked out again once a tracker answers, and learning never takes it from memory."""
+
+    def setUp(self):
+        import shutil
+        self.up, self.runs = False, []
+
+        def built_in(date, settings):
+            self.runs.append(date)
+            return ({"tracker": "ActivityWatch", "entries": [{"s": 540, "e": 720, "minutes": 180, "project": "p"}]}
+                    if self.up else {"tracker": "no tracker", "entries": [{"s": 540, "e": 570, "minutes": 30, "project": "p"}]})
+        for p in (mock.patch.object(likely, "own_script", lambda: False), mock.patch.object(likely, "_built_in", built_in),
+                  mock.patch.object(likely, "_with_tasks", lambda *a, **k: None),
+                  mock.patch("pulsar.trackers.answering", lambda url: self.up)):
+            p.start()
+            self.addCleanup(p.stop)
+        for c in (likely._cache, likely._hints):
+            c.clear()
+            self.addCleanup(c.clear)
+        shutil.rmtree(likely.DAYS_DIR, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, likely.DAYS_DIR, True)
+
+    def ask(self, keep=True):
+        return likely.proposal(DATE, "UTC", "2026-11-06", False, dict(S), keep=keep)
+
+    def test_a_day_seen_while_no_tracker_answered_is_worked_out_again(self):
+        self.assertEqual(self.ask()["tracker"], "no tracker")
+        self.assertEqual(self.ask()["tracker"], "no tracker")  # reused for a while, as today is
+        self.assertEqual(len(self.runs), 1)
+        self.assertFalse(os.path.exists(os.path.join(likely.DAYS_DIR, f"{DATE}.json")))  # never kept on disk
+        self.up = True
+        self.assertEqual(self.ask(keep=False)["entries"][0]["minutes"], 180)  # learning: never the copy in memory
+        likely._cache.clear()  # a restart, the tracker up
+        self.assertEqual(self.ask()["tracker"], "ActivityWatch")
+        self.assertEqual(len(self.runs), 3)
+        now = time.time()
+        self.up = False
+        self.ask()  # a day seen by a tracker is final: kept, never worked out again
+        with mock.patch.object(likely.time, "time", lambda: now + 3600):
+            self.ask()
+        self.assertEqual(len(self.runs), 3)
+        for _ in range(100):
+            if os.path.exists(os.path.join(likely.DAYS_DIR, f"{DATE}.json")):
+                break
+            time.sleep(0.02)
+        self.assertTrue(os.path.exists(os.path.join(likely.DAYS_DIR, f"{DATE}.json")))
+
+    def test_after_a_while_it_is_worked_out_again_in_memory_too(self):
+        now = time.time()
+        self.ask()
+        self.up = True
+        with mock.patch.object(likely.time, "time", lambda: now + likely.TODAY_FOR + 1):
+            self.assertEqual(self.ask()["tracker"], "ActivityWatch")
+        self.assertEqual(len(self.runs), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

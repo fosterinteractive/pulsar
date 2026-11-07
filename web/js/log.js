@@ -125,12 +125,13 @@ function makePicker(listEl, searchEl, onPick) {
       if (pre) selected = pre;
       redraw(); if (pre) onPick(pre);
     },
-    /* a task just created (newtask.js): first, in a group of its own, and picked */
+    /* a task just created (newtask.js): first, in a group of its own, and picked as if by hand, so a late answer
+       (the stretch's lead, range.js) never replaces it */
     pick(t) {
       loading = false; searched = ''; searchEl.value = ''; clearTimeout(timer);
       base = [{label: 'Just created', tasks: [t]}, ...base.filter(g => g.label !== 'Just created')
         .map(g => ({...g, tasks: g.tasks.filter(x => x.taskId !== t.taskId)}))];
-      groups = base; selected = t; redraw(); onPick(t);
+      groups = base; selected = t; byHand = true; redraw(); onPick(t);
     },
     get selected() { return selected; },
   };

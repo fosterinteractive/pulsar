@@ -184,6 +184,23 @@ class ReportTest(unittest.TestCase):
         self.assertEqual(r["hours"][1][0], 10)   # Tuesday 00:00-00:10
         self.assertEqual([a["name"] for a in r["apps"]], ["Cursor", "Slack"])
 
+    def test_time_logged_with_no_start_counts_against_what_is_not_logged(self):
+        """A day logged in full from Productive's timesheet (by duration, no start) is not "7 h not logged"."""
+        items = [item(540, 960)]
+        entries = [{"date": "2026-11-02", "start": None, "minutes": 420, "project": "P"},
+                   {"date": "2026-11-03", "start": None, "minutes": 30, "project": "P"}]
+        d1, d2 = report.build(self.dates, self.bounds, {"aw": items + [item(1440 + 540, 1440 + 600)]}, entries,
+                              "2026-11-04")["days"]
+        self.assertEqual((d1["active"], d1["logged"], d1["noStart"], d1["notLogged"]), (420, 420, 420, 0))
+        self.assertEqual((d2["active"], d2["noStart"], d2["notLogged"]), (60, 30, 30))
+
+    def test_earlier_days_say_when_no_activity_was_read(self):
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "js", "catchup.js"),
+                  encoding="utf-8") as fh:
+            code = fh.read()
+        self.assertIn("r.trackerWarning", code)  # shown, or every day would read "nothing left"
+        self.assertIn("no activity read", code)
+
     def test_each_day_uses_the_tracker_that_saw_more_of_it(self):
         r = report.build(self.dates, self.bounds, {"aw": [item(600, 610)], "memtime": [item(600, 660), item(1500, 1505)]},
                          [], "2026-11-03")
@@ -1916,6 +1933,35 @@ class EntryWriteAnswersTest(unittest.TestCase):
                 with self.assertRaises(productive.ProductiveUnclear) as said:
                     productive.delete_entry("7", {"person_id": "1"})
             self.assertIn(text, str(said.exception))
+
+    def test_a_failure_behind_productives_mcp_is_unclear_not_refused(self):
+        """A server error, a timeout or a JSON-RPC error behind the MCP may come after the write reached Productive: it
+        is never read as a refusal (the journal would offer to send it again). Its own refusals stay refusals."""
+        def answer(result=None, error=None):
+            msg = {"jsonrpc": "2.0", "id": 1, **({"error": error} if error else {"result": result})}
+            return mock.patch.object(productive, "https", lambda *a, **k: (200, ("data: " + json.dumps(msg)).encode()))
+
+        def failed(text):
+            return {"isError": True, "content": [{"type": "text", "text": text}]}
+        new = {"date": "2026-11-04", "minutes": 10, "started_at": "2026-11-04T14:00:00+00:00", "task_id": "1",
+               "service_id": "2"}
+        upstream = [failed('Failed to create time entry. API request failed because of error: {"status": 503}'),
+                    failed("Failed to create time entry: fetch failed"), failed("Request timed out after 30000 ms"),
+                    failed("Failed: connect ECONNRESET")]
+        for result in upstream:
+            with answer(result), self.assertRaises(productive.ProductiveUnclear):
+                productive.create_entry(new, {"person_id": "3"})
+        with answer(error={"code": -32603, "message": "Internal error"}), self.assertRaises(productive.ProductiveUnclear):
+            productive.create_entry(new, {"person_id": "3"})
+        for result, error in ((failed('Failed to create time entry. API request failed because of error: {"status": 422, '
+                                      '"code": "budget_limit_overrun"}'), None),
+                              (None, {"code": -32602, "message": "Invalid params: unknown tool"})):
+            with answer(result, error), self.assertRaises(productive.ProductiveError) as said:
+                productive.create_entry(new, {"person_id": "3"})
+            self.assertNotIsInstance(said.exception, productive.ProductiveUnclear)
+        with answer(error={"code": -32603, "message": "Internal error"}), self.assertRaises(productive.ProductiveError) as said:
+            productive.mcp_text("query_resources", {}, "t")  # a read: nothing was changed, whatever failed
+        self.assertNotIsInstance(said.exception, productive.ProductiveUnclear)
 
     def test_a_rest_server_error_after_a_change_was_sent_is_unclear_not_refused(self):
         def rest(status, raw=b"{}"):
