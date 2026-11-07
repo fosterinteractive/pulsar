@@ -560,7 +560,9 @@ whether one fits is the person's call. It opens a small form over the dialog:
   - **Estimate**: empty when the parent carries one, since a subtask may then have none (fi-productive-process); else
     the median of the project's recent tasks of the same kind that have one (its subtasks for a subtask; its
     top-level tasks, containers such as core updates left out, otherwise), to the nearest 5 minutes, from the same
-    read as the "no estimate" flag (`project_estimates`, kept a day); with fewer than 2 to go by, none. Typed as
+    read as the "no estimate" flag (`project_estimates`, kept a day); with fewer than 2 to go by, none, and none
+    when that median is over 8 hours (`ISSUE_MAX`: a project whose tasks are phases of 10 to 100 hours would offer 60 h
+    for one small fix). Typed as
     minutes ("90") or hours ("1h 30m", "1.5 h"), up to 500 hours; empty is allowed. Of the 200 subtasks created most
     recently in the organization (of 1,226 since 15 September), 13 of their 73 parents carried an estimate, and 160
     had none anywhere in the chain, so an empty estimate under a parent with none is allowed but said in the line.

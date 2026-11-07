@@ -107,6 +107,16 @@ class CreateTaskBodyTest(unittest.TestCase):
         self.assertNotIn("parent_task", body["relationships"])
         self.assertEqual(body["attributes"]["description"], "<p>&lt;b&gt; &amp; co</p>")  # escaped, never markup
 
+    def test_an_estimate_the_size_of_a_project_is_not_offered(self):
+        """A project whose recent tasks are phases (10 h to 100 h) offers no estimate for one issue's task: 60 h for a
+        small fix would mislead a PM. Issue-sized ones still give their median."""
+        big = [(600, False, "Phase one"), (3600, False, "Phase two"), (6000, False, "Phase three"), (2400, False, "Phase four")]
+        got = newtask._estimate("list", {}, big)
+        self.assertIsNone(got["minutes"])
+        self.assertIn("much bigger", got["why"])
+        small = [(60, False, "Menu fix"), (120, False, "Footer"), (90, False, "Search")]
+        self.assertEqual(newtask._estimate("list", {}, small)["minutes"], 90)
+
     def test_status_and_estimate_both_ways_and_never_a_service(self):
         wire = Wire()
         with connected("claude-code"), mock.patch.object(productive, "https", wire):

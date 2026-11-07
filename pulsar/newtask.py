@@ -295,6 +295,7 @@ TODO = re.compile(r"^\s*to\s*-?\s*do\s*$", re.I)
 CONTINGENCY = (re.compile(r"contingenc", re.I), re.compile(r"service requests?|support requests?", re.I))
 NOT_CONTINGENCY = re.compile(r"overage|rollover", re.I)
 SIZES_MIN = 2  # tasks of the same kind with an estimate, at least, before their median is offered
+ISSUE_MAX = 8 * 60  # minutes: a median above it comes from projects or phases, not one issue's task; it is not offered
 
 
 def dur(minutes) -> str:
@@ -344,7 +345,12 @@ def _estimate(kind: str, parent: dict, sizes) -> dict:
     if len(same) < SIZES_MIN:
         return {"minutes": None, "parent": 0, "why": lead + "Too few recent tasks like it in this project have one to go by: "
                                                            "add one if you know it."}
-    return {"minutes": max(5, int(round(_median(same) / 5)) * 5), "parent": 0,
+    median = _median(same)
+    if median > ISSUE_MAX:  # a new task here is one issue: "60 h", the size of a project's phases, would mislead a PM
+        return {"minutes": None, "parent": 0,
+                "why": lead + f"Left empty: recent {'subtasks' if sub else 'tasks'} in this project are much bigger "
+                              f"({dur(min(same))} to {dur(max(same))}) than one issue: add one if you know it."}
+    return {"minutes": max(5, int(round(median / 5)) * 5), "parent": 0,
             "why": lead + f"The median of the {len(same)} recent {'subtasks' if sub else 'tasks'} in this project that have "
                           f"one ({dur(min(same))} to {dur(max(same))})."}
 
