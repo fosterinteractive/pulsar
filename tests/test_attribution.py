@@ -135,6 +135,37 @@ class TurnRepositoryTest(Fixture):
         [s] = sessions.load(T0, T0 + 86400, self.projects, namer)
         self.assertEqual(s["turns"][0]["project"], "time logging")
 
+    def test_with_the_skills_naming_a_turn_is_named_as_the_skill_counts_it(self):
+        """With the fi-time-from-activity script, each turn is named as it names it: every string of the turn's calls
+        and what was typed counted, words too (one person's 52 days: the right task 33.9% of minutes, 30.4% with the
+        weights). Its hard calls count for that project. Without the script, the weights; a naming that fails on a
+        session leaves that session to the weights."""
+        self.write("aaaa0006", [typed(10, "the house-tool hub: rerun house-tool checks", self.acme),
+                                call(11, "Bash", command=f"cd {self.acme} && git status"),
+                                call(12, "Bash", command="echo house-tool house-tool")])
+
+        def count(strings, counts):
+            for s in strings:
+                n = s.count("house-tool")
+                if n:
+                    counts["house-tool"] = counts.get("house-tool", 0) + n
+
+        def strings_of(r):
+            return [str(x.get("input")) for x in r["message"]["content"] if x.get("type") == "tool_use"]
+        [s] = self.load()
+        self.assertEqual((s["turns"][0]["project"], s["turns"][0]["hard"]), ("acme-site", {"acme-site": 2}))
+        [s] = sessions.load(T0, T0 + 86400, self.projects, turns={"strings": strings_of, "count": count})
+        self.assertEqual((s["turns"][0]["project"], s["turns"][0]["hard"]), ("house-tool", {"house-tool": 2}))
+
+        def broken(strings, counts):
+            raise ValueError("another shape")
+        [s] = sessions.load(T0, T0 + 86400, self.projects, turns={"strings": strings_of, "count": broken})
+        self.assertEqual(s["turns"][0]["project"], "acme-site")
+        # a turn nothing names takes the session's title without a leading IMPORTANT!, as the script does
+        self.write("aaaa0006", [typed(10, "how is it going?", "/nowhere")], title="IMPORTANT! Weekly plan")
+        [s] = sessions.load(T0, T0 + 86400, self.projects, turns={"strings": strings_of, "count": count})
+        self.assertEqual(s["turns"][0]["project"], "Weekly plan")
+
     def test_one_session_splits_by_the_repository_of_each_turn(self):
         self.write("aaaa0004", [
             typed(10, "fix the client form", self.tool), call(11, "Edit", file_path=os.path.join(self.acme, "src", "a.js")),

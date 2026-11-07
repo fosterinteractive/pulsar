@@ -241,11 +241,12 @@ def tool_result(r: dict) -> bool:
     return isinstance(content, list) and any(isinstance(x, dict) and x.get("type") == "tool_result" for x in content)
 
 
-def read_session(path: str, t0: float, t1: float, subagents: bool = False) -> dict | None:
+def read_session(path: str, t0: float, t1: float, subagents: bool = False, strings_of=None) -> dict | None:
     """One session's messages, agent activity and titles around [t0, t1); None if nobody typed in it that day.
-    subagents: also the calls of the subagents it started (<folder>/<id>/subagents/*.jsonl)."""
+    subagents: also the calls of the subagents it started (<folder>/<id>/subagents/*.jsonl). strings_of(record): the
+    strings a naming of turns counts (likely.skill_turns), kept per agent message as "strings"."""
     prompts, triggers, notified, assistant, titles, cwd, title, custom = [], [], [], [], set(), None, "", False
-    calls, events = [], []
+    calls, events, strings = [], [], []
     lo, hi = t0 - 6 * 3600, t1 + 3600
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
@@ -280,6 +281,11 @@ def read_session(path: str, t0: float, t1: float, subagents: bool = False) -> di
                 found = tool_calls(r)
                 if found:
                     calls.append((t, found))
+                if strings_of:
+                    try:
+                        strings.append((t, list(strings_of(r))))
+                    except Exception:  # noqa: BLE001 - a record of a shape the naming does not know: that record only
+                        pass
             elif tool_result(r):
                 events.append(t)
     if not any(t0 <= t < t1 for t, _ in prompts):
@@ -298,7 +304,7 @@ def read_session(path: str, t0: float, t1: float, subagents: bool = False) -> di
     events.sort()
     return {"id": os.path.basename(path)[:8], "cwd": cwd, "title": title, "titles": {x for x in titles if len(x) >= 5},
             "prompts": dedup, "triggers": triggers, "notified": sorted(notified), "assistant": assistant,
-            "calls": calls, "events": events}
+            "calls": calls, "events": events, **({"strings": sorted(strings, key=lambda x: x[0])} if strings_of else {})}
 
 
 def _read_subagents(path: str, lo: float, hi: float, calls: list, events: list) -> None:
@@ -330,9 +336,12 @@ def _read_subagents(path: str, lo: float, hi: float, calls: list, events: list) 
             continue  # that subagent only
 
 
-def analyse(s: dict, namer=None) -> None:
+def analyse(s: dict, namer=None, turns=None) -> None:
     """The project of every turn (weighted by its tool calls), the spans the agent was running, and the stretches of
-    attended agent work. namer(path) -> a project name or None (default: the git repository, project_of_path)."""
+    attended agent work. namer(path) -> a project name or None (default: the git repository, project_of_path).
+    turns: another naming of turns (likely.skill_turns: the fi-time-from-activity script's own), used in place of
+    the weights when the session was read with its strings (read_session strings_of); a turn's hard calls then count
+    for its project, at their highest weight."""
     prompts = s["prompts"]
     name_of = namer or project_of_path
     names: dict = {}
@@ -347,7 +356,7 @@ def analyse(s: dict, namer=None) -> None:
         calls = [(t, [(p, W_READ) for p in paths]) for t, paths in s.get("assistant") or [] if paths]
     at = [t for t, _ in calls]
     folder = (project_of_path(s["cwd"]) or os.path.basename(s["cwd"].rstrip("/"))) if s["cwd"] else None
-    turns = []
+    out = []
     for i, (p, text) in enumerate(prompts):
         nxt = prompts[i + 1][0] if i + 1 < len(prompts) else float("inf")
         counts: dict = {}
@@ -361,14 +370,22 @@ def analyse(s: dict, namer=None) -> None:
                 counts[name] = counts.get(name, 0) + w
                 if w >= HARD:
                     hard[name] = hard.get(name, 0) + w
-        turns.append({"p": p, "project": max(counts, key=counts.get) if counts else None, "hard": hard})
+        out.append({"p": p, "project": max(counts, key=counts.get) if counts else None, "hard": hard})
     title = (s.get("title") or "").strip()[:40] or None
-    for i, t in enumerate(turns):
+    last = "Claude Code"  # nothing named it
+    named_by = _named_turns(s, turns) if turns and "strings" in s else None
+    if named_by is not None:  # the other naming, with its own last resorts
+        projects, title, folder, last = named_by
+        for t, project in zip(out, projects):
+            t["project"] = project
+    for i, t in enumerate(out):
         if t["project"] is None:
-            before = next((turns[j]["project"] for j in range(i - 1, -1, -1) if turns[j]["project"]), None)
-            after = next((turns[j]["project"] for j in range(i + 1, len(turns)) if turns[j]["project"]), None)
-            t["project"] = before or after or title or folder or "Claude Code"  # the last: nothing named it
-    s["turns"] = turns
+            before = next((out[j]["project"] for j in range(i - 1, -1, -1) if out[j]["project"]), None)
+            after = next((out[j]["project"] for j in range(i + 1, len(out)) if out[j]["project"]), None)
+            t["project"] = before or after or title or folder or last
+        if named_by is not None and t["hard"]:  # its hard calls count for the project the other naming gave it
+            t["hard"] = {t["project"]: max(t["hard"].values())}
+    s["turns"] = out
     events = s.get("events") or [t for t, _ in s.get("assistant") or []]
     running, trig = [], s["triggers"]
     for k, tk in enumerate(trig):
@@ -378,6 +395,32 @@ def analyse(s: dict, namer=None) -> None:
             running.append((tk, ends[-1]))
     s["running"] = running
     s["chains"] = chains(trig, set(s.get("notified") or ()), events)
+
+
+def _named_turns(s: dict, turns: dict):
+    """([project or None per turn], title, folder, last resort) as the other naming names them: its count(strings,
+    counts) over what was typed and each agent message's strings in the turn; its fallbacks are the session's title
+    without a leading "IMPORTANT!", the folder as it names it, then "unknown". None when it fails on this session."""
+    count = turns["count"]
+    try:
+        at = [t for t, _ in s["strings"]]
+        projects = []
+        for i, (p, text) in enumerate(s["prompts"]):
+            nxt = s["prompts"][i + 1][0] if i + 1 < len(s["prompts"]) else float("inf")
+            counts: dict = {}
+            count([text], counts)
+            for _, strings in s["strings"][bisect.bisect_left(at, p):bisect.bisect_left(at, nxt)]:
+                count(strings, counts)
+            projects.append(max(counts, key=counts.get) if counts else None)
+        folder = None
+        if s.get("cwd"):
+            c: dict = {}
+            count([s["cwd"]], c)
+            folder = max(c, key=c.get) if c else os.path.basename(s["cwd"].rstrip("/"))
+    except Exception:  # noqa: BLE001 - the naming changed shape: the weights name this session
+        return None
+    title = re.sub(r"^important!\s*", "", s.get("title") or "", flags=re.I).strip()[:40] or None
+    return projects, title, folder, "unknown"
 
 
 def chains(triggers: list, notified: set, events: list) -> list:
@@ -420,16 +463,16 @@ def project_at(s: dict, t: float) -> str:
     return turn_at(s, t)["project"]
 
 
-def load(t0: float, t1: float, projects_dir: str = PROJECTS_DIR, namer=None) -> list:
-    """The sessions someone typed in during [t0, t1), each read with its subagents and analysed."""
+def load(t0: float, t1: float, projects_dir: str = PROJECTS_DIR, namer=None, turns=None) -> list:
+    """The sessions someone typed in during [t0, t1), each read with its subagents and analysed (turns: analyse)."""
     sessions = []
     for path in glob.glob(os.path.join(projects_dir, "*", "*.jsonl")):
         try:
             if os.path.getmtime(path) < t0 - 3600:
                 continue
-            s = read_session(path, t0, t1, subagents=True)
+            s = read_session(path, t0, t1, subagents=True, strings_of=(turns or {}).get("strings"))
             if s:
-                analyse(s, namer)
+                analyse(s, namer, turns)
                 sessions.append(s)
         except (OSError, ValueError, TypeError, AttributeError):  # a file that cannot be read: that session only
             continue
@@ -437,13 +480,13 @@ def load(t0: float, t1: float, projects_dir: str = PROJECTS_DIR, namer=None) -> 
 
 
 def propose(t0: float, t1: float, items: list, tracker: str, projects_dir: str = PROJECTS_DIR, namer=None,
-            logging_name: str | None = None) -> dict:
+            logging_name: str | None = None, turns=None) -> dict:
     """The Likely column for the day [t0, t1): blocks of minutes, each with its project, the sessions' titles, how many
     messages were typed in it and the first one; and the agents' background work at its real time. `items` are the
     day's activity (minutes from t0, as trackers.py makes them); without any, the agents' run time stands in for the
-    tracker. namer: see analyse. logging_name: a project name that means time spent logging time (the
+    tracker. namer, turns: see analyse. logging_name: a project name that means time spent logging time (the
     fi-time-from-activity script's): its minutes go to no session, as Pulsar's own window does."""
-    return propose_from(load(t0, t1, projects_dir, namer), t0, t1, items, tracker, logging_name)
+    return propose_from(load(t0, t1, projects_dir, namer, turns), t0, t1, items, tracker, logging_name)
 
 
 def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str, logging_name: str | None = None) -> dict:

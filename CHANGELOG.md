@@ -7,7 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
-- Parallel work: the Likely column is at the real time of the work, one row per repository a session worked in (by what its tool calls did there, subagents included), with the agents' background work as a thin dashed rail.
+- Parallel work: the Likely column is at the real time of the work, one row per repository a session worked in (by what its tool calls did there, subagents included; with the fi-time-from-activity skill, each turn named as the skill names it), with the agents' background work as a thin dashed rail.
 - Log the day: a client's agent that ran on your typed request while internal work was on screen gets those minutes first, as a shared row, ticked, with Client, Half each or Internal; a Parallel chip; agent time that ran in parallel is noted, never moved.
 - Log the day: a billable entry never has more minutes than the work was seen, and the cap cuts internal work first.
 - Tasks: a session's history counts in the repository it was learned in; a minute logged while a client's agent ran teaches that client's repository, not the one on screen; on internal work a client's task only from a rule, a link or a ticket key.

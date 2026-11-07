@@ -3,8 +3,8 @@ background meanwhile.
 
 For anyone with Claude Code sessions on this computer (~/.claude/projects): sessions.py works it out from the sessions
 and the activity tracker, at the real time of the work. Where the fi-time-from-activity skill is installed, its
-project names are used (its own rules for repositories, and its name for time spent logging time); its own proposal is
-not: it lays a sitting's minutes out one project after another and moves the agents' parallel time into free time,
+project names are used (its own rules for repositories, its name for time spent logging time, and its naming of each
+turn from every string of its tool calls); its own proposal is not: it lays a sitting's minutes out one project after another and moves the agents' parallel time into free time,
 so its rows are not where the work was. Without Claude Code sessions the column never shows.
 """
 
@@ -29,7 +29,8 @@ def available() -> bool:
 
 
 def own_script() -> bool:
-    """The fi-time-from-activity skill is installed: its project names are used (skill_names)."""
+    """The fi-time-from-activity skill is installed: its project names and its naming of turns are used
+    (skill_names, skill_turns)."""
     return os.path.exists(SCRIPT)
 
 
@@ -176,9 +177,9 @@ def _with_tasks(result: dict, date: str, settings: dict, commits: bool = True) -
             logbook.record("likely", f"Commits for the notes: {type(exc).__name__}: {exc}", kind="warning")
 
 
-def _built_in(date: str, settings: dict, names: tuple = (None, None)) -> dict:
+def _built_in(date: str, settings: dict, names: tuple = (None, None), turns: dict | None = None) -> dict:
     """sessions.py on the day's activity from the tracker that saw more of it. names: (namer, logging name), see
-    skill_names."""
+    skill_names; turns: see skill_turns."""
     from . import sessions, trackers
     if not available():
         return {"error": "No Claude Code sessions on this computer.", "entries": []}
@@ -191,29 +192,29 @@ def _built_in(date: str, settings: dict, names: tuple = (None, None)) -> dict:
     labels = {"aw": "ActivityWatch", "memtime": "MemTime"}
     namer, logging_name = names
     return sessions.propose(t0, t1, found.get(source) or [], labels.get(source, source) if found.get(source) else "no tracker",
-                            namer=namer, logging_name=logging_name)
+                            namer=namer, logging_name=logging_name, turns=turns)
 
 
 def _run(date: str, tz_name: str, tz=None, settings: dict | None = None) -> dict:
-    """With the fi-time-from-activity skill installed: Pulsar's own reading of the day, with the skill's names."""
-    return _built_in(date, settings or config.load(), skill_names())
+    """With the fi-time-from-activity skill installed: Pulsar's own reading of the day, with the skill's names, and each
+    turn named as the skill names it (skill_turns)."""
+    return _built_in(date, settings or config.load(), skill_names(), skill_turns())
 
 
-_names_kept: dict = {}  # the script's modification time -> (namer, logging name)
+_kept: dict = {}  # the script's modification time -> ((namer, logging name), turns)
 
 
-def skill_names() -> tuple:
-    """(namer, logging name) from the fi-time-from-activity script's own rules (its projects_in and LOGGING), read once
-    per version of the file; (None, None) when it is not installed or cannot be read, and then Pulsar's own names
-    (the git repository) are used. A path the script names nothing keeps Pulsar's own name."""
+def _skill() -> tuple:
+    """((namer, logging name), turns) from the fi-time-from-activity script, loaded once per version of the file;
+    ((None, None), None) when it is not installed or cannot be read: then Pulsar's own names and weights are used."""
     from . import logbook, sessions
     try:
         mtime = os.path.getmtime(SCRIPT)
     except OSError:
-        return None, None
-    if mtime in _names_kept:
-        return _names_kept[mtime]
-    got = (None, None)
+        return (None, None), None
+    if mtime in _kept:
+        return _kept[mtime]
+    got: tuple = ((None, None), None)
     try:
         spec = importlib.util.spec_from_file_location("pulsar_skill_names", SCRIPT)
         mod = importlib.util.module_from_spec(spec)
@@ -228,10 +229,28 @@ def skill_names() -> tuple:
                 projects_in([path], counts)
                 cache[path] = (max(counts, key=counts.get) if counts else None) or sessions.project_of_path(path)
             return cache[path]
-        got = (namer, logging_name if isinstance(logging_name, str) else None)
+        strings_of = getattr(mod, "tool_strings", None)
+        turns = {"strings": strings_of, "count": projects_in} if callable(strings_of) else None
+        got = ((namer, logging_name if isinstance(logging_name, str) else None), turns)
     except Exception as exc:  # the script changed shape: Pulsar's own names, and Logs says why
         logbook.record("likely", f"The fi-time-from-activity script's names could not be read, so Pulsar's own are "
                                  f"used: {type(exc).__name__}: {exc}", kind="warning", once_per=3600)
-    _names_kept.clear()
-    _names_kept[mtime] = got
+    _kept.clear()
+    _kept[mtime] = got
     return got
+
+
+def skill_names() -> tuple:
+    """(namer, logging name) from the fi-time-from-activity script's own rules (its projects_in and LOGGING); (None,
+    None) when it is not installed or cannot be read, and then Pulsar's own names (the git repository) are used. A path
+    the script names nothing keeps Pulsar's own name."""
+    return _skill()[0]
+
+
+def skill_turns() -> dict | None:
+    """The script's own naming of a turn, {"strings": its tool_strings, "count": its projects_in} (sessions.analyse):
+    every string of the turn's tool calls and what was typed, counted, as the script names it; on one person's 52 days
+    it named the client logged more often than Pulsar's weights (33.9% against 30.4% of minutes with the right task
+    at the right time, after Log the day). None when the script is not installed or cannot be read: then the weights
+    name the turns."""
+    return _skill()[1]

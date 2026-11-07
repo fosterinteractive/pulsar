@@ -2527,7 +2527,9 @@ class ClockChangeTest(unittest.TestCase):
     def test_with_the_skill_installed_its_names_are_used_never_its_layout(self):
         """The fi-time-from-activity script laid each sitting's minutes out one project after another and moved the
         agents' parallel time into free time. Pulsar reads the sessions itself, at the real time of the work, and takes
-        only the script's names: its rules for repositories (projects_in) and its name for time spent logging."""
+        only the script's names: its rules for repositories (projects_in), its name for time spent logging, and its
+        naming of each turn (tool_strings counted by projects_in). Without the script, or with one that cannot be read,
+        Pulsar's own names and weights."""
         from pulsar import likely
         folder = tempfile.mkdtemp()
         script = os.path.join(folder, "activity_blocks.py")
@@ -2535,14 +2537,16 @@ class ClockChangeTest(unittest.TestCase):
             fh.write('LOGGING = "time logging"\n'
                      'def projects_in(strings, counts):\n'
                      '    for s in strings:\n'
-                     '        if "/acme" in s: counts["Acme"] = counts.get("Acme", 0) + 1\n')
+                     '        if "/acme" in s: counts["Acme"] = counts.get("Acme", 0) + 1\n'
+                     'def tool_strings(r):\n'
+                     '    return [str(r)]\n')
         seen = {}
 
-        def built_in(date, settings, names=(None, None)):
-            seen["names"] = names
+        def built_in(date, settings, names=(None, None), turns=None):
+            seen["names"], seen["turns"] = names, turns
             return {"entries": [{"s": 600, "e": 630, "minutes": 30, "project": names[0]("/x/acme/a.js")}]}
         likely._cache.clear()
-        likely._names_kept.clear()
+        likely._kept.clear()
         with mock.patch.object(likely, "SCRIPT", script), mock.patch.object(likely, "_built_in", built_in), \
                 mock.patch.object(likely, "_with_tasks", lambda *a, **k: None):
             got = likely.proposal("2026-10-25", "UTC", "2026-11-06", False, dict(config.DEFAULTS), keep=False)
@@ -2550,11 +2554,17 @@ class ClockChangeTest(unittest.TestCase):
         self.assertEqual(got["entries"][0]["project"], "Acme")
         self.assertEqual(seen["names"][1], "time logging")
         self.assertIsNone(seen["names"][0]("/nowhere/at/all"))  # neither the script nor a repository names it
-        with open(script, "w") as fh:  # a script of another shape: Pulsar's own names
+        counts = {}
+        seen["turns"]["count"](seen["turns"]["strings"]({"x": "/x/acme/b.js"}), counts)
+        self.assertEqual(counts, {"Acme": 1})                     # the script's own counting of a turn
+        with open(script, "w") as fh:  # a script of another shape: Pulsar's own names and weights
             fh.write("x = 1\n")
         os.utime(script, (time.time() + 5, time.time() + 5))
         with mock.patch.object(likely, "SCRIPT", script):
-            self.assertEqual(likely.skill_names(), (None, None))
+            self.assertEqual((likely.skill_names(), likely.skill_turns()), ((None, None), None))
+        with mock.patch.object(likely, "SCRIPT", os.path.join(folder, "gone.py")):  # not installed
+            self.assertEqual((likely.skill_names(), likely.skill_turns()), ((None, None), None))
+        likely._kept.clear()
 
     def test_the_week_heatmap_uses_the_clock_hour(self):
         from zoneinfo import ZoneInfo

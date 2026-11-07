@@ -421,7 +421,12 @@ Which Claude Code session, and so which project, each minute of work most likely
   day uses it (5.4); the column draws it as a thin dashed rail on its right edge, and the block's popover lists it.
 - **The fi-time-from-activity skill**: where `~/.claude/skills/fi-time-from-activity/scripts/activity_blocks.py`
   exists, its project names are used (`likely.skill_names`: its `projects_in` rules, and its `LOGGING` name: a turn
-  it names "time logging", such as a Productive call on time entries, goes to no session). Pulsar reads the sessions
+  it names "time logging", such as a Productive call on time entries, goes to no session), and each turn is named as
+  it names it (`likely.skill_turns`, `sessions._named_turns`): every string of the turn's tool calls and what was
+  typed, counted by `projects_in`, words included, with its own last resorts (the title without a leading
+  "IMPORTANT!", the folder, "unknown"); the turn's hard calls count for that project at their highest weight. On one
+  person's 52 days this named the client logged more often than the weights above (right task at the right time 33.9%
+  against 30.4%). Without the script, or when it cannot be read, Pulsar's own names and weights. Pulsar reads the sessions
   itself; the script's own rows are not used: they laid each sitting's minutes out one project after another (on one
   person's days, only 57% of the minutes in front had the same project in the script's row) and moved the agents'
   parallel time into free time. It is never part of the repository.
@@ -756,12 +761,11 @@ internal work is cut first, then mixed and unknown, a client's last. The **evide
 the joins did, and a client's entry is never joined across time away. Agent time moved into free slots (the skill
 script's rows) is not used at all. Replayed on one person's 52 days (14 September to 4 November 2026), each planned as
 if nothing were logged from the days before it only, against what was logged and against the planner before this:
-billable minutes with no evidence 0 (464 before), over-billed minutes 3451 (3792), billable proposed on minutes not
-logged 2483 (2987), the right task at the right time 30.4% (35.0%). Most of that loss is the weighting: QA hub turns
-that run commands in clients' checkouts now read as those clients' work (a client's task on minutes logged as internal
-work, 1712 minutes, 1161 before); with each turn named as the skill names it, the rest of the same rules gave 33.9%.
-Shared rows were rare (45 minutes in the 52 days): most work in front had no settled class yet, or the client's
-agent was not attended.
+billable minutes with no evidence 0 (464 before), over-billed minutes 3038 (3792), billable proposed on minutes not
+logged 2457 (2987), wrong client 3711 minutes (4273), the right task at the right time 33.9% (35.0%), with each turn
+named as the fi-time-from-activity script names it (4.4). With Pulsar's own weights instead it was 30.4%: QA hub
+turns that run commands in clients' checkouts read as those clients' work. Shared rows were rare (45 minutes in the 52
+days): most work in front had no settled class yet, or the client's agent was not attended.
 
 Pieces of one task in one sitting join, pieces under 10 minutes join a neighbour within 30 minutes in the same sitting
 (never one hours away, which would move it there, never across an entry already logged; a meeting someone attended
