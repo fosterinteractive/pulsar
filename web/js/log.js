@@ -58,6 +58,11 @@ function taskNote(t) {
   else if (/progress/i.test(t.status || '')) bits.push('in progress');
   return bits.length ? ' · ' + bits.join(' · ') : '';
 }
+/* the day a search ranks "yours" against: the log dialog's date, Log the day's, else the day in view */
+function searchDate() {
+  if (logDlg.open && logForm.elements.date.value) return logForm.elements.date.value;
+  return typeof LD !== 'undefined' && LD.on ? LD.date : state.date;
+}
 function makePicker(listEl, searchEl, onPick) {
   let selected = null, groups = [], base = [], timer, loading = false, searched = '', byHand = false;
   function draw() {
@@ -66,7 +71,7 @@ function makePicker(listEl, searchEl, onPick) {
       + (g.note ? `<div class="note">${esc(g.note)}</div>` : '')
       + g.tasks.map(t => `<button type="button" class="pk${selected?.taskId === t.taskId ? ' on' : ''}" data-id="${esc(t.taskId)}"
           role="option" aria-selected="${selected?.taskId === t.taskId}"><span class="pk-t">${esc(t.title)}</span>
-          <span class="pk-p">${esc(t.project)}${g.showMin && t.minutes ? ' · ' + dur(t.minutes) + ' here' : ''}${t.why ? ' · ' + (t.claude ? CLAUDE_MARK : '') + esc(t.why) : ''}${taskNote(t)}</span></button>`).join('')).join('')
+          <span class="pk-p">${t.yours ? `<span class="pk-mine">${t.yours === 'logged' ? 'yours, logged lately' : 'assigned to you'}</span> · ` : ''}${esc(t.project)}${g.showMin && t.minutes ? ' · ' + dur(t.minutes) + ' here' : ''}${t.why ? ' · ' + (t.claude ? CLAUDE_MARK : '') + esc(t.why) : ''}${taskNote(t)}</span></button>`).join('')).join('')
       || `<div class="note">${esc(empty)}</div>`;
   }
   /* a redraw replaces the buttons: the one that had the focus gets it back */
@@ -99,7 +104,7 @@ function makePicker(listEl, searchEl, onPick) {
     timer = setTimeout(async () => {
       if (q.length < 2) { searched = ''; groups = base; redraw(); return; }
       listEl.classList.add('busy');
-      const r = await getJSON(`/api/tasks/search?q=${encodeURIComponent(q)}`);
+      const r = await getJSON(`/api/tasks/search?q=${encodeURIComponent(q)}&date=${encodeURIComponent(searchDate())}`);
       listEl.classList.remove('busy');
       if (searchEl.value.trim() !== q) return;
       searched = r.error ? '' : q;

@@ -959,8 +959,47 @@ def api_meeting_tasks(q: dict) -> dict:
 
 
 def api_search(q: dict) -> dict:
+    """Every task whose title holds the words, yours first (rank_search). `date` (optional) is the day being logged:
+    "yours" means logged to in the 30 days before it, or assigned to you (api_suggest, kept ten minutes)."""
     text = (q.get("q") or "").strip()
-    return {"tasks": productive.search_tasks(text, current_settings()) if len(text) >= 2 else []}
+    if len(text) < 2:
+        return {"tasks": []}
+    s = current_settings()
+    found = productive.search_tasks(text, s)
+    try:
+        sug = api_suggest({"date": q["date"] if DATE.match(q.get("date") or "") else today(config.tz(s))})
+    except Exception as exc:  # the results still come, in Productive's order
+        logbook.record("productive", f"Search could not put your tasks first: {exc}", kind="warning", once_per=600)
+        sug = {}
+    return {"tasks": rank_search(found, text, sug.get("recent") or [], sug.get("assigned") or [])}
+
+
+SEARCH_MAX = 30
+
+
+def rank_search(found: list, text: str, recent: list, assigned: list) -> list:
+    """Search results in the order a person looks for them: tasks you logged to lately (most recent first), then open
+    tasks assigned to you, then everyone else's, closed tasks last; otherwise Productive's order. Your own tasks whose
+    title holds the words are added when Productive's first page left them out. Each of yours says so: "yours" is
+    "logged" or "assigned"."""
+    words = text.lower().strip()
+    logged = {t["taskId"]: i for i, t in enumerate(recent) if t.get("taskId")}
+    mine = {t["taskId"] for t in assigned if t.get("taskId")}
+    extra = [t for t in [*recent, *assigned] if words in (t.get("title") or "").lower()]
+    out, seen = [], set()
+    for t in [*found, *extra]:
+        tid = t.get("taskId")
+        if not tid or tid in seen:
+            continue
+        seen.add(tid)
+        yours = "logged" if tid in logged else "assigned" if tid in mine else ""
+        out.append({**t, **({"yours": yours} if yours else {})})
+
+    def rank(t):
+        closed = (t.get("title") or "").endswith(" (closed)")
+        tier = 3 if closed else 0 if t.get("yours") == "logged" else 1 if t.get("yours") == "assigned" else 2
+        return tier, logged.get(t["taskId"], 0) if tier == 0 else 0
+    return sorted(out, key=rank)[:SEARCH_MAX]  # sorted() keeps Productive's order within a tier
 
 
 # ---- a new task from the log dialog (newtask.py, web/js/newtask.js) -----------------------------------

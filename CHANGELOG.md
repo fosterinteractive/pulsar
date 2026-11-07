@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Task search puts yours first: tasks you logged to lately, then those assigned to you; closed tasks last.
 - Log the day: a row opened with no note gets one drafted by Claude from its sessions and commits, and picking another task keeps it.
 - Log the day: entries already in Productive have a green bar, a green wash and a check, apart from what is still to log.
 
