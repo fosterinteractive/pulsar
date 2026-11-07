@@ -6,11 +6,14 @@
 /* entries logged from this page in the last ten minutes: Productive can take a moment to show a new entry, and the
    next stretch offered must never be the one just logged */
 const loggedHere = [];
+/* stretches skipped with Skip in the last ten minutes: the next ones offered leave them out (the rails stay) */
+const skippedHere = [];
+let logStretchNow = null;  // {a, b}: the stretch the log dialog opened on (log.js), for Skip
 /* the active stretches with no entry (the yellow rails, as drawn), less what was just logged and less [skipA, skipB):
    [{a, b}] in minutes, 3 minutes or more each, earliest first */
 function openStretches(skipA = 0, skipB = 0) {
-  while (loggedHere.length && Date.now() - loggedHere[0].at > 10 * 60 * 1000) loggedHere.shift();
-  const cuts = [...loggedHere.filter(x => x.date === state.date), {a: skipA, b: skipB}].filter(x => x.b > x.a);
+  for (const list of [loggedHere, skippedHere]) while (list.length && Date.now() - list[0].at > 10 * 60 * 1000) list.shift();
+  const cuts = [...loggedHere, ...skippedHere].filter(x => x.date === state.date).concat({a: skipA, b: skipB}).filter(x => x.b > x.a);
   let out = [...document.querySelectorAll('#lane-logged .gaprail')].map(g => ({a: +g.dataset.a, b: +g.dataset.b}));
   for (const c of cuts)
     out = out.flatMap(s => (c.b <= s.a || c.a >= s.b ? [s] : [{a: s.a, b: c.a}, {a: c.b, b: s.b}].filter(p => p.b - p.a >= 3)));
@@ -21,6 +24,7 @@ function openStretches(skipA = 0, skipB = 0) {
 function prepareNext(date, edit) {
   logForm.elements.start.removeAttribute('aria-invalid');  // a start the last dialog refused is not this one's
   $('#log-next').hidden = !!edit || date !== state.date;
+  $('#log-skip').hidden = !(logStretchNow && date === state.date && openStretches(logStretchNow.a, logStretchNow.b).length);
   $('#log-next-hint').textContent = '';
   syncTimes('start', false);
 }
@@ -39,6 +43,19 @@ function afterLog(date, start, minutes, said, andNext) {
     + (more ? `, then ${more} more.` : ', the last one.');
   return true;
 }
+
+/* Skip: this stretch stays unlogged for now, and the next one opens, as after Log and next */
+$('#log-skip').onclick = () => {
+  const s = logStretchNow; if (!s) return;
+  skippedHere.push({date: state.date, a: s.a, b: s.b, at: Date.now()});
+  const left = openStretches(), next = left.find(x => x.a >= s.b) || left[0];
+  logDlg.close();
+  if (!next) { toast('No other active time without an entry.'); return; }
+  logStretch(next.a, next.b);  // day.js
+  const more = left.length - 1;
+  $('#log-next-hint').textContent = `Skipped ${hm(s.a)}–${hm(s.b)}. Next active stretch with no entry: ${hm(next.a)}–${hm(next.b)}`
+    + (more ? `, then ${more} more.` : ', the last one.');
+};
 
 /* ---------- the start: 24-hour HH:MM, as everywhere else in Pulsar ---------- */
 /* 09:30, and also 9:30, 930 or 9.30; '' when it is not a time of day */

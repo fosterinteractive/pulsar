@@ -167,7 +167,7 @@ function logStretch(a, b, exact = false) {
   // holds (GET /api/range: meetings and work outside Claude too), leads with its main task and asks Claude for the note
   const hint = rulesInRange(a, b), {work} = stretchWork(a, b, hint), draft = work ? rowTasks(work.rows).draft : null;
   openLog({start: a, minutes: realMinutes(state.date, a, b), hint, lead: leadFor(a, b, hint), note: draft?.note || '',
-           drafted: draft, range: true, exact});
+           drafted: draft, range: true, exact, stretch: {a, b}});
 }
 
 /* the active minutes inside [a, b): from the first active minute, as long as the activity was (not the slot) */

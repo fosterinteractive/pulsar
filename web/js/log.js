@@ -236,8 +236,9 @@ logForm.elements.date.addEventListener('change', () => {
 /* while the dialog edits an entry that is already logged: {id, taskId, serviceId, service, budget, title, noteRich,
    seen (the entry as the page showed it), orig (the fields as the dialog opened)} */
 let logEdit = null;
-async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = [], note = '', lead = null, edit = null, drafted = null, range = false, exact = false} = {}) {
+async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = [], note = '', lead = null, edit = null, drafted = null, range = false, exact = false, stretch = null} = {}) {
   logEdit = edit; logOpened++; logDrafting = 0;
+  logStretchNow = stretch && !edit && date === state.date ? stretch : null;  // flow.js: Skip goes on from it
   $('#log-title').textContent = edit ? 'Change a logged entry' : 'Log time in Productive';
   logForm.elements.date.disabled = !!edit;  // an entry changes within its own day
   if (!CONFIG?.productive.active) { toast('Connect Productive in Settings first.', true); openSettings('t-conn'); return; }
@@ -246,7 +247,11 @@ async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = 
   // its own length: the dialog never moves it by itself
   start = edit ? Math.max(0, Math.min(1439, Math.floor(start))) : Math.max(0, Math.min(1435, Math.round(start)));
   minutes = Math.max(1, Math.min(realMinutes(date, start, 1440), Math.round(minutes)));
-  if (!edit && !exact) minutes = roundMinutes(date, start, minutes);  // a drag to the minute stays as it was picked
+  if (!edit && !exact) {  // a drag to the minute stays as it was picked
+    const free = freeStart(date, start);  // a block that starts inside a logged entry starts where that entry ends
+    if (free > start && minutes - (free - start) >= 1) { minutes -= free - start; start = free; }
+    minutes = roundMinutes(date, start, minutes);
+  }
   f.date.value = date; f.start.value = hm(start); f.minutes.value = minutes; f.note.value = note || '';
   if (edit) edit.orig = {start: f.start.value, minutes, note: f.note.value};
   logDrafted = drafted?.note && drafted.note === note ? drafted : null;
@@ -264,6 +269,17 @@ async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = 
   rangeOpen(range && !edit ? {date, start, minutes} : null);  // range.js: what a picked stretch holds
 }
 
+/* where a block's time is free: a start inside an entry already logged that day moves to that entry's end (and on
+   past the next one, if they touch), so "Log this time" never opens on time that is logged */
+function freeStart(date, start) {
+  if (date !== state.date) return start;
+  let s = start;
+  for (let moved = true; moved;) {
+    moved = false;
+    for (const x of state.logged?.entries || []) if (x.s != null && x.e != null && x.s <= s && s < x.e) { s = Math.ceil(x.e); moved = true; }
+  }
+  return Math.min(s, 1435);
+}
 /* a block's minutes on the step of Settings' "Round entries to" (5, 10 or 15): the nearest step, at least one. Next
    to an entry already logged that day it runs up to that entry instead, whenever rounding would run into it or leave
    less than a step before it: those minutes are taken in, never left as a crumb "not logged". Minutes typed in the

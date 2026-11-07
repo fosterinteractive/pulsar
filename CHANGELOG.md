@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Log this time never opens on time already logged; Skip in the log dialog moves on to the next stretch.
 - Undo after deleting an entry or dragging its edge.
 - Logged cards lead with the task; the project is the colour stripe and the second line.
 - Keys: L Log the day, N + Log, ? lists every shortcut; Tab reaches every button; ⌘↩ shows on the Log button.

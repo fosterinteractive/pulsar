@@ -477,7 +477,9 @@ which keeps the minutes dragged) are rounded to Settings'
 **Round entries to** (5, 10 or 15 minutes): to the nearest step, and at least one step. Next to an entry already
 logged that day the block runs up to that entry instead, whenever rounding would run into it or leave less than a step
 before it: a 14-minute stretch ending at an entry is logged as 14 minutes, not 10 with a 4-minute crumb left "not
-logged" (`roundMinutes`). Minutes typed in the dialog (or worked out from a typed End), a drag in the Logged
+logged" (`roundMinutes`). A block that starts inside an entry already logged (a Likely block, a meeting) starts
+where that entry ends instead, less those minutes (`freeStart`), so **Log this time** never opens on logged time.
+Minutes typed in the dialog (or worked out from a typed End), a drag in the Logged
 column (in 1-minute steps: the person picked those minutes) and an entry being changed are never rounded.
 
 **Around time already logged.** When the overlap check (5.2) finds entries inside the time asked for, the answer also
@@ -553,7 +555,8 @@ dialog; the dialog's own (around entries already logged) should take its place o
 the next yellow-rail stretch after it, else the first one left in the day, with that stretch's suggestions
 (`leadFor`, as the rail itself) and their first task picked. A line at the top says what was just logged and how
 many stretches are left. Stretches logged from the page in the last ten minutes are left out even before Productive
-shows them. It is offered for new entries in the day on screen only. Clicks to log a whole day again, entry by entry
+shows them. **Skip**, on a dialog opened on a stretch while others are left, leaves that stretch unlogged and opens
+the next one the same way (skipped stretches are left out of the next ones for ten minutes; the rails stay). It is offered for new entries in the day on screen only. Clicks to log a whole day again, entry by entry
 (Nick's own entries, on a simulated empty day): 4 Nov 2026, 21 entries, 57 clicks before and 38 with it; 3 Nov,
 38 entries, 108 and 71 (with ⌘⇧↩, 17 and 33). Entries away from the computer (calls) still need their start typed.
 
