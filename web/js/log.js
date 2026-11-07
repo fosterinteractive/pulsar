@@ -231,7 +231,7 @@ logForm.elements.date.addEventListener('change', () => {
 /* while the dialog edits an entry that is already logged: {id, taskId, serviceId, service, budget, title, noteRich,
    seen (the entry as the page showed it), orig (the fields as the dialog opened)} */
 let logEdit = null;
-async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = [], note = '', lead = null, edit = null, drafted = null, range = false} = {}) {
+async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = [], note = '', lead = null, edit = null, drafted = null, range = false, exact = false} = {}) {
   logEdit = edit; logOpened++; logDrafting = 0;
   $('#log-title').textContent = edit ? 'Change a logged entry' : 'Log time in Productive';
   logForm.elements.date.disabled = !!edit;  // an entry changes within its own day
@@ -241,7 +241,7 @@ async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = 
   // its own length: the dialog never moves it by itself
   start = edit ? Math.max(0, Math.min(1439, Math.floor(start))) : Math.max(0, Math.min(1435, Math.round(start)));
   minutes = Math.max(1, Math.min(1440 - start, Math.round(minutes)));
-  if (!edit) minutes = roundMinutes(date, start, minutes);
+  if (!edit && !exact) minutes = roundMinutes(date, start, minutes);
   f.date.value = date; f.start.value = hm(start); f.minutes.value = minutes; f.note.value = note || '';
   if (edit) edit.orig = {start: f.start.value, minutes, note: f.note.value};
   logDrafted = drafted?.note && drafted.note === note ? drafted : null;
@@ -458,7 +458,7 @@ $('#log-new').onclick = () => {
     if (start == null) return;
     const a = +sel.dataset.a, b = +sel.dataset.b;
     sel.remove(); start = null;
-    if (b - a >= 1 && a >= 0 && b <= DAY_END) logStretch(a, b);  // day.js
+    if (b - a >= 1 && a >= 0 && b <= DAY_END) logStretch(a, b, true);  // day.js; the minutes dragged, not rounded
   });
   lane.addEventListener('pointercancel', () => { if (start == null) return; sel.remove(); start = null; });
 })();

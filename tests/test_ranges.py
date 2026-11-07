@@ -319,6 +319,17 @@ class PageTest(unittest.TestCase):
         self.assertIn("Math.round(drag.x.s) + d", resize)
         self.assertIn("Math.round(drag.x.e) + d", resize)
 
+    def test_a_drag_keeps_its_minutes_and_old_windows_sign_in_again(self):
+        """log.js: a stretch dragged in the Logged column opens the dialog with the minutes dragged, not rounded to
+        "Round entries to". main.js: after an update a window of 1.4.0 or older, which ignores 'reload', is asked
+        'signin' as well, so it does not stay signed out."""
+        log, day, main = self.read("js/log.js"), self.read("js/day.js"), self.read("js/main.js")
+        self.assertIn("logStretch(a, b, true)", log)
+        self.assertIn("if (!edit && !exact) minutes = roundMinutes(", log)
+        self.assertIn("range: true, exact});", day)
+        reopen = main[main.index("async function reopenSignedIn("):]
+        self.assertLess(reopen.index("toApp('reload')"), reopen.index("toApp('signin')"))
+
     def test_settings_say_ask_claudes_answers_are_kept(self):
         """askclaude.keep: a day's picks stay on disk for KEEP_DAYS, across restarts; Settings said they last until
         Pulsar restarts."""

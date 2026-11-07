@@ -30,12 +30,14 @@ Pulsar runs on macOS 12 Monterey or newer, Apple Silicon or Intel.
 2. Open **Terminal**, paste this line and press Return. It downloads Pulsar into Applications and opens it:
 
    ```bash
-   d=$(/usr/bin/mktemp -d) && /usr/bin/curl -fsSL https://github.com/fosterinteractive/pulsar/releases/latest/download/Pulsar.zip -o "$d/Pulsar.zip" && /usr/bin/ditto -x -k "$d/Pulsar.zip" /Applications && /usr/bin/open /Applications/Pulsar.app; /bin/rm -rf "$d"
+   d=$(/usr/bin/mktemp -d) && /usr/bin/curl -fsSL https://github.com/fosterinteractive/pulsar/releases/latest/download/Pulsar.zip -o "$d/Pulsar.zip" && /usr/bin/ditto -x -k "$d/Pulsar.zip" "$d/new" && /bin/rm -rf /Applications/Pulsar.app && /bin/mv "$d/new/Pulsar.app" /Applications/ && /usr/bin/open /Applications/Pulsar.app; /bin/rm -rf "$d"
    ```
 
    It downloads into a private temporary folder, which it removes, so no other account on the Mac can swap the file
    between the download and the unpacking, and it calls `curl` and `ditto` by their full paths, so an older copy
-   earlier in your PATH (MAMP has one) is not used. Pulsar is not signed by Apple. A file a browser downloads is
+   earlier in your PATH (MAMP has one) is not used. It replaces an older Pulsar.app whole rather than unpacking over it, so no file of the old app is left
+   inside the new one (its code check would refuse it). Your settings, token and installed versions live elsewhere and
+   stay. Pulsar is not signed by Apple. A file a browser downloads is
    marked as from the internet, and macOS then refuses to open an unsigned app until you confirm it; a file `curl`
    downloads is not marked, so Pulsar opens at once. What protects this first install is Pulsar's own check: the app
    installs the code it carries only when Pulsar's release key signed it, and says so if not. That check is part of

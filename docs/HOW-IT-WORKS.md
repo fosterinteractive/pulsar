@@ -444,7 +444,8 @@ block with commits of yours, the note is drafted from them (below), with "From y
 clients may see notes"; a note Ask Claude drafted comes first. The picked task has an **Open in Productive** link (see
 5.2b for where its address comes from), and under the task list its ticket flags, if it has any (5.3).
 
-The minutes of a block (a stretch of the rail, an Activity, Likely or meeting block, a drag) are rounded to Settings'
+The minutes of a block (a stretch of the rail, an Activity, Likely or meeting block; not a drag in the Logged column,
+which keeps the minutes dragged) are rounded to Settings'
 **Round entries to** (5, 10 or 15 minutes): to the nearest step, and at least one step. When rounding up would run into
 an entry already logged that day, they are rounded down instead, and a block shorter than one step that would still
 run into it keeps its own minutes. Minutes typed in the dialog (or worked out from a typed End), and an entry being

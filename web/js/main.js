@@ -61,7 +61,11 @@ async function reopenSignedIn(v) {
   try { localStorage.removeItem(SESSION); } catch (e) {}
   if (APP) {
     try { sessionStorage.setItem('pulsar-updated', v); } catch (e) {}
-    await warpIn(); toApp('reload'); return;
+    await warpIn(); toApp('reload');
+    // a window of 1.4.0 or older does not know 'reload' and would leave the page signed out under the warp: it does
+    // know 'signin', which runs the same launcher check. A window that knew 'reload' has left this page by then.
+    setTimeout(() => toApp('signin'), 4000);
+    return;
   }
   warpRelease();
   $('#signin-text').textContent =

@@ -7,6 +7,9 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- After an update, a window from an older Pulsar.app signs in again instead of staying signed out.
+- The install line replaces an older Pulsar.app instead of unpacking over it.
+- A stretch dragged in the Logged column keeps the minutes dragged.
 - Releases can be signed with a key in the Mac's Secure Enclave, a fingerprint for each signature (`macos/sign.sh`); release.sh refuses a key the newest released version does not list.
 - Log the day with Claude (experimental): FI's rules and Claude's review of the whole day, as suggestions to accept or reject.
 - Settings > Claude lists everything Pulsar asks Claude and what each sends, with a model to pick for each.
