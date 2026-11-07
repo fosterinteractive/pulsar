@@ -6,6 +6,8 @@ the task and note that lead the log dialog, when it is mixed, and the entries a 
 
 import os
 import re
+import shutil
+import subprocess
 import sys
 import unittest
 from datetime import datetime, timezone
@@ -304,6 +306,32 @@ class PageTest(unittest.TestCase):
         self.assertNotRegex(code, r"dry\s*:")
         self.assertIn("/api/range?", code)
         self.assertIn("rangeNow.typed", code)  # what the person wrote is never replaced
+
+    def test_a_late_range_answer_never_replaces_a_task_picked_or_created(self):
+        """log.js's own picker, run in node on a stub page: a task just created and picked (newtask.js) stays picked
+        when the stretch's answer arrives later (rangeOpen -> lead); one the dialog chose by itself gives way."""
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node is not installed")
+        src = self.read("js/log.js")
+        picker = src[src.index("function dedupe("):src.index("/* ---------- the log dialog ---------- */")]
+        script = """
+const el = () => ({innerHTML: '', classList: {add() {}, remove() {}}, contains: () => false, querySelector: () => null,
+                   querySelectorAll: () => [], addEventListener() {}, value: '', focus() {}});
+const esc = s => String(s), dur = m => m + ' min', CLAUDE_MARK = '', document = {activeElement: null},
+      todayLocal = () => '2026-11-07', dayLabel = d => d;
+""" + picker + """
+const out = [], p = makePicker(el(), el(), t => out.push(t.taskId));
+const lead = {label: 'For this time', tasks: [{taskId: '555', title: 'Guess', project: 'Acme'}]};
+p.loading(); p.set([{label: 'Lately', tasks: [{taskId: '1', title: 'Old', project: 'Acme'}]}], null);
+p.pick({taskId: '999', title: 'Just created', project: 'Acme'}); p.lead(lead); out.push('|' + p.selected.taskId);
+p.loading(); p.set([{label: 'Lately', tasks: [{taskId: '1', title: 'Old', project: 'Acme'}]}], {taskId: '1', title: 'Old'});
+p.lead(lead); out.push('|' + p.selected.taskId);
+console.log(out.join(','));"""
+        got = subprocess.run([node, "-e", script], capture_output=True, text=True, timeout=30)
+        self.assertEqual(got.stdout.strip(), "999,|999,1,555,|555", got.stderr)
+        code = self.read("js/range.js")  # an answer for a time the person has since changed leads nothing
+        self.assertLess(code.index("if (rangeNow.stale) return rangeDraw();"), code.index("logPicker.lead(g)"))
 
 
 if __name__ == "__main__":
