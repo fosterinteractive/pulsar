@@ -88,12 +88,10 @@ def guard_description(text) -> tuple:
         kept.append(line)
     if not kept:
         return "", "too long"
-    for line in kept:  # the note's checks themselves (askclaude.guard_note also limits length and sentences)
-        if any(unicodedata.category(c) in ("Cc", "Cf") for c in line):
-            return "", "a character nobody sees"
-        for why, rx in askclaude._NOTE_CHECKS:
-            if rx.search(line):
-                return "", why
+    for line in kept:  # the note's checks themselves, folded (askclaude.guard_note also limits length and sentences)
+        why = askclaude.text_problem(line)
+        if why:
+            return "", why
     return "\n".join(kept), None
 
 
