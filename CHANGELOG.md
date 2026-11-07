@@ -6,6 +6,10 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- Log the day: a row opened with no note gets one drafted by Claude from its sessions and commits, and picking another task keeps it.
+- Log the day: entries already in Productive have a green bar, a green wash and a check, apart from what is still to log.
+
 ## 1.5.4 (2026-11-07)
 - A task you never logged to takes the service you used last in its project, in the log dialog and in Log the day.
 - Log the day's "Review with Claude" turns like Ask Claude while Claude reviews the day.

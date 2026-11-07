@@ -233,7 +233,7 @@ function renderReview() {
 function loggedLine(x) {
   return `<li class="er done"><div class="eb"><span class="e-time num">${x.s == null ? 'no start' : hm(x.s)}</span>
     <span class="e-task"><i class="dot full" style="--c:${color(x.project)}"></i><span>${esc(x.task || x.project)}</span></span>
-    <span class="e-st">in Productive${x.s == null ? ', no start time' : ''} · ${dur(x.minutes)}</span></div></li>`;
+    <span class="e-st">✓ in Productive${x.s == null ? ', no start time' : ''} · ${dur(x.minutes)}</span></div></li>`;
 }
 function rowHTML(r, overlaps) {
   if (r.status === 'logged') {
@@ -283,6 +283,9 @@ function ticketLine(r) {
 
 /* ---------- the editor of the open row ---------- */
 function noteHint(r) {
+  if (r.noteDrafting) return `${CLAUDE_MARK.split('<span')[0]}Claude is drafting a note from this work's sessions and commits…`;
+  if (r.noteFrom === 'session' && !r.noteEdited) return `${CLAUDE_MARK.split('<span')[0]}Drafted by Claude from this work's sessions and commits: check it before logging; clients may see notes.`;
+  if (r.noteError && !(r.note || '').trim()) return `No note from Claude: ${esc(r.noteError)} Clients may see notes: the outcome, in a sentence.`;
   if (r.noteFrom === 'claude' && !r.noteEdited) return `${CLAUDE_MARK.split('<span')[0]}Drafted by Claude: check it before logging; clients may see notes.`;
   if (r.noteFrom === 'meeting' && !r.noteEdited) return "The meeting's title. Clients may see notes.";
   if (r.noteFrom === 'repeat' && !r.noteEdited) return 'Your usual note for this. Clients may see notes.';
@@ -307,7 +310,7 @@ function editorHTML(r) {
       <label class="field"><span>Minutes</span><input type="number" min="${CONFIG?.roundTo || 5}" max="720" step="${CONFIG?.roundTo || 5}" data-ld-min value="${r.minutes}"></label>
       <span class="endt">until ${hm(r.s + r.minutes)}</span></div>
     <label class="field"><span>Note</span><textarea rows="2" data-ld-note placeholder="What was done: the outcome, in a sentence">${esc(r.note || '')}</textarea></label>
-    <p class="hint">${noteHint(r)}</p>
+    <p class="hint ld-note-hint">${noteHint(r)}</p>
     <div class="acts"><button type="button" class="btn bordered" data-ld-del="${r.id}">Delete from the proposal</button></div></div>`;
 }
 function wireEditor(r) {
@@ -345,10 +348,29 @@ function wireEditor(r) {
 }
 function ldChanged(r) { r.edited = true; if (r.status === 'refused') { r.status = null; r.reason = ''; } renderReview(); render(); }
 
+/* a row opened with no note, while the Claude Code switch is on: Claude drafts one from its sessions and commits, as
+   the log dialog does (POST /api/likely/note). The note is about the work, not the task, so picking another task
+   keeps it. Asked once per row; what the person typed meanwhile is never replaced. */
+async function ldDraftNote(r) {
+  if (!CONFIG?.likely?.askClaude || !r.repo || (r.note || '').trim() || r.noteDrafting || r.noteTried || LD.writing) return;
+  r.noteDrafting = true; r.noteTried = true; renderReview();
+  const got = await postJSON('/api/likely/note', {date: LD.date, s: r.s, e: r.e ?? r.s + r.minutes, project: r.repo}).catch(() => ({}));
+  const row = ldRow(r.id); r.noteDrafting = false;
+  if (!row) return;
+  row.noteDrafting = false;
+  if (!(row.note || '').trim()) {  // nothing typed: the draft goes in, and the panel is drawn again
+    if (got.note) Object.assign(row, {note: got.note, noteFrom: 'session', noteEdited: false});
+    else row.noteError = got.error || got.why || '';
+    return renderReview();
+  }
+  // typed meanwhile: only the hint changes, so the field keeps its focus
+  const hint = $(`#review [data-row="${row.id}"] .ld-note-hint`); if (hint) hint.innerHTML = noteHint(row);
+}
 function ldOpen(id, scroll = false) {
   const r = ldRow(id); if (!r || LD.writing) return;
   LD.open = LD.open === id && !scroll ? null : id; r.opened = true;
   renderReview(); render();
+  if (LD.open === id) ldDraftNote(r);
   if (scroll) {
     const li = $(`#review [data-row="${id}"]`);
     li?.scrollIntoView({block: 'nearest', behavior: 'smooth'});
@@ -365,6 +387,7 @@ async function ldSetTask(r, t) {
   r.flags = r.flags.filter(f => !['notask', 'low', 'noservice', 'claudefound'].includes(f));
   if (r.noteFrom === 'claude' && !r.noteEdited) { r.note = ''; r.noteFrom = ''; r.flags = r.flags.filter(f => f !== 'claudenote'); }  // Claude wrote it for another task
   renderReview(); render();
+  if (LD.open === r.id) ldDraftNote(r);  // its note went with the old task: one from the work itself
   const [list, sug] = await Promise.all([getJSON(`/api/services?task=${r.taskId}&date=${LD.date}&flags=1`), suggestions(LD.date)]);
   if (r.taskId !== String(t.taskId)) return;
   if (list.error) { r.serviceProblem = list.error; renderReview(); return; }

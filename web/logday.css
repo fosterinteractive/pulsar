@@ -83,11 +83,19 @@ section.rv[hidden] { display: none; }
 .chk { color: var(--gap-text); font-size: 11px; font-weight: 600; }
 
 /* an entry already in Productive: one quiet line */
+/* already in Productive: a green bar, a faint green wash and a check, so they read apart from what is still to log
+   (the amber bar is time with nothing yet) */
+.er.done { background: color-mix(in srgb, var(--logged) 7%, transparent); }
+.er.done::before { content: ""; position: absolute; left: 14px; top: 7px; bottom: 7px; width: 3px; border-radius: 2px; background: var(--logged); }
+.er.done .e-st { color: var(--logged-text); font-weight: 500; }
+:root { --logged: #1f9d55; --logged-text: #177a42; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --logged: #34c759; --logged-text: #4ade80; } }
+:root[data-theme="dark"] { --logged: #34c759; --logged-text: #4ade80; }
 .er.done .eb { padding-top: 6px; padding-bottom: 6px; cursor: default; padding-left: 36px; }
 .er.done .eb:hover { background: none; }
 .er.done .e-time { grid-row: auto; color: var(--muted); }
 .er.done .e-task { font-weight: 500; color: var(--muted); }
-.er.done .e-st { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+.er.done .e-st { font-size: 11.5px; white-space: nowrap; }
 
 /* active time with no entry, in time order with the entries */
 .gr { display: grid; grid-template-columns: 58px minmax(0, 1fr) auto; column-gap: 10px; align-items: center; padding: 7px 14px 7px 36px; border-bottom: 1px solid var(--line2); position: relative; }
