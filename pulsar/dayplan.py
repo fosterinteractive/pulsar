@@ -627,7 +627,8 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
                 p.update(task=q["task"], project=q.get("project"), alts=list(q.get("alts") or []),
                          claudeFound=bool(q.get("claudeFound")))
     if keep is not None:  # the log dialog's range (ranges.py): each minute's claim and piece, as placed here
-        keep.update(owner=owner, claims=claims, pieces=pieces, work=work, away=away, names=names, ctx=ctx)
+        keep.update(owner=owner, claims=claims, pieces=pieces, work=work, away=away, names=names, ctx=ctx,
+                    gone=[(int(math.ceil(w["s"])), int(w["e"])) for w in day.get("gone") or []])
 
     def logged_between(a, b) -> bool:  # an entry already logged between minutes a and b: laid out from a, a piece
         return any(a < x[1] and x[0] < b for x in busy)  # joined across it would stop at it, the rest not placed

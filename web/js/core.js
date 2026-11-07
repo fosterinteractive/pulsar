@@ -58,6 +58,33 @@ function nowMin() {
     .formatToParts(new Date()).map(x => [x.type, x.value]));
   return +p.hour * 60 + +p.minute;
 }
+/* The two nights a year the clocks change, the page's minutes are the clock's, while an entry's minutes are real ones
+   (pulsar/server.py clock, page_span): 01:30 to 03:30 is 60 minutes the night the clocks go forward, 180 from 00:30
+   to 02:30 the night they go back. Every other day these are the clock's own numbers. */
+function zoneOffset(ms) {  // Pulsar's zone's UTC offset at a moment, in minutes
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', {timeZone: TZ, hourCycle: 'h23', year: 'numeric',
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'}).formatToParts(new Date(ms))
+    .map(x => [x.type, x.value]));
+  return Math.round((Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second) - Math.floor(ms / 1000) * 1000) / 60000);
+}
+/* the moment the clock shows minute m of `date`: the first one when it shows it twice, and a minute the clocks skip
+   as if they had not changed yet (as the server reads a start) */
+function clockMoment(date, m) {
+  const naive = Date.parse(date + 'T00:00:00Z') + m * 60000, offs = [zoneOffset(naive - 64800000), zoneOffset(naive + 64800000)];
+  const fit = offs.map(o => naive - o * 60000).filter((t, i) => zoneOffset(t) === offs[i]);
+  return fit.length ? Math.min(...fit) : naive - offs[0] * 60000;
+}
+/* the real minutes from clock minute a to clock minute b of `date` */
+function realMinutes(date, a, b) {
+  return validDate(date) ? Math.round((clockMoment(date, b) - clockMoment(date, a)) / 60000) : Math.round(b - a);
+}
+/* the clock minute of `date` that comes `minutes` real minutes after clock minute a (over 1440: the next day). The
+   night the clocks go back, an end inside the hour shown twice can read before its start: then the clock's sum. */
+function clockAfter(date, a, minutes) {
+  if (!validDate(date)) return a + minutes;
+  const t = clockMoment(date, a) + minutes * 60000, end = Math.round((t + zoneOffset(t) * 60000 - Date.parse(date + 'T00:00:00Z')) / 60000);
+  return end > a ? end : a + minutes;
+}
 function shiftDate(d, n) { const t = new Date(d + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); }
 function dur(m) {
   m = Math.round(m); if (m < 60) return `${m} min`;

@@ -20,7 +20,7 @@ async function rangeOpen(r) {
   rangeDraw();
   if (!r) return;
   const ignore = typeof LD_IGNORE !== 'undefined' && LD_IGNORE;  // logday.js: a read-only test server's whole-day view
-  const res = await getJSON(`/api/range?date=${r.date}&s=${r.start}&e=${r.start + r.minutes}&source=${state.source}`
+  const res = await getJSON(`/api/range?date=${r.date}&s=${r.start}&e=${clockAfter(r.date, r.start, r.minutes)}&source=${state.source}`
     + (ignore ? '&ignore_logged=1' : '')).catch(() => null);
   if (rangeNow?.opened !== mine || mine !== logOpened || !logDlg.open) return;  // another dialog by now
   if (!res || res.error) return;  // the dialog works as it did: nothing to add
@@ -66,7 +66,7 @@ function rangeNote(res) {
 }
 
 /* the line under the note: what the stretch mixes, and the split, when it is worth it */
-const rgSpan = x => `${x.start}–${hm(x.s + x.minutes)}`;
+const rgSpan = x => `${x.start}–${hm(clockAfter(rangeNow?.res?.date || state.date, x.s, x.minutes))}`;  // real minutes
 const rgLoggable = x => x.taskId && x.serviceId && !x.done;
 function rangeDraw() {
   const el = rgBox(), res = rangeNow?.res;

@@ -146,6 +146,8 @@ def analyse(keep: dict, s: float, e: float, opts: dict | None = None) -> dict:
     for st, n, gk, w in split:
         g = by_gk[gk]
         kept[g["key"]] += w
+        # real minutes: the night the clocks go forward, the hour they skip is on the clock but never happened
+        n -= sum(max(0, min(st + n, ge) - max(st, gs)) for gs, ge in keep.get("gone") or [])
         entries.append({"s": st, "minutes": n, "start": _hm(st), "group": g["key"], "taskId": g["taskId"],
                         "title": g["title"], "project": g["project"], "label": g["label"], "kind": g["kind"],
                         "note": g["note"], "noteFrom": g["noteFrom"], "confidence": g["confidence"], "why": g["why"]})
