@@ -164,8 +164,9 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   releases behind, it reminds you once every two days; **Skip this release** stops the reminder until a newer one is
   out. Only releases signed with the maintainer's release key are accepted. The repository must stay public: Pulsar downloads without signing in to GitHub, so from a private
   repository it gets nothing (and the Pulsar.zip link stops working too).
-- **Logs.** Errors and warnings are kept for 31 days in `~/.cache/pulsar/logs/`, with tokens removed. **Logs**
-  at the top shows them; its **Download** button saves a text file to send to whoever maintains Pulsar. Productive
+- **Error log.** Errors and warnings are kept for 31 days in `~/.cache/pulsar/logs/`, with tokens removed.
+  **Settings → Updates → Error log** shows them (while there are errors of the last 24 hours, a small **!** at the top
+  opens it too); its **Download** button saves a text file to send to whoever maintains Pulsar. Productive
   not being connected is shown on the page, not logged; a Claude Code token that could not be renewed is.
 - **The warp.** An update draws the page in towards a black hole (a bright one on the light theme) with a ring of
   light around it while it loads, then lets go with a small flash; the refresh button plays a short one. In the
@@ -289,7 +290,7 @@ one, shown next to the version in Settings and in the release notes:
 
 ## If something goes wrong
 
-1. Click **Logs** at the top of Pulsar, choose how far back (24 hours, 7 or 30 days) and click **Download**. It
+1. Open **Settings → Updates → Error log** (or the **!** at the top, when it shows), choose how far back (24 hours, 7 or 30 days) and click **Download**. It
    saves a text file with the errors, your macOS and Pulsar versions, and no tokens.
 2. Send that file to the person who shared Pulsar with you, with what you did, what you expected and what you saw
    (a screenshot helps).

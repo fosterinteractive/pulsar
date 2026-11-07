@@ -457,8 +457,7 @@ header { flex-wrap: wrap; row-gap: 8px; }
 .lg-m { margin-top: 3px; overflow-wrap: anywhere; }
 .lg pre { white-space: pre-wrap; font-size: 11px; color: var(--muted); background: var(--seg); padding: 8px; border-radius: 6px; max-height: 240px; overflow: auto; }
 .lg summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-top: 4px; }
-.logs-btn.has-errors { position: relative; }
-.logs-btn.has-errors::after { content: ""; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--gap); }
+.logs-btn { color: var(--gap-text); font-weight: 700; }
 /* report download menu */
 .dl { position: relative; margin-left: auto; }
 .dl summary { list-style: none; cursor: pointer; }
@@ -509,7 +508,7 @@ dialog#signin::backdrop { background: rgba(0,0,0,.45); }
   header { padding: 10px 16px; gap: 8px; row-gap: 6px; }
   #dayname { display: none; }
   .settings-btn span { display: none; }
-  #zoom button { padding: 4px 7px; }
+  .zoom-sel { padding: 4px 4px; }
   #dayview { padding: 0 16px 16px; }
   #report { padding: 0 16px 24px; }
 }
@@ -592,3 +591,18 @@ dialog#updprompt::backdrop { background: rgba(0,0,0,.35); }
 .dp-grid td:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .dp-grid td[aria-selected="true"]:focus-visible { outline-offset: 2px; }
 .dp-f { display: flex; margin-top: 4px; padding: 8px 2px 0; border-top: 1px solid var(--line2); }
+
+/* the Logged column's head: the title takes what the buttons leave and shortens, never under them */
+.colhead.loggedcol { display: flex; align-items: flex-start; gap: 8px; }
+.loggedcol .ch-t { flex: 1 1 auto; min-width: 0; }
+.loggedcol .ch-acts { flex: none; display: flex; gap: 4px; align-items: center; margin-top: -2px; }
+.loggedcol .ch-acts .btn { font-size: 11.5px; padding: 2px 8px; }
+@container (max-width: 250px) { .colhead.loggedcol { flex-wrap: wrap; } .loggedcol .ch-acts { flex-basis: 100%; margin-top: 4px; } }
+#log-day.primary { font-weight: 600; }
+/* zoom: one menu instead of five buttons */
+.zoom-sel { font: inherit; font-size: 12px; color: var(--text); background: var(--seg); border: 1px solid transparent; border-radius: 8px; padding: 4px 6px; }
+.zoom-sel:hover { background: var(--hover); }
+/* Work time: "Active, not logged" opens Log the day */
+#worktime .kv.go { width: 100%; border: 0; background: none; font: inherit; color: inherit; padding: 0; cursor: pointer; text-align: left; }
+#worktime .kv.go:hover span:first-child { text-decoration: underline; }
+#worktime .kv.go:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }

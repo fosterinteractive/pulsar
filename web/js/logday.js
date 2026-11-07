@@ -113,6 +113,7 @@ function closeLogDay() {
   render();
 }
 $('#log-day').onclick = () => (ldActive() ? closeLogDay() : openLogDay());
+$('#worktime').addEventListener('click', ev => { if (ev.target.closest('#wt-logday')) openLogDay(); });
 
 /* ---------- what is drawn on the axis ---------- */
 function ldCoverSpans() { return LD.rows.filter(r => r.checked && r.status !== 'logged').map(r => [r.s, r.e]); }

@@ -22,6 +22,7 @@ async function openLogs(days = logsDays) {
 }
 
 $('#open-logs').onclick = () => openLogs();
+$('#settings-logs').onclick = () => { $('#settings').close(); openLogs(); };
 document.querySelectorAll('#logs-range button').forEach(b => b.onclick = () => openLogs(+b.dataset.v));
 logsDlg.querySelectorAll('[data-close]').forEach(b => b.onclick = () => logsDlg.close());
 

@@ -1294,6 +1294,11 @@ question) and cannot tell when inside it the work happened.
 - **The week** (under the day's name): "This week: X h logged of Y h active", Monday to Friday up to today, from
   `/api/report` for that week (kept 15 minutes) with the day on screen as its Logged column shows it now. A click
   lists each day; a day opens it. Where the header is narrow it reads "Week: X h of Y h".
+- **The next step**: while active time is not logged, **Log the day** is the Logged column's main (filled) button,
+  and "Active, not logged" in Work time is a link that opens it. The header keeps the day's controls: one zoom menu
+  (the time each row shows), one ↻ for everything; the error log is in Settings → Updates, with a small **!** in
+  the header only while there are errors of the last 24 hours. The Logged column's title shortens before its
+  buttons ever cover it.
 - **First run**: when Productive is not connected (or does not know who you are), no tracker answers, or today has
   no activity yet, a short list at the top of the board says what is missing and gives the one action that fixes
   it (Connect Productive, Get or Open ActivityWatch).

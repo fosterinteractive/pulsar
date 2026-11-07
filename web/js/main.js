@@ -6,9 +6,11 @@ function applyConfig(c) {
   TZ = c.timezone || undefined;  // undefined: the browser's own zone, the computer's
   TARGET = c.targetMinutes || 480;
   document.body.classList.toggle('no-likely', !c.likely.enabled);
+  // the error log lives in Settings > Updates; the header shows a small button for it only while there are errors
   const errs = c.errors24h || 0;
-  $('#open-logs').classList.toggle('has-errors', errs > 0);
-  $('#open-logs').title = errs ? `${errs} error${errs === 1 ? '' : 's'} in the last 24 hours` : 'Error log';
+  $('#open-logs').hidden = !errs;
+  $('#open-logs').title = errs ? `Error log: ${errs} error${errs === 1 ? '' : 's'} in the last 24 hours` : 'Error log';
+  $('#open-logs').setAttribute('aria-label', $('#open-logs').title);
   // Pulsar Preview: which code this is, at all times, so nobody mistakes it for the release
   const pv = c.preview, chip = $('#preview-chip');
   chip.hidden = !pv;

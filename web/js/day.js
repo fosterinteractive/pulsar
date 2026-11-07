@@ -288,7 +288,7 @@ function render() {
     month: 'long', year: 'numeric', timeZone: 'UTC'}).format(noon);
   setText($('#dayname'), label.charAt(0).toUpperCase() + label.slice(1));
   $('#date').value = state.date;
-  document.querySelectorAll('#zoom button').forEach(b => b.classList.toggle('on', +b.dataset.v === Z));
+  $('#zoom').value = String(Z);
   $('#source-select').value = state.source;
 
   // axis and rules
@@ -457,6 +457,10 @@ function scrollToNow(smooth = true) {
 
 function renderAside(gapMin) {
   const act = state.act, logged = state.logged, likely = state.likely;
+  // the day's next step: Log the day is the main button while active time is not logged
+  $('#log-day').classList.toggle('primary', !!(logged && !logged.error && act && !act.error && gapMin >= 1 && !ldActive()));
+  $('#log-day').classList.toggle('bordered', !$('#log-day').classList.contains('primary'));
+  $('#log-day').setAttribute('aria-pressed', String(ldActive()));
   const work = act && !act.error ? act.items.filter(x => x.cat !== 'personal').reduce((s, x) => s + x.e - x.s, 0) : null;
   const personal = act && !act.error ? act.items.filter(x => x.cat === 'personal').reduce((s, x) => s + x.e - x.s, 0) : null;
   const sum = logged && !logged.error ? logged.entries.reduce((s, x) => s + x.minutes, 0) : null;
@@ -470,7 +474,9 @@ function renderAside(gapMin) {
     ${sum && sum > (bill ? bill.yes + bill.no : 0) && bill ? `<div class="kv"><span>Billing unknown</span><span class="num">${dur(sum - bill.yes - bill.no)}</span></div>` : ''}
     <div class="kv"><span>Active, work</span><span class="num">${v(work)}</span></div>
     ${personal ? `<div class="kv"><span>Personal</span><span class="num">${dur(personal)}</span></div>` : ''}
-    ${logged && act && !logged.error && !act.error ? `<div class="kv gap"><span>Active, not logged</span><span class="num">${dur(gapMin)}</span></div>` : ''}
+    ${logged && act && !logged.error && !act.error ? (gapMin >= 1 && !ldActive()
+      ? `<button type="button" class="kv gap go" id="wt-logday" title="Open Log the day to log it"><span>Active, not logged</span><span class="num">${dur(gapMin)} →</span></button>`
+      : `<div class="kv gap"><span>Active, not logged</span><span class="num">${dur(gapMin)}</span></div>`) : ''}
     ${act?.away?.some(x => !x.off) ? `<div class="kv"><span>Away, breaks</span><span class="num">${dur(act.away.filter(x => !x.off).reduce((s, x) => s + x.e - x.s, 0))}</span></div>` : ''}
     <div class="bar"><i style="width:${Math.min(100, (sum || 0) / TARGET * 100)}%"></i></div>
     <div class="kv"><span>Daily target</span><span class="num">${dur(TARGET)}</span></div>`);
@@ -689,25 +695,15 @@ $('#ask-claude').onclick = async () => {
   toast(r.warning ? `${said} ${r.warning}` : said, !!r.warning);
   askEnd(n ? 'picked' : 'none');
 };
-/* logged time only: one Productive read, the other columns stay as they are */
-$('#refresh-logged').onclick = async () => {
-  const btn = $('#refresh-logged'), d = state.date, before = state.logged;
-  btn.classList.add('busy');
-  const x = await refreshLogged();
-  btn.classList.remove('busy');
-  if (d !== state.date) return;
-  const c = loggedChange(before, x);
-  toast(c.warn ? c.text : `Logs updated: ${c.text}`, c.warn);
-};
 /* folded projects stay folded when the page redraws */
 const folded = new Set();
 document.addEventListener('toggle', ev => {
   const p = ev.target.dataset?.p; if (p == null) return;
   ev.target.open ? folded.delete(p) : folded.add(p);
 }, true);
-document.querySelectorAll('#zoom button').forEach(b => b.onclick = () => {
+$('#zoom').addEventListener('change', ev => {
   const sc = $('#scroll'), top = sc.scrollTop / ppmOf(state.zoom);  // keep the same minute at the top
-  state.zoom = +b.dataset.v; syncURL(); render(); sc.scrollTop = top * ppmOf(state.zoom);
+  state.zoom = +ev.target.value; syncURL(); render(); sc.scrollTop = top * ppmOf(state.zoom);
 });
 $('#source-select').addEventListener('change', ev => {
   state.source = ev.target.value; syncURL(); state.act = null; render();
