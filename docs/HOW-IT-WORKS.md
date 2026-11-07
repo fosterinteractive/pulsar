@@ -404,14 +404,6 @@ the commit draft; then range.js (below) leads with the task of the work that hol
 note, and, with the Claude Code switch on, asks for its session note (5.7). A stretch with no Likely row in it
 gets neither. Earlier versions drafted no note for a stretch, and took its first group from the Likely block that
 covered half of it at the zoom on screen: it changed with the zoom and could name a project with no row in it.
-| Dragging in the Logged column | the dragged stretch | Log the day's task for its main work (below), then the Likely block or meeting over most of it |
-| The yellow rail (active, not logged) | the stretch | the same |
-| The hatched rail (away) | the stretch | the same |
-| An Activity block, **Log this time** | the block | the same |
-| A Likely block, **Log this time** | the block; note = Claude's draft, if it wrote one | "For this work": Claude's pick, task links, learned tasks |
-| A meeting, **Log this time** | the meeting; note = its title | "For this meeting" |
-| A dashed card (a repeat) | the call as seen; note = the usual note | "Usually at this time" |
-| **+ Log** | the first yellow-rail stretch, else after the last entry | the same |
 
 After the first group come **From your rules**, **You logged to these lately** (tasks of your last 30 days, with the
 service you used last) and **Assigned to you** (open tasks in active projects, the urgent ones first: overdue, due
@@ -1467,10 +1459,6 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   suggest.
 - The key in `~/.config/pulsar/secret` is readable by every program of the person's, so a session in bypass mode can
   log new entries without the `pulsar_log` prompt, and a program set on it can sign a window in itself (section 3).
-- `/api/whoami`'s proof is an HMAC of the nonce alone, not of the port: the MCP server checks it before every call,
-  which stops a program that took Pulsar's port after it quit, but a program on Pulsar's port that relays the
-  challenge to a real Pulsar on another port would pass. Binding the port needs the launcher and the server to change
-  together; not done.
 - The Productive ask rules (the opt-in of 5.7) cover the server named `productive` only; a claude.ai connector
   (`mcp__claude_ai_<name>__…`) or a server under another name gets none. With the box on in one copy and off in the
   other, the other's tidy can take back a rule the first found already there (so not on its own list): Settings then

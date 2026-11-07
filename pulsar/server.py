@@ -199,7 +199,7 @@ def public_config(s: dict) -> dict:
                        "personId": s["person_id"], "personName": s["person_name"], "web": productive_address(s)},
         "claude": {"uses": claudeuses.public(s)},  # everything Pulsar asks Claude, with each model (Settings > Claude)
         "calendar": calendar.status(s),  # configured, connected, account: never a token
-        "preview": ({**PREVIEW, "writes": bool(s["preview_writes"])} if config.is_preview() else None),
+        "preview": ({**(PREVIEW or {}), "writes": bool(s["preview_writes"])} if config.is_preview() else None),
         "writesBlocked": config.writes_blocked(),  # why nothing may be written now (read-only, Preview), or None
     }
 

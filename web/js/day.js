@@ -753,13 +753,16 @@ async function deleteEntry(x, btn) {
     const h = ev.target.closest('.rz'); if (!h || ev.button !== 0) return;
     const card = h.closest('.card'), x = loggedCache[+card.dataset.i];
     ev.preventDefault(); ev.stopPropagation();
-    drag = {card, x, edge: h.dataset.rz, s: x.s, e: x.e};
+    // the edge moves by as much as the pointer does: grabbed anywhere on the handle (or on a short card drawn taller
+    // than its minutes), it does not jump to the pointer first
+    drag = {card, x, edge: h.dataset.rz, s: x.s, e: x.e, y0: ev.clientY - lane.getBoundingClientRect().top};
     lane.setPointerCapture(ev.pointerId);
   });
   lane.addEventListener('pointermove', ev => {
     if (!drag) return;
-    const ppm = ppmOf(state.zoom), m = Math.round((ev.clientY - lane.getBoundingClientRect().top) / ppm);
-    if (drag.edge === 't') drag.s = Math.max(0, Math.min(drag.e - 1, m)); else drag.e = Math.min(1440, Math.max(drag.s + 1, m));
+    const ppm = ppmOf(state.zoom), d = Math.round((ev.clientY - lane.getBoundingClientRect().top - drag.y0) / ppm);
+    if (drag.edge === 't') drag.s = Math.max(0, Math.min(drag.e - 1, Math.round(drag.x.s) + d));
+    else drag.e = Math.min(1440, Math.max(drag.s + 1, Math.round(drag.x.e) + d));
     drag.card.style.top = (drag.s * ppm + 1) + 'px'; drag.card.style.height = Math.max((drag.e - drag.s) * ppm - 2, 18) + 'px';
     drag.card.title = `${hm(drag.s)}–${hm(drag.e)} · ${dur(drag.e - drag.s)}`;
   });

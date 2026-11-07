@@ -241,6 +241,10 @@ class RoundingTest(unittest.TestCase):
         config.update({"round_to": 10})
         with mock.patch.object(server.productive, "connection", lambda s: {"kind": None, "problem": "x"}):
             self.assertEqual(server.public_config(config.load())["roundTo"], 10)
+            # a Preview that started without PULSAR_PREVIEW (PULSAR_INSTANCE=preview alone, as a test server may):
+            # no branch to show, and Settings still load instead of answering 500
+            with mock.patch.dict(os.environ, {"PULSAR_PREVIEW": "1"}), mock.patch.object(server, "PREVIEW", None):
+                self.assertEqual(server.public_config(config.load())["preview"], {"writes": False})
 
     def test_it_sets_log_the_days_grid_and_shortest_entry(self):
         self.assertEqual(dayplan.opts_for({}), {"grid": 5, "min_entry": 10})       # today's, unchanged

@@ -305,6 +305,27 @@ class PageTest(unittest.TestCase):
         self.assertIn("/api/range?", code)
         self.assertIn("rangeNow.typed", code)  # what the person wrote is never replaced
 
+    def test_a_dragged_edge_moves_by_the_pointer_not_to_it(self):
+        """day.js: a logged card's edge moves by as many minutes as the pointer moved since it was grabbed. Taken from
+        the pointer's place, it jumped on the first move: the 6 px handle is up to 4 minutes wide at 30-minute rows,
+        and a short card is drawn 18 px tall whatever its minutes, so a 10-minute entry grabbed by its bottom edge and
+        let go where it was asked to become 13 minutes (27 at 1-hour rows)."""
+        day = self.read("js/day.js")
+        resize = day[day.index("(function resizeEntries()"):day.index("function askResize(")]
+        self.assertIn("y0: ev.clientY - lane.getBoundingClientRect().top", resize)
+        self.assertIn("Math.round((ev.clientY - lane.getBoundingClientRect().top - drag.y0) / ppm)", resize)
+        self.assertIn("Math.round(drag.x.s) + d", resize)
+        self.assertIn("Math.round(drag.x.e) + d", resize)
+
+    def test_settings_say_ask_claudes_answers_are_kept(self):
+        """askclaude.keep: a day's picks stay on disk for KEEP_DAYS, across restarts; Settings said they last until
+        Pulsar restarts."""
+        from pulsar import askclaude
+        html = self.read("index.html")
+        hint = html[html.index('id="ask-claude-hint"'):].split("</p>")[0]
+        self.assertNotIn("until Pulsar restarts", hint)
+        self.assertIn(f"kept on this Mac for {askclaude.KEEP_DAYS} days, through restarts", hint)
+
 
 if __name__ == "__main__":
     unittest.main()

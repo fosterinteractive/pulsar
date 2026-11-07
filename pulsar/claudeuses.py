@@ -30,7 +30,7 @@ USES = {
                 "is unsure of.",
         "sends": "Sends each block's time, repository and session titles, what you typed and Claude's replies, your "
                  "commit subjects and a few of your notes, and your tasks of the last 30 days. May search Productive, "
-                 "read only.",
+                 "read only. A day's answers are kept on this Mac for 60 days.",
         "model": "sonnet", "cap": 0.25,
     },
     "note": {
