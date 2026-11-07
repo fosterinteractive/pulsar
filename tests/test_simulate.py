@@ -1094,14 +1094,25 @@ def stop_server() -> None:
         httpd.server_close()
 
 
+STEPS_READ = [0]  # steps of typed words askclaude.steps found in the made-up sessions: the words checks had words
+
+
 def simulate(seed: int, with_mcp: bool = False) -> list:
-    """One day through every piece; the problems found."""
+    """One day through every piece; the problems found. Every reader of Claude Code's sessions reads the day's own
+    made-up ones (sessions.PROJECTS_DIR), so the typed words planted there are what the leak checks look for."""
     day = Day(seed)
     run = Run(day)
     if with_mcp:
         start_server()
+    real_steps = askclaude.steps
+
+    def steps(*a, **k):
+        got = real_steps(*a, **k)
+        STEPS_READ[0] += len(got)
+        return got
     try:
-        with no_network():
+        with no_network(), mock.patch.object(sessions, "PROJECTS_DIR", run.folder), \
+                mock.patch.object(askclaude, "steps", steps):
             _simulate(run, with_mcp)
     except NoNetwork as exc:
         run.fail("network", str(exc))
@@ -1155,6 +1166,7 @@ class SimulatedDaysTest(unittest.TestCase):
         problems = []
         for seed in range(first, first + count):
             problems += simulate(seed, with_mcp=every > 0 and seed % every == 0)
+        self.assertGreater(STEPS_READ[0], 0, "no typed words were read: the words checks checked nothing")
         if os.environ.get("PULSAR_SIM"):
             print(f"\n{count} days from seed {first}, every {every}th through the MCP tools; documented limits met: "
                   f"{LIMITS or 'none'}", file=sys.stderr)

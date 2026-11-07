@@ -301,7 +301,7 @@ def _conversation(path: str, t0: float):
     return _talk[k]
 
 
-def steps(t0: float, titles: list, a: float, b: float, projects_dir: str = sessions.PROJECTS_DIR) -> list:
+def steps(t0: float, titles: list, a: float, b: float, projects_dir: str | None = None) -> list:
     """The work between minutes a and b of the day in the sessions with these titles, step by step: what the person
     typed and Claude's last words before the next message (its summary of what it did), [{"typed", "reply"}].
     A step that began earlier but ended inside the time counts too. At most 15 steps; 400 and 900 characters."""
@@ -310,7 +310,7 @@ def steps(t0: float, titles: list, a: float, b: float, projects_dir: str = sessi
         return []
     lo, hi = t0 + a * 60, t0 + b * 60
     out = []
-    for path in glob.glob(os.path.join(projects_dir, "*", "*.jsonl")):
+    for path in glob.glob(os.path.join(projects_dir or sessions.PROJECTS_DIR, "*", "*.jsonl")):
         try:
             if os.path.getmtime(path) < t0 - 3600:
                 continue
@@ -329,14 +329,14 @@ def steps(t0: float, titles: list, a: float, b: float, projects_dir: str = sessi
     return [x for _, x in sorted(out, key=lambda x: x[0])][:15]
 
 
-def typed(t0: float, titles: list, a: float, b: float, projects_dir: str = sessions.PROJECTS_DIR) -> list:
+def typed(t0: float, titles: list, a: float, b: float, projects_dir: str | None = None) -> list:
     """What the person typed, between minutes a and b of the day, in the sessions with these titles (at most 15
     messages of 400 characters)."""
     keys = {k for k in (sessions.norm_title(t) for t in titles) if len(k) >= 5}
     if not keys:
         return []
     out = []
-    for path in glob.glob(os.path.join(projects_dir, "*", "*.jsonl")):
+    for path in glob.glob(os.path.join(projects_dir or sessions.PROJECTS_DIR, "*", "*.jsonl")):
         try:
             if os.path.getmtime(path) < t0 - 3600:
                 continue
