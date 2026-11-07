@@ -6,7 +6,7 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
-## Unreleased
+## 1.5.1 (2026-11-07)
 - Two more release keys are trusted: a Touch ID key in the publisher's Mac, which signs the next releases, and an offline reserve.
 - Pulsar.zip is signed, and the install line checks it with the Mac's own openssl before it unpacks anything.
 - release.sh signs only main as it is on GitHub; an update older than one already seen is refused.
