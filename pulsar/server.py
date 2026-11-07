@@ -1090,14 +1090,18 @@ def api_task_draft(body: dict) -> dict:
 
 
 _task_lock = threading.Lock()
-_just_created: dict = {}  # (project, title) -> when it was created
+_just_created: dict = {}  # (project, title) -> (until when a second create is refused, why)
+JUST_CREATED = 60       # seconds: created, so a second click would make it twice
+MAYBE_CREATED = 600     # seconds: Productive's answer was unclear, so it may exist; time to search for it first
 
 
 def api_task_create(body: dict) -> dict:
     """One new task in Productive, assigned to you, only from a click in the page (the key alone is refused,
     key_refusal): {"task": {taskId, title, project, projectId}}. With `statusId` (one of the project's open statuses)
     and `estimate` (whole minutes), never a service (productive.create_task). The same title in the same project
-    within a minute is refused: a second click would create a second task."""
+    is refused for a minute after it was created, and for ten minutes after an unclear answer (a timeout, a server
+    error, a reply that is not Productive's success sentence): the task may exist then, and a second click would
+    create it twice. The page then says to search for it first."""
     s = current_settings()
     project, parent, task_list, status = (str(body.get(k) or "") for k in ("projectId", "parentId", "taskListId", "statusId"))
     title = re.sub(r"\s+", " ", str(body.get("title") or "")).strip()
@@ -1126,13 +1130,21 @@ def api_task_create(body: dict) -> dict:
         raise ValueError(config.writes_blocked())
     key = (project, title.lower())
     with _task_lock:  # one at a time: two quick clicks cannot both pass the check below
-        if time.time() - _just_created.get(key, 0) < 60:
-            raise ValueError("This task was created a moment ago. Search for it in the task list before creating it "
-                             "again.")
-        created = productive.create_task({"project_id": project, "parent_id": parent, "task_list_id": task_list,
-                                          "title": title, "description": description, "status_id": status,
-                                          "estimate": estimate}, s)
-        _just_created[key] = time.time()
+        until, why = _just_created.get(key, (0, ""))
+        if time.time() < until:
+            raise ValueError(why)
+        try:
+            created = productive.create_task({"project_id": project, "parent_id": parent, "task_list_id": task_list,
+                                              "title": title, "description": description, "status_id": status,
+                                              "estimate": estimate}, s)
+        except Exception as exc:
+            if isinstance(exc, productive.ProductiveUnclear) or not isinstance(exc, productive.ProductiveError):
+                _just_created[key] = (time.time() + MAYBE_CREATED, "Productive did not say whether this task was "
+                                      "created a moment ago, so it may exist. Search for it in the task list before "
+                                      "creating it again.")
+            raise
+        _just_created[key] = (time.time() + JUST_CREATED, "This task was created a moment ago. Search for it in the "
+                              "task list before creating it again.")
     _recent.clear()  # the dialog's lists read Productive again
     name = next((p["name"] for _, ps in list(_projects.values()) for p in ps if p["id"] == project), "")
     return {"task": {"taskId": created["taskId"], "title": title, "project": name, "projectId": project}}

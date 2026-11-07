@@ -468,6 +468,13 @@ def _renew_claude_code(name: str) -> bool:
 
 
 WRITE_TOOLS = {"create_resource", "update_resource", "delete_resource", "perform_action"}
+# JSON-RPC errors that mean the tool never ran: not parsed, not a request, no such method, bad parameters
+NEVER_RAN = (-32700, -32600, -32601, -32602)
+# a failure behind Productive's MCP server, passed on as its own error text: a server error (5xx), a timeout, a dropped
+# connection. The write may have reached Productive before it, so it is never read as a refusal
+UPSTREAM = re.compile(r'"status"\s*:\s*"?5\d\d\b|\b(?:HTTP|status(?: code)?|error|code)\W{0,3}5\d\d\b|bad gateway|'
+                      r"service unavailable|gateway time-?out|internal server error|timed out|\btime-?out\b|"
+                      r"\bE(?:CONN\w+|TIMEDOUT|AI_AGAIN|PIPE)\b|fetch failed|socket hang up|network error", re.I)
 
 
 _mcp_slots = threading.BoundedSemaphore(4)  # Productive's MCP endpoint hangs up when asked too much at once
@@ -513,9 +520,14 @@ def mcp_text(tool: str, args: dict, token: str, session: Optional[str] = None) -
             msg = json.loads(line[5:])
     msg = msg or json.loads(text)
     if msg.get("error"):
-        raise ProductiveError(msg["error"].get("message", "MCP error"))
+        said = str(msg["error"].get("message") or "MCP error")
+        if tool in WRITE_TOOLS and msg["error"].get("code") not in NEVER_RAN:  # it may have run before it failed
+            raise ProductiveUnclear(UNCLEAR_SAID.format(said[:300]))
+        raise ProductiveError(said)
     content = "".join(c.get("text", "") for c in msg.get("result", {}).get("content", []))
     if msg.get("result", {}).get("isError"):  # the tool ran and failed: its text is the reason, never a result
+        if tool in WRITE_TOOLS and UPSTREAM.search(content):  # failed behind the MCP server, maybe after the write
+            raise ProductiveUnclear(UNCLEAR_SAID.format(content[:300]))
         raise ProductiveError(plain_refusal(content, "it"))
     return content
 
@@ -1487,8 +1499,8 @@ def create_task(task: dict, settings: dict) -> dict:
         item["initial_estimate"] = f"{estimate} min"  # the MCP's time format, as for a time entry
     try:
         text = mcp_text("create_resource", {"resource_type": "tasks", "items": [item]}, conn["token"])
-    except ProductiveUnclear:
-        raise
+    except ProductiveUnclear as exc:  # a server error or a timeout behind the MCP: it may exist
+        raise ProductiveUnclear(TASK_UNCLEAR.format(str(exc).split("Productive said: ")[-1][:200]))
     except ProductiveError as exc:  # the tool said no (isError): nothing was created
         raise ProductiveError(task_refusal(str(exc).replace("Productive refused it: ", "")))
     except (OSError, http.client.HTTPException, ValueError) as exc:
@@ -1497,7 +1509,7 @@ def create_task(task: dict, settings: dict) -> dict:
     ids = re.findall(r"(?:\btask created|\bcreated 1 tasks?) \(IDs?:\s*(\d+)", text, re.I)
     if ids:
         return {"taskId": ids[0]}
-    if re.match(r"\s*(?:Failed to create|Item 1: Invalid)", text):  # a refusal in plain text: nothing was created
-        raise ProductiveError(task_refusal(text))
+    if re.match(r"\s*(?:Failed to create|Item 1: Invalid)", text) and not UPSTREAM.search(text):  # a refusal in plain
+        raise ProductiveError(task_refusal(text))  # text: nothing was created
     raise ProductiveUnclear("Productive's answer was unclear, so the task may or may not exist. Search for it in the "
                            "task list before creating it again. Productive said: " + text[:200])

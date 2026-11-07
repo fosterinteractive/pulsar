@@ -1917,6 +1917,35 @@ class EntryWriteAnswersTest(unittest.TestCase):
                     productive.delete_entry("7", {"person_id": "1"})
             self.assertIn(text, str(said.exception))
 
+    def test_a_failure_behind_productives_mcp_is_unclear_not_refused(self):
+        """A server error, a timeout or a JSON-RPC error behind the MCP may come after the write reached Productive: it
+        is never read as a refusal (the journal would offer to send it again). Its own refusals stay refusals."""
+        def answer(result=None, error=None):
+            msg = {"jsonrpc": "2.0", "id": 1, **({"error": error} if error else {"result": result})}
+            return mock.patch.object(productive, "https", lambda *a, **k: (200, ("data: " + json.dumps(msg)).encode()))
+
+        def failed(text):
+            return {"isError": True, "content": [{"type": "text", "text": text}]}
+        new = {"date": "2026-11-04", "minutes": 10, "started_at": "2026-11-04T14:00:00+00:00", "task_id": "1",
+               "service_id": "2"}
+        upstream = [failed('Failed to create time entry. API request failed because of error: {"status": 503}'),
+                    failed("Failed to create time entry: fetch failed"), failed("Request timed out after 30000 ms"),
+                    failed("Failed: connect ECONNRESET")]
+        for result in upstream:
+            with answer(result), self.assertRaises(productive.ProductiveUnclear):
+                productive.create_entry(new, {"person_id": "3"})
+        with answer(error={"code": -32603, "message": "Internal error"}), self.assertRaises(productive.ProductiveUnclear):
+            productive.create_entry(new, {"person_id": "3"})
+        for result, error in ((failed('Failed to create time entry. API request failed because of error: {"status": 422, '
+                                      '"code": "budget_limit_overrun"}'), None),
+                              (None, {"code": -32602, "message": "Invalid params: unknown tool"})):
+            with answer(result, error), self.assertRaises(productive.ProductiveError) as said:
+                productive.create_entry(new, {"person_id": "3"})
+            self.assertNotIsInstance(said.exception, productive.ProductiveUnclear)
+        with answer(error={"code": -32603, "message": "Internal error"}), self.assertRaises(productive.ProductiveError) as said:
+            productive.mcp_text("query_resources", {}, "t")  # a read: nothing was changed, whatever failed
+        self.assertNotIsInstance(said.exception, productive.ProductiveUnclear)
+
     def test_a_rest_server_error_after_a_change_was_sent_is_unclear_not_refused(self):
         def rest(status, raw=b"{}"):
             return mock.patch.object(productive, "https", lambda *a, **k: (status, raw))

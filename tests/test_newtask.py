@@ -159,10 +159,14 @@ class CreateTaskBodyTest(unittest.TestCase):
         self.assertNotIsInstance(caught.exception, productive.ProductiveUnclear)
 
     def test_an_answer_that_is_not_the_success_sentence_may_have_created_it(self):
-        for text in ("Something about ID: 55", ""):
-            with connected("claude-code"), mock.patch.object(productive, "https", Wire(text)):
-                with self.assertRaises(productive.ProductiveUnclear):
+        for text, is_error in (("Something about ID: 55", False), ("", False),
+                               ("Failed to create task. fetch failed", False),  # behind the MCP: it may have run
+                               ('Failed to create task. API request failed because of error: {"status": 502}', True),
+                               ("The request timed out", True)):
+            with connected("claude-code"), mock.patch.object(productive, "https", Wire(text, is_error=is_error)):
+                with self.assertRaises(productive.ProductiveUnclear) as said:
                     productive.create_task(TASK, SETTINGS)
+            self.assertIn("Search for it", str(said.exception))
         for rest in ((502, b""), (201, b"{}")):
             with connected("token"), mock.patch.object(productive, "https", Wire(rest=rest)):
                 with self.assertRaises(productive.ProductiveUnclear):
@@ -553,6 +557,35 @@ class ServerTest(unittest.TestCase):
                 server.api_task_create(dict(self.BODY))
         self.assertIn("a moment ago", str(caught.exception))
         self.assertEqual(len(wire.writes()), 1)
+
+    def test_an_unclear_answer_holds_a_second_create_for_ten_minutes(self):
+        """A timeout, a 5xx or a reply that is not the success sentence: the task may exist, so the same title in the
+        same project is refused for ten minutes and nothing more is sent. A clear refusal holds nothing."""
+        for kind, wire in (("claude-code", Wire("Task created successfully (ID 777)")), ("token", Wire(rest=(502, b""))),
+                           ("claude-code", Wire('Failed to create task. API request failed because of error: {"status": 504, '
+                                               '"title": "Gateway Timeout"}', is_error=True))):
+            server._just_created.clear()
+            with connected(kind), mock.patch.object(productive, "https", wire):
+                with self.assertRaises(productive.ProductiveUnclear):
+                    server.api_task_create(dict(self.BODY))
+                with self.assertRaises(ValueError) as caught:  # the second click
+                    server.api_task_create(dict(self.BODY))
+                self.assertIn("may exist", str(caught.exception))
+                self.assertIn("Search for it", str(caught.exception))
+                now = time.time()
+                with mock.patch.object(server.time, "time", lambda: now + 9 * 60):
+                    with self.assertRaises(ValueError):
+                        server.api_task_create(dict(self.BODY))
+                with mock.patch.object(server.time, "time", lambda: now + 11 * 60), \
+                        mock.patch.object(productive, "create_task", lambda t, s: {"taskId": "778"}):
+                    self.assertEqual(server.api_task_create(dict(self.BODY))["task"]["taskId"], "778")
+            self.assertEqual(len(wire.writes()), 1, kind)
+        server._just_created.clear()
+        wire = Wire("Failed to create task. task_list is required (unless task_list=null)")
+        with connected("claude-code"), mock.patch.object(productive, "https", wire):
+            with self.assertRaises(productive.ProductiveError):
+                server.api_task_create(dict(self.BODY))
+        self.assertEqual(server._just_created, {})  # refused: nothing exists, the person fixes it and tries again
 
     def test_refused_before_anything_is_sent(self):
         bad = [{"projectId": ""}, {"projectId": "3/0"}, {"parentId": "x"}, {"taskListId": "5"}, {"title": " "},
