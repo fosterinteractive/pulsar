@@ -317,6 +317,15 @@ class PageTest(unittest.TestCase):
         self.assertIn("Math.round(drag.x.s) + d", resize)
         self.assertIn("Math.round(drag.x.e) + d", resize)
 
+    def test_settings_say_ask_claudes_answers_are_kept(self):
+        """askclaude.keep: a day's picks stay on disk for KEEP_DAYS, across restarts; Settings said they last until
+        Pulsar restarts."""
+        from pulsar import askclaude
+        html = self.read("index.html")
+        hint = html[html.index('id="ask-claude-hint"'):].split("</p>")[0]
+        self.assertNotIn("until Pulsar restarts", hint)
+        self.assertIn(f"kept on this Mac for {askclaude.KEEP_DAYS} days, through restarts", hint)
+
 
 if __name__ == "__main__":
     unittest.main()
