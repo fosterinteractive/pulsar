@@ -174,6 +174,8 @@ function renderReview() {
   const el = $('#review');
   if (!LD.on) { el.hidden = true; return; }
   if (cuRender(el)) return;  // catchup.js: the list of earlier days, while it is open
+  // a tick, an edit or a late answer redraws the list: it stays scrolled where the person was
+  const was = {list: el.querySelector('.rv-list')?.scrollTop || 0, panel: el.scrollTop};
   const head = `<div class="rv-t"><h2>Log the day <span class="sub">· ${esc(dayTitle(LD.date))}</span></h2>${cuButton()}
     <button type="button" class="btn icon" id="ld-close" aria-label="Close Log the day">✕</button></div>`;
   if (LD.loading) { el.innerHTML = `<div class="rv-h">${head}<div class="rv-sum">Reading the day: activity, Claude sessions, meetings and what is logged…</div></div>`; return; }
@@ -223,6 +225,9 @@ function renderReview() {
       : `<button type="button" class="btn bordered" id="ld-redo" title="Work the day out again; your changes go">Start over</button>
          <p class="hint">Nothing is written until you confirm.</p>
          <button type="button" class="btn primary big" id="ld-go"${n ? '' : ' disabled'}>Log ${n} ${n === 1 ? 'entry' : 'entries'}</button>`}</div>`;
+  const list = el.querySelector('.rv-list');
+  if (list) list.scrollTop = was.list;
+  el.scrollTop = was.panel;
   if (LD.open) el.querySelector(`[data-row="${LD.open}"] .ed`) && wireEditor(ldRow(LD.open));
 }
 function loggedLine(x) {
@@ -293,6 +298,7 @@ function editorHTML(r) {
       <span class="tb-t">${esc(r.title || 'Pick a task')}</span><span class="tb-p">${esc(r.project || 'Search every task in Productive')}</span></button></div>
     ${r.alts?.length ? `<div class="alts"><span>Or</span><div>${r.alts.map((a, i) => `<button type="button" class="alt" data-ld-alt="${i}"><span>${esc(altName(a))}</span>${a.why ? `<span class="vh">, ${esc(a.why)}</span>` : ''}</button>`).join('')}</div></div>` : ''}
     <p class="whyd">${whyLine(r)}</p>
+    <button type="button" class="newtask-link" data-ld-newtask="${r.id}">No task fits this work? Create one in Productive</button>
     <label class="field"><span>Service</span><select data-ld-svc="${r.id}"${svcs.length ? '' : ' disabled'}>
       ${r.serviceId ? '' : '<option value="">' + (svcs.length ? 'Pick a service' : r.taskId ? 'Loading or none on this date' : 'Pick a task first') + '</option>'}
       ${svcs.map(x => `<option value="${esc(x.id)}"${x.id === r.serviceId ? ' selected' : ''}>${esc(x.name)}${x.budget ? ' · ' + esc(x.budget) : ''}${x.billable ? ' · billable' : x.billable === false ? ' · not billable' : ''}</option>`).join('')}
@@ -365,7 +371,7 @@ async function ldSetTask(r, t) {
   r.ticket = list.flags || [];
   r.services = (list.services || []).map(x => ({id: x.id, name: (x.name || '').trim(), budget: x.budget || '', billable: x.billable}));
   const recent = (sug.recent || []).find(x => x.taskId === r.taskId);
-  const pick = r.services.find(x => x.id === recent?.serviceId)
+  const pick = r.services.find(x => t.serviceHint && x.id === t.serviceHint) || r.services.find(x => x.id === recent?.serviceId)
     || r.services.find(x => recent?.service && x.name === recent.service.trim())
     || r.services.find(x => x.id === list.task?.serviceId) || (r.services.length === 1 ? r.services[0] : null);
   if (pick) Object.assign(r, {serviceId: pick.id, service: pick.name, billable: pick.billable, budget: pick.budget});
@@ -410,6 +416,11 @@ $('#review').addEventListener('click', ev => {
   if (t.dataset.ldOpen) return ldOpen(t.dataset.ldOpen);
   if (t.dataset.ldTick) { const r = ldRow(t.dataset.ldTick); r.checked = t.checked; r.edited = true; renderReview(); render(); return; }
   if (t.dataset.ldTask) return ldPickTask(ldRow(t.dataset.ldTask), t);
+  if (t.dataset.ldNewtask) {  // newtask.js: the same form as the log dialog's; the new task is then this row's
+    const r = ldRow(t.dataset.ldNewtask);
+    return openNewTask({date: LD.date, s: r.s, e: r.s + r.minutes, project: r.project,
+                        onCreated: (task, serviceHint) => ldRow(r.id) && ldSetTask(ldRow(r.id), {...task, serviceHint})});
+  }
   if (t.dataset.ldAlt != null) { const r = ldRow(LD.open); return ldSetTask(r, r.alts[+t.dataset.ldAlt]); }
   if (t.dataset.ldDel) { LD.rows = LD.rows.filter(r => r.id !== t.dataset.ldDel); LD.open = null; renderReview(); render(); return; }
   if (t.id === 'ld-undo') { LD.undoAsk = true; renderReview(); return; }

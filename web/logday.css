@@ -1,10 +1,11 @@
-/* Log the day (js/logday.js): the review mode of the Day view. The Likely column steps aside (each row says why
-   instead), the Logged column shows the proposed entries as dashed cards, and the side panel becomes the review. */
+/* Log the day (js/logday.js): the review mode of the Day view. The Likely column stays (the Claude sessions behind
+   each proposal), the Logged column shows the proposed entries as dashed cards, and the side panel becomes the review. */
 #log-day { right: 92px; }
 .rv-on #dayview { grid-template-columns: minmax(0, 1fr) 440px; }
-.rv-on .likelycol, .rv-on #lane-likely { display: none; }
-.rv-on .cols, .rv-on .grid { grid-template-columns: 56px minmax(0, 1.1fr) minmax(0, 1.3fr); }
-.has-meetings.rv-on .cols, .has-meetings.rv-on .grid { grid-template-columns: 56px minmax(0, .55fr) minmax(0, 1fr) minmax(0, 1.3fr); }
+.rv-on .cols, .rv-on .grid { grid-template-columns: 56px minmax(0, 1fr) minmax(0, .8fr) minmax(0, 1.2fr); }
+.has-meetings.rv-on .cols, .has-meetings.rv-on .grid { grid-template-columns: 56px minmax(0, .5fr) minmax(0, .9fr) minmax(0, .75fr) minmax(0, 1.1fr); }
+.no-likely.rv-on .cols, .no-likely.rv-on .grid { grid-template-columns: 56px minmax(0, 1.1fr) minmax(0, 1.3fr); }
+.has-meetings.no-likely.rv-on .cols, .has-meetings.no-likely.rv-on .grid { grid-template-columns: 56px minmax(0, .55fr) minmax(0, 1fr) minmax(0, 1.3fr); }
 .rv-on aside > .box { display: none; }
 .rv-on #lane-logged .card.repeat { display: none; }  /* the proposal has them already */
 .rv-ignore #lane-logged .card.logged { display: none; }  /* test view: worked out as if nothing were logged */
@@ -201,7 +202,7 @@ dialog.dlg::backdrop { background: rgba(0,0,0,.35); }
 .dlg .dh h2 { margin: 0; font-size: 15px; flex: 1; }
 .dlg .df { border-top: 1px solid var(--line); justify-content: flex-end; flex-wrap: wrap; }
 .dlg .df .hint { flex: 1; margin: 0; min-width: 200px; }
-.dlg .scrollarea { overflow-y: auto; padding: 12px 18px; flex: 1; min-height: 0; }
+.dlg .scrollarea { overflow-y: auto; padding: 12px 18px; flex: 1 1 auto; min-height: 0; }  /* not 0%: WebKit then gave it no height */
 .cf-sum { margin: 0 0 12px; color: var(--muted); }
 .cf-sum b { color: var(--text); }
 .cf-w { display: flex; gap: 8px; align-items: baseline; padding: 7px 10px; border-radius: 8px; background: var(--seg); margin-bottom: 6px; font-size: 12.5px; }

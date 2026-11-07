@@ -21,7 +21,10 @@ const DRAFT_FROM = {
 };
 
 /* the log dialog's time, in the page's minutes */
+let taskFor = null;  // opened from a row of Log the day: {date, s, e, project, onCreated}; null from the log dialog
+const taskDate = () => taskFor?.date || logForm.elements.date.value;
 function taskRange() {
+  if (taskFor) return {date: taskFor.date, s: taskFor.s, e: taskFor.e};
   const f = logForm.elements, st = startHHMM(f.start.value), s = st ? +st.slice(0, 2) * 60 + +st.slice(3) : null;
   return {date: f.date.value, s, e: s == null ? null : Math.min(1440, s + Math.max(1, +f.minutes.value || 0))};
 }
@@ -86,7 +89,7 @@ function fillFields(r) {
 }
 
 async function loadFields() {
-  const f = taskForm.elements, project = f.project.value, place = f.place.value, mine = taskOpened, date = logForm.elements.date.value;
+  const f = taskForm.elements, project = f.project.value, place = f.place.value, mine = taskOpened, date = taskDate();
   if (!project || !place) return fillFields(null);
   $('#task-fields-hint').textContent = 'Finding the status, estimate and service…';
   const r = await getJSON(`/api/task/fields?project=${project}&date=${date}&place=${encodeURIComponent(place)}`
@@ -95,7 +98,9 @@ async function loadFields() {
   fillFields(r);
 }
 
-async function openNewTask() {
+/* from: {date, s, e, project, onCreated(task, serviceHint)} for a row of Log the day; nothing from the log dialog */
+async function openNewTask(from = null) {
+  taskFor = from && from.onCreated ? from : null;
   const mine = ++taskOpened, f = taskForm.elements, {date, s, e} = taskRange();
   f.title.value = ''; f.description.value = ''; f.estimate.value = ''; taskTyped = {...TYPED}; taskPlaces = null;
   fillFields(null);
@@ -114,7 +119,7 @@ async function openNewTask() {
   if (mine !== taskOpened || !taskDlg.open) return;
   fillDraft(draft, esc(draft.error ? `No draft: ${draft.error}` : DRAFT_FROM[draft.from] || ''));
   // the project of the task picked in the log dialog (the work's own task, a rule's or yours), else the repository's
-  const hint = logPicker.selected?.project || '';
+  const hint = (taskFor ? taskFor.project : logPicker.selected?.project) || '';
   const r = await getJSON(`/api/task/projects?date=${date}&hint=${encodeURIComponent(hint)}&repo=${encodeURIComponent(draft.repo || '')}`);
   if (mine !== taskOpened || !taskDlg.open) return;
   fillProjects(r);
@@ -148,7 +153,7 @@ function fillProjects(r) {
 }
 
 async function loadPlaces() {
-  const f = taskForm.elements, project = f.project.value, mine = taskOpened, date = logForm.elements.date.value;
+  const f = taskForm.elements, project = f.project.value, mine = taskOpened, date = taskDate();
   taskPlaces = null; f.place.disabled = true; f.place.innerHTML = '<option value="">Loading…</option>'; fillFields(null);
   if (!project) { f.place.innerHTML = '<option value="">Pick a project first</option>'; return; }
   const r = await getJSON(`/api/task/places?project=${project}&date=${date}`);
@@ -197,8 +202,13 @@ taskForm.addEventListener('submit', async ev => {
   if (r.error) return setTaskMsg(r.error, true);
   taskDlg.close();
   suggestCache = null;  // log.js: the lists read Productive again
+  const name = `“${r.task.title}”${r.task.project ? ` in ${r.task.project}` : ''}`;
+  if (taskFor) {  // Log the day: the row takes the new task, and the service proposed for this time when it has it
+    taskFor.onCreated({...r.task, why: 'just created'}, serviceHint);
+    return toast(`Created ${name}. It is set on that entry: check the service before you log.`);
+  }
   logPicker.pick({...r.task, why: 'just created', serviceHint});  // log.js: shown first and picked, with that service
-  toast(`Created “${r.task.title}”${r.task.project ? ` in ${r.task.project}` : ''}. It is picked: check the service, then log.`);
+  toast(`Created ${name}. It is picked: check the service, then log.`);
 });
 taskDlg.querySelectorAll('[data-close]').forEach(b => b.onclick = () => taskDlg.close());
-$('#log-newtask').onclick = openNewTask;
+$('#log-newtask').onclick = () => openNewTask();
