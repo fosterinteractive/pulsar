@@ -267,7 +267,7 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
                 if shared and (best is None or len(shared) > best[1]):
                     best = (tid, len(shared), shared)
             if best:
-                out.append((best[0], "words", "low", "the task's name shares " + ", ".join(sorted(best[2]))))
+                out.append((best[0], "words", "low", "name matches: " + ", ".join(sorted(best[2]))))
     return out
 
 
@@ -279,7 +279,7 @@ def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, ass
     if found:
         task, src, conf, why = found[0]
     else:
-        task, src, conf, why = None, "none", "low", "no signal: pick the task"
+        task, src, conf, why = None, "none", "low", "no match: pick the task"
     # a task you never logged to that the work names (learn.new_tasks): the first alternative, and the pick over an
     # answer that is unsure and not one you gave (a rule, a link, a ticket key): never above a sure vote
     fresh = [x for x in row.get("learned") or [] if x.get("new")]
@@ -580,7 +580,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     skipped = []
     for m, c in unattended:
         free = [x for x in range(int(m["s"]), min(N, int(math.ceil(m["e"])))) if work[x] and owner[x] is None]
-        claim({**c, "kind": "unattended", "why": c["why"] + "; no call was seen, so it starts unticked"}, free)
+        claim({**c, "kind": "unattended"}, free)  # the row says "No call seen" (logday.js)
         rest = int(m["e"] - m["s"]) - len(free)
         if rest >= 5:
             skipped.append({"s": m["s"], "e": m["e"], "minutes": rest, "title": m.get("title") or "",
@@ -602,7 +602,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     for a, b, n in runs:
         if n >= o["out_min"]:
             claim({"kind": "outside", "task": None, "source": "neighbour", "conf": "low", "titles": [],
-                   "why": "work outside Claude (a browser, Slack, an editor with no session): the task of the work next to it"},
+                   "why": "work outside Claude: the task of the work next to it"},
                   [x for x in range(a, b + 1) if work[x] and not away[x]])
         else:
             short.append((a, b))

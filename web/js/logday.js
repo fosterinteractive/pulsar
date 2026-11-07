@@ -134,7 +134,7 @@ function ldCoverSpans() { return LD.rows.filter(r => r.checked && r.status !== '
 function ldHead(loggedSum) {
   if (LD.loading) return 'Working out the day…';
   const n = LD.rows.filter(r => r.status !== 'logged').length;
-  return `${n} proposed, dashed · ${dur(LD.plan?.ignoreLogged ? 0 : loggedSum)} logged`;
+  return `${n} proposed · ${dur(LD.plan?.ignoreLogged ? 0 : loggedSum)} logged`;
 }
 function ldLaneItems() { return LD.rows.filter(r => r.status !== 'logged').map(r => ({...r, prop: true})); }
 function ldCards(ppm, list) {
@@ -209,7 +209,7 @@ function renderReview() {
   const was = {list: el.querySelector('.rv-list')?.scrollTop || 0, panel: el.scrollTop};
   const head = `<div class="rv-t"><h2>Log the day <span class="sub">· ${esc(dayTitle(LD.date))}</span></h2>${cuButton()}
     <button type="button" class="btn icon" id="ld-close" aria-label="Close Log the day">✕</button></div>`;
-  if (LD.loading) { el.innerHTML = `<div class="rv-h">${head}<div class="rv-sum">Reading the day: activity, Claude sessions, meetings and what is logged…</div></div>`; return; }
+  if (LD.loading) { el.innerHTML = `<div class="rv-h">${head}<div class="rv-sum">Reading the day…</div></div>`; return; }
   const p = LD.plan;
   if (p?.error) {
     el.innerHTML = `<div class="rv-h">${head}</div><div class="rv-empty"><div class="big-ic" aria-hidden="true">!</div>
@@ -225,8 +225,8 @@ function renderReview() {
     toCheck.length ? `<button type="button" class="iss" data-ld-goto="${ldNextCheck(toCheck).id}" title="Open the next row to check"><span class="g" aria-hidden="true">!</span>${toCheck.length} to check</button>`
       : LD.rows.some(ldPending) ? '<span class="iss ok all" role="status"><span class="g" aria-hidden="true">✓</span>All checked</span>' : '',
     ov.size ? `<button type="button" class="iss" data-ld-goto="${[...ov.keys()][0]}"><span class="g" aria-hidden="true">!</span>${Math.ceil(ov.size / 2)} ${ov.size > 2 ? 'overlaps' : 'overlap'}, ${dur(Math.round(ovMin))}</button>` : '',
-    nFlags ? `<button type="button" class="iss" data-ld-goto="${flagged[0].id}" title="Things to fix in Productive: a closed task, no budget on this date, no estimate"><span class="g" aria-hidden="true">!</span>${nFlags} ticket ${nFlags === 1 ? 'flag' : 'flags'}</button>` : '',
-    T.notCovered ? `<span class="iss ok" title="Active time no entry covers, logged or proposed">${dur(T.notCovered)} not covered</span>` : '',
+    nFlags ? `<button type="button" class="iss" data-ld-goto="${flagged[0].id}" title="A closed task, no budget on this date, or no estimate"><span class="g" aria-hidden="true">!</span>${nFlags} to fix in Productive</button>` : '',
+    T.notCovered ? `<span class="iss ok" title="Active time no entry covers, logged or proposed">${dur(T.notCovered)} not logged</span>` : '',
     T.over ? `<span class="iss ok" title="More than your active time and meetings: shown, never placed">${dur(T.over)} over the day</span>` : '',
   ].join('');
   const model = {haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus'}[CONFIG?.likely?.askClaudeModel] || 'Claude';
@@ -240,7 +240,7 @@ function renderReview() {
   const items = [], all = LD.view === 'all', step = CONFIG?.roundTo || 5;
   const inProductive = p.ignoreLogged ? [] : state.logged?.entries || [], loggedRows = LD.rows.filter(r => r.status === 'logged');
   if (all) for (const x of inProductive) items.push({at: x.s ?? -1, html: loggedLine(x)});
-  for (const u of (p.uncovered || []).filter(u => u.minutes >= step && !ldNotWork(u))) items.push({at: u.s, html: `<li class="gr"><span class="e-time num">${hm(u.s)}</span><span class="gt"><b>${dur(u.minutes)}</b> active, not covered</span><span></span></li>`});
+  for (const u of (p.uncovered || []).filter(u => u.minutes >= step && !ldNotWork(u))) items.push({at: u.s, html: `<li class="gr"><span class="e-time num">${hm(u.s)}</span><span class="gt"><b>${dur(u.minutes)}</b> not logged</span><span></span></li>`});
   for (const r of LD.rows) if (all || r.status !== 'logged') items.push({at: r.s, html: rowHTML(r, ov.get(r.id))});
   items.sort((a, b) => a.at - b.at);
   const folded = inProductive.length + loggedRows.length;
@@ -254,13 +254,13 @@ function renderReview() {
       <button type="button" data-ld-view="review" aria-pressed="${!all}">To review</button><button type="button" data-ld-view="all" aria-pressed="${all}">All</button></span>` : '';
   const skipped = (p.skipped || []).length ? `<li class="gr quiet"><span class="e-time num">·</span><span class="gt">Left out: ${esc(p.skipped.map(s => `${s.title || s.project} ${dur(s.minutes)} (${s.why})`).join('; '))}</span><span></span></li>` : '';
   const empty = !LD.rows.length ? `<div class="rv-empty"><div class="big-ic" aria-hidden="true">✓</div><h3>${(state.logged?.entries || []).length ? 'Everything is logged' : 'Nothing to log'}</h3>
-    <p>${(state.logged?.entries || []).length ? 'Every active stretch of this day already has an entry, or is too short to log.' : 'No activity, Claude sessions or meetings were found for this day.'}</p></div>` : '';
+    ${(state.logged?.entries || []).length ? '' : '<p>No activity, Claude sessions or meetings were found for this day.</p>'}</div>` : '';
   const n = T.n, tickRows = LD.writing ? [] : ldTickAllRows(), held = LD.rows.filter(r => ldTickable(r) && !tickRows.includes(r)).length;
   const tickAll = tickRows.length ? `<div class="rv-tickall"><button type="button" class="btn bordered sm" id="ld-tickall"
       title="Ticks every row that has a task and a service. The next step lists each entry and its note before anything is written.">Tick all ${tickRows.length} with a task</button>${held
       ? `<span class="hint">${held} found by Claude's search ${held === 1 ? 'stays' : 'stay'} unticked until opened</span>` : ''}</div>` : '';
   el.innerHTML = `<div class="rv-h">${head}
-      <div class="rv-sum"><b>${dur(T.minutes)}</b> ticked in ${n} ${n === 1 ? 'entry' : 'entries'} · ${dur(T.billable)} billable · ${dur(T.logged)} logged</div>
+      <div class="rv-sum"><b>${dur(T.minutes)}</b> ticked in ${n} ${n === 1 ? 'entry' : 'entries'} · ${dur(T.billable)} billable</div>
       <div class="rv-bar" role="img" aria-label="${esc(`${dur(withThese)} with these, against a target of ${dur(target)}`)}"><i class="lg" style="width:${pct(T.logged)}%"></i><i class="pp" style="width:${pct(T.minutes)}%"></i></div>
       <div class="rv-bl"><span>${dur(withThese)} with these</span><span>target ${dur(target)}</span></div>
       <div class="rv-iss">${chips}${viewSwitch}</div>${tickAll}${askLine}${sgHead()}${testNote}${historyNote}${cuStrip()}</div>
@@ -271,8 +271,7 @@ function renderReview() {
       : LD.writing
       ? `<span class="hint" role="status">Writing ${LD.rows.filter(r => r.status === 'logged' && r.thisRun).length + 1} of ${LD.writeCount}…</span><button type="button" class="btn bordered" id="ld-stop"${LD.stop ? ' disabled' : ''}>${LD.stop ? 'Stopping after this one' : 'Stop after this one'}</button>`
       : `<button type="button" class="btn bordered" id="ld-redo" title="Work the day out again; your changes go">Start over</button>
-         <p class="hint">Nothing is written until you confirm.</p>
-         <button type="button" class="btn primary big" id="ld-go"${n ? '' : ' disabled'}>Log ${n} ${n === 1 ? 'entry' : 'entries'}</button>`}</div>`;
+         <button type="button" class="btn primary big" id="ld-go"${n ? '' : ' disabled'}>Log ${n} ${n === 1 ? 'entry' : 'entries'}…</button>`}</div>`;
   const list = el.querySelector('.rv-list');
   if (list) list.scrollTop = was.list;
   el.scrollTop = was.panel;
@@ -281,7 +280,7 @@ function renderReview() {
 function loggedLine(x) {
   return `<li class="er done"><div class="eb"><span class="e-time num">${x.s == null ? 'no start' : hm(x.s)}</span>
     <span class="e-task"><i class="dot full" style="--c:${color(x.project)}"></i><span>${esc(x.task || x.project)}</span></span>
-    <span class="e-st">✓ in Productive${x.s == null ? ', no start time' : ''} · ${dur(x.minutes)}</span></div></li>`;
+    <span class="e-st">✓ ${x.s == null ? 'no start · ' : ''}${dur(x.minutes)}</span></div></li>`;
 }
 function rowHTML(r, overlaps) {
   if (r.status === 'logged') {
@@ -293,16 +292,16 @@ function rowHTML(r, overlaps) {
   if (r.status === 'refused' || r.status === 'unknown') warn.push(`<b>Not written.</b> ${esc(r.reason || '')}`);
   for (const o of overlaps || []) warn.push(`Overlaps ${esc(o.with)} for ${dur(o.minutes)}`);
   const quiet = [];
-  if (!r.taskId) quiet.push('No task: pick one to log it.');
+  if (!r.taskId) quiet.push('No task yet.');
   else if (!r.serviceId && !r.ticket?.some(f => f.kind === 'nobudget')) quiet.push(r.serviceProblem ? `No service: ${r.serviceProblem}` : 'No service that takes time on this date: pick one.');
-  if (r.flags.includes('agent')) quiet.push("Claude's agent ran while you did something else: unticked.");
-  if (r.flags.includes('unattended')) quiet.push('No call was seen: unticked.');
-  if (r.claudeNone) quiet.push("Claude found no task for this work: Pulsar's guess stays. Check it.");
-  if (r.flags.includes('claudefound')) quiet.push('Claude found this task by searching Productive; you have not logged to it in 30 days: unticked. Check it.');
-  if (r.flags.includes('claudenote') && r.noteFrom === 'claude' && !r.noteEdited) quiet.push('Claude drafted the note: unticked until you read it.');
-  if (r.flags.includes('meetingtitle')) quiet.push("The meeting's title was not used as the note (it reads like more than a meeting's name): unticked. Check it.");
-  if (r.flags.includes('renamed')) quiet.push("This meeting's title changed since you last logged it: unticked. Check the task.");
-  if (r.flags.includes('untimed')) quiet.push(`${dur(r.untimed)} of this task ${r.untimed === 1 ? 'is' : 'are'} logged with no start time: unticked, in case it is this work.`);
+  if (r.flags.includes('agent')) quiet.push('Agent ran while you did other work.');
+  if (r.flags.includes('unattended')) quiet.push('No call seen.');
+  if (r.claudeNone) quiet.push("Claude found no task; Pulsar's guess stays.");
+  if (r.flags.includes('claudefound')) quiet.push('Claude found this task by search; not one of yours lately.');
+  if (r.flags.includes('claudenote') && r.noteFrom === 'claude' && !r.noteEdited) quiet.push('Claude drafted the note: read it first.');
+  if (r.flags.includes('meetingtitle')) quiet.push('Meeting title not used as the note.');
+  if (r.flags.includes('renamed')) quiet.push('Meeting renamed since you last logged it: check the task.');
+  if (r.flags.includes('untimed')) quiet.push(`${dur(r.untimed)} of this task has no start time: is it this work?`);
   const open = LD.open === r.id;
   return `<li class="er${open ? ' on' : ''}" data-row="${r.id}">
     <label class="ck"><input type="checkbox" data-ld-tick="${r.id}"${r.checked ? ' checked' : ''}${r.taskId && r.serviceId && !LD.writing ? '' : ' disabled'}
@@ -331,14 +330,14 @@ function ticketLine(r) {
 
 /* ---------- the editor of the open row ---------- */
 function noteHint(r) {
-  if (r.noteDrafting) return `${CLAUDE_MARK.split('<span')[0]}Claude is drafting a note from this work's sessions and commits…`;
-  if (r.noteFrom === 'session' && !r.noteEdited) return `${CLAUDE_MARK.split('<span')[0]}Drafted by Claude from this work's sessions and commits: check it before logging; clients may see notes.`;
-  if (r.noteError && !(r.note || '').trim()) return `No note from Claude: ${esc(r.noteError)} Clients may see notes: the outcome, in a sentence.`;
-  if (r.noteFrom === 'claude' && !r.noteEdited) return `${CLAUDE_MARK.split('<span')[0]}Drafted by Claude: check it before logging; clients may see notes.`;
+  if (r.noteDrafting) return `${CLAUDE_MARK.split('<span')[0]}Claude is drafting a note…`;
+  if (r.noteFrom === 'session' && !r.noteEdited) return `${CLAUDE_MARK.split('<span')[0]}Drafted by Claude. Clients may see notes.`;
+  if (r.noteError && !(r.note || '').trim()) return `No note from Claude: ${esc(r.noteError)} Clients may see notes.`;
+  if (r.noteFrom === 'claude' && !r.noteEdited) return `${CLAUDE_MARK.split('<span')[0]}Drafted by Claude. Clients may see notes.`;
   if (r.noteFrom === 'meeting' && !r.noteEdited) return "The meeting's title. Clients may see notes.";
   if (r.noteFrom === 'repeat' && !r.noteEdited) return 'Your usual note for this. Clients may see notes.';
   if (r.noteFrom === 'commits' && !r.noteEdited) return 'From your commits. Clients may see notes.';
-  if (CONFIG?.likely?.askClaude && r.repo && !(r.note || '').trim() && !r.noteTried) return `${CLAUDE_MARK.split('<span')[0]}Click in the note and Claude drafts it from this work's sessions and commits. Clients may see notes.`;
+  if (CONFIG?.likely?.askClaude && r.repo && !(r.note || '').trim() && !r.noteTried) return `${CLAUDE_MARK.split('<span')[0]}Click in the note for Claude's draft. Clients may see notes.`;
   return 'Clients may see notes: the outcome, in a sentence.';
 }
 const altName = a => a.title || 'task ' + a.taskId;
@@ -347,10 +346,10 @@ function editorHTML(r) {
   const svcs = r.services || [];
   return `<div class="ed" role="group" aria-label="Change this entry">
     <div class="field"><span>Task</span><button type="button" class="taskbtn" data-ld-task="${r.id}">
-      <span class="tb-t">${esc(r.title || 'Pick a task')}</span><span class="tb-p">${esc(r.project || 'Search every task in Productive')}</span></button></div>
+      <span class="tb-t">${esc(r.title || 'Pick a task')}</span><span class="tb-p">${esc(r.project || 'Search tasks')}</span></button></div>
     ${r.alts?.length ? `<div class="alts"><span>Or</span><div>${r.alts.map((a, i) => `<button type="button" class="alt" data-ld-alt="${i}"><span>${esc(altName(a))}</span>${a.why ? `<span class="vh">, ${esc(a.why)}</span>` : ''}</button>`).join('')}</div></div>` : ''}
     <p class="whyd">${whyLine(r)}</p>
-    <button type="button" class="newtask-link" data-ld-newtask="${r.id}">No task fits this work? Create one in Productive</button>
+    <button type="button" class="newtask-link" data-ld-newtask="${r.id}">Create a task…</button>
     <label class="field"><span>Service</span><select data-ld-svc="${r.id}"${svcs.length ? '' : ' disabled'}>
       ${r.serviceId ? '' : '<option value="">' + (svcs.length ? 'Pick a service' : r.taskId ? 'Loading or none on this date' : 'Pick a task first') + '</option>'}
       ${svcs.map(x => `<option value="${esc(x.id)}"${x.id === r.serviceId ? ' selected' : ''}>${esc(x.name)}${x.budget ? ' · ' + esc(x.budget) : ''}${x.billable ? ' · billable' : x.billable === false ? ' · not billable' : ''}</option>`).join('')}
@@ -360,8 +359,8 @@ function editorHTML(r) {
       <span class="endt">until ${hm(r.s + r.minutes)}</span></div>
     <label class="field"><span>Note</span><textarea rows="2" data-ld-note placeholder="What was done: the outcome, in a sentence">${esc(r.note || '')}</textarea></label>
     <p class="hint ld-note-hint">${noteHint(r)}</p>
-    <div class="acts"><button type="button" class="btn bordered" data-ld-del="${r.id}">Delete from the proposal</button>
-      <button type="button" class="btn bordered" data-ld-notwork="${r.id}" title="This time was not work: not proposed again, not marked as to log (on this Mac only)">Not work</button>
+    <div class="acts"><button type="button" class="btn bordered" data-ld-del="${r.id}">Remove</button>
+      <button type="button" class="btn bordered" data-ld-notwork="${r.id}" title="Not work: not proposed again, not shown as to log (this Mac only)">Not work</button>
       <span class="hint ld-keys"><kbd>↩</kbd> on the row ${r.taskId && r.serviceId ? 'ticks it and opens the next' : 'picks its task'}</span></div></div>`;
 }
 function wireEditor(r) {
@@ -543,11 +542,11 @@ function openConfirm(dry = null) {
   const T = ldTotals(), ov = ldOverlaps();
   const unopened = live.filter(r => r.confidence === 'low' && !r.opened);
   const warns = [];
-  if (ov.size) warns.push(`${[...ov.entries()].filter(([id]) => live.some(r => r.id === id)).map(([id, os]) => `${hm(ldRow(id).s)} ${ldRow(id).title} overlaps ${os.map(o => o.with).join(', ')}`).join('; ')}. Pulsar checks the day before each one and stops at an overlap.`);
+  if (ov.size) warns.push(`${[...ov.entries()].filter(([id]) => live.some(r => r.id === id)).map(([id, os]) => `${hm(ldRow(id).s)} ${ldRow(id).title} overlaps ${os.map(o => o.with).join(', ')}`).join('; ')}.`);
   const untimed = LD.plan?.ignoreLogged ? [] : (state.logged?.entries || []).filter(x => x.s == null && live.some(r => r.taskId === String(x.taskId)));
   if (untimed.length) warns.push(`Already logged with no start time, on a task below: ${untimed.map(x => `${x.task || x.project} ${dur(x.minutes)}`).join(', ')}. Check it is not the same work.`);
   if (unopened.length) warns.push(`${unopened.length} ${unopened.length === 1 ? 'entry' : 'entries'} marked “check” ${unopened.length === 1 ? 'was' : 'were'} not opened: ${unopened.map(r => `${hm(r.s)} ${r.title}`).join(', ')}.`);
-  const quiet = T.notCovered ? [`${dur(T.notCovered)} of active time stays unlogged.`] : [];
+  const quiet = T.notCovered ? [`${dur(T.notCovered)} not logged.`] : [];
   const claudeNote = r => ['claude', 'session'].includes(r.noteFrom) && !r.noteEdited;
   const lines = live.map(r => `<li class="cl-r"><span class="num">${hm(r.s)}</span><span><b>${esc(r.title)}</b>
       <small>${esc([r.project, r.service, r.budget].filter(Boolean).join(' · '))}${r.billable ? ' <span class="bill">$</span>' : ''}</small>
@@ -557,12 +556,12 @@ function openConfirm(dry = null) {
   ldDlg.innerHTML = `<div class="dh"><h2 id="ld-title">Log ${live.length} ${live.length === 1 ? 'entry' : 'entries'} in Productive?</h2>
       <button type="button" class="btn icon" data-ld-x aria-label="Close">✕</button></div>
     <div class="scrollarea">
-      <p class="cf-sum">${esc(dayTitle(LD.date))} · <b>${dur(T.minutes)}</b> · ${dur(T.billable)} billable · target ${dur(TARGET)}</p>
+      <p class="cf-sum">${esc(dayTitle(LD.date))} · <b>${dur(T.minutes)}</b> · ${dur(T.billable)} billable</p>
       ${warns.map(w => `<div class="cf-w"><span class="g" aria-hidden="true">!</span><span>${esc(w)}</span></div>`).join('')}
       ${quiet.map(w => `<div class="cf-w quiet"><span class="g" aria-hidden="true">·</span><span>${esc(w)}</span></div>`).join('')}
       ${dry ? `<div class="cf-w quiet"><span class="g" aria-hidden="true">·</span><span>Dry run: each entry below shows what would be sent. Nothing was written.</span></div>` : ''}
       <ul class="cl">${lines}</ul></div>
-    <div class="df"><p class="hint">One at a time, in time order. Pulsar reads the day from Productive before each one, so nothing is logged twice.</p>
+    <div class="df"><p class="hint">Sent one at a time; stops at the first problem.</p>
       <button type="button" class="btn bordered" data-ld-dry>Dry run</button>
       <button type="button" class="btn bordered" data-ld-x>Back to the review</button>
       <button type="button" class="btn primary" data-ld-write autofocus>Log ${live.length} ${live.length === 1 ? 'entry' : 'entries'}</button></div>`;
@@ -652,7 +651,6 @@ function ldResultsBox() {
     + (left ? ` ${left} not sent yet.` : '')
     + (LD.journalError ? ` Pulsar could not read its journal of this run (${LD.journalError}), so these rows and Undo may be out of date: open Log the day again.` : '');
   return `<div class="rv-res${failed.length ? ' warn' : ''}" tabindex="-1" role="status"><p>${head}</p>
-    <p>${n ? 'Undo deletes only what this run wrote, and only as it wrote it.' : ''}</p>
     ${LD.undoAsk ? `<p>Delete the ${n} ${n === 1 ? 'entry' : 'entries'} this run logged? ${n === 1 ? 'It goes' : 'They go'} to Productive's Recycle Bin.</p>
       <div class="btnrow"><button type="button" class="btn bordered sm" id="ld-undo-no">Cancel</button><button type="button" class="btn danger sm" id="ld-undo-yes">Delete the ${n}</button></div>`
     : `<div class="btnrow">${failed.length + left ? `<button type="button" class="btn bordered sm" id="ld-retry">Try the ${failed.filter(r => r.status === 'refused').length + left} again</button>` : ''}

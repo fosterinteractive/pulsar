@@ -36,7 +36,7 @@ async function cuLoad() {
 
 /* the title row's button, while no catch-up runs and nothing is being written */
 function cuButton() {
-  return CU.queue.length || LD.writing ? '' : '<button type="button" class="btn bordered sm" id="cu-open" title="Catch up on several earlier days, one after another">Earlier days…</button>';
+  return CU.queue.length || LD.writing ? '' : '<button type="button" class="btn bordered sm" id="cu-open" title="Catch up on earlier days">Earlier days…</button>';
 }
 
 /* the list of earlier days in place of the review, while it is open; false otherwise */
@@ -44,8 +44,7 @@ function cuRender(el) {
   if (!CU.picking) return false;
   const head = `<div class="rv-h"><div class="rv-t"><h2>Earlier days</h2>
       <button type="button" class="btn icon" id="ld-close" aria-label="Close Log the day">✕</button></div>
-    <div class="rv-sum">Active time with no entry, on your last workdays. Tick the days to catch up on: each one opens here
-      as Log the day does, and nothing is written until you confirm that day.</div>
+    <div class="rv-sum">Tick the days to catch up on. Each opens as Log the day; nothing is written until you confirm it.</div>
     ${CU.warning ? `<p class="rv-test" role="status">${esc(CU.warning)}</p>` : ''}</div>`;
   if (CU.loading || (!CU.days && !CU.error)) { el.innerHTML = `${head}<div class="rv-empty"><p>Reading your last workdays…</p></div>`; return true; }
   if (CU.error) {

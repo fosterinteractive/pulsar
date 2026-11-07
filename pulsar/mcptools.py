@@ -306,7 +306,7 @@ BY_SOURCE = {
     "sameday": "you logged it earlier today in this session", "words": "your past notes on it match this work",
     "new": "a new task that matches this work", "recent": "you logged it lately", "claude": "Ask Claude's pick",
     "repeat": "you log this at this time on most days", "call": "a call with no calendar entry",
-    "neighbour": "work outside Claude, next to other work", "none": "no signal: pick the task",
+    "neighbour": "work outside Claude, next to other work", "none": "no match: pick the task",
 }
 BY_TEXT = [  # (the start, or a part, of Pulsar's own reason, lower case) -> the phrase
     ("logged while in this claude session", "you logged it during this Claude session before"),
@@ -323,7 +323,8 @@ BY_TEXT = [  # (the start, or a part, of Pulsar's own reason, lower case) -> the
     ("work outside claude", "work outside Claude, next to other work"),
     ("no room before", "no room before an entry already logged"),
     ("no likely work", "no Likely work at that time"),
-    ("no signal", "no signal: pick the task"),
+    ("no match", "no match: pick the task"),
+    ("no signal", "no match: pick the task"),
     ("share words", "your past notes on it match this work"),
     ("the work names", "the work names its ticket"),
     ("you never log this repository", "you never log this repository"),
