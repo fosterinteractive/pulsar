@@ -1,5 +1,6 @@
 /* ================= Report: a range of days ================= */
-const RANGES = ['this-week', 'last-week', 'this-month', 'last-month', '30d'];
+const RANGES = ['today', 'this-week', 'last-week', 'this-month', 'last-month', '30d'];
+const DEFAULT_RANGE = 'this-week';  // what the Report opens on
 const MAX_DAYS = 93;
 /* the problem with a custom range, or '' when it can load */
 function rangeProblem(from, to) {
@@ -8,11 +9,11 @@ function rangeProblem(from, to) {
   if (daysBetween(from, to) + 1 > MAX_DAYS) return `Pick a range of at most ${MAX_DAYS} days.`;
   return '';
 }
-/* from the address: a preset, or custom with two good dates; anything else is the last 30 days */
+/* from the address: a preset, or custom with two good dates; anything else is this week */
 const R = (() => {
   const range = params.get('range'), from = params.get('from'), to = params.get('to');
   const ok = range === 'custom' ? !rangeProblem(from, to) : RANGES.includes(range);
-  return {range: ok ? range : '30d', from: ok && range === 'custom' ? from : '', to: ok && range === 'custom' ? to : '', data: null, days: [], seq: 0};
+  return {range: ok ? range : DEFAULT_RANGE, from: ok && range === 'custom' ? from : '', to: ok && range === 'custom' ? to : '', data: null, days: [], seq: 0};
 })();
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const WEEKDAYS_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -28,6 +29,7 @@ const seq = t => (t <= 0 ? 'var(--seg)' : `color-mix(in oklab, var(--seq-hi) ${M
 function rangeDates(key) {
   const t = todayLocal(), base = new Date(t + 'T12:00:00Z'), wd = (base.getUTCDay() + 6) % 7;
   const at = n => { const x = new Date(base); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  if (key === 'today') return [t, t];
   if (key === 'this-week') return [at(-wd), t];
   if (key === 'last-week') return [at(-wd - 7), at(-wd - 1)];
   if (key === 'this-month') return [t.slice(0, 8) + '01', t];
@@ -45,7 +47,7 @@ function paintFilters() {
     ? `${dayLabel(R.from, {day: 'numeric', month: 'short'})} to ${dayLabel(R.to, {day: 'numeric', month: 'short', year: 'numeric'})}` : '';
 }
 async function loadReport(note = false) {
-  if (R.range !== 'custom' || rangeProblem(R.from, R.to)) { if (!RANGES.includes(R.range)) R.range = '30d'; [R.from, R.to] = rangeDates(R.range); }
+  if (R.range !== 'custom' || rangeProblem(R.from, R.to)) { if (!RANGES.includes(R.range)) R.range = DEFAULT_RANGE; [R.from, R.to] = rangeDates(R.range); }
   syncURL(); paintFilters();
   const id = ++R.seq, btn = $('#refresh');
   $('#report').classList.add('loading'); btn.classList.add('busy');

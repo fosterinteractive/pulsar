@@ -380,6 +380,14 @@ class PageTest(unittest.TestCase):
         self.assertIn("Math.round(drag.x.s) + d", resize)
         self.assertIn("Math.round(drag.x.e) + d", resize)
 
+    def test_the_report_has_today_and_opens_on_this_week(self):
+        """report.js: a Today range (today to today) and this week as the range the Report opens on."""
+        js, html = self.read("js/report.js"), self.read("index.html")
+        self.assertIn("'today'", js[js.index("const RANGES"):js.index("const MAX_DAYS")])
+        self.assertIn("const DEFAULT_RANGE = 'this-week'", js)
+        self.assertIn("if (key === 'today') return [t, t];", js)
+        self.assertIn('data-v="today">Today</button>', html)
+
     def test_a_drag_keeps_its_minutes_and_old_windows_sign_in_again(self):
         """log.js: a stretch dragged in the Logged column opens the dialog with the minutes dragged, not rounded to
         "Round entries to". main.js: after an update a window of 1.4.0 or older, which ignores 'reload', is asked

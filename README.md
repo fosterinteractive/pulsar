@@ -15,7 +15,7 @@ normal use; a session with full access to the computer can get around any confir
   entries (Logged). A yellow rail marks active time with no entry, a hatched rail time away from the computer, and a
   dashed card an entry you log at this time most days. On the side: work time against your daily target, totals per
   project and budget, and the day's tasks against their estimates.
-- **Report**: any range up to 93 days: logged against active time by day, time by project, top apps and sites,
+- **Report**: today, this week (where it opens), last week, this or last month, 30 days, or any range up to 93 days: logged against active time by day, time by project, top apps and sites,
   projects by day, when in the week you work, and a table of every day.
 
 ## Install on a Mac
