@@ -145,8 +145,8 @@ Code and reconnect Productive. A token of your own never expires, so it is the s
 | Personal windows | Telegram, WhatsApp, YouTube, Netflix, Instagram, Facebook, TikTok, Reddit (one word per line; a window whose app, title or site contains one counts as personal) |
 | ActivityWatch address | `http://localhost:5600` |
 | Likely column | shown when Claude Code sessions are on this computer (`~/.claude/projects`) |
-| Claude Code | off; one switch turns on Ask Claude, notes from sessions and logging from a session (needs Claude Code on this Mac) |
-| Claude's models | Ask Claude: Sonnet; the note and a new task's draft: Haiku. **Settings → Claude** lists everything Pulsar asks Claude, what each sends, and a model (Haiku, Sonnet or Opus) to pick for each |
+| Claude Code | off; one switch turns on Check my day with Claude (task picks, then a review of the day), drafted notes and tasks, and logging from a session (needs Claude Code on this Mac) |
+| Claude's models | Task picks: Sonnet; the review, the note and a new task's draft: Haiku. **Settings → Claude** lists everything Pulsar asks Claude, what each sends, and a model (Haiku, Sonnet or Opus) to pick for each |
 | Google Calendar | not connected; **Connect** signs in with Google (fosterinteractive.com accounts only) |
 
 Settings are saved in `~/.config/pulsar/settings.json`; names, copies of fetched days and what Likely learned are
@@ -184,7 +184,7 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   opens it too); its **Download** button saves a text file to send to whoever maintains Pulsar. Productive
   not being connected is shown on the page, not logged; a Claude Code token that could not be renewed is.
 - **The warp.** An update draws the page in towards a black hole (a bright one on the light theme) with a ring of
-  light around it while it loads, then lets go with a small flash; the refresh button plays a short one. In the
+  light around it while it loads, then lets go with a small flash. In the
   Pulsar window the page really bends around it: the window draws it with Core Image on the graphics card, so it stays
   smooth on any Mac (a Pulsar.app downloaded before 1.0.12 shows the version without the bend; download Pulsar.zip
   again to get it). In a browser it is the version without the bend. Turn it off in **Settings → Updates**; it is off anyway while macOS has
@@ -205,15 +205,16 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
     (read only; tools that change anything are refused). Its tooltip names the models and the most each run may
     cost; pick the models in **Settings → Claude**: Sonnet (default) for the picks, Haiku for the review. It takes
     15 to 60 seconds each. Nothing runs by itself.
-  - **Notes from the session** in the log dialog: Haiku (or the model you pick) drafts the note of a Likely block from that session and your
-    commits in a few seconds; it never replaces what you typed.
+  - **Notes from the session** in the log dialog, and in a row of Log the day when you click in its empty note: Haiku
+    (or the model you pick) drafts the note from that session and your commits in a few seconds; it never replaces what
+    you typed.
   - **Logging from a session:** Pulsar adds itself to Claude Code, so in any new session you can ask "what did I not
     log today?" or "log the time of this session". The session reads your day from Pulsar and shows the entries;
     Claude Code asks you before each write, showing Pulsar's own summary of it. One write may hold up to 40
     entries, so one yes can log a whole day: read the summary. Pulsar must be open.
-  - **Claude Code asks first** before Pulsar's log tool, and its file tools are kept out of Pulsar's settings
-    folders, which hold its key, sign-in code and settings (an ask rule and deny rules in `~/.claude/settings.json`;
-    a backup of that file is kept beside it). Pulsar's cache and the window's own data are not covered. The deny rules stop
+  - **Claude Code asks first** before Pulsar's log tool, and its file tools are kept out of Pulsar's folders: its
+    settings (key, sign-in code, settings), the installed code, the window's own data and the cache (an ask rule and
+    deny rules in `~/.claude/settings.json`; a backup of that file is kept beside it). The deny rules stop
     Claude Code's file tools and the file commands it recognizes in a shell; a script is stopped only with Claude
     Code's sandbox on.
   - **Ask before any Claude Code session changes Productive** (a separate box, off by default): ask rules for the

@@ -435,8 +435,8 @@ It opens from many places, each with the time already filled in:
 **A stretch** (`day.js` `logStretch`; also the stretch **Log and next** opens) is read from the Likely rows inside it,
 not from the blocks, which change with the zoom: the project with most minutes there is its work, when it has half
 the stretch, or less when no meeting covers half of it and no rule has more of it. The first group is that project's
-"For this work (project)": Claude's pick, task links and learned tasks of those rows, as for its Likely block, with
-"2 h 2 min of 2 h 30 min" in the label when it has less than half. Else a meeting that covers half of it ("For
+"From the project sessions": Claude's pick, task links and learned tasks of those rows, as for its Likely block. Else a
+meeting that covers half of it ("For
 “title”"), else the rules. The note starts from the same rows as for a Likely block: Claude's pick's note, else
 the commit draft; then range.js (below) leads with the task of the work that holds most of the stretch, takes its
 note, and, with the Claude Code switch on, asks for its session note (5.7). A stretch with no Likely row in it
@@ -468,9 +468,9 @@ sends nothing until it is fixed. Minutes are real minutes and End a time on the 
 clocks change they differ (`core.js` `realMinutes`, `clockAfter`), so 01:30 to 03:30 the night they go forward is 60
 minutes, and 00:30 to 02:30 the night they go back is 180, as the server counts an entry. A drag, a dragged edge and
 the split count the same way. A note Pulsar filled in, a meeting's title or a repeat's
-usual note, says "Filled in for you: clients may see notes on invoices; check it" until it is edited. On a Likely
-block with commits of yours, the note is drafted from them (below), with "From your commits: check it before logging;
-clients may see notes"; a note Ask Claude drafted comes first. The picked task has an **Open in Productive** link (see
+usual note, says "Filled in for you. Clients may see notes." until it is edited. On a Likely block with commits of
+yours, the note is drafted from them (below), with "From your commits. Clients may see notes."; a note Ask Claude
+drafted comes first. Every note hint has that form: where the note came from, then "Clients may see notes". The picked task has an **Open in Productive** link (see
 5.2b for where its address comes from), and under the task list its ticket flags, if it has any (5.3).
 
 The minutes of a block (a stretch of the rail, an Activity, Likely or meeting block; not a drag in the Logged column,
@@ -518,7 +518,7 @@ outside Claude, a repository you never log, already logged, away, no work seen. 
 for it (with its confidence and why) and a note source: its commits, Claude's draft for that task, a meeting's title
 or a repeat's usual note. Parts with the same task are one group, and the group with most minutes leads:
 
-- Its task comes first, in a group "For this time (mostly fi-drupal-qa, 50 min of 1 h)", with the other groups' tasks
+- Its task comes first, in a group "For this time: fi-drupal-qa, 50 min of 1 h", with the other groups' tasks
   and its alternatives after it; the dialog's other groups follow. It is picked unless a task was picked by hand or
   just created there (Create a task), and not at all once the day or time was changed meanwhile. Not
   when the main work is work outside Claude: its task is only the neighbour's, and on the replay the dialog's own
@@ -531,8 +531,8 @@ or a repeat's usual note. Parts with the same task are one group, and the group 
   once the person has typed in the note, and only in the dialog that asked.
 
 **A stretch that mixes work.** When the biggest group holds less than three quarters of the work minutes, or two
-groups have 20 minutes or more each, one line under the note says so: "This range mixes 3 kinds of work:
-fi-drupal-qa 50 min, a meeting 30 min, client-site 20 min. Split into 3 entries?". The groups are counted as the split
+groups have 20 minutes or more each, one line under the note says so: "Mixed work: fi-drupal-qa 50 min, a meeting
+30 min, client-site 20 min. Split into 3 entries?". The groups are counted as the split
 would make them: minutes that are not work (away, no activity, time spent logging) go with the work before them, time
 already logged stays out, a piece with under 10 minutes of work (the shortest entry, or Settings' **Round entries
 to**) joins its neighbour, or is left out when it has none, and boundaries inside the stretch go on the grid. The
@@ -613,9 +613,8 @@ whether one fits is the person's call. It opens a small form over the dialog:
     the 48 recent subtasks whose parent had a service, 34 had the same one. The service a PM later set on the task
     itself differed from the entries' in 37 of the 47 entries where both are known, so the form says this one is for
     the time only.
-- One line says everything that will be set: "Creates “…” in <project>, as a subtask of “…”, assigned to you, in
-  “Backlog”, with an estimate of 1 h 10 min. Its service is left to a PM; this time then goes to “Service Request /
-  Contingency · …”."
+- One line says what the form does not show: "Assigned to you." (and when the estimate typed is not a duration). The
+  service's line ends "Used only for this time; a PM sets the task's own."
 
 **Create in Productive** sends it (`POST /api/task/create`). Read-only and Preview refuse it before anything is sent,
 and the form says so when it opens. The same title in the same project within a minute is refused: a second click
@@ -785,7 +784,7 @@ each row was proposed for (the day, its start as proposed, its repository or mee
 its place in the list. A row's work is dropped when that row is no longer proposed or its time is logged in Productive
 now; a row a run wrote stays as the journal says. **Start over** forgets it all for that day. It lives in the page
 only: a reload starts again. The review itself is kept on the server too (8): opening the panel asks for it with
-`kept_only` (never a new run), and **Review again** asks Claude anew (`again`). A row's note is drafted by Claude only
+`kept_only` (never a new run), and **Check again** asks Claude anew (`again`). A row's note is drafted by Claude only
 when its empty note field gets the focus, never by opening the row; the server keeps each draft (8), so the same work
 is not drafted twice, after a restart either.
 
@@ -997,7 +996,7 @@ not a verdict.
   while its day was still today is worked out again the next time it is asked for, in memory and for learning
   (format 2 of these files; a format-1 file could hold a day cut off at the hour it was seen, so they are redone once).
   A day worked out while no tracker answered (ActivityWatch not up yet at login) is marked `blind` and worked out
-  again once ActivityWatch answers or MemTime's database is there. Until all 60 days are there, the page says "Learning your tasks… N of 60". The rows do
+  again once ActivityWatch answers or MemTime's database is there. Until all 60 days are there, the page says "Learning your tasks: N of 60". The rows do
   not wait for the 60 days of Productive history: while it is read, they come without learned tasks and with
   `learnPending`, and the page asks once more (`wait=1`) a few seconds later. Nor do they wait for their hints, the
   tasks linked in their sessions and the commits made during them (every session of the day read and git run: 1.5
@@ -1061,8 +1060,8 @@ not a verdict.
   only asked against, in the prompt. For the session note, which has no task yet, the projects of the block's likely
   tasks and those named like its repository are its own, and the projects of the person's history are the others.
   A note written for a task that could not be named, and any note from an older Claude Code without
-  `structured_output`, is dropped. The log dialog fills the note in with "Drafted by Claude: check it before logging;
-  clients may see notes" under it; the line goes when the note is edited, and names the task the note was written
+  `structured_output`, is dropped. The log dialog fills the note in with "Drafted by Claude. Clients may see notes." under
+  it; the line goes when the note is edited, and names the task the note was written
   for when another task is picked. The model is chosen in Settings (Sonnet by
   default; 5.7); each name is Claude Code's alias for the latest model of that kind. About 15 to 60 seconds and $0.10 to
   $0.25 of the person's usage per day with Sonnet. `--max-budget-usd` caps each run (not each day) at $0.25 for
@@ -1243,15 +1242,15 @@ nothing else. Saving it on:
   alone and the switch says so. Rules already there are not counted as added, so they are never Pulsar's to take back.
 
 **What Pulsar asks Claude, and with which model** (Settings → Claude, `pulsar/claudeuses.py`). Settings lists every
-use, one row each, from `claudeuses.USES`: its name, what it does, what it sends to Anthropic, and a model to choose
-(Haiku, Sonnet or Opus, the default marked) where Pulsar runs Claude itself:
+use, one row each, from `claudeuses.USES`: its name, what it does, what it sends to Anthropic (folded under "What it
+sends"), and a model to choose (Haiku, Sonnet or Opus, the default marked) where Pulsar runs Claude itself:
 
 | Use (id) | What it does | What it sends | Model by default | Most one run may cost (Haiku, Sonnet, Opus) |
 |---|---|---|---|---|
-| Ask Claude (`ask`) | A task and a note for each Likely block; Log the day asks it for the rows it is unsure of (5.4, 5.5) | Each block's time, repository, session titles, steps (typed and Claude's replies), commit subjects, up to 5 of your notes; your tasks of the last 30 days. May search Productive, read only | Sonnet | $0.25, $0.75, $2 |
-| Note in the log dialog (`note`) | The note for a block or a stretch (below) | That work's time, repository, steps, commit subjects, up to 5 of your notes | Haiku | $0.10, $0.30, $0.80 |
-| New task (`task`) | A new task's title and description (5.1) | That work's time, repository, session titles, steps, commit subjects, up to 8 titles of your recent tasks | Haiku | $0.10, $0.30, $0.80 |
-| Log the day with Claude (`review`) | Reviews the day's plan with FI's rules: suggestions to accept or reject (5.4c) | The day's digest (5.4c): the plan, steps, session titles, commit subjects, meeting titles, app names by hour, notes of logged entries, your tasks of the last 30 days; may search Productive, read only | Haiku | $0.25, $0.75, $2 |
+| Check my day: task picks (`ask`) | A task and a note for each row Log the day is unsure of, before the review; also shown on the Likely cards (5.4, 5.5) | Each block's time, repository, session titles, steps (typed and Claude's replies), commit subjects, up to 5 of your notes; your tasks of the last 30 days. May search Productive, read only | Sonnet | $0.25, $0.75, $2 |
+| Note (`note`) | The note for a block or a stretch (below), and for a row of Log the day whose empty note is clicked | That work's time, repository, steps, commit subjects, up to 5 of your notes | Haiku | $0.10, $0.30, $0.80 |
+| New task (`task`) | A new task's title and description, from the log dialog or a row of Log the day (5.1) | That work's time, repository, session titles, steps, commit subjects, up to 8 titles of your recent tasks | Haiku | $0.10, $0.30, $0.80 |
+| Check my day: review (`review`) | Reviews the day's plan with FI's rules: suggestions to accept or reject (5.4c) | The day's digest (5.4c): the plan, steps, session titles, commit subjects, meeting titles, app names by hour, notes of logged entries, your tasks of the last 30 days; may search Productive, read only | Haiku | $0.25, $0.75, $2 |
 | Pulsar in Claude Code (`session`) | A session reads the day and logs through Pulsar (5.6) | What the session reads from Pulsar, as part of that session | the session's own | none of Pulsar's |
 
 Each `claude -p` call takes its model and cap from there and nothing else changes: its isolation (`--tools ""`,
@@ -1373,9 +1372,8 @@ question) and cannot tell when inside it the work happened.
 - **Total project time**: per project, then budget and service.
 - **Tasks against estimates**: each task logged today, with everyone's time on it against its estimate
   (`task_details`, cached 5 minutes).
-- **Refreshing**: ↻ reloads everything and asks Google and the Likely proposal afresh; the small ↻ in Logged reads
-  only Productive. Today refreshes by itself once an hour while the page is visible.
-- **The warp**: the update and the refresh play a short gravitational-lens animation. In the window it is native
+- **Refreshing**: ↻ reloads everything and asks Google and the Likely proposal afresh. Today refreshes by itself once an hour while the page is visible.
+- **The warp**: an update plays a short gravitational-lens animation. In the window it is native
   (a snapshot of the page bent by Core Image's hole distortion, animated by Core Animation on the graphics card); in a
   browser it is a CSS version. It is off with Reduce motion, or in Settings. Taking the snapshot comes first (50 to 70
   ms), so the page waits that much more before it lets go, and the window lets go only once the pull is all the way
