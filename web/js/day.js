@@ -8,8 +8,10 @@ function newest(kind) {
 }
 
 /* Day view: one day on one time axis (activity, likely, logged) */
+let loading = 0;  // reads under way: the logo pulses while there are any (style.css html.loading)
 function load({fresh = false, keepScroll = false} = {}) {
   const d = state.date, act = newest('activity'), logged = newest('entries'), likely = newest('proposal');
+  document.documentElement.classList.add('loading'); loading++;
   if (!keepScroll) { state.act = state.likely = state.logged = state.repeats = null; render(); }
   loadRepeats();
   return Promise.all([
@@ -29,7 +31,7 @@ function load({fresh = false, keepScroll = false} = {}) {
       }
       return x;
     }) : null,
-  ]);
+  ]).finally(() => { if (--loading <= 0) { loading = 0; document.documentElement.classList.remove('loading'); } });
 }
 
 /* the Likely rows came before your Productive history was read, or before their sessions' tasks and commits were
@@ -686,7 +688,6 @@ $('#date').onchange = e => {
 };
 $('#date').addEventListener('blur', e => { if (e.target.value !== state.date) e.target.value = state.date; });
 $('#refresh').onclick = async () => {
-  warp();  // one short warp while the reload starts; holding it until the data is back made redrawing lag
   if (state.view === 'report') return loadReport(true);
   const btn = $('#refresh'), before = state.logged, d = state.date;
   btn.classList.add('busy');
@@ -809,7 +810,7 @@ function askDelete(x, ev) {
   popEntry = x;
   openPop(`<h3>Delete this entry?</h3><div class="sub">${hm(x.s)}–${hm(x.e)} · ${dur(x.minutes)} · ${esc(x.project)}</div>
     <p>${esc(x.task || '')}</p><p class="sub">It goes to Productive's Recycle Bin, where it can be restored.</p>
-    <div class="btnrow"><button class="btn primary sm" data-del-yes>Delete</button><button class="btn bordered sm" data-rz-no>Cancel</button></div>`, ev);
+    <div class="btnrow"><button class="btn bordered sm" data-rz-no>Cancel</button><button class="btn danger sm" data-del-yes>Delete</button></div>`, ev);
 }
 async function deleteEntry(x, btn) {
   btn.disabled = true;

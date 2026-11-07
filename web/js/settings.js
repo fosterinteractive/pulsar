@@ -149,9 +149,44 @@ window.pulsarUnsaved = () => {
   return '';
 };
 
+/* This Mac: the window's own choices (Pulsar.app 1.6 and later, native.js). Read from window.PULSAR_APP.native, then
+   asked again (pulsarNative.nativePrefs); each change goes to the window at once (setNativePrefs), and the window
+   answers with a pulsar:prefs event. Hidden in a browser and in an older window. */
+const appNative = () => (window.PULSAR_APP && typeof window.PULSAR_APP === 'object' ? window.PULSAR_APP.native : null);
+function paintApp(n = appNative()) {
+  const sec = $('#app-sec'), can = !!(n && window.pulsarNative?.setNativePrefs);
+  sec.hidden = !can;
+  if (!can) return;
+  $('#app-badge').checked = !!n.badge;
+  $('#app-reminder').checked = !!n.reminder;
+  $('#app-reminder-time').value = /^\d\d:\d\d$/.test(n.reminderTime || '') ? n.reminderTime : '17:30';
+  $('#app-reminder-time').disabled = !n.reminder;
+  const login = n.login, box = $('#app-login'), hint = $('#app-login-hint');
+  box.checked = login === 'on' || login === 'approve';
+  box.disabled = login === 'unsupported';
+  hint.hidden = !['approve', 'unsupported'].includes(login);
+  hint.innerHTML = login === 'approve'
+    ? 'macOS has to allow it first. <button type="button" class="linkbtn" id="app-login-open">Open Login Items</button> and switch Pulsar on.'
+    : login === 'unsupported' ? 'On this macOS, add it by hand: System Settings, General, Login Items, then + under Open at Login, and choose Pulsar.' : '';
+}
+async function refreshApp() {
+  if (!appNative() || !window.pulsarNative?.nativePrefs) return paintApp();
+  paintApp();
+  const got = await window.pulsarNative.nativePrefs();
+  if (got?.native) paintApp(got.native);
+}
+function setApp(change) { $('#app-msg').textContent = ''; window.pulsarNative?.setNativePrefs(change); }
+$('#app-badge').onchange = ev => setApp({badge: ev.target.checked});
+$('#app-reminder').onchange = ev => { $('#app-reminder-time').disabled = !ev.target.checked; setApp({reminder: ev.target.checked}); };
+$('#app-reminder-time').onchange = ev => { if (/^\d\d:\d\d$/.test(ev.target.value)) setApp({reminderTime: ev.target.value}); };
+$('#app-login').onchange = ev => setApp({login: ev.target.checked});
+$('#app-login-hint').addEventListener('click', ev => { if (ev.target.id === 'app-login-open') window.pulsarNative?.openLoginItems(); });
+addEventListener('pulsar:prefs', ev => { if (ev.detail?.native) paintApp(ev.detail.native); });
+
 function openSettings(tab) {
   if (!CONFIG) return;
   clearSearch();
+  refreshApp();
   let last = null;
   try { last = localStorage.getItem(TAB_KEY); } catch { /* storage off */ }
   showTab(typeof tab === 'string' ? tab : last || 't-conn');

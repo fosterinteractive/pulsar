@@ -38,7 +38,7 @@ function rangeDates(key) {
   return [at(-29), t];
 }
 function paintFilters() {
-  document.querySelectorAll('#range button').forEach(b => b.classList.toggle('on', b.dataset.v === R.range));
+  document.querySelectorAll('#range button').forEach(b => { b.classList.toggle('on', b.dataset.v === R.range); b.setAttribute('aria-pressed', String(b.dataset.v === R.range)); });
   $('#rfrom').value = R.from; $('#rto').value = R.to; $('#rmsg').textContent = '';
   $('#print-title').textContent = R.from && R.to ? `Pulsar report, ${dayLabel(R.from, {day: 'numeric', month: 'short'})} to ${dayLabel(R.to, {day: 'numeric', month: 'short', year: 'numeric'})}` : 'Pulsar report';
   $('#rlabel').textContent = R.from && R.to

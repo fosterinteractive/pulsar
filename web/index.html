@@ -16,7 +16,7 @@
 </head>
 <body>
 <header>
-  <span class="brand"><a class="home" id="home" href="/" title="Go to the Day view"><svg id="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
+  <span class="brand"><a class="home" id="home" href="/" title="Go to the Day view" draggable="false"><svg id="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="24" height="24" aria-hidden="true">
       <defs>
         <radialGradient id="pGlow" cx="16" cy="16" r="9" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffffff"/><stop offset=".3" stop-color="#f0abfc"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0"/></radialGradient>
         <linearGradient id="pUp" x1="16" y1="16" x2="16" y2="0" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#06b6d4"/><stop offset=".6" stop-color="#22d3ee" stop-opacity=".7"/><stop offset="1" stop-color="#22d3ee" stop-opacity="0"/></linearGradient>
@@ -34,9 +34,9 @@
   <span class="daytitle dayonly"><span class="sub dayonly" id="dayname"></span><button type="button" class="weekline" id="weekline" hidden aria-haspopup="dialog"></button></span>
   <span class="spacer"></span>
   <span class="seg dayonly">
-    <button class="btn icon" id="prev" title="Previous day (←)">‹</button>
+    <button class="btn icon" id="prev" title="Previous day (←)" aria-label="Previous day">‹</button>
     <button class="btn" id="today" title="Today (T)">Today</button>
-    <button class="btn icon" id="next" title="Next day (→)">›</button>
+    <button class="btn icon" id="next" title="Next day (→)" aria-label="Next day">›</button>
   </span>
   <input type="date" id="date" class="dayonly">
   <span id="zoom" class="dayonly"><select id="zoom-sel" class="zoom-sel" aria-label="Zoom: the time each row of the day shows" title="Zoom">
@@ -156,6 +156,16 @@
             than 10 minutes) to the work next to it. When you log a block of time, its minutes are rounded to it too. Minutes
             you type yourself stay as you typed them.</p>
         </section>
+        <section data-k="dock badge reminder end of day open at login startup window app mac" id="app-sec" hidden>
+          <h3>This Mac</h3>
+          <p class="hint">Pulsar's window: these change at once, no Save needed.</p>
+          <label class="check"><input type="checkbox" id="app-badge"> The Dock icon shows the time not logged today</label>
+          <label class="check"><input type="checkbox" id="app-reminder"> Remind me to log the day at
+            <input type="time" id="app-reminder-time" class="app-time" aria-label="Reminder time"></label>
+          <label class="check"><input type="checkbox" id="app-login"> Open Pulsar when I log in to the Mac</label>
+          <p class="hint" id="app-login-hint" hidden></p>
+          <p class="msg" id="app-msg" role="status"></p>
+        </section>
         <section data-k="personal windows activitywatch memtime tracker afk away">
           <h3>Activity</h3>
           <label class="field"><span>Personal windows</span><textarea name="personal_patterns" rows="5"></textarea></label>
@@ -261,7 +271,7 @@
   <form id="task-form" novalidate>
     <div class="dh"><h2 id="task-title">New task in Productive</h2><button type="button" class="btn icon" data-close aria-label="Close">✕</button></div>
     <div class="scrollarea">
-      <label class="field"><span>Project</span><select name="project"></select></label>
+      <label class="field"><span>Project</span><select name="project" autofocus></select></label>
       <label class="field"><span>Where it goes</span><select name="place"></select></label>
       <label class="field"><span>Title</span><input name="title" maxlength="140" autocomplete="off" spellcheck="true"
         placeholder="The issue or deliverable, e.g. “Area: what”" aria-describedby="task-draft-hint"></label>
@@ -286,7 +296,7 @@
   <form id="rule-form" novalidate>
     <div class="dh"><h2 id="rule-title">New rule</h2><button type="button" class="btn icon" data-close aria-label="Close">✕</button></div>
     <div class="scrollarea">
-      <label class="field"><span>When a window, page or site contains</span><input name="match" autocomplete="off" placeholder="github.com/your-team/your-repo"></label>
+      <label class="field"><span>When a window, page or site contains</span><input name="match" autocomplete="off" placeholder="github.com/your-team/your-repo" autofocus></label>
       <p class="hint" id="rule-preview"></p>
       <div class="field"><span>it belongs to the task</span>
         <input name="q" type="search" placeholder="Search every task in Productive" autocomplete="off" aria-label="Search tasks">

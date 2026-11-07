@@ -25,7 +25,7 @@ function applyConfig(c) {
 function setView(v) {
   state.view = v === 'report' ? 'report' : 'day';
   document.body.dataset.view = state.view;
-  document.querySelectorAll('#view button').forEach(b => b.classList.toggle('on', b.dataset.v === state.view));
+  document.querySelectorAll('#view button').forEach(b => { b.classList.toggle('on', b.dataset.v === state.view); b.setAttribute('aria-pressed', String(b.dataset.v === state.view)); });
   pop.classList.remove('on'); tipEl.classList.remove('on');
   syncURL();
   if (state.view === 'report' && !R.data) return loadReport();

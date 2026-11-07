@@ -7,6 +7,8 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- In Pulsar's window: Settings has the Dock badge, the end-of-day reminder and Open at Login; the Mac's accent colour; no wordmark or ✕ the window already gives.
+- Delete asks with Cancel first and a red Delete; the logo pulses only while loading; refresh has no warp; more contrast when macOS asks for it.
 - One Claude button, in Log the day: "Check my day with Claude" picks tasks when needed, then reviews; it names the models and their limits; nothing runs by itself.
 - Day done: a day at its target (or marked done) greys its rails and leaves Earlier days; "Not work" marks a stretch that was not work.
 - Log the day keeps your ticks, tasks, notes and deletions per day while Pulsar is open; Start over forgets them.

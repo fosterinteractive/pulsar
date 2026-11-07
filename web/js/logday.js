@@ -652,7 +652,7 @@ function ldResultsBox() {
   return `<div class="rv-res${failed.length ? ' warn' : ''}" tabindex="-1" role="status"><p>${head}</p>
     <p>${n ? 'Undo deletes only what this run wrote, and only as it wrote it.' : ''}</p>
     ${LD.undoAsk ? `<p>Delete the ${n} ${n === 1 ? 'entry' : 'entries'} this run logged? ${n === 1 ? 'It goes' : 'They go'} to Productive's Recycle Bin.</p>
-      <div class="btnrow"><button type="button" class="btn primary sm" id="ld-undo-yes">Delete the ${n}</button><button type="button" class="btn bordered sm" id="ld-undo-no">Cancel</button></div>`
+      <div class="btnrow"><button type="button" class="btn bordered sm" id="ld-undo-no">Cancel</button><button type="button" class="btn danger sm" id="ld-undo-yes">Delete the ${n}</button></div>`
     : `<div class="btnrow">${failed.length + left ? `<button type="button" class="btn bordered sm" id="ld-retry">Try the ${failed.filter(r => r.status === 'refused').length + left} again</button>` : ''}
       ${n ? `<button type="button" class="btn bordered sm" id="ld-undo">Undo this run (${n})</button>` : ''}</div>`}</div>`;
 }

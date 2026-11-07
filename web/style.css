@@ -5,7 +5,7 @@
   --seg: rgba(0,0,0,.05); --seg-on: #ffffff;
   /* charts: billable blue, not billable orange (validated as a pair, light and dark, colour-blind safe); billing
      Productive does not show this person in grey, set apart from the grey of active time behind it */
-  --accent: #2a78d6; --accent2: #eb6834; --unknown: #7d7c76; --warp-core: 255, 255, 255; --deemph: #c4c3bc; --seq-lo: #e6effa; --seq-hi: #104281; --grid: #e1e0d9; --axis: #c3c2b7; --weekend: rgba(0,0,0,.025);
+  --accent: var(--mac-accent, #2a78d6); --accent2: #eb6834; --unknown: #7d7c76; --warp-core: 255, 255, 255; --deemph: #c4c3bc; --seq-lo: #e6effa; --seq-hi: #104281; --grid: #e1e0d9; --axis: #c3c2b7; --weekend: rgba(0,0,0,.025);
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -14,7 +14,7 @@
     --text: #f2f2f4; --muted: #9b9ba2; --faint: #5c5c63; --hover: rgba(255,255,255,.05);
     --gap: #f0a833; --gap-text: #f0a833; --now: #ff453a; --shadow: 0 12px 40px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
     --seg: rgba(255,255,255,.06); --seg-on: #3a3a3f;
-    --accent: #3987e5; --accent2: #d95926; --unknown: #9a9993; --warp-core: 0, 0, 0; --deemph: #4a4a46; --seq-lo: #1c2736; --seq-hi: #9ec5f4; --grid: #2c2c2a; --axis: #383835; --weekend: rgba(255,255,255,.025);
+    --accent: var(--mac-accent, #3987e5); --accent2: #d95926; --unknown: #9a9993; --warp-core: 0, 0, 0; --deemph: #4a4a46; --seq-lo: #1c2736; --seq-hi: #9ec5f4; --grid: #2c2c2a; --axis: #383835; --weekend: rgba(255,255,255,.025);
     color-scheme: dark;
   }
 }
@@ -24,7 +24,7 @@
   --text: #f2f2f4; --muted: #9b9ba2; --faint: #5c5c63; --hover: rgba(255,255,255,.05);
   --gap: #f0a833; --gap-text: #f0a833; --now: #ff453a; --shadow: 0 12px 40px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
   --seg: rgba(255,255,255,.06); --seg-on: #3a3a3f;
-  --accent: #3987e5; --accent2: #d95926; --unknown: #9a9993; --warp-core: 0, 0, 0; --deemph: #4a4a46; --seq-lo: #1c2736; --seq-hi: #9ec5f4; --grid: #2c2c2a; --axis: #383835; --weekend: rgba(255,255,255,.025);
+  --accent: var(--mac-accent, #3987e5); --accent2: #d95926; --unknown: #9a9993; --warp-core: 0, 0, 0; --deemph: #4a4a46; --seq-lo: #1c2736; --seq-hi: #9ec5f4; --grid: #2c2c2a; --axis: #383835; --weekend: rgba(255,255,255,.025);
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -524,12 +524,13 @@ html.warp-held body { transform: scale(.94); transform-origin: 50% 45vh; }
     rgba(120,220,255,.32) 24%, rgba(160,110,255,.16) 48%, rgba(255,90,200,.06) 68%, transparent 92%); }
 @media (prefers-reduced-motion: reduce) { html.warp-held body { transform: none; } .warp-flash, .warp-core { display: none; } }
 
-/* the logo pulses like a pulsar: core and beams flash together once a turn and fade; faster while Pulsar is loading */
-#logo .p-glow, #logo .p-beam { transform-box: view-box; transform-origin: 16px 16px; animation: p-pulse 2.2s cubic-bezier(.2, .7, .3, 1) infinite; }
-#logo .p-beam { animation-name: p-beam; }
+/* the logo pulses like a pulsar while Pulsar is reading the day (html.loading, day.js load), and is still otherwise:
+   core and beams flash together once a turn and fade */
+#logo .p-glow, #logo .p-beam { transform-box: view-box; transform-origin: 16px 16px; }
+html.loading #logo .p-glow, html.loading #logo .p-beam { animation: p-pulse .9s cubic-bezier(.2, .7, .3, 1) infinite; }
+html.loading #logo .p-beam { animation-name: p-beam; }
 @keyframes p-pulse { 0% { opacity: .7; transform: scale(.92); } 7% { opacity: 1; transform: scale(1.14); } 45%, 100% { opacity: .7; transform: scale(.92); } }
 @keyframes p-beam { 0% { opacity: .75; } 7% { opacity: 1; } 45%, 100% { opacity: .75; } }
-body:has(#refresh.busy) #logo .p-glow, body:has(#refresh.busy) #logo .p-beam { animation-duration: .9s; }
 @media (prefers-reduced-motion: reduce) { #logo .p-glow, #logo .p-beam { animation: none; } }
 
 /* the reminder to update, after several releases were left out */
@@ -634,3 +635,29 @@ kbd { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px
   background: repeating-linear-gradient(135deg, var(--faint) 0 2px, transparent 2px 5px); opacity: .8; }
 .nwrail:hover { opacity: 1; }
 .nwrail:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.app-time { font: inherit; font-size: 12.5px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px; margin-left: 2px; }
+.app-time:disabled { opacity: .5; }
+
+/* a Mac's settings for more contrast (Accessibility, Display): stronger secondary text and lines */
+@media (prefers-contrast: more) {
+  :root { --muted: #48484d; --faint: #6e6e73; --line: rgba(0,0,0,.18); --line2: rgba(0,0,0,.1); --gap-text: #7a4d00; }
+  :root[data-theme="dark"] { --muted: #c7c7cc; --faint: #98989f; --line: rgba(255,255,255,.2); --line2: rgba(255,255,255,.12); --gap-text: #ffc04d; }
+}
+@media (prefers-contrast: more) and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --muted: #c7c7cc; --faint: #98989f; --line: rgba(255,255,255,.2); --line2: rgba(255,255,255,.12); --gap-text: #ffc04d; }
+}
+/* a destructive button: red, after Cancel */
+.btn.danger { background: #d70015; color: #fff; }
+.btn.danger:hover { background: #d70015; opacity: .9; }
+/* in Pulsar's own window (html.in-app): the window draws its title, menus (View > Appearance, Help > Error Log) and
+   closes dialogs with Escape and Cmd+W, so the page leaves out its wordmark, theme button and the dialogs' ✕; buttons
+   keep the arrow, as Mac buttons do; the main button takes the Mac's accent colour */
+html.in-app header .brand h1, html.in-app #theme-btn { display: none; }
+html.in-app dialog .dh .btn.icon[aria-label="Close"], html.in-app dialog .dh [data-ld-x] { display: none; }
+html.in-app button, html.in-app .btn, html.in-app summary, html.in-app .card, html.in-app .gaprail, html.in-app .awayband, html.in-app .nwrail { cursor: default; }
+html.in-app .btn.primary { background: var(--accent); color: #fff; }
+html.in-app .btn.primary:hover { background: var(--accent); }
+/* Settings > Updates: "Reinstall Pulsar" (native.js) as a box of its own */
+#app-reinstall { margin-top: 14px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 6%, transparent); }
+#app-reinstall h3 { margin-top: 0; }

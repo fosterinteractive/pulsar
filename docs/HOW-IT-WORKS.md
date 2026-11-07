@@ -1338,6 +1338,15 @@ question) and cannot tell when inside it the work happened.
   not in "Active, not logged", not proposed by Log the day, less in Earlier days) and shows as a quiet hatched rail; a
   click on it, or Undo in the note at the bottom, counts it as work again. `GET /api/daymarks?date=` (or `from=&to=`),
   `POST /api/daymarks` `{date, done | undone | add: [a, b] | remove: [a, b]}`, the page's session only.
+- **In Pulsar's own window** (1.6 and later sets `window.PULSAR_APP`; `theme-early.js` then marks `<html>` with
+  `in-app`): Settings → Time and activity has **This Mac**, the window's own choices, applied at once through
+  `pulsarNative.setNativePrefs` and shown again on each `pulsar:prefs` event: the Dock badge, the end-of-day reminder
+  and its time, and Open at Login (when macOS needs approval, a button opens Login Items; on macOS 12, the steps to
+  do it by hand). The page leaves out what the window does itself: the wordmark, the theme button and the dialogs' ✕
+  (Escape and ⌘W close them); buttons keep the arrow cursor, and the main button and focus rings take the Mac's
+  accent colour (`--mac-accent`). In a browser none of this shows. Everywhere: a Delete asks with Cancel first and a
+  red Delete; the logo pulses only while the day is being read (`html.loading`); ↻ reloads without the warp;
+  `prefers-contrast: more` strengthens secondary text and lines; segmented controls say which is on (`aria-pressed`).
 - **First run**: when Productive is not connected (or does not know who you are), no tracker answers, or today has
   no activity yet, a short list at the top of the board says what is missing and gives the one action that fixes
   it (Connect Productive, Get or Open ActivityWatch).

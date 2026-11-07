@@ -5,7 +5,7 @@ let logsDays = 1;
 
 async function openLogs(days = logsDays) {
   logsDays = days;
-  document.querySelectorAll('#logs-range button').forEach(b => b.classList.toggle('on', +b.dataset.v === days));
+  document.querySelectorAll('#logs-range button').forEach(b => { b.classList.toggle('on', +b.dataset.v === days); b.setAttribute('aria-pressed', String(+b.dataset.v === days)); });
   $('#logs-download').dataset.days = days;
   $('#logs-list').innerHTML = '<p class="hint">Loading…</p>';
   if (!logsDlg.open) logsDlg.showModal();
