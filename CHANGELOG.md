@@ -6,6 +6,10 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- Settings → Time and activity → Away after: 10, 15 (the default), 20 or 30 minutes without input is time away and ends a sitting; a shorter pause between two stretches of work counts as work.
+- Settings checks ActivityWatch's AFK timeout against Away after and fixes a longer one with a click (a copy of its file is kept, ActivityWatch restarts, new data only), and checks and adds ActivityWatch to Login Items.
+
 ## 1.6.0 (2026-11-07)
 - Report: a Today range, and it opens on this week.
 - In Pulsar's window: 12-hour times when the Mac uses them (fields take "2:30 pm"), dates in the Mac's region order, weeks from its first weekday.

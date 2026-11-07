@@ -275,8 +275,10 @@ Both readers return the same items: `{s, e, app, title, host, url, cat, icon}`, 
 
 - **ActivityWatch** (`http://localhost:5600`, read only). Pulsar reads the window bucket and the AFK bucket of every
   host name the Mac has had (a renamed Mac gets new buckets). A window counts only while the AFK watcher says someone
-  was at the keys (`clip_to_present`). When the AFK watcher recorded nothing at all, Pulsar says so instead of
-  showing a day with no breaks.
+  was at the keys (`clip_to_present`). A pause the AFK watcher wrote that is shorter than Settings' **Away after**
+  (`config.away_after`: 10, 15, 20 or 30 minutes, 15 by default), between two stretches of input, counts as being
+  there (`present_spans`), as in the fi-time-from-activity skill: the window in front then counts as work. When the AFK
+  watcher recorded nothing at all, Pulsar says so instead of showing a day with no breaks.
 - **MemTime.** MemTime keeps its database open and writing, so Pulsar reads a private copy
   (`$TMPDIR/pulsar-memtime-*`, tens of MB), made at most once a minute and deleted when the next one is made, before
   a restart into an update, and on exit. A Pulsar that is killed runs nothing at exit, so every ten minutes at most
@@ -289,8 +291,35 @@ Both readers return the same items: `{s, e, app, title, host, url, cat, icon}`, 
 - **Cleaning**: touching pieces of the same window are joined (`compact`), so a day is hundreds of items, not
   thousands. Editor titles lose the workspace part ("Tab — repo (Workspace)" becomes "Tab"; the workspace is kept for
   rules). URLs lose their query string, which can carry tokens.
-- **Away** (`server.away`): every gap of 5 minutes or more between the first and the last activity of the day. Gaps of
-  3 hours or more are "Off" (a night, an afternoon off): drawn, never added to the total.
+- **Away** (`server.away`): every gap of Away after or more between the first and the last activity of the day. Gaps of
+  3 hours or more are "Off" (a night, an afternoon off): drawn, never added to the total. Away after also ends a
+  sitting in Likely (`sessions.propose`) and in Log the day (`dayplan.opts_for`, `sitting_gap`). The one setting drives all
+  four; `dayplan.MERGE_GAP`, `CALL_GAP` and `OFF_MIN` are not breaks and stay fixed.
+- **ActivityWatch's own settings** (`pulsar/awsetup.py`). Its AFK watcher writes "afk" only after its own timeout
+  (`~/Library/Application Support/activitywatch/aw-watcher-afk/aw-watcher-afk.toml`, section `[aw-watcher-afk]`, key
+  `timeout` in seconds; 180 without the file or the key), backdated to the last input, so a pause shorter than that
+  timeout is not in its data and no threshold in Pulsar can see it. Settings → Time and activity → **Away** reads that
+  one key, line by line with the standard library (`scan`; `[aw-watcher-afk-testing]` and every other section are
+  never read or changed; a form it cannot read for sure, such as a dotted key, the key twice or a value that is not a
+  number, is said and left alone). A timeout longer than Away after offers **Fix**: it keeps a copy of the file next
+  to it (`aw-watcher-afk.toml.pulsar-<date-time>.bak`, never over another file), changes that one line, or adds the
+  key in that section, writes through a temporary file and a rename with the file's own permissions, reads it back
+  (and puts the file back if it does not say the new value), saves Away after, and restarts ActivityWatch: aw-qt
+  ignores an AppleScript quit, so `pkill -f "ActivityWatch.app/Contents/MacOS/aw-qt"`, then a wait (15 seconds at
+  most) until no process of the app is left, `open -a` the app, and a wait (30 seconds at most each) for
+  `/api/0/info` and for the AFK watcher (its process, or a heartbeat in its bucket since the restart). The page says
+  before the click that the new timeout applies to new data only. A timeout the same or shorter is never touched:
+  `present_spans` counts the shorter pauses as work. **Login Items**: ActivityWatch not in them records nothing after
+  a restart of the Mac until someone opens it. Only on a click, Pulsar asks System
+  Events for the login items' names and, on a second click, adds the app where it really is (the copy that runs,
+  else `/Applications` or `~/Applications`, else Spotlight by bundle id, each checked by its `Info.plist`) as a hidden
+  login item, then lists them again: System Events answers "login item UNKNOWN" even when it worked. The page says
+  first that macOS asks once whether Pulsar may control System Events (Automation); a no (-1743) says where to allow
+  it, or how to add ActivityWatch by hand. Settings shows the last answer while Pulsar runs; nothing is asked by
+  itself. The two routes (`POST /api/activitywatch/fix`, `/login`) need the page's session (the key alone is
+  refused, `server.key_refusal`) and refuse in a read-only run (`PULSAR_READ_ONLY`) and in tests (`awsetup.blocked`);
+  behind that, `awsetup._run` and `_fetch` refuse on their own, and the tests cannot start `pkill`, `osascript` or
+  `open` at all.
 
 The column groups items into blocks per zoom slot (1 to 60 minutes): each slot shows the window with most time in it,
 and equal neighbours join (`activityBlocks` in `day.js`). Away time is drawn as a hatched rail on the column's edge,
@@ -402,10 +431,11 @@ Which Claude Code session, and so which project, each minute of work most likely
   neighbours' project, then the session's title, then the folder the session ran in. `~/.claude` itself is tooling,
   never a project.
 - **Each minute** the tracker saw work goes to one session: the one whose title the editor window showed; else one
-  whose agent was running; else the one last used in that sitting (a sitting ends after 30 minutes away). In a
+  whose agent was running; else the one last used in that sitting (a sitting ends after Away after with no sign of
+  work, 4.1). In a
   browser, a page whose title or address names a project goes to that project's session. Meetings, personal
   windows and time logging (a minute that went mostly to Pulsar or Productive) go to none.
-- **Without a tracker**, the time an agent ran on a request, and answers typed within 30 minutes, count as work.
+- **Without a tracker**, the time an agent ran on a request, and answers typed within Away after, count as work.
 - **Rows**: neighbouring minutes of one project join into rows `{s, e, minutes, project, titles, messages,
   first_message}`.
 - **The fi-time-from-activity skill**: where `~/.claude/skills/fi-time-from-activity/scripts/activity_blocks.py`
@@ -722,7 +752,8 @@ claim wins:
    with no call seen, and work outside Claude, an editor or terminal with no session row included (it takes the task
    of the work next to it, never a meeting's, and starts unticked).
 
-Pieces of one task in one sitting join, pieces under 10 minutes join a neighbour within 30 minutes in the same sitting
+Pieces of one task in one sitting (it ends after Away after with no activity) join, pieces under 10 minutes join a
+neighbour within 30 minutes in the same sitting
 (never one hours away, which would move it there, never across an entry already logged; a meeting someone attended
 keeps its own time, so nothing before it joins it), boundaries go on a 5-minute grid except right against an entry
 already logged (an entry starts where that one ends, or stops where it starts, taking in the minutes up to the grid
@@ -1410,6 +1441,7 @@ estimate, and a table of every day. A day's bar and its row in the tables open t
 | `~/.cache/pulsar/logs/` | The error log, one JSON line per event, 31 days; tokens, keys, OAuth codes, signed addresses, fields named as keys or secrets, bare hex secrets, UUIDs and long opaque strings removed. |
 | `~/Library/Application Support/Pulsar/` | The installed code: `versions/`, `current`, `previous`, `bad-versions`, and `seen-release` (the newest signed `latest.json` believed: its version and expiry). Only code a release signed gets here (section 2). |
 | `~/Library/Logs/Pulsar.log` | What the launcher and the server printed. |
+| `~/Library/Application Support/activitywatch/aw-watcher-afk/aw-watcher-afk.toml.pulsar-<date-time>.bak` | ActivityWatch's file as it was before each Fix (4.1). Pulsar never removes it. |
 
 Every file Pulsar writes is readable by its owner only. Settings and caches are written atomically (a temporary file, then a rename), so a reader never sees half a file; the error log is appended to.
 
@@ -1545,6 +1577,8 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `POST /api/mcp/<tool>` | `{args, client, session, sessionFrom, projectDir, ignoreLogged}`: one of Pulsar in Claude Code's tools, answered in the server (5.6). The key opens it. |
 | `POST /api/session` | Trade a sign-in code for a session token. `POST /api/session/end` signs out. |
 | `POST /api/settings` | Save settings (each field checked). |
+| `POST /api/activitywatch/fix` | `{minutes}`: ActivityWatch's AFK timeout set to Away after (saved too), with a copy of its file, then ActivityWatch restarted (4.1). The page's session only; refused read-only and in tests. |
+| `POST /api/activitywatch/login` | `{add}`: whether ActivityWatch is in Login Items, or adding it, through System Events (4.1). The page's session only; refused read-only and in tests. |
 | `POST /api/log` | Log one entry. With `run` and `row`: one row of Log the day, journalled. |
 | `GET /api/dayplan?date=&source=` | Log the day: the day proposed for review. Nothing is written. |
 | `GET /api/dayplan/journal?date=` | Log the day: what each run of that day sent, and what Undo would delete. |
@@ -1598,7 +1632,10 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 - **`settings.js`**: Settings (a sidebar of categories, each with its own icon, and a search that shows the matching
   sections of every category; the last category open opens again), updates and the reminder, the changelog. Saving
   asks Productive again only when the connection changed. Closing it (✕, Close, Escape, the error log) with a change
-  not saved asks first: Save, Discard or Keep editing. Settings → Updates also opens the error log.
+  not saved asks first: Save, Discard or Keep editing. Settings → Updates also opens the error log. Time and
+  activity → **Away** holds Away after and, where ActivityWatch is installed, its AFK timeout against it (repainted
+  as the choice changes) with **Fix**, and Login Items with **Check Login Items** and **Open ActivityWatch at login**
+  (4.1); each says what it does before the click.
 - **Keys** (`day.js`, the `?` list in `#keysdlg`): L Log the day, N + Log, ← → another day, T today, Enter on a block
   or a rail opens it; in the log dialog ⌘↩ logs (shown on the button) and ⌘⇧↩ is Log and next.
 - **`report.js`**: the report, its charts (SVG, drawn here) and downloads.
@@ -1624,7 +1661,7 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   Pulsar itself skip the keychain, Claude Code and the network. Every `GIT_*` variable is dropped and git's global
   settings file is one in the scratch folder (`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_NOSYSTEM`): git exports `GIT_DIR` into
   hooks, so a hook that ran the tests would otherwise point them at the real repository. Behind that, `security`,
-  `claude`, `osascript` and `open` cannot start, directly or through `env`, `sh -c`, `shell=True`, `os.system` or
+  `claude`, `osascript`, `open` and `pkill` cannot start, directly or through `env`, `sh -c`, `shell=True`, `os.system` or
   `os.posix_spawn`, nor `os.exec*` at all; no connection or UDP datagram leaves the computer, no name is looked up but
   its own, none reaches a local port the run did not open (not the real Pulsar, a Preview or ActivityWatch), and a
   Unix socket only inside the scratch folder. Not covered: a call into libc through ctypes, and a child Python, which
@@ -1687,7 +1724,12 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   place that way still has to be removed by hand (`~/Library/Application Support/Pulsar/`).
 - In a browser (not the window) the page cannot check who answers on the port: after a restart it asks to be opened
   from the app icon, but a page loaded there by hand loads whatever holds the port. Its token is worth nothing there.
-- ActivityWatch's AFK timeout decides what counts as a break: with 30 minutes, shorter breaks are not seen.
+- ActivityWatch's AFK timeout decides which breaks are in its data: one longer than Away after hides the shorter
+  breaks until Fix is clicked, and Fix changes new data only. Pulsar checks neither MemTime's idle time nor whether
+  MemTime opens at login; a MemTime pause shorter than Away after is neither away nor work (its window is not known).
+- Away after is read when a day is worked out: Likely's past days kept on disk (`likely-full/`) keep the sittings of
+  the setting they were worked out with until ↻ works them out again. Where the fi-time-from-activity skill makes the
+  Likely rows, its own away time applies to them.
 - The night the clocks go back, the repeated hour (01:00 to 02:00 in Toronto, 03:00 to 04:00 in Kyiv) is one hour on
   the clock: Log the day folds the two hours together, and an entry there is sent as the first of them. The overlap
   check of `POST /api/log` still refuses one that would clash with an entry in the second.

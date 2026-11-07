@@ -25,10 +25,8 @@ Pulsar runs on macOS 12 Monterey or newer, Apple Silicon or Intel.
 1. Install **ActivityWatch**, the free tracker Pulsar reads (skip this if you use MemTime): download it from
    [activitywatch.net](https://activitywatch.net/downloads/), drag it into Applications and open it. When macOS
    asks, allow it in **System Settings → Privacy & Security → Accessibility**; without that it sees no windows.
-   Add it to your **Login Items** too, so it records every day. By default it counts you as away after 3 minutes
-   without typing or moving the mouse; reading and calls then look like time away. To count 30 minutes instead, open
-   `~/Library/Application Support/activitywatch/aw-watcher-afk/aw-watcher-afk.toml` (in Finder: **Go → Go to
-   Folder…**), set `timeout = 1800` under `[aw-watcher-afk]`, and quit and reopen ActivityWatch.
+   Once Pulsar runs, **⚙ Settings → Time and activity → Away** checks that ActivityWatch opens at login and counts a
+   break as Pulsar does, and fixes either with a click.
 2. Open **Terminal**, paste this line and press Return. It downloads Pulsar, checks its signature, puts it into
    Applications and opens it:
 
@@ -142,6 +140,7 @@ Code and reconnect Productive. A token of your own never expires, so it is the s
 | Time zone | this computer's |
 | Daily target | your organization's working day in Productive, else 8 h (Pulsar reads it through Claude Code's connection; with an API token it is 8 h unless you set it) |
 | Round entries to | 5 minutes (or 10 or 15): Log the day's entries start and end on this step (or right against an entry already logged), a block you log is rounded to it, and active time shorter than it is not marked as unlogged |
+| Away after | 15 minutes (or 10, 20 or 30) without typing or moving the mouse: time away, and the end of a sitting (Likely, Log the day); a shorter pause between two stretches of work counts as work. With ActivityWatch, its AFK timeout and Login Items are checked here too |
 | Personal windows | Telegram, WhatsApp, YouTube, Netflix, Instagram, Facebook, TikTok, Reddit (one word per line; a window whose app, title or site contains one counts as personal) |
 | ActivityWatch address | `http://localhost:5600` |
 | Likely column | shown when Claude Code sessions are on this computer (`~/.claude/projects`) |
@@ -154,8 +153,11 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
 
 ## Good to know
 
-- **ActivityWatch counts input, MemTime the window in front.** Reading or a call with no typing reads as away in
-  ActivityWatch after its AFK timeout (3 minutes by default; 30 is closer to how people work). The day view's
+- **ActivityWatch counts input, MemTime the window in front.** Reading or a call with no typing is time away once it
+  lasts **Away after** (Settings → Time and activity, 15 minutes unless you choose 10, 20 or 30); a shorter pause
+  between two stretches of work counts as work. ActivityWatch writes a pause only after its own AFK timeout (3
+  minutes unless changed), so a timeout longer than Away after hides the shorter breaks: Settings says so and **Fix**
+  sets it to Away after (a copy of its file is kept, and the change applies to new data only). The day view's
   Activity column can switch tracker; each Report day uses the one that saw more of it.
 - **If Productive is unreachable**, the day view and the report show the last copy fetched for each day, and say so.
   A read that Productive drops without answering is tried up to twice more; time you log is never sent twice.
@@ -387,6 +389,7 @@ pulsar.py          start the server (--self-test, --signin-url, --no-open, --por
 pulsar/
   config.py            settings, time zone, the tokens (keychain or private file), session key, sign-in codes
   trackers.py          ActivityWatch and MemTime readers
+  awsetup.py           ActivityWatch's AFK timeout (read, and Fix on a click) and its Login Items
   productive.py        Productive: REST with a token, or Claude Code's MCP connection (renewed through
                        `claude mcp get`); billing; tasks; writing
   likely.py            the Likely column: sessions.py, or the fi-time-from-activity skill where it is installed
