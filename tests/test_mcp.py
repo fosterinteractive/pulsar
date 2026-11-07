@@ -928,6 +928,19 @@ class McpTest(unittest.TestCase):
         self.assertEqual({x["id"] for x in got["entries"] if x.get("fromClaudeCode")}, ids)
         self.assertNotIn("e600", {x["id"] for x in got["entries"] if x.get("fromClaudeCode")})
 
+    def test_pulsar_writes_only_for_claude_code_whatever_reached_it(self):
+        """The proxy refuses pulsar_log in other apps; Pulsar checks it again, for a request that did not come
+        through the proxy (a key holder can still say "claude-code" itself: HOW-IT-WORKS, Security)."""
+        with self._create():
+            dry, _ = self.call("pulsar_preview", self.ARGS)
+            for client in ("cursor", "", None, 5):
+                status, answer = mcptools.call("pulsar_log", {"args": {"code": dry["code"], "summary": dry["summary"]},
+                                                              "client": client})
+                self.assertEqual(status, 400, client)
+                self.assertIn("only in Claude Code", answer.get("error", ""), client)
+        self.assertEqual(self.day.created, [])
+        self.assertIn(dry["code"], mcptools._pending)  # not used up
+
     def test_rate_limit_and_dates(self):
         for i in range(10):
             code, _ = mcptools.call("pulsar_log", {"args": {"code": "0" * 16, "summary": "x"}, "client": "claude-code"})

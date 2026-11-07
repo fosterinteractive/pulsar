@@ -445,8 +445,10 @@ class DraftTest(unittest.TestCase):
             return subprocess.CompletedProcess(argv, 0, json.dumps(out), "")
         steps = [{"typed": "fix the lists", "reply": "Numbering restarts per list now."}]
         newtask._cache.clear()
+        session = {"CLAUDECODE": "1", "CLAUDE_CODE_MESSAGING_SOCKET": "/tmp/x.sock", "CLAUDE_CODE_MESSAGING_TOKEN": "t",
+                   "ANTHROPIC_BASE_URL": "http://127.0.0.1:9", "NODE_OPTIONS": "--require /tmp/x.js", "LANG": "en_CA.UTF-8"}
         with mock.patch.object(productive, "_claude_binary", lambda: "/bin/claude-fake"), \
-                mock.patch.object(askclaude, "steps", lambda *a, **k: steps):
+                mock.patch.object(askclaude, "steps", lambda *a, **k: steps), mock.patch.dict(os.environ, session):
             got = newtask.claude_draft("2026-10-15", self.ROWS, 0, [{"task": "Hero images", "project": "P"}], "P", run=run)
         self.assertEqual((got["title"], got["description"]), ("Lists: numbering in Firefox", ""))
         self.assertIn("description had a file path", got["why"])
@@ -461,6 +463,11 @@ class DraftTest(unittest.TestCase):
         self.assertNotIn("--mcp-config", argv)  # no MCP server at all
         self.assertEqual(json.loads(argv[argv.index("--json-schema") + 1]), newtask.SCHEMA)
         self.assertEqual(kw["env"]["CLAUDE_CODE_DISABLE_AUTO_MEMORY"], "1")
+        self.assertEqual(kw["env"]["LANG"], "en_CA.UTF-8")
+        for k in session.keys() - {"LANG"}:  # the calling session's variables never reach this run
+            self.assertFalse(k in kw["env"], k)  # the name only: a failure never prints the environment
+        self.assertTrue(set(kw["env"]) <= set(askclaude.ENV_KEEP) | {"ENABLE_CLAUDEAI_MCP_SERVERS",
+                                                                     "CLAUDE_CODE_DISABLE_AUTO_MEMORY"})
         self.assertEqual(kw["cwd"], config.CACHE_DIR)
         for said in ("Numbering restarts per list now.", "Lists: restart numbering per list", "Hero images", "from 10:00 to 11:00"):
             self.assertIn(said, kw["input"])
