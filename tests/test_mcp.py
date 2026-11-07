@@ -250,6 +250,24 @@ class McpTest(unittest.TestCase):
             data, err = self.call("pulsar_session", {"date": DATE})
         self.assertTrue(err)
 
+    def test_a_source_that_failed_is_said_never_dropped(self):
+        """A read tool that leaves a source out says so: an answer without the meetings is not "no meetings"."""
+        def broken(q):
+            raise productive.ProductiveError("Productive answered HTTP 503.")
+        with mock.patch.object(server, "api_calendar", lambda q: {"events": [], "error": "Google answered HTTP 500"}), \
+                mock.patch.object(server, "api_repeats", lambda q: {"repeats": [], "error": "Productive timed out."}), \
+                mock.patch.object(server.logbook, "record"):
+            day, _ = self.call("pulsar_day", {"date": DATE})
+            self.assertTrue(any(w.startswith("Meetings:") for w in day["warnings"]), day["warnings"])
+            self.assertTrue(any(w.startswith("Usual meetings:") for w in day["warnings"]), day["warnings"])
+            with mock.patch.object(server, "api_proposal", broken), mock.patch.object(server, "api_activity", broken):
+                sug, _ = self.call("pulsar_suggest", {"date": DATE, "start": "09:00", "minutes": 30})
+                plan, _ = self.call("pulsar_propose", {"date": DATE})
+        for source in ("Likely:", "Meetings:", "Usual meetings:", "Activity:"):
+            self.assertTrue(any(w.startswith(source) for w in sug["warnings"]), (source, sug["warnings"]))
+        self.assertTrue(any("HTTP 503" in w for w in plan["warnings"]), plan["warnings"])  # no repositories: said
+        self.assertNotIn("Google", json.dumps(day["warnings"]))  # in Pulsar's fixed words only
+
     def test_time_logged_with_no_start_is_never_offered_again_as_ready(self):
         """2 h of the session's task logged by duration only: no overlap check sees them, so the session's stretch on
         that task waits for a yes, and the summary the person approves names them."""
