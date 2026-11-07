@@ -53,7 +53,7 @@ async function openLogDay({fresh = false} = {}) {
   if (fresh) LD_KEPT.delete(d);
   const kept = LD_KEPT.get(d) || null;
   Object.assign(LD, {on: true, date: d, plan: null, rows: [], open: null, run: null, writing: false, stop: false,
-                     loading: true, undoAsk: false, note: '', lastRun: null, undo: [], confirmed: null, claudeLate: null, picked: false,
+                     loading: true, undoAsk: false, undoing: false, note: '', lastRun: null, undo: [], confirmed: null, claudeLate: null, picked: false,
                      deleted: new Set(kept?.deleted || [])});
   closePop();
   document.body.classList.add('rv-on');
@@ -81,7 +81,7 @@ async function askClaudeForDay(d) {
   const ans = await postJSON('/api/likely/ask', {date: d});
   LD.asking = false;
   if (!ldActive() || LD.date !== d) return;
-  if (ans.error) { LD.askNote = `Ask Claude: ${ans.error}`; renderReview(); return; }
+  if (ans.error) { LD.askNote = `Check my day with Claude: ${ans.error}`; renderReview(); return; }
   LD.picked = true;  // this day has Claude's picks now: "Check again" reviews, it does not pick again
   state.claude = {date: d, picks: ans.picks || {}};
   if (LD.writing) { LD.askNote = "Claude answered while writing; Start over to see its picks."; renderReview(); return; }
@@ -230,7 +230,7 @@ function renderReview() {
     T.over ? `<span class="iss ok" title="More than your active time and meetings: shown, never placed">${dur(T.over)} over the day</span>` : '',
   ].join('');
   const model = {haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus'}[CONFIG?.likely?.askClaudeModel] || 'Claude';
-  const askLine = LD.asking ? `<p class="rv-ask" role="status">${CLAUDE_MARK.split('<span')[0]}Asking ${model} about the rows Pulsar is unsure of (about 30 seconds). You can review meanwhile.</p>`
+  const askLine = LD.asking ? `<p class="rv-ask" role="status">${CLAUDE_MARK.split('<span')[0]}Asking ${model} about the unsure rows (up to a minute)…</p>`
     : LD.askNote ? `<p class="rv-ask" role="status">${CLAUDE_MARK.split('<span')[0]}${esc(LD.askNote)}</p>` : '';
   const testNote = p.ignoreLogged ? '<p class="rv-test">Test view: worked out as if nothing were logged this day. Nothing can be written from a read-only test server.</p>' : '';
   const historyNote = p.historyProblem ? `<p class="rv-test" role="status">${esc(p.historyProblem)}</p>` : '';
@@ -266,7 +266,9 @@ function renderReview() {
       <div class="rv-iss">${chips}${viewSwitch}</div>${tickAll}${askLine}${sgHead()}${testNote}${historyNote}${cuStrip()}</div>
     ${results}
     ${empty || `<ul class="rv-list" aria-label="Proposed entries">${sgDayHTML()}${items.map(x => x.html).join('')}${skipped}</ul>`}
-    <div class="rv-f">${LD.writing
+    <div class="rv-f">${LD.writing && LD.undoing
+      ? '<span class="hint" role="status">Deleting what this run logged…</span>'
+      : LD.writing
       ? `<span class="hint" role="status">Writing ${LD.rows.filter(r => r.status === 'logged' && r.thisRun).length + 1} of ${LD.writeCount}…</span><button type="button" class="btn bordered" id="ld-stop"${LD.stop ? ' disabled' : ''}>${LD.stop ? 'Stopping after this one' : 'Stop after this one'}</button>`
       : `<button type="button" class="btn bordered" id="ld-redo" title="Work the day out again; your changes go">Start over</button>
          <p class="hint">Nothing is written until you confirm.</p>
@@ -657,7 +659,7 @@ function ldResultsBox() {
       ${n ? `<button type="button" class="btn bordered sm" id="ld-undo">Undo this run (${n})</button>` : ''}</div>`}</div>`;
 }
 async function undoRun() {
-  LD.undoAsk = false; LD.writing = true; LD.writeCount = LD.undo.length; renderReview();
+  LD.undoAsk = false; LD.writing = true; LD.undoing = true; LD.writeCount = LD.undo.length; renderReview();
   let deleted = 0;
   const left = [];  // each one is tried: one deleted or changed by hand, or refused, never holds up the rest
   for (const x of LD.undo) {
@@ -668,7 +670,7 @@ async function undoRun() {
     if (r) Object.assign(r, {status: null, thisRun: false, checked: false, entryId: null, reason: 'Undone: deleted from Productive.'});
   }
   await syncJournal();  // the journal says what Undo still offers
-  LD.writing = false;
+  LD.writing = false; LD.undoing = false;
   renderReview(); render();
   refreshLogged().then(() => renderReview());
   toast(left.length ? `Undo deleted ${deleted} and left ${left.length}: ${left.join('; ')}.`

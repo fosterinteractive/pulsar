@@ -83,8 +83,7 @@ function fillFields(r) {
     + services.map(x => `<option value="${esc(x.id)}"${x.id === sv ? ' selected' : ''}>${esc(x.name.trim())}${x.budget ? ' · ' + esc(x.budget) : ''}</option>`).join('');
   $('#task-fields-hint').textContent = !r ? '' : r.error ? `Nothing proposed: ${r.error}`
     : `Status: ${taskFields.status.why} Estimate: ${taskFields.estimate.why}`;
-  $('#task-service-hint').textContent = taskFields ? `${taskFields.service.why} A task’s own service is left to a PM: the `
-    + 'one picked here is only for this time, in the log dialog.' : '';
+  $('#task-service-hint').textContent = taskFields ? `${taskFields.service.why} Not set on the task (a PM sets that): used only for this time.` : '';
   showWhere();
 }
 

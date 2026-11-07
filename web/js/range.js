@@ -137,7 +137,12 @@ async function rangeLogSplit() {
     const r = await postJSON('/api/log', {date: res.date, start: x.start, minutes: x.minutes, taskId: x.taskId,
                                           serviceId: x.serviceId, note: (x.note || '').trim()}).catch(e => ({error: String(e)}));
     if (r.overlap) { stop = `${rgSpan(x)} overlaps ${r.overlap.map(o => `${o.start} ${dur(o.minutes)} ${o.project}`).join('; ')}`; break; }
-    if (r.error || !r.created) { stop = `${rgSpan(x)} was not logged: ${r.error || 'no answer'}`; unclear = !!r.unclear; break; }
+    if (r.error || !r.created) {  // unclear: it may be in Productive, so it is never called "not logged"
+      unclear = !!r.unclear;
+      stop = unclear ? `${rgSpan(x)}: no clear answer, it may be in Productive. Check the Logged column before logging again`
+        : `${rgSpan(x)} was not logged: ${r.error || 'no answer'}`;
+      break;
+    }
     x.done = true;
     afterLog(res.date, x.start, x.minutes, '', false);  // flow.js: Log and next leaves it out
   }
@@ -146,8 +151,7 @@ async function rangeLogSplit() {
   const done = res.split.filter(x => x.done), left = res.split.filter(x => !x.done);
   if (res.date === state.date) refreshLogged();
   suggestCache = null;
-  const said = `Logged ${done.length} of ${res.split.length}.${stop ? ` ${stop}.` : ' The rest wait for a tick, or a task.'}${
-    unclear ? ' Pulsar did not hear back, so check the Logged column first.' : ''}`;
+  const said = `Logged ${done.length} of ${res.split.length}.${stop ? ` ${stop}.` : ' The rest wait for a tick, or a task.'}`;
   if (mine !== logOpened || !logDlg.open) return toast(stop ? said : `Logged ${done.length} entries.`, !!stop);  // closed meanwhile
   if (!stop && !left.some(rgLoggable)) {
     logDlg.close();

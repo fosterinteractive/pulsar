@@ -414,8 +414,8 @@ logForm.addEventListener('submit', async ev => {
     r.created.forEach((_, i) => afterLog(f.date.value, r.pieces[i].start, r.pieces[i].minutes, '', false));
     if (f.date.value === state.date) refreshLogged();
     return setLogMsg(`Logged ${r.created.length} of ${r.pieces.length} entries: ${andList(r.pieces.slice(0, r.created.length).map(pieceText))}. `
-      + `The rest was not logged: ${r.why}${r.unclear ? ' Pulsar did not hear back, so check the Logged column first.' : ''} `
-      + 'Log again to see what is still free.', true);
+      + (r.unclear ? 'No clear answer for the rest: it may be in Productive. Check the Logged column before logging again.'
+         : `The rest was not logged: ${r.why} Log again to see what is still free.`), true);
   }
   logDlg.close(); suggestCache = null;
   if (r.unchanged) return toast('Nothing to change: the entry is already like this.');

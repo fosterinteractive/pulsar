@@ -45,7 +45,7 @@
   <button class="btn icon bordered" id="theme-btn" aria-label="Theme"></button>
   <button class="btn icon" id="refresh" title="Refresh everything" aria-label="Refresh everything">↻</button>
   <button class="btn icon bordered logs-btn" id="open-logs" hidden aria-label="Error log">!</button>
-  <button class="btn bordered settings-btn" id="open-settings" title="Settings: Productive token, time zone, rules" aria-label="Settings">
+  <button class="btn bordered settings-btn" id="open-settings" title="Settings" aria-label="Settings">
     <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
     <span>Settings</span></button>
 </header>
@@ -152,9 +152,8 @@
           <label class="field"><span>Daily target, hours</span><input name="target_hours" type="number" min="0.5" max="24" step="0.25"></label>
           <label class="field"><span>Round entries to</span>
             <select name="round_to"><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option></select></label>
-          <p class="hint">Log the day starts and ends each entry on this step, and joins a piece of work shorter than it (or
-            than 10 minutes) to the work next to it. When you log a block of time, its minutes are rounded to it too. Minutes
-            you type yourself stay as you typed them.</p>
+          <p class="hint">Log the day starts and ends entries on this step. A block you click to log is rounded to it, or runs up
+            to the next entry; a drag or minutes you type stay as they are.</p>
         </section>
         <section data-k="dock badge reminder end of day open at login startup window app mac" id="app-sec" hidden>
           <h3>This Mac</h3>
@@ -185,9 +184,9 @@
           <button type="button" class="btn sm bordered" id="claude-relink" hidden>Add Pulsar to Claude Code again</button>
           <h4 class="cu-h" id="claude-uses-h">What Claude does, and with which model</h4>
           <div class="cu-list" id="claude-uses" role="list" aria-labelledby="claude-uses-h"></div>
-          <p class="hint">Each runs your own Claude Code, under your Claude plan. Each name is the latest model of that kind: Haiku is the fastest and costs least, Opus is the most careful, slower, and costs most. A run stops at its limit, which grows with the model. With Sonnet, Ask Claude has cost about $0.10 to $0.25 a day; with Haiku, a note costs under half a cent. On the rows Log the day is unsure of, Haiku did as well as Sonnet. Answers last until Pulsar restarts.</p>
+          <p class="hint">Runs your own Claude Code, on your plan. Haiku is fastest and cheapest, Opus slowest and dearest; a run stops at its limit. Task picks with Sonnet cost about $0.10 to $0.25 a day.</p>
           <p class="hint" id="claude-account"></p>
-          <p class="hint" id="claude-deny"><b>Pulsar's folders are kept out:</b> deny rules in Claude Code's settings stop its file tools reading or changing Pulsar's key, sign-in code and settings, and the file commands it recognizes in a shell (cat, head, a redirection); a script that opens the files itself is stopped only with <a href="https://code.claude.com/docs/en/sandboxing" target="_blank" rel="noopener noreferrer">Claude Code's sandbox</a> on. Pulsar does not turn the sandbox on.</p>
+          <p class="hint" id="claude-deny">With it on, Claude Code's file tools are kept out of Pulsar's folders; a script can still read them unless <a href="https://code.claude.com/docs/en/sandboxing" target="_blank" rel="noopener noreferrer">Claude Code's sandbox</a> is on.</p>
           <label class="check"><input type="checkbox" name="claude_ask_productive"> Ask before any Claude Code session changes Productive</label>
           <p class="hint warnish" id="claude-ask-off" hidden>Not in effect while “Use Claude Code with Pulsar” is off: the rules are added when you switch it on and Save.</p>
           <p class="hint">Adds “ask” rules to Claude Code's own settings for the Productive connection named “productive”. They apply to <b>every</b> Claude Code session on this Mac, not only to Pulsar: each one then asks you before it creates, changes or deletes anything in Productive. Off by default.</p>
@@ -206,7 +205,7 @@
           <h3>Preview</h3>
           <p class="status" id="preview-status"></p>
           <label class="check"><input type="checkbox" name="preview_writes"> Allow this preview to write to Productive</label>
-          <p class="hint">Off by default: you can try everything, and logging, changing and deleting entries stop before Productive. Switch it on to test writing for real, then off again.</p>
+          <p class="hint">Off: logging, changing, deleting entries and creating tasks stop before Productive. Switch it on to test writing for real, then off again.</p>
         </section>
         <section data-k="version update updates changelog release warp animation codename error log logs errors" id="updates">
           <h3>Version and updates</h3>
@@ -220,10 +219,10 @@
             <button type="button" class="btn primary" id="update-now" hidden>Update</button></div>
           <p class="hint">Pulsar looks for a new version every few hours and shows the Update button; it installs one only when
             you click it.</p>
-          <label class="check"><input type="checkbox" id="warp-on"> Warp animation on updates and refresh</label>
-          <div class="btnrow"><button type="button" class="btn bordered" id="settings-logs">Error log</button></div>
-          <p class="hint">Errors and warnings of the last 31 days, to send to whoever maintains Pulsar when something goes wrong.</p>
+          <label class="check"><input type="checkbox" id="warp-on"> Warp animation on updates</label>
           <p class="hint" id="warp-hint">Option-click the version at the top to see it.</p>
+          <div class="btnrow"><button type="button" class="btn bordered" id="settings-logs">Error log</button></div>
+          <p class="hint">Errors of the last 31 days, to send when something goes wrong.</p>
         </section>
       </div>
     </div>

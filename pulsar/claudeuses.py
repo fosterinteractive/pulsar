@@ -25,32 +25,30 @@ SCALE = {"haiku": 1, "sonnet": 3, "opus": 8}
 # dollars of the person's Claude usage per run
 USES = {
     "ask": {
-        "name": "Ask Claude",
-        "does": "Picks the task and drafts the note for each block in the Likely column, and for the rows Log the day "
-                "is unsure of.",
+        "name": "Check my day: task picks",
+        "does": "A task and a note for each row Log the day is unsure of, before the review.",
         "sends": "Sends each block's time, repository and session titles, what you typed and Claude's replies, your "
                  "commit subjects and a few of your notes, and your tasks of the last 30 days. May search Productive, "
                  "read only. A day's answers are kept on this Mac for 60 days.",
         "model": "sonnet", "cap": 0.25,
     },
     "note": {
-        "name": "Note in the log dialog",
-        "does": "Drafts the note when you log a block or a stretch of time.",
+        "name": "Note",
+        "does": "Drafts the note for time you log, in the log dialog or a row of Log the day.",
         "sends": "Sends that work's time and repository, what you typed and Claude's replies, your commit subjects "
                  "and a few of your notes.",
         "model": "haiku", "cap": 0.1,
     },
     "task": {
         "name": "New task",
-        "does": "Drafts the title and description when you create a task from the log dialog.",
+        "does": "Drafts the title and description of a task you create.",
         "sends": "Sends that work's time, repository and session titles, what you typed and Claude's replies, your "
                  "commit subjects and the names of your recent tasks.",
         "model": "haiku", "cap": 0.1,
     },
     "review": {
-        "name": "Log the day with Claude",
-        "does": "Reviews the whole day's plan in Log the day with FI's rules and suggests other tasks, splits and "
-                "services, each for you to accept or reject.",
+        "name": "Check my day: review",
+        "does": "Checks Log the day's plan with FI's rules; you accept or reject each suggestion.",
         "sends": "Sends a digest of the day: the plan, what you typed and Claude's replies (cut short), session titles, "
                  "commit subjects, meeting titles, app names by hour, the notes of entries already logged, and your "
                  "tasks of the last 30 days. Never window titles, sites or addresses. May search Productive, read only.",

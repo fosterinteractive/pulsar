@@ -49,7 +49,7 @@ function askStart() {
   ASK.btn.classList.add('asking'); ASK.head.classList.add('ask-on');
   ASK.btn.setAttribute('aria-busy', 'true'); ASK.btn.setAttribute('aria-disabled', 'true');
   ASK.t0 = performance.now(); ASK.line = -1;
-  ASK.live.textContent = 'Claude is working. It takes 15 to 60 seconds.';
+  ASK.live.textContent = 'Claude is working. It takes up to a minute.';
   askPause();
 }
 /* outcome 'picked': a bloom, and the blocks that got a task lit once; anything else ('none', 'error', 'stale'): a fade */

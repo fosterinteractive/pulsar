@@ -175,7 +175,7 @@ function renderChecklist() {
       items.push(['No activity tracker answers', problem, /not answering/.test(problem)
         ? link('Get ActivityWatch', 'https://activitywatch.net/downloads/') : link('Open ActivityWatch', aw)]);
     else if (!seen && state.date === todayLocal() && !logged?.entries?.length)
-      items.push(['No activity yet today', 'Your work shows here within a minute, while ActivityWatch runs.',
+      items.push(['No activity yet today', 'Your work shows here within a minute, while your tracker runs.',
                   act.source === 'aw' ? link('Open ActivityWatch', aw) : '']);
   }
   el.hidden = !items.length;

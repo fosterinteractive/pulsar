@@ -60,7 +60,7 @@ async function sgAsk() {
   const ans = await postJSON('/api/dayplan/review', {date: d, source: state.source, again, ...(LD_IGNORE ? {ignore_logged: true} : {})});
   SG.asking = false;
   if (!ldActive() || LD.date !== d) return;
-  if (ans.error) { SG.note = `Review with Claude: ${ans.error}`; renderReview(); return; }
+  if (ans.error) { SG.note = `Check my day with Claude: ${ans.error}`; renderReview(); return; }
   sgTake(ans);
   renderReview(); render();
 }
@@ -78,8 +78,8 @@ function sgItemHTML(s, row) {
   const mark = s.source === 'claude' ? CLAUDE_MARK.split('<span')[0] : '<span class="sg-rule" aria-hidden="true">FI</span>';
   const who = s.source === 'claude' ? 'Claude' : "FI's rule";
   const gone = s.row && !row;
-  const ok = s.kind === 'question' ? 'Noted' : s.kind === 'create_task' ? 'Keep as a to-do' : 'Accept';
-  const done = s.state === 'accepted' ? `<span class="sg-done">${s.kind === 'question' ? 'Noted' : 'Accepted'}</span>`
+  const ok = s.kind === 'question' || s.kind === 'create_task' ? 'Noted' : 'Accept';
+  const done = s.state === 'accepted' ? `<span class="sg-done">${s.kind === 'question' || s.kind === 'create_task' ? 'Noted' : 'Accepted'}</span>`
     : s.state === 'rejected' ? '<span class="sg-done">Rejected</span>' : '';
   return `<li class="sg ${s.state}${gone ? ' gone' : ''}" data-sg="${s.key}">${mark}
     <div class="sg-b"><span class="sg-k">${SG_KIND[s.kind]}</span> <span class="sg-t">${sgText(s)}</span>
@@ -118,7 +118,7 @@ function sgHead() {
   const anim = busy ? '<span class="ask-ring" aria-hidden="true"><span class="ask-beam"></span><span class="ask-flash"></span></span><span class="ask-glow" aria-hidden="true"></span>' : '';
   const label = busy ? 'Checking…' : SG.items.some(s => s.source === 'claude') ? 'Check again' : 'Check my day with Claude';
   const btn = can && !LD.writing ? `<button type="button" class="btn sm bordered${busy ? ' asking' : ''}" id="sg-ask" title="${esc(sgCheckTitle())}"${busy ? ' aria-disabled="true"' : ''}>${anim}${CLAUDE_MARK.split('<span')[0]}${label}</button>` : '';
-  const line = SG.asking ? `${MODEL_NAME(useOf('review')?.model)} is reviewing the day with FI's rules (about a minute). You can review meanwhile.` : SG.note;
+  const line = SG.asking ? `${MODEL_NAME(useOf('review')?.model)} is reviewing the day (a minute or two)…` : SG.note;
   const open = SG.items.filter(s => s.state === 'open' && (!s.row || sgRowFor(s))).length;
   return `<div class="sg-head">${btn}${line ? `<p class="rv-ask" role="status">${esc(line)}</p>` : ''}
     ${open ? `<span class="iss ok">${open} ${open === 1 ? 'suggestion' : 'suggestions'} to decide</span>` : ''}</div>`;

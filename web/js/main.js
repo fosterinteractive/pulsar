@@ -109,7 +109,7 @@ async function signInFromAddress() {
   const first = setView(params.get('view'));
   // the Day view says so in its checklist (flow.js); the report only in its banner
   if (CONFIG && !CONFIG.productive.active && state.view !== 'day') toast(CONFIG.productive.keychainStuck ? CONFIG.productive.problem
-    : 'Productive is not connected yet: open Settings, top right, to add your token.', true);
+    : 'Productive is not connected. Open Settings to connect it.', true);
   try {
     const was = sessionStorage.getItem('pulsar-updated');
     if (was) {  // core.js opened the page inside the lens: let go once this version has drawn its data

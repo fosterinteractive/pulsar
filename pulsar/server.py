@@ -490,7 +490,7 @@ def api_ask_claude(body: dict) -> dict:
     if not DATE.match(date):
         raise ValueError("date=YYYY-MM-DD")
     if not s["ask_claude"]:
-        raise ValueError("Ask Claude is off. Switch it on in Settings first.")
+        raise ValueError("Claude Code is off. Switch it on in Settings > Claude.")
     tz = config.tz(s)
     proposal = likely.proposal(date, config.timezone_name(s), today(tz), False, s)
     if proposal.get("error"):
@@ -529,7 +529,7 @@ def api_likely_note(body: dict) -> dict:
     except (TypeError, ValueError):
         raise ValueError("s and e are minutes of the day") from None
     if not s["ask_claude"]:
-        raise ValueError("Claude Code is off. Switch it on in Settings first.")
+        raise ValueError("Claude Code is off. Switch it on in Settings > Claude.")
     tz = config.tz(s)
     t0 = day_bounds(date, tz)[0]
     proposal = likely.proposal(date, config.timezone_name(s), today(tz), False, s)
@@ -1132,7 +1132,7 @@ def api_task_draft(body: dict) -> dict:
     if not body.get("claude"):
         return {**newtask.local_draft(rows, str(body.get("meeting") or "")[:200]), "repo": project}
     if not s["ask_claude"]:
-        raise ValueError("Claude Code is off. Switch it on in Settings first.")
+        raise ValueError("Claude Code is off. Switch it on in Settings > Claude.")
     if not rows:
         return {"title": "", "description": "", "why": "no Likely work at that time"}
     before, problem = history_rows(date, s, days=learn.LEARN_DAYS)
@@ -1440,7 +1440,7 @@ def api_dayplan_review(body: dict) -> dict:
     if not DATE.match(date):
         raise ValueError("date=YYYY-MM-DD")
     if not s["ask_claude"]:
-        raise ValueError("Claude Code is off. Switch it on in Settings first.")
+        raise ValueError("Claude Code is off. Switch it on in Settings > Claude.")
     ignore = body.get("ignore_logged") is True
     if ignore and not config.read_only():
         raise ValueError("ignore_logged is for read-only test servers only.")
