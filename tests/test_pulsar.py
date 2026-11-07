@@ -161,9 +161,12 @@ class TrackersTest(unittest.TestCase):
             out = trackers.clip_to_present(events, present, t0, t0 + 86400, trackers.classifier([]))
         self.assertEqual([(x["s"], x["e"]) for x in out], [(610.0, 630.0)])
 
-    def test_auto_picks_the_tracker_that_saw_more(self):
-        self.assertEqual(trackers.pick({"aw": [item(0, 10)], "memtime": [item(0, 30)]}, "auto"), "memtime")
-        self.assertEqual(trackers.pick({"aw": [item(0, 10)], "memtime": [item(0, 30)]}, "aw"), "aw")
+    def test_auto_picks_activitywatch_the_main_tracker(self):
+        """ActivityWatch whenever it saw the day, even when MemTime saw more (it counts windows nobody looked at);
+        MemTime for a day ActivityWatch saw nothing of."""
+        self.assertEqual(trackers.pick({"aw": [item(0, 10)], "memtime": [item(0, 30)]}, "auto"), "aw")
+        self.assertEqual(trackers.pick({"aw": [], "memtime": [item(0, 30)]}, "auto"), "memtime")
+        self.assertEqual(trackers.pick({"aw": [item(0, 10)], "memtime": [item(0, 30)]}, "memtime"), "memtime")
 
 
 class ReportTest(unittest.TestCase):
@@ -1338,9 +1341,9 @@ class HistoryReadTest(unittest.TestCase):
 class AwayTest(unittest.TestCase):
     def test_gaps_of_away_after_or_more_between_activity_are_away(self):
         items = [item(540, 600), item(603, 640, app="Slack"), item(650, 700), item(690, 720), item(800, 810, cat="personal")]
-        self.assertEqual(server.away(items, 10), [{"s": 640, "e": 650, "off": False}, {"s": 720, "e": 800, "off": False}])
+        self.assertEqual(server.away(items, 10), [{"s": 640, "e": 650, "off": False, "kind": "pause"}, {"s": 720, "e": 800, "off": False, "kind": "away"}])
         # Settings' "Away after" (15 minutes unless saved): the 10-minute gap is a pause, not time away
-        self.assertEqual(server.away(items), [{"s": 720, "e": 800, "off": False}])
+        self.assertEqual(server.away(items), [{"s": 720, "e": 800, "off": False, "kind": "away"}])
         self.assertTrue(server.away([item(60, 120), item(400, 420)])[0]["off"])  # a night between: time off
         self.assertEqual(server.away([]), [])
 

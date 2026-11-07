@@ -131,7 +131,7 @@ class ShortPauseIsWorkTest(unittest.TestCase):
                                                      trackers.classifier([]), away)
             self.assertEqual([(x["s"], x["e"]) for x in read(15)], [(540, 600)])  # the reading counts
             self.assertEqual([(x["s"], x["e"]) for x in read(10)], [(540, 570), (582, 600)])
-            self.assertEqual(server.away(read(10), 10), [{"s": 570, "e": 582, "off": False}])
+            self.assertEqual(server.away(read(10), 10), [{"s": 570, "e": 582, "off": False, "kind": "pause"}])
             self.assertEqual(server.away(read(15), 15), [])
             with saved({"away_after": 10}):  # without `away`, the saved setting
                 self.assertEqual(len(trackers.both(self.T0, self.T0 + 86400, "http://localhost:5600",
@@ -146,9 +146,20 @@ class OpenAwayTest(unittest.TestCase):
         from pulsar import server
         items = [{"s": 600, "e": 660}]
         got = server.away(items, 15, until=690)
-        self.assertEqual(got, [{"s": 660, "e": 690, "off": False, "open": True}])
+        self.assertEqual(got, [{"s": 660, "e": 690, "off": False, "open": True, "kind": "pause"}])
+        self.assertEqual(server.away(items, 15, until=760)[0]["kind"], "away")  # an hour or more
         self.assertEqual(server.away(items, 15, until=670), [])  # not long enough yet
         self.assertEqual(server.away(items, 15), [])             # another day: only between activities
+
+    def test_memtime_is_cut_where_activitywatch_saw_nobody(self):
+        from pulsar import trackers
+        raw = {"afk": [{"timestamp": "2026-11-07T10:00:00+00:00", "duration": 1800, "data": {"status": "afk"}},
+                       {"timestamp": "2026-11-07T11:00:00+00:00", "duration": 300, "data": {"status": "afk"}}]}
+        t0 = trackers.parse_ts("2026-11-07T00:00:00+00:00")
+        gaps = trackers.aw_away(raw, t0, 15)
+        self.assertEqual(gaps, [(600.0, 630.0)])  # the 5-minute one is a pause, not cut
+        items = [{"s": 590.0, "e": 640.0, "app": "Cursor"}]
+        self.assertEqual([(x["s"], x["e"]) for x in trackers.cut_out(items, gaps)], [(590.0, 600.0), (630.0, 640.0)])
 
 if __name__ == "__main__":
     unittest.main()

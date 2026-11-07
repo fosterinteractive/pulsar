@@ -158,7 +158,8 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   between two stretches of work counts as work. ActivityWatch writes a pause only after its own AFK timeout (3
   minutes unless changed), so a timeout longer than Away after hides the shorter breaks: Settings says so and **Fix**
   sets it to Away after (a copy of its file is kept, and the change applies to new data only). The day view's
-  Activity column can switch tracker; each Report day uses the one that saw more of it.
+  Activity column can switch tracker. ActivityWatch is the main one (it knows when you are at the keys); MemTime is
+  used for a day ActivityWatch saw nothing of, and where ActivityWatch recorded you away, MemTime's time is cut too.
 - **If Productive is unreachable**, the day view and the report show the last copy fetched for each day, and say so.
   A read that Productive drops without answering is tried up to twice more; time you log is never sent twice.
 - **Only you can use your Pulsar.** It listens on 127.0.0.1 only. Its data and actions need a session key that only

@@ -401,6 +401,7 @@ def api_activity(q: dict) -> dict:
     return {"source": source, "minutes": minutes, "items": items, "problems": dict(trackers.PROBLEMS), "away": gaps}
 
 
+AWAY_LONG = 60  # minutes: a gap from Away after up to this is a pause; from this long the person was away (Nick, 2026-11-07)
 OFF_MIN = 180   # from this long it is time off (a night, an afternoon off), not a break: shown, never added up
 
 
@@ -418,6 +419,8 @@ def away(items: list, least: float | None = None, until: float | None = None) ->
         end = it["e"] if end is None else max(end, it["e"])
     if until is not None and end is not None and until - end >= least:
         out.append({"s": round(end, 2), "e": round(until, 2), "off": until - end >= OFF_MIN, "open": True})
+    for g in out:  # a pause (under AWAY_LONG), away (an hour or more), or off (OFF_MIN or more): drawn apart
+        g["kind"] = "off" if g["off"] else "away" if g["e"] - g["s"] >= AWAY_LONG else "pause"
     return out
 
 

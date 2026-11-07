@@ -279,10 +279,11 @@ def present_spans(afk_events: list, bridge: float = 0) -> list:
     return merge(spans)
 
 
-def activity_aw(base: str, t0: float, t1: float, classify: Classifier, away: float | None = None) -> list:
+def activity_aw(base: str, t0: float, t1: float, classify: Classifier, away: float | None = None, raw=False) -> list:
     """The windows ActivityWatch saw while someone was at the keys; a pause shorter than `away` minutes (Settings'
-    "Away after" when not given) between two stretches of input counts as being there."""
-    raw = activitywatch_raw(base, t0, t1)
+    "Away after" when not given) between two stretches of input counts as being there. `raw`: the events, when the
+    caller has read them already."""
+    raw = activitywatch_raw(base, t0, t1) if raw is False else raw
     if not raw:
         return []
     present = present_spans(raw["afk"], (config.away_after() if away is None else away) * 60)
@@ -326,14 +327,49 @@ def answering(aw_url: str) -> bool:
         return False
 
 
+def aw_away(raw: dict | None, t0: float, minutes: float) -> list:
+    """[(s, e)] in minutes from t0: the stretches ActivityWatch's AFK watcher recorded as away for at least `minutes`.
+    Only what it recorded: a time it was not running is not away."""
+    out = []
+    for ev in (raw or {}).get("afk") or []:
+        if isinstance(ev, dict) and (ev.get("data") or {}).get("status") == "afk" and ev.get("timestamp") \
+                and float(ev.get("duration") or 0) >= minutes * 60:
+            s = parse_ts(ev["timestamp"])
+            out.append(((s - t0) / 60, (s + float(ev["duration"]) - t0) / 60))
+    return sorted(out)
+
+
+def cut_out(items: list, gaps: list) -> list:
+    """`items` without the minutes inside `gaps` ([(s, e)] in minutes): a window in front while nobody was there."""
+    if not gaps:
+        return items
+    out = []
+    for it in items:
+        pieces = [(it["s"], it["e"])]
+        for a, b in gaps:
+            if b <= it["s"] or a >= it["e"]:
+                continue
+            pieces = [p for s, e in pieces for p in ((s, min(e, a)), (max(s, b), e)) if p[1] - p[0] >= 1 / 60]
+        out.extend({**it, "s": round(s, 3), "e": round(e, 3)} for s, e in pieces)
+    return out
+
+
 def both(t0: float, t1: float, aw_url: str, classify: Classifier, away: float | None = None) -> dict:
-    """Both trackers' items. `away`: Settings' "Away after" in minutes (read from the settings when not given)."""
+    """Both trackers' items. `away`: Settings' "Away after" in minutes (read from the settings when not given).
+    MemTime counts the window in front even while nobody is there (until its own idle time), so where ActivityWatch
+    recorded the person away, MemTime's items are cut there too: one answer to "was I there?" whichever is shown."""
     PROBLEMS.pop("memtime", None)
-    return {"aw": activity_aw(aw_url, t0, t1, classify, away), "memtime": activity_memtime(t0, t1, classify)}
+    minutes = config.away_after() if away is None else away
+    raw = activitywatch_raw(aw_url, t0, t1)
+    mem = activity_memtime(t0, t1, classify)
+    return {"aw": activity_aw(aw_url, t0, t1, classify, minutes, raw=raw), "memtime": cut_out(mem, aw_away(raw, t0, minutes))}
 
 
 def pick(found: dict, source: str) -> str:
-    """The tracker asked for, or (auto) the one that saw more of the time."""
+    """The tracker asked for, or (auto) ActivityWatch, the main tracker: it knows when someone is at the keys. MemTime
+    only for a day ActivityWatch saw nothing of (it was not running), or when it is all there is."""
     if source in found:
         return source
+    if found.get("aw"):
+        return "aw"
     return max(found, key=lambda k: sum(x["e"] - x["s"] for x in found[k]))

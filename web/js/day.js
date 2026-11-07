@@ -359,8 +359,9 @@ function render() {
     // 20-minute break), and its length in words where no card covers it. A click logs it (a call away from the desk).
     const covered = (a, b) => blocksCache.some(k => k.start * Z < b && k.end * Z > a);
     const awayHTML = (act.away || []).map(x => {
-      const h = (x.e - x.s) * ppm, len = dur(x.e - x.s), word = x.off ? 'Off' : 'Away';
-      return `<div class="awayband${x.off ? ' off' : ''}" data-a="${Math.round(x.s)}" data-b="${Math.round(x.e)}" style="top:${x.s * ppm}px;height:${h}px"
+      const kind = x.kind || (x.off ? 'off' : 'away');
+      const h = (x.e - x.s) * ppm, len = dur(x.e - x.s), word = kind === 'off' ? 'Off' : kind === 'pause' ? 'Pause' : 'Away';
+      return `<div class="awayband ${kind}" data-a="${Math.round(x.s)}" data-b="${Math.round(x.e)}" style="top:${x.s * ppm}px;height:${h}px"
         title="${word} from the computer ${hm(x.s)}–${hm(x.e)}, ${len}. Click to log it." tabindex="0" role="button"
         aria-label="${word} ${hm(x.s)}–${hm(x.e)}, ${len}: log this time"></div>`
         + (h >= 18 && !covered(x.s, x.e) ? `<div class="awaylabel" style="top:${x.s * ppm + 4}px">${word} · ${len}</div>` : '');

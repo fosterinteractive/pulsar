@@ -285,7 +285,11 @@ Both readers return the same items: `{s, e, app, title, host, url, cat, icon}`, 
   (and at start-up) any copy older than ten minutes goes, whichever Pulsar made it: a copy serves queries for a minute
   only, so none that old is still read. Rows of type `offline` are left out. App names come from MemTime's own table of bundle
   ids. Icons are the ones MemTime already saved; nothing is fetched from the internet.
-- **Auto** picks the tracker that saw more of the day. The Activity header can switch.
+- **Auto** picks ActivityWatch, the main tracker, whenever it saw the day; MemTime only for a day it saw nothing of.
+  MemTime counts the window in front even while nobody is there, so its items are cut where ActivityWatch recorded
+  the person away (`trackers.aw_away`, `cut_out`). A gap from Away after up to an hour is a **pause**, an hour or
+  more is **away** (`server.AWAY_LONG`), three hours or more is **off**; a gap still going on today shows too.
+  The Activity header can switch.
 - **Personal windows**: a window whose app, title or site contains one of the words in Settings is `personal`. It is
   drawn faded and never counts as work, in the totals, the gaps or Likely.
 - **Cleaning**: touching pieces of the same window are joined (`compact`), so a day is hundreds of items, not
