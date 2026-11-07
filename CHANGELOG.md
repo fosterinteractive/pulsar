@@ -6,7 +6,7 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
-## Unreleased
+## 1.5.5 (2026-11-07)
 - Log the day: "Tick all with a task", Enter ticks the open row and opens the next; the confirm step marks Claude's notes and searches.
 - Log the day: "to check" counts down as you open and tick rows, opens the next one, and says "All checked" at the end.
 - Task search puts yours first: tasks you logged to lately, then those assigned to you; closed tasks last.
