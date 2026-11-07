@@ -728,7 +728,27 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
     /// Today's active time with no entry, on the Dock icon: "45m", "3h". Nothing under a quarter of an hour.
     private func badge(_ minutes: Int) {
         guard defaults.bool(forKey: "badge"), minutes >= 15 else { NSApp.dockTile.badgeLabel = nil; return }
-        NSApp.dockTile.badgeLabel = minutes >= 60 ? "\(Int((Double(minutes) / 60).rounded()))h" : "\(minutes)m"
+        let label = minutes >= 60 ? "\(Int((Double(minutes) / 60).rounded()))h" : "\(minutes)m"
+        NSApp.dockTile.badgeLabel = label
+        askForBadges(then: label)
+    }
+
+    /// Recent macOS shows a Dock badge only for an app allowed to badge its icon (System Settings > Notifications), so
+    /// the first badge asks for that once, together with the reminder's alerts, and puts the label back once allowed.
+    private var badgesAsked = false
+    private func askForBadges(then label: String) {
+        guard !badgesAsked else { return }
+        badgesAsked = true
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            guard settings.authorizationStatus == .notDetermined else { return }
+            center.requestAuthorization(options: [.badge, .alert, .sound]) { granted, _ in
+                guard granted else { return }
+                DispatchQueue.main.async {
+                    if self.defaults.bool(forKey: "badge") { NSApp.dockTile.badgeLabel = label }
+                }
+            }
+        }
     }
 
     /// Once a working day, at the reminder's time (17:30 unless the page set another), when half an hour or more of
@@ -754,7 +774,7 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
     private func remind(_ minutes: Int, day: String) {
         let said = minutes >= 60 ? "\(minutes / 60) h\(minutes % 60 > 0 ? " \(minutes % 60) min" : "")" : "\(minutes) min"
         let center = UNUserNotificationCenter.current()
-        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+        center.requestAuthorization(options: [.badge, .alert, .sound]) { granted, error in
             DispatchQueue.main.async {
                 guard granted, error == nil else { self.remindHere(said); return }
                 let content = UNMutableNotificationContent()

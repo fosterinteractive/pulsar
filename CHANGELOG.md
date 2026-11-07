@@ -8,6 +8,7 @@ What each Pulsar release changed, newest first.
 
 ## Unreleased
 - The warp plays on ↻ (and ⌘R) again, as before 1.6.0.
+- The Dock badge asks macOS once for permission to badge the icon: recent macOS shows it only then (Reinstall Pulsar to get it).
 
 ## 1.6.1 (2026-11-07)
 - Settings → Time and activity → Away after: 10, 15 (the default), 20 or 30 minutes without input is time away and ends a sitting; a shorter pause between two stretches of work counts as work.
