@@ -9,7 +9,8 @@
 # CHANGELOG.md, and failing tests.
 # Then it sets __version__ and builds, in dist/:
 #   release/pulsar-<version>.zip   the code, one top folder pulsar-<version>/ (what the in-app updater downloads)
-#   release/latest.json            {version, url, sha256, notes, published, expires, versions}, signed (.sig)
+#   release/latest.json            {version, url, sha256, notes, published, expires, versions, app}, signed (.sig);
+#                                  app: {version, min, url, sha256} of Pulsar.zip, for "Reinstall Pulsar" (pulsar/appupdate.py)
 #   Pulsar.zip                     the whole app, for new installs, its code signed too (build_app.sh)
 #   Pulsar.zip.sig                 the release key's signature of Pulsar.zip itself, which README.md's install line
 #                                  checks with /usr/bin/openssl before it unpacks anything
@@ -139,18 +140,42 @@ SHA="$(shasum -a 256 "$ZIP" | cut -d' ' -f1)"
 git fetch -q --tags origin 2>/dev/null || true
 VERSIONS="$( { git tag -l 'v*' | sed 's/^v//'; echo "$VERSION"; } | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -u -t. -k1,1n -k2,2n -k3,3n | paste -sd, -)"
 URL="https://github.com/$REPO/releases/download/v$VERSION/pulsar-$VERSION.zip"
+
+# The release key: the Touch ID key (in this Mac's Secure Enclave, macos/sign.sh) when there is one, else the key file.
+KEY="${PULSAR_SIGNING_KEY:-}"
+if [ -z "$KEY" ]; then
+  KEY="$HOME/.config/pulsar-release/update-signing-key.se"
+  [ -f "$KEY" ] || KEY="$HOME/.config/pulsar-release/update-signing-key.pem"
+fi
+[ -f "$KEY" ] || die "the release signing key is missing: $KEY (see macos/README.md, 'The release keys')"
+
+# The app, with the code it carries described and signed with the same key: its launcher installs that code only
+# with this signature (build_app.sh checks it the way the launcher will). Built before latest.json, which carries
+# Pulsar.zip's SHA-256 for "Reinstall Pulsar" (pulsar/appupdate.py).
+PULSAR_BUNDLE_SIGNING_KEY="$KEY" "$ROOT/macos/build_app.sh" >/dev/null
+APP_SHA="$(shasum -a 256 dist/Pulsar.zip | cut -d' ' -f1)"
+APP_URL="https://github.com/$REPO/releases/download/v$VERSION/Pulsar.zip"
+
 # expires: installed copies ignore this latest.json after MANIFEST_DAYS (pulsar/updater.py), so an old one served again
 # cannot hold them back for ever. The next release writes a fresh one; release at least that often.
-python3 -E -s - "$ROOT" "$OUT/latest.json" "$VERSION" "$URL" "$SHA" "$NOTES" "$(date +%Y-%m-%d)" "$VERSIONS" <<'PY'
+# app.min: the oldest app (window and launcher) this release wants, MIN_APP in pulsar/appupdate.py; an older window
+# is offered "Reinstall Pulsar".
+python3 -E -s - "$ROOT" "$OUT/latest.json" "$VERSION" "$URL" "$SHA" "$NOTES" "$(date +%Y-%m-%d)" "$VERSIONS" "$APP_URL" "$APP_SHA" <<'PY'
 import json, sys
 from datetime import datetime, timedelta, timezone
 sys.path.insert(0, sys.argv[1])
-from pulsar import updater
-path, version, url, sha, notes, published, versions = sys.argv[2:]
+from pulsar import appupdate, updater
+path, version, url, sha, notes, published, versions, app_url, app_sha = sys.argv[2:]
 expires = (datetime.now(timezone.utc) + timedelta(days=updater.MANIFEST_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+if updater.vtuple(appupdate.MIN_APP) > updater.vtuple(version):
+    sys.exit(f"MIN_APP {appupdate.MIN_APP} in pulsar/appupdate.py is newer than this release ({version})")
+app = {"version": version, "min": appupdate.MIN_APP, "url": app_url, "sha256": app_sha}
+if appupdate.manifest_app({"app": app}) != app:
+    sys.exit(f"the app's description would not be understood: {app}")
 with open(path, "w", encoding="utf-8") as fh:
     json.dump({"version": version, "url": url, "sha256": sha, "notes": notes, "published": published,
-               "expires": expires, "versions": [v for v in versions.split(",") if v]}, fh, ensure_ascii=False, indent=2)
+               "expires": expires, "versions": [v for v in versions.split(",") if v], "app": app},
+              fh, ensure_ascii=False, indent=2)
     fh.write("\n")
 PY
 
@@ -159,13 +184,6 @@ on_main " M pulsar/__init__.py"
 
 # Sign latest.json with the release key. Installed copies verify this signature against PUBLIC_KEYS in
 # pulsar/release_sig.py and ignore anything else, so a release can only come from whoever holds this key.
-# The Touch ID key (in this Mac's Secure Enclave, macos/sign.sh) when there is one, else the key file.
-KEY="${PULSAR_SIGNING_KEY:-}"
-if [ -z "$KEY" ]; then
-  KEY="$HOME/.config/pulsar-release/update-signing-key.se"
-  [ -f "$KEY" ] || KEY="$HOME/.config/pulsar-release/update-signing-key.pem"
-fi
-[ -f "$KEY" ] || die "the release signing key is missing: $KEY (see macos/README.md, 'The release keys')"
 # A bridge while the key moves: copies older than the release that listed a new key know only the old one, and they
 # read latest.json from the newest release only. So for a while latest.json is signed with the old key
 # (PULSAR_UPDATE_KEY), the app's code and Pulsar.zip with the new one (macos/README.md, "Moving to a Touch ID key").
@@ -196,10 +214,6 @@ if [ -n "$PREV" ]; then
 else
   echo "warning: no earlier release tag here (git fetch --tags), so it was not checked that installed copies know this key" >&2
 fi
-
-# The app, with the code it carries described and signed with the same key: its launcher installs that code only
-# with this signature (build_app.sh checks it the way the launcher will).
-PULSAR_BUNDLE_SIGNING_KEY="$KEY" "$ROOT/macos/build_app.sh" >/dev/null
 
 # Pulsar.zip itself, signed as one file, so a new install can check it before anything in it runs: README.md's
 # install line verifies this signature with the Mac's own /usr/bin/openssl and the public key written in the line.
