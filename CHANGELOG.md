@@ -6,7 +6,7 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
-## Unreleased
+## 1.5.0 (2026-11-07)
 - After an update, a window from an older Pulsar.app signs in again instead of staying signed out.
 - The install line replaces an older Pulsar.app instead of unpacking over it.
 - A stretch dragged in the Logged column keeps the minutes dragged.
