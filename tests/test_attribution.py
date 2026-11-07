@@ -378,6 +378,26 @@ class SharedTest(unittest.TestCase):
         self.assertEqual(p["totals"]["shared"], 40)
         self.assertEqual(p["totals"]["parallel"], 40)
 
+    def test_a_shared_stretch_with_a_gap_in_it_is_one_entry(self):
+        # 640-642: a glance at Pulsar itself (logging time) inside the agent's stretch: still one shared entry
+        items = [work(600, 640), work(640, 642, app="Pulsar", title="Pulsar"), work(642, 700)]
+        p = plan(items, [front(600, 700, "house-tool")], [back(620, 660, "client-web")], ctx=self.ctx)
+        shared = [(e["s"], e["e"]) for e in p["entries"] if e.get("shared")]
+        self.assertEqual(shared, [(620, 655)])  # one entry; the glance is not the client's (38 minutes seen: 35 on the grid)
+
+    def test_the_clients_own_session_flipping_into_the_front_does_not_cut_a_shared_stretch(self):
+        rows = [front(600, 625, "house-tool"), front(625, 627, "client-web"), front(627, 640, "house-tool"),
+                front(640, 641, "client-web"), front(641, 700, "house-tool")]
+        p = plan([work(600, 700)], rows, [back(610, 650, "client-web")], ctx=self.ctx)
+        shared = [(e["s"], e["e"]) for e in p["entries"] if e.get("shared")]
+        self.assertEqual(len(shared), 1, p["entries"])  # one stretch, not one entry per piece between the flips
+        self.check_no_overlap(p)
+
+    def check_no_overlap(self, p):
+        spans = sorted((e["s"], e["e"]) for e in p["entries"])
+        for (a0, a1), (b0, b1) in zip(spans, spans[1:]):
+            self.assertLessEqual(a1, b0, spans)
+
     def test_half_each_and_internal_keep_the_real_time(self):
         p = plan([work(600, 700)], [front(600, 700, "house-tool")], [back(620, 660, "client-web")], ctx=self.ctx)
         shared = {**p["entries"][1], "sharedWith": {**p["entries"][1]["sharedWith"], "serviceId": "sT1"}}

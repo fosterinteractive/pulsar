@@ -673,10 +673,10 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
             continue
         free = [x for x in range(int(r["s"]), min(N, int(math.ceil(r["e"]))))
                 if present(x, False) and owner[x] is None and in_front[x] is not None and in_front[x]["class"] == INTERNAL]
-        for a, b in _runs(free, 2):
-            if b - a + 1 < CONTEST_MIN:
-                continue  # a short one stays with the work in front
+        for a, b in _runs(free, 3):  # a glance elsewhere of up to two minutes does not cut the stretch
             minutes = [x for x in free if a <= x <= b]
+            if len(minutes) < CONTEST_MIN:
+                continue  # a short one stays with the work in front
             under: dict = defaultdict(int)
             for x in minutes:
                 under[id(in_front[x])] += 1
@@ -791,6 +791,15 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     merged: list = []
     for p in pieces:
         m = merged[-1] if merged else None
+        # one shared stretch is one entry, whatever minutes in it went to something else (its run allows two at a
+        # time); it never joins anything else
+        same = next((q for q in reversed(merged[-6:]) if p["kind"] == q["kind"] == "shared" and q["claim"] == p["claim"]),
+                    None) if p["kind"] == "shared" else None
+        if same is not None:
+            same["minutes"] += p["minutes"]
+            same["last"] = p["last"]
+            same["parts"].append(p)
+            continue
         if m and m.get("task") and m["task"] == p.get("task") and not {"skip", "shared"} & {m["kind"], p["kind"]} \
                 and p["s"] - m["last"] <= o["merge_gap"] and sitting[m["last"]] == sitting[p["s"]] \
                 and (not p.get("attended") or p["s"] - m["last"] <= (o["grid"] or 1)) \
@@ -853,7 +862,8 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     out, end, unplaced = [], 0, []
     fixed = [(a, b, "logged") for a, b in busy]
     for m in sorted((m for m in entries if m["kind"] == "shared"), key=lambda m: m["s"]):
-        s, e = int(round(m["s"] / g) * g), min(N, int(round((m["last"] + 1) / g) * g))
+        s = int(round(m["s"] / g) * g)
+        e = min(N, int(round((s + m["minutes"]) / g) * g))  # its own minutes, from its real start
         for a, b, _ in sorted(fixed):
             if a < e and s < b:  # never over an entry already logged
                 s, e = (s, int(a)) if s < a else (int(math.ceil(b)), e)
@@ -1303,6 +1313,8 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
         if x:
             e["sent"] = x["status"]
             e["checked"] = False
+    _shared_kept[date] = (time.time(), [(e["s"], e["e"], str(e.get("taskId") or "")) for e in result["entries"]
+                                        if e.get("shared")])
     if inputs is not None:
         inputs.update(plan=result, items=day["items"], away=day["away"], rows=likely_rows, background=bg_rows,
                       meetings=meetings,
@@ -1323,6 +1335,16 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
             "historyProblem": history_note, "likelyError": got["likely"].get("error"),
             "calendar": bool(got["cal"].get("connected")), "claude": bool(answer),
             "learning": got["likely"].get("learning")}
+
+
+_shared_kept = config.Newest(32)  # date -> (when, [(s, e, task)]): the shared rows of the plan worked out last
+SHARED_FOR = 900  # seconds pulsar_preview takes them as the day's
+
+
+def shared_spans(date: str):
+    """[(s, e, task)] of the shared rows in the last plan worked out for `date`, if within SHARED_FOR; else None."""
+    kept = _shared_kept.get(date)
+    return kept[1] if kept and time.time() - kept[0] < SHARED_FOR else None
 
 
 def _hm(m) -> str:
