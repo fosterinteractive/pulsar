@@ -53,7 +53,7 @@ async function openLogDay({fresh = false} = {}) {
   if (fresh) LD_KEPT.delete(d);
   const kept = LD_KEPT.get(d) || null;
   Object.assign(LD, {on: true, date: d, plan: null, rows: [], open: null, run: null, writing: false, stop: false,
-                     loading: true, undoAsk: false, note: '', lastRun: null, undo: [], confirmed: null, claudeLate: null,
+                     loading: true, undoAsk: false, note: '', lastRun: null, undo: [], confirmed: null, claudeLate: null, picked: false,
                      deleted: new Set(kept?.deleted || [])});
   closePop();
   document.body.classList.add('rv-on');
@@ -71,9 +71,7 @@ async function openLogDay({fresh = false} = {}) {
   if (kept?.sg) sgRestore(kept.sg); else sgKept(d);  // the review's suggestions as they were, or the one kept for the day
   renderReview(); render();
   document.body.classList.toggle('rv-ignore', !!r.ignoreLogged);
-  // Ask Claude (when it is on in Settings): the whole day goes to it, its picks fill in unsure rows as they arrive
-  const unsure = LD.rows.some(x => x.confidence !== 'high' && ['focused', 'agent', 'outside'].includes(x.kind));
-  if (!r.error && !r.claude && unsure && CONFIG?.likely?.askClaude && CONFIG.likely.claudeFound) askClaudeForDay(d);
+  // Claude runs only from "Check my day with Claude" (ldreview.js sgCheck), never by itself on opening
 }
 
 /* Claude's pick replaces only rows the planner is not sure of (medium, low): on high rows it was wrong more often
@@ -84,6 +82,7 @@ async function askClaudeForDay(d) {
   LD.asking = false;
   if (!ldActive() || LD.date !== d) return;
   if (ans.error) { LD.askNote = `Ask Claude: ${ans.error}`; renderReview(); return; }
+  LD.picked = true;  // this day has Claude's picks now: "Check again" reviews, it does not pick again
   state.claude = {date: d, picks: ans.picks || {}};
   if (LD.writing) { LD.askNote = "Claude answered while writing; Start over to see its picks."; renderReview(); return; }
   const r = await getJSON(`/api/dayplan?date=${d}&source=${state.source}${LD_IGNORE ? '&ignore_logged=1' : ''}`);

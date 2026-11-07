@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- One Claude button, in Log the day: "Check my day with Claude" picks tasks when needed, then reviews; it names the models and their limits; nothing runs by itself.
 - Day done: a day at its target (or marked done) greys its rails and leaves Earlier days; "Not work" marks a stretch that was not work.
 - Log the day keeps your ticks, tasks, notes and deletions per day while Pulsar is open; Start over forgets them.
 - The day's review and Claude's note drafts are kept for 60 days and reused, so the same work is not asked about twice.

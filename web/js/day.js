@@ -361,8 +361,7 @@ function render() {
   else {
     likelyCache = likelyBlocks(likely.entries, Z, end);
     setText($('#h-likely'), `Claude sessions · ${dur(likely.proposed || 0)}`);
-    const ask = $('#ask-claude');
-    ask.hidden = !(CONFIG?.likely?.askClaude && CONFIG.likely.claudeFound && likely.entries.length);
+    $('#ask-claude').hidden = true;  // Claude's one way in is Log the day's "Check my day with Claude" (ldreview.js)
     setHTML(laneLikely, likelyCache.length ? likelyCache.map((b, i) => {
       const x = {s: b.start * Z, e: b.end * Z}, h = (x.e - x.s) * ppm;
       return `<div class="card likely${b.parallel ? ' parallel' : ''}" data-k="likely" data-i="${i}" style="${place(x, ppm, 18)}"

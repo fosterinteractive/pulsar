@@ -185,9 +185,12 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   hash of each session title are kept, in `~/.cache/pulsar/likely-days/`).
 - **Claude Code (one switch, off by default).** Switch on **Use Claude Code with Pulsar** in **Settings → Claude**
   and Save. That is all; it turns on:
-  - **Ask Claude** in the Likely column: your own Claude Code suggests a task and a note for each block, and may
-    search Productive (read only; tools that change anything are refused). Pick the model there: Sonnet (default),
-    Haiku or Opus. It takes 15 to 60 seconds. Settings lists each use of Claude with its own model.
+  - **Check my day with Claude**, in Log the day, the one button that runs Claude there: your own Claude Code first
+    suggests a task and a note for each block Pulsar is unsure of (Ask Claude, when the day has no picks yet), then
+    reviews the whole day with FI's rules; you accept or reject each suggestion. Ask Claude may search Productive
+    (read only; tools that change anything are refused). Its tooltip names the models and the most each run may
+    cost; pick the models in **Settings → Claude**: Sonnet (default) for the picks, Haiku for the review. It takes
+    15 to 60 seconds each. Nothing runs by itself.
   - **Notes from the session** in the log dialog: Haiku (or the model you pick) drafts the note of a Likely block from that session and your
     commits in a few seconds; it never replaces what you typed.
   - **Logging from a session:** Pulsar adds itself to Claude Code, so in any new session you can ask "what did I not
@@ -223,8 +226,7 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
 
   **What it costs.** Your Claude usage, not money to Pulsar. Each Ask Claude run may cost at most $0.25 (Haiku),
   $0.75 (Sonnet) or $2 (Opus). When Claude answers with no picks, Pulsar asks once more, so one Ask Claude click may
-  cost up to twice that; the cost shown is what both runs cost together. **Log the day** runs Ask Claude by itself when the switch
-  is on and some entries are unsure. A day with Sonnet has cost about $0.10 to $0.25. A note may cost at most $0.10 with Haiku
+  cost up to twice that; the cost shown is what both runs cost together. Claude runs only when you click **Check my day with Claude**. A day with Sonnet has cost about $0.10 to $0.25. A note may cost at most $0.10 with Haiku
   ($0.30 with Sonnet, $0.80 with Opus) and usually costs under half a cent. Asking again after Pulsar restarted, or
   after the day's blocks changed, asks Claude again and costs again.
 
