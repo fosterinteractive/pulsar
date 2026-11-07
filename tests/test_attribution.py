@@ -122,6 +122,19 @@ class TurnRepositoryTest(Fixture):
         self.assertEqual(s["turns"][0]["project"], "acme-site")  # the Task prompt's path counts nothing
         self.assertEqual(s["turns"][0]["hard"], {"acme-site": 6})
 
+    def test_a_call_on_time_entries_is_named_only_by_a_namer_that_knows_it(self):
+        """The fi-time-from-activity script names a Productive call on time entries "time logging"; Pulsar's own
+        names never see it as a project."""
+        self.write("aaaa0005", [typed(10, "log my time", self.acme),
+                                call(11, "mcp__productive__create_resource", resource="time_entries", attributes={}),
+                                call(12, "mcp__productive__query_resources", resource="time_entries"),
+                                call(13, "Read", file_path=os.path.join(self.acme, "src", "a.js"))])
+        [s] = self.load()
+        self.assertEqual(s["turns"][0]["project"], "acme-site")
+        namer = lambda p: "time logging" if p == "tool:mcp__productive__time_entries" else sessions.project_of_path(p)  # noqa: E731
+        [s] = sessions.load(T0, T0 + 86400, self.projects, namer)
+        self.assertEqual(s["turns"][0]["project"], "time logging")
+
     def test_one_session_splits_by_the_repository_of_each_turn(self):
         self.write("aaaa0004", [
             typed(10, "fix the client form", self.tool), call(11, "Edit", file_path=os.path.join(self.acme, "src", "a.js")),

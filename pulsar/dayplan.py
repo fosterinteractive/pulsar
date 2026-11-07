@@ -780,6 +780,12 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
         # joined across it would stop at it, the rest not placed; a shared stretch stays where it was, so the same
         return any(a < x[1] and x[0] < b for x in busy + shared_spans)
 
+    def billable_task(p) -> bool:
+        return p.get("class") == CLIENT or attribution.class_of_task(p.get("task"), ctx) == CLIENT
+
+    def away_between(p, q, a, b) -> bool:  # a client's entry is never laid over time away: a break splits it
+        return (billable_task(p) or billable_task(q)) and any(away[x] for x in range(max(0, a), min(N, b)))
+
     # one task in one sitting: one entry, laid out from its first piece; a meeting someone attended keeps its own
     # time, so what comes before it joins it only when it touches it
     merged: list = []
@@ -788,7 +794,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
         if m and m.get("task") and m["task"] == p.get("task") and not {"skip", "shared"} & {m["kind"], p["kind"]} \
                 and p["s"] - m["last"] <= o["merge_gap"] and sitting[m["last"]] == sitting[p["s"]] \
                 and (not p.get("attended") or p["s"] - m["last"] <= (o["grid"] or 1)) \
-                and not logged_between(m["last"] + 1, p["s"]):
+                and not logged_between(m["last"] + 1, p["s"]) and not away_between(m, p, m["last"] + 1, p["s"]):
             m["minutes"] += p["minutes"]
             m["last"] = p["last"]
             m["parts"].append(p)
@@ -804,7 +810,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
         if "shared" in (p["kind"], q["kind"]):  # a shared stretch stays as it was, at its real time
             return False
         a, b = (q["last"], p["s"]) if q_first else (p["last"], q["s"])
-        if logged_between(a + 1, b):
+        if logged_between(a + 1, b) or away_between(p, q, a + 1, b):
             return False
         sa, sb = sitting[a], sitting[b]  # a minute with no activity, in a call, fits any sitting
         return b - a <= o["merge_gap"] and (sa is None or sb is None or sa == sb)
@@ -925,9 +931,10 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
             if e["minutes"]:
                 over -= cut_from(e, over, "more than your active time and meetings")
         out = [e for e in out if e["minutes"] >= g]
-    # the evidence cap: a client's task never gets more minutes than the person was seen at work on it
+    # the evidence cap: a task that may be billable (any not known to be internal) never gets more minutes than the
+    # person was seen at work on it
     billable = lambda e: e.get("taskId") and e["kind"] not in ("meeting", "unattended") and (  # noqa: E731
-        e.get("class") == CLIENT or attribution.class_of_task(e["taskId"], ctx) == CLIENT)
+        e.get("class") == CLIENT or attribution.class_of_task(e["taskId"], ctx) != INTERNAL)
     total: dict = defaultdict(int)
     for e in out:
         if billable(e):

@@ -151,7 +151,8 @@ def _real(path: str) -> bool:
 
 def tool_calls(r: dict) -> list:
     """[(path, weight)]: the paths an agent's tool calls named, weighted by what each call did with them (EDITS,
-    Bash, READS above). Other tools count nothing: what a subagent did is in its own file."""
+    Bash, READS above). Other tools count nothing (what a subagent did is in its own file), except a Productive call on
+    time entries, as the marker "tool:mcp__productive__time_entries"."""
     found: list = []
     content = _obj(r.get("message")).get("content")
     for item in content if isinstance(content, list) else []:
@@ -167,6 +168,10 @@ def tool_calls(r: dict) -> list:
         elif name in READS:
             found += [(p, W_READ) for k in ("file_path", "notebook_path", "path", "pattern")
                       for p in PATH_RE.findall(str(inp.get(k) or "")[:1000])]
+        elif name.startswith("mcp__productive__") and "time_entries" in json.dumps(inp)[:4000]:
+            # a call on time entries: logging time. Not a path: only a naming function that knows it names it (the
+            # fi-time-from-activity script's "time logging"), so such a turn is never another project's work
+            found.append(("tool:mcp__productive__time_entries", W_RUN))
     return found
 
 

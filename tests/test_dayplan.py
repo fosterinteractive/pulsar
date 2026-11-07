@@ -308,7 +308,9 @@ class PlannerTest(unittest.TestCase):
         rows = [row(39, 42, project="elsewhere", titles=["Something new"]), row(785, 989)]
         p = dayplan.plan(day(items=items, rows=rows, away=[{"s": 42, "e": 785, "off": True}]), self.ctx)
         [main] = [e for e in p["entries"] if e["taskId"] == "11"]
-        self.assertEqual((main["s"], main["e"]), (785, 990))
+        # 204 minutes seen: the grid's 205 would be more than that, and a task whose billing is not known may be
+        # billable, so it stays at 200 (the evidence cap)
+        self.assertEqual((main["s"], main["e"]), (785, 985))
         for e in p["entries"]:
             self.assertFalse(e["s"] < 785 and e["e"] > 60, e)  # nothing proposed in the night
 
