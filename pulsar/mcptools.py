@@ -1047,10 +1047,11 @@ def _note_problem(note: str):
     return text, None
 
 
-def _resolve_services(date: str, entries: list) -> dict:
+def _resolve_services(date: str, entries: list, warnings: list) -> dict:
     """{n: problem} after setting each entry's service: the one asked for, if it takes time on that date; else the one
     you used last on the task, one of the same name in a newer budget, the task's own, or the only one (as the log
-    dialog does). Also the task's name, project, service name, budget and billable, for the preview."""
+    dialog does). Also the task's name, project, service name, budget and billable, for the preview. When your last
+    30 days could not be read, `warnings` says so: the one used last is not known then."""
     from .dayplan import pick_service
     tasks = sorted({e["taskId"] for e in entries})
     calls = {"suggest": ("/api/tasks/suggest", {"date": _history_date(date)})}  # the service used last, before the day
@@ -1058,6 +1059,10 @@ def _resolve_services(date: str, entries: list) -> dict:
     got = fetch(calls)
     recent = {t.get("taskId"): t for t in (got["suggest"].get("recent") or [])}
     problems: dict = {}
+    sug = got["suggest"]
+    if (sug.get("error") or sug.get("historyError")) and any(not e["serviceId"] for e in entries):
+        warnings.append("Your last 30 days could not be read, so a service you did not name is the task's own or the "
+                        "only one, not the one you used last.")
     for e in entries:
         b = got[f"svc:{e['taskId']}"]
         if b.get("error"):
@@ -1120,7 +1125,8 @@ def pulsar_preview(args: dict) -> dict:
     and journal). Nothing is written. With no problem, a code that holds exactly these entries, and the summary
     pulsar_log must be given back."""
     date, entries = _clean(args)
-    problems = _resolve_services(date, entries)
+    warnings: list = []
+    problems = _resolve_services(date, entries, warnings)
     # time logged with no start on an entry's task: no overlap check sees it, so the summary the person approves says so
     untimed = untimed_minutes(_entries(fetch({"e": ("/api/entries", {"date": date})})["e"], []))
     for e in entries:
@@ -1149,7 +1155,8 @@ def pulsar_preview(args: dict) -> dict:
                     f"{o.get('start') if HHMM.match(str(o.get('start') or '')) else ''} {mins(o.get('minutes'))} min "
                     f"{name_out(o.get('project'))}" for o in got["overlap"]))
         previews.append(_preview(e, {"problem": "; ".join(found)} if found else None))
-    out = {"date": date, "entries": previews, "minutes": sum(e["minutes"] for e in entries)}
+    out = {"date": date, "entries": previews, "minutes": sum(e["minutes"] for e in entries),
+           **({"warnings": warnings} if warnings else {})}
     if any(p.get("problem") for p in previews):
         return {**out, "code": None, "summary": None,
                 "next": "Nothing can be logged until every problem is fixed. Fix them and preview again."}

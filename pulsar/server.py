@@ -1439,7 +1439,9 @@ def api_range(q: dict) -> dict:
     def bookable(tid):
         try:
             return dayplan._bookable(tid, date, s)
-        except Exception:  # the entry says so; the person picks the service when logging
+        except Exception as exc:  # the entry says so; the person picks the service when logging; Logs has why
+            logbook.record("log dialog", f"The services of task {tid} could not be read for the split: "
+                           f"{type(exc).__name__}: {exc}", kind="warning", once_per=600)
             return None
 
     ranges.with_services(res, keep["ctx"], bookable)

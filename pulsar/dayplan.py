@@ -904,7 +904,9 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
     def suggest():
         try:
             return server.api_suggest({"date": date}).get("assigned") or []
-        except Exception:
+        except Exception as exc:  # a hint only: the plan goes on without your assigned tasks, and Logs says why
+            logbook.record("log the day", f"Your assigned tasks could not be read: {type(exc).__name__}: {exc}",
+                           kind="warning", once_per=600)
             return []
 
     with ThreadPoolExecutor(8) as pool:
