@@ -22,7 +22,9 @@ async function cuLoad() {
   if (r.error) { CU.error = r.error; renderReview(); return; }
   CU.days = (r.days || []).filter(d => want.includes(d.date));
   CU.ticked = new Set(CU.days.slice(-CU.shown).filter(d => d.notLogged >= CU_TICK).map(d => d.date));
-  CU.warning = r.warning || '';
+  // no activity read for the range (ActivityWatch down, say): said, or every day would read "nothing left"
+  CU.warning = [r.warning, r.trackerWarning].filter(Boolean).join(' ');
+  CU.noActivity = !!r.trackerWarning;
   renderReview();
 }
 
@@ -51,7 +53,7 @@ function cuRender(el) {
     const none = d.notLogged < 5;
     return `<li class="cu-d${none ? ' none' : ''}"><label><input type="checkbox" data-cu-day="${esc(d.date)}"${CU.ticked.has(d.date) && !none ? ' checked' : ''}${none ? ' disabled' : ''}>
       <span class="cu-n">${esc(dayLabel(d.date, {weekday: 'short', day: 'numeric', month: 'short'}))}</span>
-      <span class="cu-m num">${none ? 'nothing left' : `<b>${dur(d.notLogged)}</b> not logged`}</span>
+      <span class="cu-m num">${none ? (CU.noActivity ? 'no activity read' : 'nothing left') : `<b>${dur(d.notLogged)}</b> not logged`}</span>
       <span class="cu-l num">${dur(d.logged)} logged of ${dur(d.active)} active</span></label></li>`;
   };
   el.innerHTML = `${head}

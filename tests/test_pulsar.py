@@ -184,6 +184,23 @@ class ReportTest(unittest.TestCase):
         self.assertEqual(r["hours"][1][0], 10)   # Tuesday 00:00-00:10
         self.assertEqual([a["name"] for a in r["apps"]], ["Cursor", "Slack"])
 
+    def test_time_logged_with_no_start_counts_against_what_is_not_logged(self):
+        """A day logged in full from Productive's timesheet (by duration, no start) is not "7 h not logged"."""
+        items = [item(540, 960)]
+        entries = [{"date": "2026-11-02", "start": None, "minutes": 420, "project": "P"},
+                   {"date": "2026-11-03", "start": None, "minutes": 30, "project": "P"}]
+        d1, d2 = report.build(self.dates, self.bounds, {"aw": items + [item(1440 + 540, 1440 + 600)]}, entries,
+                              "2026-11-04")["days"]
+        self.assertEqual((d1["active"], d1["logged"], d1["noStart"], d1["notLogged"]), (420, 420, 420, 0))
+        self.assertEqual((d2["active"], d2["noStart"], d2["notLogged"]), (60, 30, 30))
+
+    def test_earlier_days_say_when_no_activity_was_read(self):
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "js", "catchup.js"),
+                  encoding="utf-8") as fh:
+            code = fh.read()
+        self.assertIn("r.trackerWarning", code)  # shown, or every day would read "nothing left"
+        self.assertIn("no activity read", code)
+
     def test_each_day_uses_the_tracker_that_saw_more_of_it(self):
         r = report.build(self.dates, self.bounds, {"aw": [item(600, 610)], "memtime": [item(600, 660), item(1500, 1505)]},
                          [], "2026-11-03")
