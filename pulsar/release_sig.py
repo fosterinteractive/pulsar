@@ -11,6 +11,7 @@ copies this file next to the launcher, outside the code it checks, and the launc
 
     python3 -I -B release_sig.py check-bundle <code folder> <manifest> <signature> <version>   exit 0: signed, as is
     python3 -I -B release_sig.py bundle-manifest <code folder> <version>                       the manifest, unsigned
+    python3 -I -B release_sig.py signed-for <file with keys> <data> <signature>                exit 0: one of its keys signed it
 """
 
 from __future__ import annotations
@@ -147,7 +148,20 @@ def _read(path: str) -> bytes:
         return b""
 
 
+PEM_BLOCK = re.compile(r"-----BEGIN PUBLIC KEY-----\n[A-Za-z0-9+/=\n]+?-----END PUBLIC KEY-----\n?")
+
+
+def keys_in(text: str) -> list:
+    """The public keys (PEM) written in a file's text: an earlier release's release_sig.py, or updater.py before
+    1.5, where PUBLIC_KEYS lived. release.sh asks whether the version people have installed would accept a new
+    release's signature, which is what decides whether they get it."""
+    return [k if k.endswith("\n") else k + "\n" for k in PEM_BLOCK.findall(text or "")]
+
+
 def main(argv: list) -> int:
+    if len(argv) == 4 and argv[0] == "signed-for":
+        keys = keys_in(_read(argv[1]).decode("utf-8", "replace"))
+        return 0 if keys and any(verify(_read(argv[2]), _read(argv[3]), k) for k in keys) else 1
     if len(argv) == 5 and argv[0] == "check-bundle":
         problem = check_bundle(argv[1], _read(argv[2]), _read(argv[3]), argv[4])
         if problem:

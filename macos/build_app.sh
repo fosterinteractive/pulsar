@@ -108,7 +108,7 @@ if [ -z "$PREVIEW_DIR" ]; then  # Preview never installs anything
   MANIFEST="$APP/Contents/Resources/app.manifest.json"
   /usr/bin/python3 -I -B "$ROOT/pulsar/release_sig.py" bundle-manifest "$RES" "$VERSION" >"$MANIFEST"
   if [ -n "${PULSAR_BUNDLE_SIGNING_KEY:-}" ]; then
-    /usr/bin/openssl dgst -sha256 -sign "$PULSAR_BUNDLE_SIGNING_KEY" -out "$MANIFEST.sig" "$MANIFEST"
+    "$ROOT/macos/sign.sh" "$PULSAR_BUNDLE_SIGNING_KEY" "$MANIFEST" "$MANIFEST.sig" "Pulsar $VERSION, the app's code"
     # the very check the launcher makes, with the copy the app carries: a key that is not listed fails here
     why="$(/usr/bin/python3 -I -B "$APP/Contents/Resources/release_sig.py" check-bundle "$RES" "$MANIFEST" "$MANIFEST.sig" "$VERSION")" ||
       { echo "The launcher would refuse this app's code: $why (is the key one of PUBLIC_KEYS in pulsar/release_sig.py?)" >&2; exit 1; }

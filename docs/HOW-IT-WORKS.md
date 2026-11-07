@@ -1321,7 +1321,9 @@ publishes; none of them is done yet unless noted in section 13.
 3. **Create the reserve key** (`macos/README.md`, "The release keys"), add its public half to `PUBLIC_KEYS` in
    `pulsar/release_sig.py`, and ship a release with it, before more people install. A key can only be added by a
    release signed with a key already listed.
-4. **Encrypt the release key** at rest (`openssl ec -aes256 -in update-signing-key.pem -out
+4. **Move the release key to Touch ID** (`macos/README.md`, "Moving to a Touch ID key"): `macos/sign.sh keygen`
+   makes it in the Mac's Secure Enclave, where no program can copy it, and each signature then needs a fingerprint.
+   Until then, encrypt the key file at rest (`openssl ec -aes256 -in update-signing-key.pem -out
    update-signing-key.enc.pem`, then use the encrypted file), and keep a copy only in the team's 1Password vault.
 5. **Release at least every 60 days**, or installed copies stop seeing updates until the next release (`expires`).
 
