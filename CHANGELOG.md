@@ -6,6 +6,9 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- Update also updates the Pulsar app when the window has changed: one click, one restart. The app section in Settings > Updates looks like the rest.
+
 ## 1.6.3 (2026-11-07)
 - The menu bar shows today's active and logged time ("6:12 · 4:48"), with a menu to open Pulsar, log the day or add an entry; on by default, in Settings > This Mac. It needs no permission, unlike the Dock badge, which macOS hides for an app not signed by Apple.
 - The menu bar counts in decimal hours with marks: the clock for active time, ✓ for logged ("6.2h  ✓ 4.8h").

@@ -664,6 +664,5 @@ html.in-app button, html.in-app .btn, html.in-app summary, html.in-app .card, ht
 html.in-app .btn.primary { background: var(--accent); color: #fff; }
 html.in-app .btn.primary:hover { background: var(--accent); }
 /* Settings > Updates: "Reinstall Pulsar" (native.js) as a box of its own */
-#app-reinstall { margin-top: 14px; padding: 12px 14px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); border-radius: 10px;
-  background: color-mix(in srgb, var(--accent) 6%, transparent); }
+#app-reinstall { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line2); }  /* a section like the others */
 #app-reinstall h3 { margin-top: 0; }

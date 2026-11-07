@@ -447,6 +447,7 @@ $('#update-check').onclick = async () => {
 $('#update-now').onclick = () => startUpdate();
 async function startUpdate() {
   const btn = $('#update-now'), u = CONFIG.update; btn.disabled = true;
+  try { sessionStorage.setItem('pulsar-update-app', '1'); } catch (e) {}  // native.js: the app too, once the code is in
   $('#update-status').textContent = u.status === 'ready' ? 'Restarting…' : `Downloading and checking Pulsar ${u.latest}…`;
   dlg.close();
   warpTo(u.status === 'ready' ? 1 : .45);

@@ -57,10 +57,9 @@
       ? `<h3>Pulsar app</h3><p class="status">Pulsar ${esc(offer.version)} is in Applications. ${SHELL ? '' : 'Quit Pulsar (Cmd+Q) to finish: it opens again by itself.'}</p>
          ${SHELL ? '<div class="btnrow"><button type="button" class="btn primary" data-app-restart>Restart Pulsar</button></div>' : ''}`
       : `<h3>Pulsar app</h3>
-         <p class="hint">This Mac's Pulsar app${offer.mine ? ' (' + esc(offer.mine) + ')' : ''} is too old for the new window and menus.
-           Reinstalling puts the ${esc(offer.version)} app in its place, checked like any update; settings and data stay. ${finish}</p>
+         <p class="hint">The window and menus are new in ${esc(offer.version)}${offer.mine ? ` (this app is ${esc(offer.mine)})` : ''}. Updating the app restarts Pulsar once; settings and data stay.</p>
          <p class="status" id="app-reinstall-msg" role="status" hidden></p>
-         <div class="btnrow"><button type="button" class="btn primary" data-app-reinstall>Reinstall Pulsar</button></div>`;
+         <div class="btnrow"><button type="button" class="btn bordered" data-app-reinstall>Update the app</button></div>`;
   }
   document.addEventListener('click', async ev => {
     if (ev.target.closest('[data-app-restart]')) { send({action: 'quit'}); return; }
@@ -95,13 +94,19 @@
       const out = paint.apply(this, arguments);
       paintApp();
       const offer = appOffer();
+      let asked = '';
+      try { asked = sessionStorage.getItem('pulsar-update-app') || ''; } catch (e) {}
+      if (asked) {  // the person clicked Update: the app follows by itself, one restart, no second click
+        try { sessionStorage.removeItem('pulsar-update-app'); } catch (e) {}
+        if (offer && !offer.pending && SHELL) { setTimeout(() => q('[data-app-reinstall]')?.click(), 1500); return out; }
+      }
       if (offer && !offer.pending) {  // once a day, a word outside Settings too
         let said = '';
         try { said = localStorage.getItem('pulsar-app-offer') || ''; } catch (e) {}
         const day = new Date().toISOString().slice(0, 10);
         if (said !== day) {
           try { localStorage.setItem('pulsar-app-offer', day); } catch (e) {}
-          setTimeout(() => toast(`A new Pulsar app is ready: Settings, Updates, Reinstall Pulsar.`), 2500);
+          setTimeout(() => toast(`A new Pulsar app is ready: Settings, Updates, Update the app.`), 2500);
         }
       }
       return out;
