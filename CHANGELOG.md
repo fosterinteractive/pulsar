@@ -6,7 +6,7 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
-## Unreleased
+## 1.6.1 (2026-11-07)
 - Settings → Time and activity → Away after: 10, 15 (the default), 20 or 30 minutes without input is time away and ends a sitting; a shorter pause between two stretches of work counts as work.
 - Settings checks ActivityWatch's AFK timeout against Away after and fixes a longer one with a click (a copy of its file is kept, ActivityWatch restarts, new data only), and checks and adds ActivityWatch to Login Items.
 - Parallel work: the Likely column is at the real time of the work, one row per repository a session worked in (by what its tool calls did there, subagents included; with the fi-time-from-activity skill, each turn named as the skill names it), with the agents' background work as a thin dashed rail.
