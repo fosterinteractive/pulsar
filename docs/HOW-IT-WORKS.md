@@ -766,7 +766,12 @@ run has started it is only mentioned. Haiku did as well as Sonnet here, at a sma
 (a task it found by searching, a note it drafted, no task found). The "N to check" chip counts those not yet looked
 at: a row counts as checked once the person has opened it and it is ticked (one with no task or service cannot be
 ticked, so it stays until it has them). The chip opens the next such row after the open one, in time order, and reads
-"All checked" when none is left (`ldNeedsLook`, `ldCheck` in `logday.js`).
+"All checked" when none is left (`ldNeedsLook`, `ldCheck` in `logday.js`). **Tick all N with a task** ticks every row
+that has a task and a service, except one whose task Claude found by searching Productive (not one you logged to in the
+last 30 days) that nobody opened: that rule stays, for the reason above, and the panel says how many it held back.
+Enter on the open row (its line or its tick box) ticks it and opens the next row still to log; on a row with no task
+or service it opens the task picker. The confirm step is the check for all of them: it lists every entry with its
+note, marks a note Claude drafted ("Claude's note:") and a task Claude found by searching.
 
 **Writing.** The confirm step shows the totals, overlaps, unopened rows marked "check", and active time left
 unlogged; **Dry run** sends every row with `"dry": true` and shows exactly what would be sent. The confirm step keeps

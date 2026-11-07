@@ -168,6 +168,11 @@ function ldTotals() {
 const ldNeedsLook = r => r.confidence === 'low' || !r.taskId || !r.serviceId || r.claudeNone
   || r.flags.includes('claudefound') || (r.flags.includes('claudenote') && r.noteFrom === 'claude' && !r.noteEdited);
 const ldCheck = r => ldPending(r) && ldNeedsLook(r) && !(r.opened && r.checked);
+/* "Tick all with a task": every row that has a task and a service and is not ticked yet, except a task Claude found by
+   searching Productive (not one you logged to lately) that nobody opened: what Claude read could have steered it
+   there, so it waits for the person, as it always has */
+const ldTickable = r => ldPending(r) && !r.checked && !!r.taskId && !!r.serviceId;
+const ldTickAllRows = () => LD.rows.filter(r => ldTickable(r) && !(r.flags.includes('claudefound') && !r.opened));
 /* the next row to check after the open one (in time order), back to the first after the last */
 function ldNextCheck(list) {
   const at = ldRow(LD.open)?.s ?? -1;
@@ -221,12 +226,15 @@ function renderReview() {
   const skipped = (p.skipped || []).length ? `<li class="gr quiet"><span class="e-time num">·</span><span class="gt">Left out: ${esc(p.skipped.map(s => `${s.title || s.project} ${dur(s.minutes)} (${s.why})`).join('; '))}</span><span></span></li>` : '';
   const empty = !LD.rows.length ? `<div class="rv-empty"><div class="big-ic" aria-hidden="true">✓</div><h3>${(state.logged?.entries || []).length ? 'Everything is logged' : 'Nothing to log'}</h3>
     <p>${(state.logged?.entries || []).length ? 'Every active stretch of this day already has an entry, or is too short to log.' : 'No activity, Claude sessions or meetings were found for this day.'}</p></div>` : '';
-  const n = T.n;
+  const n = T.n, all = LD.writing ? [] : ldTickAllRows(), held = LD.rows.filter(r => ldTickable(r) && !all.includes(r)).length;
+  const tickAll = all.length ? `<div class="rv-tickall"><button type="button" class="btn bordered sm" id="ld-tickall"
+      title="Ticks every row that has a task and a service. The next step lists each entry and its note before anything is written.">Tick all ${all.length} with a task</button>${held
+      ? `<span class="hint">${held} found by Claude's search ${held === 1 ? 'stays' : 'stay'} unticked until opened</span>` : ''}</div>` : '';
   el.innerHTML = `<div class="rv-h">${head}
       <div class="rv-sum"><b>${dur(T.minutes)}</b> ticked in ${n} ${n === 1 ? 'entry' : 'entries'} · ${dur(T.billable)} billable · ${dur(T.logged)} logged</div>
       <div class="rv-bar" role="img" aria-label="${esc(`${dur(withThese)} with these, against a target of ${dur(target)}`)}"><i class="lg" style="width:${pct(T.logged)}%"></i><i class="pp" style="width:${pct(T.minutes)}%"></i></div>
       <div class="rv-bl"><span>${dur(withThese)} with these</span><span>target ${dur(target)}</span></div>
-      <div class="rv-iss">${chips}</div>${askLine}${sgHead()}${testNote}${historyNote}${cuStrip()}</div>
+      <div class="rv-iss">${chips}</div>${tickAll}${askLine}${sgHead()}${testNote}${historyNote}${cuStrip()}</div>
     ${results}
     ${empty || `<ul class="rv-list" aria-label="Proposed entries">${sgDayHTML()}${items.map(x => x.html).join('')}${skipped}</ul>`}
     <div class="rv-f">${LD.writing
@@ -320,7 +328,8 @@ function editorHTML(r) {
       <span class="endt">until ${hm(r.s + r.minutes)}</span></div>
     <label class="field"><span>Note</span><textarea rows="2" data-ld-note placeholder="What was done: the outcome, in a sentence">${esc(r.note || '')}</textarea></label>
     <p class="hint ld-note-hint">${noteHint(r)}</p>
-    <div class="acts"><button type="button" class="btn bordered" data-ld-del="${r.id}">Delete from the proposal</button></div></div>`;
+    <div class="acts"><button type="button" class="btn bordered" data-ld-del="${r.id}">Delete from the proposal</button>
+      <span class="hint ld-keys"><kbd>↩</kbd> on the row ${r.taskId && r.serviceId ? 'ticks it and opens the next' : 'picks its task'}</span></div></div>`;
 }
 function wireEditor(r) {
   const li = $(`#review [data-row="${r.id}"]`); if (!li) return;
@@ -445,6 +454,7 @@ $('#review').addEventListener('click', ev => {
   if (LD.writing && t.id !== 'ld-stop') { ev.preventDefault(); return; }  // a run (or Undo) is writing: rows stay as confirmed
   if (t.id === 'ld-redo') return openLogDay();
   if (t.id === 'ld-go') return openConfirm();
+  if (t.id === 'ld-tickall') { for (const r of ldTickAllRows()) { r.checked = true; r.edited = true; } renderReview(); render(); return; }
   if (t.id === 'ld-stop') { LD.stop = true; renderReview(); return; }
   if (t.dataset.ldGoto) return ldOpen(t.dataset.ldGoto, true);
   if (t.dataset.ldOpen) return ldOpen(t.dataset.ldOpen);
@@ -463,6 +473,20 @@ $('#review').addEventListener('click', ev => {
   if (t.id === 'ld-retry') return openConfirm();
 });
 
+/* Enter on the open row (its line or its tick box): tick it and open the next row still to log; a row with no task
+   or service opens its task picker instead. Enter in a field, a menu or another button does what it always does. */
+$('#review').addEventListener('keydown', ev => {
+  if (ev.key !== 'Enter' || ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey || LD.writing || !LD.open) return;
+  const li = ev.target.closest('li[data-row]'), r = ldRow(LD.open);
+  if (!r || li?.dataset.row !== r.id || !(ev.target.matches('.eb') || ev.target.matches('[data-ld-tick]'))) return;
+  ev.preventDefault();
+  if (!(r.taskId && r.serviceId)) { const b = li.querySelector('.taskbtn'); if (b) ldPickTask(r, b); return; }
+  r.checked = true; r.edited = true;
+  const next = LD.rows.filter(x => ldPending(x) && x.id !== r.id).sort((a, b) => a.s - b.s).find(x => x.s > r.s);
+  if (next) ldOpen(next.id, true);
+  else { LD.open = null; renderReview(); render(); $('#ld-go')?.focus(); }
+});
+
 /* ---------- the confirm step ---------- */
 const ldDlg = $('#lddlg');
 function openConfirm(dry = null) {
@@ -478,9 +502,11 @@ function openConfirm(dry = null) {
   if (untimed.length) warns.push(`Already logged with no start time, on a task below: ${untimed.map(x => `${x.task || x.project} ${dur(x.minutes)}`).join(', ')}. Check it is not the same work.`);
   if (unopened.length) warns.push(`${unopened.length} ${unopened.length === 1 ? 'entry' : 'entries'} marked “check” ${unopened.length === 1 ? 'was' : 'were'} not opened: ${unopened.map(r => `${hm(r.s)} ${r.title}`).join(', ')}.`);
   const quiet = T.notCovered ? [`${dur(T.notCovered)} of active time stays unlogged.`] : [];
+  const claudeNote = r => ['claude', 'session'].includes(r.noteFrom) && !r.noteEdited;
   const lines = live.map(r => `<li class="cl-r"><span class="num">${hm(r.s)}</span><span><b>${esc(r.title)}</b>
       <small>${esc([r.project, r.service, r.budget].filter(Boolean).join(' · '))}${r.billable ? ' <span class="bill">$</span>' : ''}</small>
-      ${r.note ? `<small class="cl-n">${esc(r.note)}</small>` : ''}
+      ${r.flags.includes('claudefound') ? `<small class="cl-c">${CLAUDE_MARK.split('<span')[0]}Claude found this task by searching Productive; you have not logged to it lately.</small>` : ''}
+      ${r.note ? `<small class="cl-n">${claudeNote(r) ? `${CLAUDE_MARK.split('<span')[0]}<span class="cl-by">Claude's note:</span> ` : ''}${esc(r.note)}</small>` : ''}
       ${dry?.[r.id] ? `<small class="cl-d">${esc(dry[r.id])}</small>` : ''}</span><span class="num">${dur(r.minutes)}</span></li>`).join('');
   ldDlg.innerHTML = `<div class="dh"><h2 id="ld-title">Log ${live.length} ${live.length === 1 ? 'entry' : 'entries'} in Productive?</h2>
       <button type="button" class="btn icon" data-ld-x aria-label="Close">✕</button></div>
