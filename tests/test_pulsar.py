@@ -3130,9 +3130,6 @@ class SilentFailureTest(unittest.TestCase):
                         self.assertIn(words, server.api_estimates({"ids": "5"})["error"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class ReadOnlyKeychainTest(unittest.TestCase):
     """A read-only test server shares the keychain with the real Pulsar: it never saves or removes a secret there,
@@ -3223,3 +3220,7 @@ class PlainRefusalTest(unittest.TestCase):
         self.assertTrue(got.startswith("Productive refused the change:"))
         self.assertIn("(budget_limit_overrun)", got)
         self.assertEqual(productive.plain_refusal("something else", "it"), "Productive refused it: something else")
+
+
+if __name__ == "__main__":
+    unittest.main()

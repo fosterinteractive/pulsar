@@ -6,6 +6,7 @@
 import io
 import json
 import os
+import re
 import socket
 import sys
 import tempfile
@@ -17,6 +18,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from isolation import SCRATCH as _SCRATCH  # noqa: E402,F401  first: nothing real is reachable (isolation.py)
+import isolation  # noqa: E402
 
 from pulsar import __version__, config, dayplan, learn, likely, logbook, mcp, mcptools, productive, server  # noqa: E402
 
@@ -124,6 +126,12 @@ class McpTest(unittest.TestCase):
         today = mock.patch.object(mcptools, "_today", lambda tz_name: TODAY)  # DATE stays within the last 120 days
         today.start()
         self.addCleanup(today.stop)
+        # behind PULSAR_TESTS_OFFLINE: a test that writes fakes create_entry itself (_create); any other that reaches it
+        # is refused, and the run fails, whatever the code under test catches (isolation.RealWorld)
+        unfaked = mock.patch.object(productive, "create_entry",
+                                    lambda e, s: isolation._refuse("productive.create_entry in a test that did not fake it"))
+        unfaked.start()
+        self.addCleanup(unfaked.stop)
         mcptools._pending.clear()
         mcptools._calls.clear()
         server._just_logged.clear()  # the server's one-minute guard against the same entry twice
@@ -1059,9 +1067,6 @@ class McpTest(unittest.TestCase):
         self.assertTrue(log["_meta"]["anthropic/requiresUserInteraction"])
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class ReasonAllowListTest(unittest.TestCase):
     """Whatever Pulsar's reason says, Claude Code gets a fixed phrase and digits: an instruction hidden in a meeting's
@@ -1074,11 +1079,15 @@ class ReasonAllowListTest(unittest.TestCase):
                              (f"you logged it while in {attack} (40%)", "repo"), (attack, ""), (attack, "nonsense"),
                              (f"logged while in {attack}: 2 h 5 min", "")]:
             got = mcptools.reason(text, source)
-            self.assertNotIn("IGNORE", got.upper().replace("IGNORE", "IGNORE") if False else got)
-            for word in ("IGNORE", "INSTRUCTIONS", "rm -rf", "run"):
-                self.assertNotIn(word.lower(), got.lower().replace("run", "") if word == "run" else got.lower(), (text, got))
+            for word in ("ignore", "instructions", "rm -rf", "previous"):
+                self.assertNotIn(word, got.lower(), (text, got))
+            self.assertIsNone(re.search(r"\brun\b", got.lower()), (text, got))  # "run" as a word, not inside one
             self.assertIn(got.split(" (")[0], set(mcptools.BY_SOURCE.values()) | {p for _, p in mcptools.BY_TEXT} | {"Pulsar's suggestion"})
 
     def test_names_lose_control_and_invisible_characters(self):
         self.assertEqual(mcptools.name_out("Fix\u202e the\x1b[31m search\n\nnow"), "Fix the[31m search now")
         self.assertEqual(len(mcptools.name_out("x" * 500)), 120)
+
+
+if __name__ == "__main__":
+    unittest.main()

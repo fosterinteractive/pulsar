@@ -151,6 +151,17 @@ class IsolationTest(unittest.TestCase):
             early = [ast.get_source_segment(source, n) for n in body[:at] if not harmless(n)]
             self.assertEqual(early, [], f"{name} does this before importing isolation")
 
+    def test_unittest_main_comes_last_in_every_test_module(self):
+        """A class after `unittest.main()` never runs when its module is run on its own."""
+        import ast
+        import glob
+        here = os.path.dirname(os.path.abspath(__file__))
+        for path in sorted(glob.glob(os.path.join(here, "test_*.py"))):
+            with open(path, encoding="utf-8") as fh:
+                body = ast.parse(fh.read()).body
+            at = [i for i, n in enumerate(body) if isinstance(n, ast.If) and "__main__" in ast.unparse(n.test)]
+            self.assertIn(at, ([], [len(body) - 1]), os.path.basename(path))
+
     def test_nothing_was_refused_outside_these_tests(self):
         """What a test reached for is listed here as it happens; the run also exits 1 at the end if any."""
         self.assertEqual(isolation.TRIED, [])
