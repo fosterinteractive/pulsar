@@ -34,8 +34,8 @@ flowchart LR
 
 | Piece | File | What it does |
 |---|---|---|
-| Window | `macos/PulsarWindow.swift` | The app's executable. Runs the launcher, loads the page, handles downloads, print, About and the native warp. |
-| Launcher | `macos/launcher.sh` | Installs or upgrades the code under `~/Library/Application Support/Pulsar/`, starts the server, rolls back if it does not start, stops it when the window closes. |
+| Window | `macos/PulsarWindow.swift` | The app's executable. Runs the launcher (its dialogs as sheets), loads the page, and gives it a Mac app's menus, Cmd+W and Cmd+Q, right-click menus, a title bar in its colours, the Dock badge, the end-of-day reminder, Open at Login, downloads, print, About and the native warp (with `web/js/native.js`). |
+| Launcher | `macos/launcher.sh` | Installs or upgrades the code under `~/Library/Application Support/Pulsar/`, starts the server, rolls back if it does not start, stops it when the app quits. |
 | Server | `pulsar.py`, `pulsar/server.py` | The page, its files and a JSON API, on 127.0.0.1 only. |
 | Page | `web/` | Plain HTML, CSS and JavaScript, no build step. |
 | Release tools | `macos/build_app.sh`, `macos/release.sh` | Build Pulsar.app, build and sign a release. |
@@ -88,9 +88,10 @@ sequenceDiagram
 6. **Signing the window in.** The launcher writes a one-time code to `~/.config/pulsar/signin-code` and prints the
    address with it. The page trades the code for a session token (`POST /api/session`). The code works once and only
    for two minutes, and a wrong guess does not spoil it. A session lives as long as the server that issued it (section
-   3), so every load of the page in the window goes through the launcher: at start, **View > Reload**, **Sign in**,
+   3), so every load of the page in the window goes through the launcher: at start, **View > Reload Pulsar**, a new sign-in,
    and the page's own move into a new version.
-7. **Stopping.** Closing the window quits the app, and the app runs `launcher.sh --stop`, which stops only a server
+7. **Stopping.** Closing the window keeps Pulsar running (the Dock icon brings it back); quitting it (Cmd+Q, which
+   asks first when the page has work that would be lost) runs `launcher.sh --stop`, which stops only a server
    the app itself started. A server started from a git checkout keeps running.
 8. **Self-test.** `pulsar.py --self-test` imports every module, reads from `index.html` every script and style the
    page loads and checks each is there, starts a server on a free port, fetches the page and each of those files,
@@ -120,7 +121,7 @@ yours.
   localStorage. So: a token dies with the server that issued it, and a later Pulsar never accepts it; and the page
   never reloads itself into a new version. It drops its token and, in the app, asks the window, which runs the
   launcher: the launcher checks the server holds this user's key (`/api/whoami`) and only then signs the page in again
-  with a fresh code (**View > Reload** goes the same way). An impostor fails that check, the launcher says so, and the
+  with a fresh code (**View > Reload Pulsar** goes the same way; WebKit's own Reload is out of the window's right-click menu). An impostor fails that check, the launcher says so, and the
   window loads nothing. A browser cannot make that check, so there the page says to open Pulsar from its app icon.
 - **What the key alone opens** (`server.key_refusal`). The key (`~/.config/pulsar/secret`) is a file any program of
   the person's can read, a Claude Code session too (in bypass mode it needs no prompt to `cat` it). So on its own it
@@ -1347,7 +1348,7 @@ sequenceDiagram
   S->>S: current → X.Y.Z, previous → the running one, restart in place
 ```
 
-- **Only signed releases.** `latest.json` (`{version, url, sha256, notes, published, expires, versions}`) is signed
+- **Only signed releases.** `latest.json` (`{version, url, sha256, notes, published, expires, versions, app}`) is signed
   with an ECDSA P-256 key that only the maintainer holds, and checked with the Mac's own `/usr/bin/openssl` against
   `PUBLIC_KEYS` in `pulsar/release_sig.py`. A manifest that does not verify is ignored, so even someone with write
   access to the repository cannot ship code to installed copies. The list has room for a reserve key.
@@ -1373,8 +1374,30 @@ sequenceDiagram
   does not reload itself (section 3): it drops its token, and in the app the window runs the launcher, which checks
   the new server holds this user's key and signs the page in again. The warp holds over the page meanwhile and lets
   go once the new data is in. In a browser the page asks to be opened again from the app icon.
-- **The window shell** (Pulsar.app itself) does not update this way: a new shell needs a new Pulsar.zip, whose code
-  installs only as signed (section 2).
+- **The window shell** (Pulsar.app itself, the window and the launcher) does not update this way. A release that
+  needs a newer one says so in its signed `latest.json`: `app: {version, min, url, sha256}`, where `min` is
+  `MIN_APP` in `pulsar/appupdate.py` and `sha256` that of the release's Pulsar.zip. The page compares `min` with the
+  version the window injects (`window.PULSAR_APP`; a window of 1.5 or older injects none, and counts as older) and
+  offers **Reinstall Pulsar** in Settings, Updates (and once a day in a toast). Only on that click,
+  `POST /api/update/app` (page session only; `pulsar/appupdate.py`):
+  1. refuses in Preview, from source, for an app that is not `com.fosterinteractive.pulsar`, for one macOS runs
+     translocated, and for a version that did not start here before;
+  2. when this account cannot change the app or its folder, downloads nothing and answers README.md's install line
+     for the page to show;
+  3. downloads Pulsar.zip from the release only (`releases/download/v<version>/Pulsar.zip`, at most 30 MB), checks
+     its SHA-256 against the signed `latest.json` and its own signature (`Pulsar.zip.sig`, the release key, as the
+     install line checks it);
+  4. unpacks it with `ditto` into a hidden folder beside the app (same disk), and requires one `Pulsar.app` of
+     Pulsar's bundle id and the version named, with its program, that passes `codesign --verify --deep --strict`,
+     and whose code a release signed (`release_sig.check_bundle` with this copy's keys);
+  5. swaps the two apps in one step (`renamex_np`, `RENAME_SWAP`): the new one at the app's path, the old one kept in
+     `.Pulsar-previous` beside it; the state goes in `app-reinstall.json` in the install folder;
+  6. starts a helper on its own (`appupdate.finish`), which waits for the running window to quit (the new window of
+     1.6.0 on quits by itself after the click; an older one asks the person to press Cmd+Q), opens the new app, and
+     waits two minutes for its page to say it started (`POST /api/app/started` with its version). Then the old copy
+     goes. Otherwise the new app is quit, the old one swapped back and opened, and that version is not offered again.
+
+  Nothing in it is automatic, and nothing changes before every check has passed; a failure leaves no folder behind.
 - **Test switches** (`PULSAR_UPDATE_URL`, `PULSAR_UPDATE_PUBKEY`) are ignored by an installed copy.
 
 ### Releasing (`macos/release.sh`)
@@ -1455,6 +1478,8 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `POST /api/task/create` | `{projectId, parentId or taskListId, title, description[, statusId][, estimate]}`: one task, assigned to you, never with a service (the page only). |
 | `POST /api/calendar/connect`, `/disconnect` | Google Calendar. |
 | `POST /api/update/check`, `/install`, `/apply` | Updates. |
+| `POST /api/update/app` | Reinstall Pulsar: the newer app the signed `latest.json` describes, in place of this one (section 9). `{app: {ok, version, pending}}`, or `{error[, installLine]}`. |
+| `POST /api/app/started` | `{version}`: the page of a window of 1.6.0 on says it started; ends a reinstall of that version (section 9). |
 | `POST /api/productive/test`, `/api/client-error`, `/api/quit` | Test the connection; log a page error; stop (launcher). |
 
 ## 11. The page (`web/`)
@@ -1492,6 +1517,12 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 - **`datepick.js`**: the calendar behind every date field (the native fields stay underneath, hidden, so the rest of
   the code still reads `YYYY-MM-DD`).
 - **`main.js`**: start-up and switching between Day and Report; `logs.js`: the Logs dialog.
+- **`native.js`**: the page's side of Pulsar.app's window (macos/README.md, "How the window works"): what the page
+  shows, posted to the window for its menus, title and title bar; the commands its menus run; Cmd+W's "close what is
+  open"; what Cmd+Q would lose; the right-click menus of entries, blocks and gaps; the Dock badge and the reminder's
+  "time not logged today"; the day after a sleep; an automatic new sign-in; and Reinstall Pulsar in Settings,
+  Updates. It wraps three of the page's own functions (`syncURL`, `paintUpdate`, `renderAside`) rather than changing
+  them, and does nothing in a browser.
 - **Colours**: tokens on `:root`, a dark set under `prefers-color-scheme` and `data-theme`. Billable blue
   (`#2a78d6`), not billable orange (`#eb6834`), unknown grey (`#7d7c76`), checked for colour-blind readers in both
   themes.
@@ -1515,7 +1546,10 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   fake Productive, so they pass the same under `PULSAR_READ_ONLY=1`. `test_isolation.py` also fails when a test
   module does anything before importing `isolation`, so each one is guarded when run alone too. The writes are
   checked by the whole request that reaches Productive's fake wire, REST and MCP, from `POST /api/log`, Undo and
-  `pulsar_log` down (`tests/test_payloads.py`). `tests/test_release.py` signs test apps with a throwaway key and runs
+  `pulsar_log` down (`tests/test_payloads.py`). `tests/test_appupdate.py` puts stand-in apps (signed ad hoc, their code
+  signed with a throwaway key) through Reinstall Pulsar end to end in temporary folders, the helper's wait, open,
+  confirmation and rollback included, and talks to the launcher as the window does (dialogs, progress, the
+  developer tools' wait, the pipe no server may hold). `tests/test_release.py` signs test apps with a throwaway key and runs
   the real `launcher.sh` against them, with a home of its own and dialogs written to a file (`PULSAR_TEST_DIALOGS`):
   signed, tampered, unsigned, foreign and higher-than-released code, and a port taken at start.
 - `tools/replay/` (Log the day replayed on real days) refuses to run without `PULSAR_REPLAY_DIR`, a private folder
@@ -1546,6 +1580,13 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   flag counts the project's first 100 tasks as Productive lists them, not the most recently active.
 - No ticket flag for a budget nearly used up: Productive does not show budgets to a Staff role (5.3).
 - The app is ad-hoc signed, not with an Apple Developer ID: macOS asks for confirmation on first open (Open Anyway).
+  Whether macOS lets such an app send notifications was not checked on a real Mac: the end-of-day reminder falls
+  back to a bounce of the Dock icon and a sheet on the window when it may not. Open at Login (`SMAppService`) was
+  not tried on a real Mac either.
+- Reinstall Pulsar reaches a window of 1.5 or older too (it is the page that offers it), but such a window cannot
+  quit by itself: it asks the person to press Cmd+Q, and the helper opens the new app once it has quit (it waits up
+  to a day). Its right-click menu still has WebKit's Reload, which skips the launcher's check, until it is
+  reinstalled.
 - `main` is not protected and who may publish a release is not limited yet; the old release key file still exists,
   unencrypted, until the move to the Touch ID key is finished (section 9, "What the maintainer must do"). The reserve
   key and the Touch ID key were made on 2026-11-07.

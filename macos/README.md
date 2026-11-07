@@ -1,7 +1,7 @@
 # Pulsar.app (macOS)
 
 A double-clickable Pulsar for colleagues who never open Terminal. The app is a window (`PulsarWindow.swift`,
-about 680 lines, the Mac's own WebKit) and a bash launcher: the launcher installs the code the app carries and
+about 1,300 lines, the Mac's own WebKit, with `web/js/native.js` on the page's side) and a bash launcher: the launcher installs the code the app carries and
 starts it with the Mac's own Python, and the window shows the page. It needs macOS 12 Monterey or newer, Apple
 Silicon or Intel (macOS 11's developer tools come with Python 3.8, and Pulsar needs 3.9), and Safari 16.2 or
 newer for the window (older: the window hands the page to the default browser).
@@ -36,8 +36,9 @@ tests. Then it sets the version, builds into `dist/`, shows what it will do and 
 1. commits the version change as "Pulsar 1.1.0" on top of `origin/main` and pushes it to `main`;
 2. creates the public release `v1.1.0` on `fosterinteractive/pulsar` at that commit, with five files:
    - `pulsar-1.1.0.zip`: the code git tracks, in one folder `pulsar-1.1.0/` (what installed copies download);
-   - `latest.json`: version, download address, SHA-256 of the zip, the notes, the date and an expiry date 60 days
-     ahead (what they read; past that date they ignore it, so release at least every 60 days);
+   - `latest.json`: version, download address, SHA-256 of the zip, the notes, the date, an expiry date 60 days
+     ahead (what they read; past that date they ignore it, so release at least every 60 days), and the app:
+     Pulsar.zip's address and SHA-256 and `MIN_APP` (Reinstall Pulsar, below);
    - `latest.json.sig`: the release key's signature of `latest.json` (see below);
    - `Pulsar.zip`: the whole app, for new installs, with the code it carries signed by the same key
      (`Contents/Resources/app.manifest.json.sig`): its launcher installs that code only as signed. Share the
@@ -60,6 +61,16 @@ self-test that fails is run once more; a version that fails twice goes into `bad
 could not finish (a timeout) is left to try again. `latest.json` also lists every version released
 so far (from the git tags): a copy two or more releases behind reminds its person once every two days, until they
 update or skip that release. A copy run from a git checkout only says that a newer version exists.
+
+**A new app (window and launcher).** Updates replace only the code, never Pulsar.app. Each release's `latest.json` also
+describes its app (`app: {version, min, url, sha256}`: Pulsar.zip's address and SHA-256, and `min`, `MIN_APP` in
+`pulsar/appupdate.py`). A window older than `min` (a window of 1.5 or older counts as older) is offered **Reinstall
+Pulsar** in Settings, Updates: on the click, Pulsar downloads Pulsar.zip, checks it against that SHA-256, its own
+signature (`Pulsar.zip.sig`), macOS's signature check and the code check, swaps it in for the running app, quits,
+and the new app opens; the old one is kept beside it (`/Applications/.Pulsar-previous`) until the new one has started,
+and put back if it does not (`docs/HOW-IT-WORKS.md`, section 9). So: **raise `MIN_APP` in a release whose window or
+launcher changed in a way people should have** (it must not be newer than the release; `release.sh` checks). Where
+the account cannot change the app in /Applications, the page shows the install line instead.
 
 Click-only updates also limit the damage of a stolen release key: a forged release reaches only the people who
 click Update, not everyone within six hours.
@@ -193,18 +204,70 @@ signature, so the first open needs the confirmation described in the main README
 
 It runs `launcher.sh --window`, which does everything below and prints `PULSAR_URL <address>?code=<one-time
 code>` instead of opening a browser; the window loads it and the page signs in. While that runs it shows
-"Starting Pulsar…"; if the launcher fails, its own dialog says why and the app quits.
+"Starting Pulsar…" under a spinner, and the launcher's dialogs are sheets on the window (below); if the launcher
+fails, its dialog says why and the app quits.
 
 - Only `http://127.0.0.1:<port>` opens in the window. A link elsewhere that the person clicks goes to the default
   browser; anything else (another site, a frame, a new window) is refused.
-- Downloads (the page's `<a download>` with a blob) go through `WKDownload` and a save panel. **Print or save as
-  PDF** asks the window to print (the page posts `{action: "print"}`; a WebView ignores `window.print()`).
-- **Sign in** on the "not signed in" notice, **View > Reload**, **Start Pulsar** and the page's move into a new
-  version (`{action: "reload"}`) all run the launcher again for a fresh code; the window never reloads the page by
-  itself, since a session lives only as long as its server and the launcher first checks the server on the port is
-  this user's (`docs/HOW-IT-WORKS.md`, section 3). Cmd+, opens Settings; Cmd+=, Cmd+- and Cmd+0 zoom.
-- Closing the window quits the app, and quitting runs `launcher.sh --stop`: the server stops if this app started
-  it and it holds this user's key. A server started from a checkout keeps running.
+- Downloads (the page's `<a download>` with a blob) go through `WKDownload` and a save panel. **File > Print** asks
+  the page to print (it posts `{action: "print"}`; a WebView ignores `window.print()`).
+- **View > Reload Pulsar** (Option-Cmd-R), **Start Pulsar**, a new sign-in and the page's move into a new version
+  (`{action: "reload"}`) all run the launcher again for a fresh code; the window never reloads the page by itself,
+  since a session lives only as long as its server and the launcher first checks the server on the port is this
+  user's (`docs/HOW-IT-WORKS.md`, section 3). The page's view, day, rows, tracker and report range are carried into
+  the new address, so nobody lands back on today. WebKit's own Reload is taken out of the right-click menu for the
+  same reason (`PulsarWebView.willOpenMenu`), with the other items that belong to a browser (Open Link in New
+  Window, Download Linked File, Search with Google, Share, Copy Link with Highlight; Writing Tools outside a text
+  field). When the page's session has expired, `web/js/native.js` asks for a new sign-in by itself, once a minute
+  at most.
+- **The page and the window** talk through `web/js/native.js`. The window injects `window.PULSAR_APP` at the start of
+  every load: its version, path and pid, the Mac's own choices (`prefs`: 12 or 24 hours, the first weekday, the
+  locale and languages, the accent colour, also set as `--mac-accent` on `<html>`) and the app's own (`native`: badge,
+  reminder, reminder time, Open at Login). The page posts `{action: "state", …}` whenever what it shows changes (view,
+  day, rows, theme and background colour, title, open dialogs, unsaved work), and the window calls
+  `pulsarNative.run(command, arg)`, `closeTop()`, `wake()`, `menuPick(id)`, `todayUnlogged()` and `prefs(…)`. A
+  window of 1.5 or older sets no `PULSAR_APP`: the page then sends it none of this.
+- **Menus.** File: New Entry (Cmd+N), Log the Day (Cmd+L), Close (Cmd+W), Export (days or entries, CSV), Print
+  (Cmd+P). View: Day (Cmd+1), Report (Cmd+2), Rows, Refresh (Cmd+R), Reload Pulsar (Option-Cmd-R), Actual Size,
+  Zoom In and Out (Cmd+0, Cmd+= or Cmd++, Cmd+-; the page zoom is kept between launches), Appearance, Enter Full
+  Screen (Ctrl-Cmd-F). Go: Today (Cmd+T), Previous and Next Day (Cmd+Left, Cmd+Right). Pulsar: Check for Updates,
+  Settings (Cmd+,), Services. Window: Pulsar (brings the window back), Bring All to Front. Help: Pulsar Help, How
+  Pulsar Works (both on GitHub), Show Error Log; the Help menu also searches every menu. `validateMenuItem` greys out
+  what does not apply (the day's commands in the report, Print and Export outside it, everything while one of the
+  page's dialogs is open or before the page has loaded) and ticks the view, rows and appearance shown.
+- **Cmd+W** closes the page's top dialog, popover, date picker, task picker or Log the day, as a sheet would close
+  (`pulsarNative.closeTop()`); with nothing open it closes the window. **Closing the window keeps Pulsar running**:
+  the Dock icon (or Window > Pulsar) brings it back. **Cmd+Q** asks first, as a sheet, when the page says something
+  would be lost (the log dialog open, a task or rule being written, changes in Log the day, Log the day writing;
+  the page may add its own with `window.pulsarUnsaved()`), then runs `launcher.sh --stop`: the server stops if this
+  app started it and it holds this user's key. A server started from a checkout keeps running.
+- **Right-click** on an entry: Edit Entry, Delete Entry, Open in Productive; on an activity block: Log This Time, Add
+  a Rule for This Window; on a Likely block, a usual entry or a gap: Log This Time. The page posts the items
+  (`{action: "menu", x, y, items}`) and the window shows a real menu at the pointer; Open in Productive opens in the
+  browser (https only), the rest goes back to the page (`menuPick`). Anywhere else the menu is WebKit's, cut down.
+- **The title bar** is transparent with no separator and no title of its own, in the page's background colour and
+  theme (light, dark or the system's, `window.appearance`), so it reads as one band with the page's header. The
+  window's title still names the day or the report's range, for the Window menu, Mission Control and VoiceOver.
+- **A pinch** changes the day's rows (1 minute to 1 hour) instead of magnifying the window.
+- **After a sleep, and at midnight**, the window calls `pulsarNative.wake()`: the page gets a `pulsar:wake` event, and
+  unless a listener takes it (`preventDefault`), a day view that was showing today moves on to the new today, or
+  refreshes.
+- **The Dock badge** is today's active time with no entry ("45m", "3h"; nothing under 15 minutes), from the day view
+  when it shows today, else from `/api/report` for today every half hour.
+- **The reminder**: once a working day at 17:30 (the page can set another time, or switch it off), when half an hour
+  or more of today has no entry, a notification "Time not logged today" with **Log the Day**. The app is signed ad
+  hoc only, and whether macOS lets such an app notify was not checked on a real Mac: if the request for permission
+  fails or is refused, the Dock icon bounces once and a sheet on the window says the same, with Log the Day.
+- **Open at Login** (macOS 13 and later, `SMAppService.mainApp`): the page can switch it with
+  `pulsarNative.setNativePrefs({login: true})`; its state ("on", "off", "approve", or "unsupported" on macOS 12) is in
+  `PULSAR_APP.native.login`. Launched at login, the window opens without taking the keyboard.
+- **The launcher's dialogs**: with `PULSAR_WINDOW_DIALOGS=1` (set by this window) and `--window`, the launcher writes
+  `PULSAR_DIALOG <text> <buttons>` (each base64) on its own output and reads the button's title back on its input;
+  the window shows each as a sheet, the last button the default. `PULSAR_STATUS <text>` lines replace the words under
+  the spinner. The window gives up on a launcher that says nothing for five minutes. Without the variable (an older
+  window, a test), the launcher shows its own osascript dialogs as before.
+- **Reinstall Pulsar**: the page posts `{action: "quit"}` once the new app is in place (`pulsar/appupdate.py`), and the
+  window quits without asking about unsaved work.
 - The warp (an update, the refresh button): the window tells the page it can draw it (`window.PULSAR_NATIVE_WARP`),
   and the page then only posts `{action: "warp", to: 0..1, instant, dark}`. The window takes a picture of the page,
   bends it with Core Image's `CIHoleDistortion` and draws the core, the ring and the flash as Core Animation layers,
@@ -218,8 +281,10 @@ code>` instead of opening a browser; the window loads it and the page signs in. 
 
 1. **Python.** It uses `/usr/bin/python3`, which works only once Apple's Command Line Tools are installed. It
    checks `xcode-select -p` first; without the tools it shows its own dialog and, on **Install**, runs
-   `xcode-select --install` (macOS asks for an administrator password), then exits. The person opens Pulsar
-   again afterwards. With the tools but a Python older than 3.9, it points to Software Update.
+   `xcode-select --install` (macOS asks for an administrator password). Run by the window (`--window`), it then waits,
+   saying so under the window's spinner every few seconds, and goes on by itself once the tools are there (an hour
+   at most); run any other way, it exits and the person opens Pulsar again afterwards. With the tools but a Python
+   older than 3.9, it points to Software Update.
 2. **Install.** It compares the version the app carries (B, `Resources/app`) with the installed one (C,
    `current`). With nothing installed, or B newer than C and not in `bad-versions`, it copies B to a temporary
    folder, checks the copy against the signed `app.manifest.json` (`release_sig.py check-bundle`), moves it to
@@ -233,7 +298,8 @@ code>` instead of opening a browser; the window loads it and the page signs in. 
    server the app started with another version is asked to quit (`POST /api/quit`) and C starts instead. If
    another program holds the port, it says so and changes nothing.
 4. **Start.** It runs `python3 -B <real path of current>/pulsar.py --no-open --port 5610` with `nohup`, in a
-   new session, so the server outlives the launcher. `-B` writes no `__pycache__`. Output is appended to
+   new session, so the server outlives the launcher, with `PULSAR_APP_BUNDLE` set to this app's path (for Reinstall
+   Pulsar) and none of the window's pipes. `-B` writes no `__pycache__`. Output is appended to
    `~/Library/Logs/Pulsar.log`, together with what the launcher decided.
 5. **Check and roll back.** It waits up to 15 seconds for `/api/version` and `is_ours`, then opens the page. If the server
    exits or never answers and `previous` is another version, C goes into `bad-versions`, `current` goes back
@@ -356,7 +422,7 @@ Pulsar's Google client and a revoke would end Pulsar's access too. Neither app's
   ditto "dist/Pulsar Preview.app" "/Applications/Pulsar Preview.app"
   ```
 - **Put new work in it:** merge the branches to try into `preview` (in `~/Sites/pulsar-preview`, so the main checkout
-  is not touched), then quit and reopen Pulsar Preview: closing its window stops its server, and opening it runs the
+  is not touched), then quit Pulsar Preview (Cmd+Q) and open it again: quitting stops its server, and opening it runs the
   code as it is now. Page files (`web/`) also reload with ↻; Python changes need the reopen.
 - **Release** only what was tried in Preview: merge it into `main` and run `release.sh` as below.
 - **Remove it:** switch off Claude Code in its Settings first if it is on (that removes `pulsar-preview` from Claude

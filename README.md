@@ -64,17 +64,31 @@ signed). The first time, macOS says it cannot verify Pulsar: click **Done**, ope
 right-click Pulsar, **Open**, then **Open** again). Only once.
 
 After that, open Pulsar like any other app. If it is already running, its window comes to the front. Downloads
-ask where to save; **Print or save as PDF** in the Report opens the print dialog. Cmd+= and Cmd+- make the page
+ask where to save; **File → Print** (Cmd+P) in the Report opens the print dialog. Cmd+= and Cmd+- make the page
 bigger or smaller. The window needs Safari 16.2 or newer (macOS 13 has it; on macOS 12, update Safari); on an
 older Safari, Pulsar opens in your browser instead.
 
+- **Menus and keys**: every command is in the menu bar with its shortcut, and **Help** searches them. New Entry
+  Cmd+N, Log the Day Cmd+L, Day Cmd+1, Report Cmd+2, Today Cmd+T, previous and next day Cmd+Left and Cmd+Right,
+  Refresh Cmd+R. Cmd+W closes an open dialog or popover first, then the window. Right-click an entry, an activity
+  block or a gap for what can be done with it. A pinch on the trackpad changes the rows (1 minute to 1 hour).
+- **Closing the window** keeps Pulsar running in the Dock: its icon shows today's active time with no entry ("3h"),
+  and at 17:30 on working days a notification says how much is not logged, with **Log the Day**. Click the Dock icon
+  to bring the window back. (Where macOS does not let Pulsar notify, the Dock icon bounces once instead.)
 - **Open it at login**: **System Settings → General → Login Items** (Login Items & Extensions on newer macOS),
-  click **+** under *Open at Login* and choose Pulsar. It then starts when you log in and opens its window.
+  click **+** under *Open at Login* and choose Pulsar. It then starts when you log in and opens its window, without
+  taking the keyboard from what you are doing.
 - **Updates**: when a new version is out, **Settings → Update** installs it in a few seconds; you never download
-  Pulsar again. It installs nothing by itself.
+  Pulsar again. It installs nothing by itself. Now and then a release needs a newer Pulsar app (its window and
+  menus): **Settings → Updates** then offers **Reinstall Pulsar**, which downloads it, checks it like an update and
+  puts it in Applications; Pulsar quits and opens again (an app older than 1.6 asks you to press Cmd+Q). If Pulsar
+  cannot change the app in Applications (another account installed it), it shows the install line above instead.
 - **What changed**: [CHANGELOG.md](CHANGELOG.md), also under **Settings → Updates → Changelog**.
-- **Stop it**: close the window or press Cmd+Q. Nothing keeps running in the background. (If Pulsar went to your
-  browser because Safari is too old, it keeps running after you close the tab; logging out stops it.)
+- **Stop it**: press Cmd+Q. Nothing keeps running in the background then. If something would be lost (a time
+  being logged, changes in Log the day), Pulsar asks first. (If Pulsar went to your browser because Safari is too
+  old, it keeps running after you close the tab; logging out stops it.)
+- **Reinstalling by hand**: quit Pulsar first (Cmd+Q), then run the install line again. A Pulsar left running keeps
+  its old window until it is quit.
 - **If it says it could not start**: click **Show log** and send what it shows to the person who shared
   Pulsar with you. The log is `~/Library/Logs/Pulsar.log`.
 
