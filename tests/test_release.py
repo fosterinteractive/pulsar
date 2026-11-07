@@ -240,7 +240,7 @@ class InstallLineTest(unittest.TestCase):
         return buf.getvalue()
 
     def test_the_line_is_one_line_with_full_paths_and_the_release_key(self):
-        self.assertEqual(self.key_in_line, release_sig.PUBLIC_KEYS[0])  # release.sh checks the same before it publishes
+        self.assertIn(self.key_in_line, release_sig.PUBLIC_KEYS)  # release.sh checks the same before it publishes (and that it signed Pulsar.zip)
         self.assertNotIn("\n", self.line)
         for tool in ("mktemp", "curl", "openssl", "ditto", "open", "rm"):
             self.assertRegex(self.line, rf"/(?:usr/)?bin/{tool} ")
