@@ -288,7 +288,7 @@ function render() {
     month: 'long', year: 'numeric', timeZone: 'UTC'}).format(noon);
   setText($('#dayname'), label.charAt(0).toUpperCase() + label.slice(1));
   $('#date').value = state.date;
-  $('#zoom').value = String(Z);
+  $('#zoom-sel').value = String(Z);
   $('#source-select').value = state.source;
 
   // axis and rules
@@ -705,10 +705,12 @@ document.addEventListener('toggle', ev => {
   const p = ev.target.dataset?.p; if (p == null) return;
   ev.target.open ? folded.delete(p) : folded.add(p);
 }, true);
-$('#zoom').addEventListener('change', ev => {
+function setZoom(z) {
   const sc = $('#scroll'), top = sc.scrollTop / ppmOf(state.zoom);  // keep the same minute at the top
-  state.zoom = +ev.target.value; syncURL(); render(); sc.scrollTop = top * ppmOf(state.zoom);
-});
+  state.zoom = +z; syncURL(); render(); sc.scrollTop = top * ppmOf(state.zoom);
+}
+$('#zoom-sel').addEventListener('change', ev => setZoom(ev.target.value));
+document.querySelectorAll('#zoom button[data-v]').forEach(b => b.onclick = () => setZoom(b.dataset.v));
 $('#source-select').addEventListener('change', ev => {
   state.source = ev.target.value; syncURL(); state.act = null; render();
   const d = state.date, mine = newest('activity');
@@ -735,6 +737,8 @@ function tickClock(back = false) {
   if (back) load({keepScroll: true});
 }
 setInterval(() => { if (document.visibilityState === 'visible') tickClock(); }, 60 * 1000);
+// the app's window says when the Mac woke or midnight passed (native.js): handled here, so it does not move on itself
+addEventListener('pulsar:wake', ev => { ev.preventDefault(); tickClock(state.date === todayLocal()); });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
   const away = hiddenAt ? Date.now() - hiddenAt : 0;

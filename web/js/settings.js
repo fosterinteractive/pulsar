@@ -141,6 +141,13 @@ function closeSettings(then) {
   msg.querySelector('[data-sd="save"]').focus();
 }
 dlg.addEventListener('cancel', ev => { if (settingsDirty) { ev.preventDefault(); closeSettings(); } });
+/* what quitting now would lose, in a sentence, or '' (the app's window asks before ⌘Q quits, native.js) */
+window.pulsarUnsaved = () => {
+  if (dlg.open && settingsDirty) return 'Your changes in Settings are not saved.';
+  if (typeof logDlg !== 'undefined' && logDlg.open && !logEdit && logForm.elements.note.value.trim()) return 'The log dialog is open with a note that is not logged yet.';
+  if (typeof LD !== 'undefined' && LD.writing) return 'Log the day is writing entries to Productive.';
+  return '';
+};
 
 function openSettings(tab) {
   if (!CONFIG) return;
