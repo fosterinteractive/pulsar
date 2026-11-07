@@ -1288,8 +1288,14 @@ def create_entry(entry: dict, settings: dict) -> dict:
             text = raw[:600].decode("utf-8", "replace")
             raise ProductiveError(plain_refusal(text) if any(c in text for c in REFUSALS) else
                                   f"Productive refused the entry (HTTP {status}): {text[:300]}")
-        doc = json.loads(raw or b"{}")
-        return {"id": str((doc.get("data") or {}).get("id") or "")}
+        try:  # created (2xx): only an answer that names the new entry counts as logged
+            new_id = str((((json.loads(raw or b"{}") or {}).get("data") or {}).get("id")) or "")
+        except (ValueError, AttributeError):
+            new_id = ""
+        if not new_id.isdigit():
+            raise ProductiveUnclear(f"Productive answered HTTP {status} without the new entry in it, so the entry may or "
+                                    "may not exist. Check the Logged column (it has been refreshed) before logging again.")
+        return {"id": new_id}
     item = {"date": entry["date"], "time": f"{int(entry['minutes'])} min", "started_at": entry["started_at"],
             "note": entry.get("note") or "", "person": str(settings.get("person_id")),
             "service": str(entry["service_id"]), "task": str(entry["task_id"])}

@@ -1595,8 +1595,12 @@ def _log_checked(body: dict, s: dict, date: str, begin, minutes: int, task_id: s
     except productive.ProductiveError as exc:  # a clear refusal: nothing was written
         note("refused", reason=str(exc))
         raise
-    except BaseException as exc:  # anything else after sending: it may have happened
+    except BaseException as exc:  # anything else after sending: it may have happened, and is said so, never "not logged"
         note("unknown", reason=f"{type(exc).__name__}: {exc}")
+        if isinstance(exc, Exception):
+            raise productive.ProductiveUnclear(f"No clear answer from Productive ({type(exc).__name__}: {exc}), so the "
+                                               "entry may or may not exist. Check the Logged column (it has been "
+                                               "refreshed) before logging again.") from exc
         raise
     _recent.clear()
     try:

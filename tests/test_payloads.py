@@ -218,6 +218,31 @@ class LogBodyTest(unittest.TestCase):
         [row] = dayplan.journal()["runs"][0]["rows"]
         self.assertEqual((row["status"], row["id"]), ("logged", "901"))
 
+    def test_a_rest_answer_that_does_not_name_the_new_entry_is_unclear(self):
+        """Created (201), but the body is not JSON or has no id: it may exist, so the journal says "unknown", never
+        resends it, and the page and pulsar_log hear "not known", never "not logged"."""
+        for i, raw in enumerate((b"<html>busy</html>", b"{}", b'{"data": {"id": ""}}', b'{"data": null}', b"[]")):
+            wire = Wire()
+            wire_answer = (201, raw)
+            with connected("token"), mock.patch.object(productive, "https",
+                                                      lambda *a, **k: wire(*a, **k) and wire_answer):
+                with self.assertRaises(productive.ProductiveUnclear):
+                    productive.create_entry(ENTRY, SETTINGS)
+                got = mcptools.post("/api/log", dict(self.BODY, start=f"1{i}:10", run=f"ld-{DATE}-0123abcd", row=f"r{i}"))
+            self.assertTrue(got.get("unclear"), (raw, got))
+            self.assertEqual(len(wire.writes()), 2, raw)
+        rows = [x["status"] for r in dayplan.journal()["runs"] for x in r["rows"]]
+        self.assertEqual(set(rows), {"unknown"})
+
+    def test_anything_else_after_sending_is_unclear_too(self):
+        def broken(e, s):
+            raise KeyError("data")  # a fault after the request went out
+        with mock.patch.object(productive, "create_entry", broken):
+            with self.assertRaises(productive.ProductiveUnclear):
+                server.api_log(dict(self.BODY, run=f"ld-{DATE}-0123abcd", row="r1"))
+        [row] = dayplan.journal()["runs"][0]["rows"]
+        self.assertEqual(row["status"], "unknown")
+
 
 class UndoTest(unittest.TestCase):
     """Undo deletes only what its run wrote, as written, and a delete Productive did not confirm stays undoable."""
