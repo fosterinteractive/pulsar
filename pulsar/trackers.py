@@ -21,6 +21,8 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import Callable
 
+from . import config
+
 MEMTIME_DIR = os.path.expanduser("~/Library/Application Support/memtime/user")
 MEMTIME_DB = os.path.join(MEMTIME_DIR, "core.db")
 ICONS_DIR = os.path.join(MEMTIME_DIR, "icons")
@@ -259,12 +261,31 @@ def activitywatch_raw(base: str, t0: float, t1: float) -> dict | None:
     return out if out["window"] else None
 
 
-def activity_aw(base: str, t0: float, t1: float, classify: Classifier) -> list:
+def present_spans(afk_events: list, bridge: float = 0) -> list:
+    """[[start, end]] in seconds while someone was at the keys: the AFK watcher's not-afk events, and every afk event
+    shorter than `bridge` seconds between two not-afk ones. Settings' "Away after" gives `bridge`: a pause shorter than
+    it is work, as in the fi-time-from-activity skill (activity_blocks.py). It only sees pauses ActivityWatch wrote, so
+    one shorter than ActivityWatch's own AFK timeout is not there at all (awsetup.py)."""
+    evs = sorted((ev for ev in afk_events if isinstance(ev, dict) and ev.get("timestamp")),
+                 key=lambda ev: parse_ts(ev["timestamp"]))
+    status = [(ev.get("data") or {}).get("status") for ev in evs]
+    spans = []
+    for i, ev in enumerate(evs):
+        on = status[i] == "not-afk" or (status[i] == "afk" and float(ev.get("duration") or 0) < bridge
+                                        and 0 < i < len(evs) - 1 and status[i - 1] == status[i + 1] == "not-afk")
+        if on:
+            s = parse_ts(ev["timestamp"])
+            spans.append([s, s + float(ev.get("duration") or 0)])
+    return merge(spans)
+
+
+def activity_aw(base: str, t0: float, t1: float, classify: Classifier, away: float | None = None) -> list:
+    """The windows ActivityWatch saw while someone was at the keys; a pause shorter than `away` minutes (Settings'
+    "Away after" when not given) between two stretches of input counts as being there."""
     raw = activitywatch_raw(base, t0, t1)
     if not raw:
         return []
-    present = merge([[parse_ts(ev["timestamp"]), parse_ts(ev["timestamp"]) + ev["duration"]]
-                     for ev in raw["afk"] if (ev.get("data") or {}).get("status") == "not-afk"])
+    present = present_spans(raw["afk"], (config.away_after() if away is None else away) * 60)
     if not raw["afk"]:  # windows, but the AFK watcher recorded nothing at all: it stopped, or lacks access
         PROBLEMS["aw"] = ("ActivityWatch saw windows but its AFK watcher recorded nothing, so Pulsar cannot tell when "
                           "you were at the computer. Check that the AFK watcher runs and has Accessibility access.")
@@ -305,9 +326,10 @@ def answering(aw_url: str) -> bool:
         return False
 
 
-def both(t0: float, t1: float, aw_url: str, classify: Classifier) -> dict:
+def both(t0: float, t1: float, aw_url: str, classify: Classifier, away: float | None = None) -> dict:
+    """Both trackers' items. `away`: Settings' "Away after" in minutes (read from the settings when not given)."""
     PROBLEMS.pop("memtime", None)
-    return {"aw": activity_aw(aw_url, t0, t1, classify), "memtime": activity_memtime(t0, t1, classify)}
+    return {"aw": activity_aw(aw_url, t0, t1, classify, away), "memtime": activity_memtime(t0, t1, classify)}
 
 
 def pick(found: dict, source: str) -> str:

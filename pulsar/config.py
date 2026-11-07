@@ -55,9 +55,20 @@ DEFAULTS = {
     "claude_denies_added": [],   # the "deny" rules it added there (Pulsar's folders), to take back the same way
     "claude_ask_productive": False,  # "Ask before any Claude Code session changes Productive": adds ask rules for it
     "round_to": 5,               # 5 | 10 | 15 minutes: Log the day's grid and shortest entry, the log dialog's minutes
+    "away_after": 15,            # 10 | 15 | 20 | 30 minutes without input that are time away (away_after)
 }
 
 ROUNDING = (5, 10, 15)
+AWAY_AFTER = (10, 15, 20, 30)
+
+
+def away_after(settings: dict | None = None) -> int:
+    """Settings' "Away after", in minutes: this long without typing or moving the mouse is time away. It ends a sitting
+    (sessions.py, dayplan.py), it is the shortest away the day shows (server.away), and a shorter pause between two
+    stretches of input counts as work (trackers.present_spans). Without `settings`, the saved ones; a value that is not
+    one of AWAY_AFTER gives the default."""
+    v = (load() if settings is None else settings).get("away_after")
+    return int(v) if v in AWAY_AFTER and not isinstance(v, bool) else DEFAULTS["away_after"]
 
 
 def is_preview() -> bool:
@@ -149,6 +160,8 @@ def _fits(key: str, value) -> bool:
         return value in ("auto", "token", "claude-code")
     if key == "round_to":
         return not isinstance(value, bool) and value in ROUNDING
+    if key == "away_after":
+        return not isinstance(value, bool) and value in AWAY_AFTER
     if key == "claude_models":  # any use and name: claudeuses.model() takes an unknown one as no choice
         return isinstance(value, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in value.items())
     if key in ("personal_patterns", "claude_rules_added", "claude_denies_added"):

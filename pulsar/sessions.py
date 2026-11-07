@@ -9,7 +9,8 @@ what the person typed, what the agent did (its tool calls name the files it touc
     session ran in.
   * Each minute the activity tracker saw work goes to a session: the one whose title the editor window showed, else
     one whose agent was running, else the one last used in that sitting. Meetings and personal windows go to none.
-  * Without a tracker, the time an agent ran on a request, and the answers typed within half an hour, count as work.
+  * Without a tracker, the time an agent ran on a request, and the answers typed within Settings' "Away after", count
+    as work.
 
 Nothing here knows any person, company or client: projects come from the folders on this computer.
 """
@@ -23,11 +24,11 @@ import re
 import time
 from datetime import datetime
 
+from . import config
 from .config import Newest
 
 HOME = os.path.expanduser("~")
 PROJECTS_DIR = os.path.join(HOME, ".claude", "projects")
-AWAY = 30  # minutes without a sign of work that end a sitting
 CLAUDE_APPS = re.compile(r"^(Cursor|Code|Visual Studio Code|Windsurf|Terminal|iTerm2?|Warp|Ghostty|Claude)$", re.I)
 MEETING = re.compile(r"zoom|meet\.google|google meet|microsoft teams|\bteams\b|huddle|webex|meeting", re.I)
 NOT_TYPED = ("<task-notification>", "<local-command", "Caveat:", "<command-message>", "[Request interrupted",
@@ -258,10 +259,13 @@ def project_at(s: dict, t: float) -> str:
     return turn["project"]
 
 
-def propose(t0: float, t1: float, items: list, tracker: str, projects_dir: str = PROJECTS_DIR) -> dict:
+def propose(t0: float, t1: float, items: list, tracker: str, projects_dir: str = PROJECTS_DIR,
+            away: int | None = None) -> dict:
     """The Likely column for the day [t0, t1): blocks of minutes, each with its project, the sessions' titles, how many
     messages were typed in it and the first one. `items` are the day's activity (minutes from t0, as trackers.py makes
-    them); without any, the agents' run time stands in for the tracker."""
+    them); without any, the agents' run time stands in for the tracker. `away`: the minutes without a sign of work
+    that end a sitting, Settings' "Away after" (config.away_after) when not given."""
+    away = config.away_after() if away is None else away
     sessions = []
     for path in glob.glob(os.path.join(projects_dir, "*", "*.jsonl")):
         try:
@@ -305,7 +309,7 @@ def propose(t0: float, t1: float, items: list, tracker: str, projects_dir: str =
             acts.append((m(b), i))
         acts += [(m(p), i) for p, _ in s["prompts"]]
     acts.sort()
-    if not any(present):  # no tracker: an agent working on a request, and answers typed within half an hour
+    if not any(present):  # no tracker: an agent working on a request, and answers typed within the away time
         tracker = "no tracker"
         for s in sessions:
             for a, b in s["running"]:
@@ -313,7 +317,7 @@ def propose(t0: float, t1: float, items: list, tracker: str, projects_dir: str =
                     present[x] = True
             for p, _ in s["prompts"]:
                 end = max((b for a, b in s["running"] if b <= p), default=None)
-                if end is not None and p - end <= AWAY * 60:
+                if end is not None and p - end <= away * 60:
                     for x in range(max(0, m(end)), min(n, m(p) + 1)):
                         present[x] = True
 
@@ -322,7 +326,7 @@ def propose(t0: float, t1: float, items: list, tracker: str, projects_dir: str =
     if marks:
         start = prev = marks[0]
         for x in marks[1:] + [None]:
-            if x is None or x - prev > AWAY:
+            if x is None or x - prev > away:
                 for y in range(start, prev + 1):
                     sitting[y] = (start, prev)
                 start = x

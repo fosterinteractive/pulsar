@@ -44,7 +44,7 @@ GRID = 5             # entry boundaries on this grid, in minutes (Settings: "Rou
 MIN_ENTRY = 10       # shorter pieces join a neighbour (never shorter than the grid)
 MERGE_GAP = 30       # pieces of one task this close, in one sitting, are one entry
 OUT_MIN = 10         # active minutes outside Claude from this long become an entry of their own
-SITTING_GAP = 30     # minutes without activity that end a sitting
+SITTING_GAP = config.DEFAULTS["away_after"]  # minutes without activity that end a sitting: Settings' "Away after" (opts_for)
 CALL_GAP = 20        # a call goes on while its window shows again within this many minutes
 CALL_MIN = 10        # a shorter call is a glance at a call window, not a meeting
 MEETING_SLACK = 10   # a call this close to a calendar meeting is that meeting
@@ -74,10 +74,10 @@ FIT_MIN = 60         # minutes of a repository's (fading) votes before its proje
 
 def opts_for(settings: dict) -> dict:
     """plan()'s grid and shortest entry from Settings' "Round entries to" (5, 10 or 15 minutes): 5 keeps today's 5 and
-    10; 10 gives 10 and 10; 15 gives 15 and 15."""
+    10; 10 gives 10 and 10; 15 gives 15 and 15. And the end of a sitting from Settings' "Away after"."""
     step = settings.get("round_to")
     step = step if step in config.ROUNDING and not isinstance(step, bool) else GRID
-    return {"grid": step, "min_entry": max(MIN_ENTRY, step)}
+    return {"grid": step, "min_entry": max(MIN_ENTRY, step), "sitting_gap": config.away_after(settings)}
 
 
 def words(text: str, skip: frozenset = frozenset()) -> set:
@@ -397,7 +397,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     if marks:
         a = p = marks[0]
         for x in marks[1:] + [None]:
-            if x is None or x - p > SITTING_GAP:
+            if x is None or x - p > o.get("sitting_gap", SITTING_GAP):
                 for y in range(a, p + 1):
                     sitting[y] = a
                 a = x

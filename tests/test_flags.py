@@ -247,10 +247,11 @@ class RoundingTest(unittest.TestCase):
                 self.assertEqual(server.public_config(config.load())["preview"], {"writes": False})
 
     def test_it_sets_log_the_days_grid_and_shortest_entry(self):
-        self.assertEqual(dayplan.opts_for({}), {"grid": 5, "min_entry": 10})       # today's, unchanged
-        self.assertEqual(dayplan.opts_for({"round_to": 10}), {"grid": 10, "min_entry": 10})
-        self.assertEqual(dayplan.opts_for({"round_to": 15}), {"grid": 15, "min_entry": 15})
-        self.assertEqual(dayplan.opts_for({"round_to": True}), {"grid": 5, "min_entry": 10})
+        grid = lambda o: {k: o[k] for k in ("grid", "min_entry")}  # noqa: E731 - "sitting_gap" is Away after's
+        self.assertEqual(grid(dayplan.opts_for({})), {"grid": 5, "min_entry": 10})       # today's, unchanged
+        self.assertEqual(grid(dayplan.opts_for({"round_to": 10})), {"grid": 10, "min_entry": 10})
+        self.assertEqual(grid(dayplan.opts_for({"round_to": 15})), {"grid": 15, "min_entry": 15})
+        self.assertEqual(grid(dayplan.opts_for({"round_to": True})), {"grid": 5, "min_entry": 10})
 
     def test_a_quarter_hour_grid_on_a_day(self):
         ctx = history_for({"Fix the importer": "11", "Hero video": "22"})
@@ -288,7 +289,7 @@ class CatchUpTest(unittest.TestCase):
         with mock.patch.object(server, "current_settings", lambda: {"timezone": "UTC", "personal_patterns": [],
                                                                      "activitywatch_url": "http://localhost:5600"}), \
                 mock.patch.object(server, "productive_rows", lambda d0, d1, s: ([], None, "token", False)), \
-                mock.patch.object(server.trackers, "both", lambda a, b, url, cls: {"aw": []}):
+                mock.patch.object(server.trackers, "both", lambda a, b, url, cls, away=None: {"aw": []}):
             got = server.api_report({"from": "2026-10-16", "to": "2026-11-05"})
         self.assertEqual(len(got["days"]), 21)
         self.assertTrue(all("notLogged" in d and "weekday" in d for d in got["days"]))

@@ -643,7 +643,7 @@ class Run:
             return
         first, last = min(it["s"] for it in items), max(it["e"] for it in items)
         for g in away:
-            if g["e"] - g["s"] < server.AWAY_MIN or g["s"] < first or g["e"] > last or g["off"] != (g["e"] - g["s"] >= 180):
+            if g["e"] - g["s"] < config.away_after() or g["s"] < first or g["e"] > last or g["off"] != (g["e"] - g["s"] >= 180):
                 self.fail("away: a gap too short, outside the day's activity or wrongly off", g)
             if any(ov(it["s"], it["e"], g["s"], g["e"]) > 0.01 for it in items):  # away rounds to 0.01
                 self.fail("away: activity inside a gap", g)
@@ -877,7 +877,7 @@ class Run:
             mock.patch.object(server, "public_config", lambda s: {
                 "version": server.__version__, "preview": None, "timezone": d.tzname, "targetMinutes": 480,
                 "writesBlocked": config.writes_blocked(), "rules": d.rules}),
-            mock.patch.object(trackers, "both", lambda t0, t1, url, cls: {"aw": [dict(it) for it in d.items], "memtime": []}),
+            mock.patch.object(trackers, "both", lambda t0, t1, url, cls, away=None: {"aw": [dict(it) for it in d.items], "memtime": []}),
             mock.patch.object(likely, "available", lambda: True),
             mock.patch.object(likely, "proposal", proposal),
             mock.patch.object(learn, "warm", lambda date, s: None),

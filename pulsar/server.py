@@ -187,7 +187,7 @@ def public_config(s: dict) -> dict:
         "timezone": config.timezone_name(s), "timezoneSystem": config.system_timezone(), "timezoneSetting": s["timezone"],
         "targetMinutes": config.target_minutes(s), "targetHours": s["target_hours"], "personDayHours": s["person_day_hours"],
         "personalPatterns": s["personal_patterns"], "activitywatchUrl": s["activitywatch_url"], "rules": s["rules"],
-        "roundTo": s["round_to"],
+        "roundTo": s["round_to"], "awayAfter": config.away_after(s),
         "update": {**UPDATER.public(), "skip": s["update_skip"], "asked": s["update_asked"]},
         "errors24h": sum(1 for e in logbook.read(1) if e["kind"] == "error"),
         "likely": {"setting": s["likely"], "available": likely.available(), "enabled": likely.enabled(s),
@@ -269,6 +269,8 @@ def validate(body: dict) -> dict:
         if isinstance(v, bool) or v not in config.ROUNDING:
             raise ValueError("Entries round to 5, 10 or 15 minutes.")
         out["round_to"] = v
+    if "away_after" in body:
+        out["away_after"] = away_minutes(body["away_after"])
     if "productive_source" in body:
         if body["productive_source"] not in ("auto", "token", "claude-code"):
             raise ValueError("The Productive source is auto, token or claude-code")
@@ -301,6 +303,15 @@ def validate(body: dict) -> dict:
                 raise ValueError(f"{key.replace('_', ' ')} is a number")
             out[key] = v
     return out
+
+
+def away_minutes(v) -> int:
+    """Settings' "Away after" from the page: 10, 15, 20 or 30 minutes."""
+    if isinstance(v, str) and v.strip().isdigit():
+        v = int(v)
+    if isinstance(v, bool) or v not in config.AWAY_AFTER:
+        raise ValueError("Away after is 10, 15, 20 or 30 minutes.")
+    return int(v)
 
 
 def productive_rows(d0: str, d1: str, s: dict, bulk: bool = False) -> tuple:
@@ -353,28 +364,29 @@ def test_productive(s: dict) -> dict:
 def api_activity(q: dict) -> dict:
     s = config.load()
     t0, t1 = day_bounds(q["date"], config.tz(s))
-    found = trackers.both(t0, t1, s["activitywatch_url"], trackers.classifier(s["personal_patterns"]))
+    found = trackers.both(t0, t1, s["activitywatch_url"], trackers.classifier(s["personal_patterns"]), config.away_after(s))
     source = trackers.pick(found, q.get("source", "auto"))
     minutes = {k: round(sum(x["e"] - x["s"] for x in v)) for k, v in found.items()}
     tz = config.tz(s)
     # away time from elapsed minutes; then, on a day the clocks change, everything by the clock (each piece its real length)
-    items, gaps = clock_spans(found[source], t0, t1, tz), clock_spans(away(found[source]), t0, t1, tz, 2)
+    items = clock_spans(found[source], t0, t1, tz)
+    gaps = clock_spans(away(found[source], config.away_after(s)), t0, t1, tz, 2)
     for name, problem in list(trackers.PROBLEMS.items()):
         logbook.record(f"tracker {name}", problem, kind="warning")
     return {"source": source, "minutes": minutes, "items": items, "problems": dict(trackers.PROBLEMS), "away": gaps}
 
 
-AWAY_MIN = 5    # minutes without anything on screen that count as being away from the computer
 OFF_MIN = 180   # from this long it is time off (a night, an afternoon off), not a break: shown, never added up
 
 
-def away(items: list) -> list:
-    """The stretches between the day's first and last activity when nothing was on screen for at least AWAY_MIN
-    minutes: ActivityWatch's AFK time, MemTime's offline time, a computer asleep. [{s, e, off}] in minutes; off is a
-    stretch of OFF_MIN or more."""
+def away(items: list, least: float | None = None) -> list:
+    """The stretches between the day's first and last activity when nothing was on screen for at least `least`
+    minutes, Settings' "Away after" (config.away_after) when not given: ActivityWatch's AFK time, MemTime's offline
+    time, a computer asleep. [{s, e, off}] in minutes; off is a stretch of OFF_MIN or more."""
+    least = config.away_after() if least is None else least
     out, end = [], None
     for it in sorted(items, key=lambda x: x["s"]):
-        if end is not None and it["s"] - end >= AWAY_MIN:
+        if end is not None and it["s"] - end >= least:
             out.append({"s": round(end, 2), "e": round(it["s"], 2), "off": it["s"] - end >= OFF_MIN})
         end = it["e"] if end is None else max(end, it["e"])
     return out
@@ -580,7 +592,8 @@ def api_report(q: dict) -> dict:
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(2) as pool:
         rows_job = pool.submit(productive_rows, d0, d1, s)
-        sources = trackers.both(bounds[0][0], bounds[-1][1], s["activitywatch_url"], trackers.classifier(s["personal_patterns"]))
+        sources = trackers.both(bounds[0][0], bounds[-1][1], s["activitywatch_url"], trackers.classifier(s["personal_patterns"]),
+                                config.away_after(s))
         rows, problem, source, from_copy = rows_job.result()
     data = report.build(dates, bounds, sources, rows, today(tz), tz=tz)
     data["warning"], data["fromCopy"], data["needsSetup"] = problem, from_copy, bool(problem) and source is None
@@ -804,7 +817,7 @@ def api_repeats(q: dict) -> dict:
             return {"repeats": [], "error": problem}
         _repeats[key] = (time.time(), repeating(rows, tz, date))
     t0, t1 = day_bounds(date, tz)
-    found = trackers.both(t0, t1, s["activitywatch_url"], trackers.classifier(s["personal_patterns"]))
+    found = trackers.both(t0, t1, s["activitywatch_url"], trackers.classifier(s["personal_patterns"]), config.away_after(s))
     items = found[trackers.pick(found, q.get("source", "auto"))]
     items = clock_spans(items, t0, t1, tz)  # by the clock on a day the clocks change, like the usual times
     return {"repeats": repeat_suggestions(_repeats[key][1], items, datetime.strptime(date, "%Y-%m-%d").weekday())}
