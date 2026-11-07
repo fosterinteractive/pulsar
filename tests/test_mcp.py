@@ -134,6 +134,7 @@ class McpTest(unittest.TestCase):
         self.addCleanup(unfaked.stop)
         mcptools._pending.clear()
         mcptools._calls.clear()
+        dayplan._shared_kept.clear()  # the shared rows of the last plan worked out (pulsar_preview reads them)
         server._just_logged.clear()  # the server's one-minute guard against the same entry twice
         if os.path.exists(dayplan.journal_path()):  # each test starts with no Log the day runs
             os.remove(dayplan.journal_path())
@@ -332,6 +333,74 @@ class McpTest(unittest.TestCase):
                                          'Wed 4 Nov 2026 10:30-10:50 (20 min): Build (Acme), Dev in B, billable. '
                                          'Note: "Search fixed."')
         self.assertNotIn("\u2014", dry["summary"])
+
+    def shared_day(self):
+        """09:00-10:00 this session's internal work on screen; 09:20-09:50 another session's client agent got it first."""
+        self.day.rows = [{"s": 540, "e": 600, "minutes": 60, "project": "house-tool", "kind": "focused", "titles": [],
+                          "messages": 1, "first_message": "x", "sessions": ["abcdef12"]}]
+        self.day.background = [{"s": 560, "e": 590, "minutes": 30, "project": "acme-site", "kind": "background",
+                                "titles": [], "sessions": ["99999999"], "qualifies": True}]
+        inner = {"taskId": "12", "title": "Tool", "project": "Agency tools", "repo": "house-tool", "serviceId": "22",
+                 "service": "QA", "billable": False, "why": "you logged it while in this Claude session (90%)",
+                 "source": "session", "confidence": "high", "sessions": ["abcdef12"]}
+        self.day.plan = {"entries": [plan_row(540, 560, task="12", repo="house-tool", billable=False),
+                                     plan_row(560, 590, flags=["shared"], shared=True, choice="client", sharedWith=inner,
+                                              sessions=["99999999"]),
+                                     plan_row(590, 600, task="12", repo="house-tool", billable=False)],
+                         "unplaced": [], "uncovered": [], "roundTo": 5,
+                         "skipped": [{"s": 540, "e": 600, "minutes": 25, "project": "acme-site", "why": "ran in parallel"}],
+                         "totals": {"proposed": 60, "logged": 0, "parallel": 30, "shared": 30, "leftOut": 0}}
+        lk = {"entries": self.day.rows, "background": self.day.background, "tracker": "aw"}
+        p = mock.patch.object(server, "api_proposal", lambda q: lk)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_propose_says_which_rows_are_shared_and_prefer_replans_them_read_only(self):
+        self.shared_day()
+        data, _ = self.call("pulsar_propose", {"date": DATE})
+        shared = [e for e in data["proposed"] if e.get("shared")]
+        self.assertEqual([(e["start"], e["minutes"], e["taskId"], e["choice"]) for e in shared], [("09:20", 30, "11", "client")])
+        self.assertEqual((shared[0]["sharedWith"]["taskId"], shared[0]["sharedWith"]["repository"]), ("12", "house-tool"))
+        self.assertIn("shared", shared[0]["flags"])
+        self.assertEqual((data["totals"]["shared"], data["totals"]["parallel"]), (30, 30))
+        self.assertEqual(data["leftOut"], [{"repository": "acme-site", "minutes": 25}])
+        half, _ = self.call("pulsar_propose", {"date": DATE, "prefer": "half"})
+        self.assertEqual([(e["start"], e["minutes"], e["taskId"]) for e in half["proposed"]],
+                         [("09:00", 20, "12"), ("09:20", 15, "11"), ("09:35", 15, "12"), ("09:50", 10, "12")])
+        internal, _ = self.call("pulsar_propose", {"date": DATE, "prefer": "internal"})
+        self.assertEqual([e["taskId"] for e in internal["proposed"]], ["12", "12", "12"])
+        self.assertEqual(internal["proposed"][1]["serviceId"], "22")
+        self.assertEqual(self.day.plan["entries"][1]["choice"], "client")  # the plan itself is as it was
+        bad, err = self.call("pulsar_propose", {"date": DATE, "prefer": "all"})
+        self.assertTrue(err)
+
+    def test_session_is_split_by_repository_and_says_what_was_given_away(self):
+        self.shared_day()
+        data, _ = self.call("pulsar_session", {"date": DATE})
+        [row] = data["rows"]
+        self.assertEqual((row["start"], row["minutes"], row["project"], row["givenAway"]), ("09:00", 60, "house-tool", 30))
+        self.assertEqual([(x["start"], x["minutes"]) for x in data["notLoggedYet"]], [("09:00", 20), ("09:50", 10)])
+        self.assertEqual(data["minutes"], 30)
+        with mock.patch.dict(os.environ, {"PULSAR_MCP_SESSION_ID": "99999999"}):  # the agent's own session
+            data, _ = self.call("pulsar_session", {"date": DATE})
+        [row] = data["rows"]
+        self.assertEqual((row["kind"], row["start"], row["minutes"], row["project"], row["shared"]),
+                         ("background", "09:20", 30, "acme-site", True))
+        self.assertEqual(data["notLoggedYet"], [{"start": "09:20", "minutes": 30, "project": "acme-site", "shared": True,
+                                                 "taskId": "11", "task": "Build", "serviceId": "21"}])
+
+    def test_a_shared_entrys_summary_says_its_agent_ran_during_internal_work(self):
+        self.shared_day()
+        with self._create():
+            dry, err = self.call("pulsar_preview", {"date": DATE, "entries": [
+                {"start": "09:20", "minutes": 30, "taskId": "11", "note": "Migrated the pages."},
+                {"start": "09:50", "minutes": 10, "taskId": "12"}]})
+        self.assertFalse(err, dry)
+        self.assertEqual(dry["summary"].split("\n"), [
+            'Wed 4 Nov 2026 09:20-09:50 (30 min): Build (Acme), Dev in B, billable. Its agent ran while you did internal '
+            'work. Note: "Migrated the pages."',
+            'Wed 4 Nov 2026 09:50-10:00 (10 min): Build (Acme), Dev in B, billable. No note.'])
+        self.assertTrue(dry["entries"][0]["shared"])
 
     def test_log_writes_the_previewed_entries_once(self):
         with self._create():

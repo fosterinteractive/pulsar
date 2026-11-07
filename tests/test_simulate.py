@@ -766,7 +766,9 @@ class Run:
                     if d.dst and ov(e["s"], e["e"], *d.dst) > 0:
                         continue  # the hour the clocks go back is one hour on the clock: a known limit
                     # one sitting (laid out on the grid, so two steps of slack); time skipped between them blocks it
+                    # a client's entry is never joined across time away (every made-up service is billable)
                     if b[0] - a[1] <= SITTING_GAP - 2 * GRID and \
+                            not any(loc["away"][x] for x in range(max(0, int(a[1]) - GRID), min(1440, int(b[0]) + GRID))) and \
                             not any(x["s"] <= b[0] and x["e"] >= a[0] for x in res["skipped"]) and \
                             not any(x[0] < b[0] + GRID and x[1] >= a[1] - GRID for x in busy):
                         self.fail("plan: a short entry with others beside it", (hm(e["s"]), e["minutes"], e["kind"]))

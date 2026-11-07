@@ -109,7 +109,9 @@ input[type=date] {
 .act.personal { opacity: .5; }
 .act .t { font-weight: 500; }
 .likely { border-left: 2px solid var(--faint); }
-.likely.parallel { border-style: dashed; border-left-style: solid; opacity: .75; }
+/* the agents' background work (day.js backgroundRails): a thin dashed rail at the column's right edge */
+.bgrail { position: absolute; right: 1px; width: 0; border-right: 2px dashed var(--faint); z-index: 1; }
+.pop .li.bg .t > div { color: var(--muted); }
 .likely .t { font-weight: 600; font-size: 12px; }
 .likely .d.pick { color: var(--text); }
 /* Claude's mark (core.js): Claude's orange, a little darker on the light theme for contrast */

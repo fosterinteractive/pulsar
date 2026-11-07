@@ -260,8 +260,10 @@ class RoundingTest(unittest.TestCase):
         self.assertEqual([(e["s"], e["e"], e["taskId"]) for e in five["entries"]], [(545, 645, "11"), (645, 655, "22")])
         self.assertEqual(five["entries"], dayplan.plan(d, ctx)["entries"])  # the default is what plan() did before
         quarter = dayplan.plan(d, ctx, dayplan.opts_for({"round_to": 15}))
-        # the 12-minute piece is shorter than a step: it joins the work next to it; every boundary on a quarter hour
-        self.assertEqual([(e["s"], e["e"], e["taskId"]) for e in quarter["entries"]], [(540, 645, "11")])
+        # the 12-minute piece is shorter than a step: it joins the work next to it; every boundary on a quarter hour.
+        # Task 11 was seen for 100 minutes and its billing is not known, so it may be billable: never more than 100,
+        # which on this grid is 90 (the evidence cap)
+        self.assertEqual([(e["s"], e["e"], e["taskId"]) for e in quarter["entries"]], [(540, 630, "11")])
         self.assertTrue(all(e["s"] % 15 == 0 and e["e"] % 15 == 0 for e in quarter["entries"]))
         self.assertLessEqual(quarter["totals"]["proposed"], quarter["totals"]["cap"])
 

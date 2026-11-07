@@ -1,22 +1,30 @@
 """The "Likely" column for anyone who works in Claude Code: which session, and so which project, each minute of work
-most likely went to.
+most likely went to, and what the agents did meanwhile in the background.
 
 Read only and local only. Claude Code keeps every session as a JSON-lines file, ~/.claude/projects/<folder>/<id>.jsonl:
-what the person typed, what the agent did (its tool calls name the files it touched) and a title.
+what the person typed, what the agent did (its tool calls name the files it touched) and a title. A subagent's own
+calls are in <folder>/<id>/subagents/*.jsonl, and count for the session that started it.
 
-  * A session's project is the git repository of the files a turn touched (the folder that holds .git, by its name).
-    A turn that touched none belongs to its neighbours' project, then to the session's title, then to the folder the
-    session ran in.
+  * A turn's project is the git repository its tool calls worked in, weighted by what each call did there: a file
+    changed (Edit, Write) counts 3, a command run in a folder of it (Bash cd, git -C, a path that exists) 2, a file
+    read or searched 1, a path the person typed 1; a word that only names a project counts nothing. One session can
+    so work in several repositories, one turn at a time. A turn that touched none belongs to its neighbours'
+    project, then to the session's title, then to the folder the session ran in.
   * Each minute the activity tracker saw work goes to a session: the one whose title the editor window showed, else
     one whose agent was running, else the one last used in that sitting. Meetings and personal windows go to none.
-  * Without a tracker, the time an agent ran on a request, and the answers typed within Settings' "Away after", count
-    as work.
+  * The other sessions' agents that ran meanwhile, in another repository, are the background, at their real time.
+    An agent's stretch counts as attended work while it runs on a chain started by a message the person typed, and
+    ends at a silence of more than 10 minutes (a long command, a wait): a new message starts the next one.
+  * Without a tracker, the time an agent ran on a request, and the answers typed within Settings'
+    "Away after", count as work.
 
-Nothing here knows any person, company or client: projects come from the folders on this computer.
+Nothing here knows any person, company or client: projects come from the folders on this computer (or from a naming
+function given by the caller, likely.py).
 """
 
 from __future__ import annotations
 
+import bisect
 import glob
 import json
 import os
@@ -34,8 +42,19 @@ MEETING = re.compile(r"zoom|meet\.google|google meet|microsoft teams|\bteams\b|h
 NOT_TYPED = ("<task-notification>", "<local-command", "Caveat:", "<command-message>", "[Request interrupted",
              "This session is being continued")
 # paths in the home folder, in temporary folders (a clone an agent made there) and on other disks
-PATH_RE = re.compile(r"(?:" + re.escape(HOME) + r"|/private/tmp|/private/var/folders|/tmp|/var/folders|/Volumes)"
-                     r"/[^\s'\"`<>|;,()\[\]{}]+")
+PATH = (r"(?:" + re.escape(HOME) + r"|/private/tmp|/private/var/folders|/tmp|/var/folders|/Volumes)"
+        r"/[^\s'\"`<>|;,()\[\]{}]+")
+PATH_RE = re.compile(PATH)
+# What a tool call says about the repository a turn worked in: changing a file most, running a command in a folder
+# next, reading or searching least. A path the person typed counts as a read; a word that only names a project (a
+# search for it, a commit message, an instruction to a subagent) counts nothing.
+EDITS = frozenset({"Edit", "Write", "MultiEdit", "NotebookEdit"})
+READS = frozenset({"Read", "Grep", "Glob", "LS", "NotebookRead"})
+W_EDIT, W_RUN, W_READ, W_TYPED = 3, 2, 1, 1
+HARD = W_RUN  # from this weight up a call did work in the repository (Edit, Write, a command in it)
+SILENCE = 600  # seconds an agent may stay silent while its stretch still counts as attended work
+CD = re.compile(r"(?:^|[\s;&|(])(?:cd|pushd)\s+['\"]?(" + PATH + ")")
+GIT_C = re.compile(r"\bgit\s+-C\s+['\"]?(" + PATH + ")")
 # where the walk up stops: these are never a project themselves
 ROOTS = {HOME, "/", "/private", "/private/tmp", "/tmp", "/private/var", "/private/var/folders", "/var", "/var/folders",
          "/Volumes"}
@@ -119,6 +138,44 @@ def tool_paths(r: dict) -> list:
     return found
 
 
+_exists = Newest(5000)  # path -> whether it, or the folder it is in, exists
+
+
+def _real(path: str) -> bool:
+    """The path, or the folder it is in, exists: a command used it, not a word that only looks like one."""
+    got = _exists.get(path)
+    if got is None:
+        got = os.path.exists(path) or os.path.isdir(os.path.dirname(path.rstrip("/")))
+        _exists[path] = got
+    return got
+
+
+def tool_calls(r: dict) -> list:
+    """[(path, weight)]: the paths an agent's tool calls named, weighted by what each call did with them (EDITS,
+    Bash, READS above). Other tools count nothing (what a subagent did is in its own file), except a Productive call on
+    time entries, as the marker "tool:mcp__productive__time_entries"."""
+    found: list = []
+    content = _obj(r.get("message")).get("content")
+    for item in content if isinstance(content, list) else []:
+        if not (isinstance(item, dict) and item.get("type") == "tool_use"):
+            continue
+        name, inp = str(item.get("name") or ""), _obj(item.get("input"))
+        if name in EDITS:
+            found += [(p, W_EDIT) for k in ("file_path", "notebook_path") for p in PATH_RE.findall(str(inp.get(k) or "")[:1000])]
+        elif name == "Bash":
+            cmd = str(inp.get("command") or "")[:4000]
+            named = set(CD.findall(cmd)) | set(GIT_C.findall(cmd))
+            found += [(p, W_RUN) for p in PATH_RE.findall(cmd) if p in named or _real(p)]
+        elif name in READS:
+            found += [(p, W_READ) for k in ("file_path", "notebook_path", "path", "pattern")
+                      for p in PATH_RE.findall(str(inp.get(k) or "")[:1000])]
+        elif name.startswith("mcp__productive__") and "time_entries" in json.dumps(inp)[:4000]:
+            # a call on time entries: logging time. Not a path: only a naming function that knows it names it (the
+            # fi-time-from-activity script's "time logging"), so such a turn is never another project's work
+            found.append(("tool:mcp__productive__time_entries", W_RUN))
+    return found
+
+
 _repo_of = Newest(5000)  # folder -> its repository (None outside one)
 
 
@@ -175,9 +232,22 @@ def norm_title(s: str) -> str:
     return re.sub(r"(…|\.\.\.)\s*$", "", s).strip().lower()
 
 
-def read_session(path: str, t0: float, t1: float) -> dict | None:
-    """One session's messages, agent activity and titles around [t0, t1); None if nobody typed in it that day."""
-    prompts, triggers, assistant, titles, cwd, title, custom = [], [], [], set(), None, "", False
+def tool_result(r: dict) -> bool:
+    """A tool's answer coming back to the agent: the agent is still at work."""
+    if r.get("type") != "user":
+        return False
+    if r.get("toolUseResult") is not None:
+        return True
+    content = _obj(r.get("message")).get("content")
+    return isinstance(content, list) and any(isinstance(x, dict) and x.get("type") == "tool_result" for x in content)
+
+
+def read_session(path: str, t0: float, t1: float, subagents: bool = False, strings_of=None) -> dict | None:
+    """One session's messages, agent activity and titles around [t0, t1); None if nobody typed in it that day.
+    subagents: also the calls of the subagents it started (<folder>/<id>/subagents/*.jsonl). strings_of(record): the
+    strings a naming of turns counts (likely.skill_turns), kept per agent message as "strings"."""
+    prompts, triggers, notified, assistant, titles, cwd, title, custom = [], [], [], [], set(), None, "", False
+    calls, events, strings = [], [], []
     lo, hi = t0 - 6 * 3600, t1 + 3600
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
@@ -205,10 +275,24 @@ def read_session(path: str, t0: float, t1: float) -> dict | None:
                 triggers.append(t)
             elif notification(r):
                 triggers.append(t)
+                notified.append(t)
             elif r.get("type") == "assistant":
                 assistant.append((t, tool_paths(r)))
+                events.append(t)
+                found = tool_calls(r)
+                if found:
+                    calls.append((t, found))
+                if strings_of:
+                    try:
+                        strings.append((t, list(strings_of(r))))
+                    except Exception:  # noqa: BLE001 - a record of a shape the naming does not know: that record only
+                        pass
+            elif tool_result(r):
+                events.append(t)
     if not any(t0 <= t < t1 for t, _ in prompts):
         return None
+    if subagents:
+        _read_subagents(path, lo, hi, calls, events)
     prompts.sort()
     dedup: list = []
     for t, text in prompts:  # a message sent while the agent works can be recorded twice
@@ -216,67 +300,201 @@ def read_session(path: str, t0: float, t1: float) -> dict | None:
             continue
         dedup.append((t, text))
     assistant.sort(key=lambda x: x[0])
+    calls.sort(key=lambda x: x[0])
     triggers.sort()
+    events.sort()
     return {"id": os.path.basename(path)[:8], "cwd": cwd, "title": title, "titles": {x for x in titles if len(x) >= 5},
-            "prompts": dedup, "triggers": triggers, "assistant": assistant}
+            "prompts": dedup, "triggers": triggers, "notified": sorted(notified), "assistant": assistant,
+            "calls": calls, "events": events, **({"strings": sorted(strings, key=lambda x: x[0])} if strings_of else {})}
 
 
-def analyse(s: dict) -> None:
-    """The project of every turn, and the spans the agent was running."""
-    prompts, assistant = s["prompts"], s["assistant"]
+def _read_subagents(path: str, lo: float, hi: float, calls: list, events: list) -> None:
+    """The calls and activity of the subagents a session started, added to the session's own: Claude Code keeps each
+    in <folder>/<id>/subagents/<agent>.jsonl, and the session waits on them (or they report back)."""
+    for sub in glob.glob(os.path.join(path[:-len(".jsonl")] if path.endswith(".jsonl") else path, "subagents", "*.jsonl")):
+        try:
+            if os.path.getmtime(sub) < lo:
+                continue
+            with open(sub, encoding="utf-8", errors="replace") as fh:
+                for line in fh:
+                    if '"timestamp"' not in line:
+                        continue
+                    r = record(line)
+                    try:
+                        t = parse_ts(r["timestamp"])
+                    except (ValueError, KeyError, TypeError, AttributeError):
+                        continue
+                    if not lo <= t < hi:
+                        continue
+                    if r.get("type") == "assistant":
+                        events.append(t)
+                        found = tool_calls(r)
+                        if found:
+                            calls.append((t, found))
+                    elif r.get("type") == "user":
+                        events.append(t)
+        except OSError:
+            continue  # that subagent only
+
+
+def analyse(s: dict, namer=None, turns=None) -> None:
+    """The project of every turn (weighted by its tool calls), the spans the agent was running, and the stretches of
+    attended agent work. namer(path) -> a project name or None (default: the git repository, project_of_path).
+    turns: another naming of turns (likely.skill_turns: the fi-time-from-activity script's own), used in place of
+    the weights when the session was read with its strings (read_session strings_of); a turn's hard calls then count
+    for its project, at their highest weight."""
+    prompts = s["prompts"]
+    name_of = namer or project_of_path
+    names: dict = {}
+
+    def named(path: str):
+        if path not in names:
+            names[path] = name_of(path)
+        return names[path]
+
+    calls = s.get("calls")
+    if calls is None:  # a session read without weights: every path the agent named counts once
+        calls = [(t, [(p, W_READ) for p in paths]) for t, paths in s.get("assistant") or [] if paths]
+    at = [t for t, _ in calls]
     folder = (project_of_path(s["cwd"]) or os.path.basename(s["cwd"].rstrip("/"))) if s["cwd"] else None
-    turns = []
+    out = []
     for i, (p, text) in enumerate(prompts):
         nxt = prompts[i + 1][0] if i + 1 < len(prompts) else float("inf")
         counts: dict = {}
-        for path in PATH_RE.findall(text) + [x for t, paths in assistant if p <= t < nxt for x in paths]:
-            name = project_of_path(path)
-            if name:
-                counts[name] = counts.get(name, 0) + 1
-        turns.append({"p": p, "project": max(counts, key=counts.get) if counts else None})
-    named = (s.get("title") or "").strip()[:40] or None
-    for i, t in enumerate(turns):
+        hard: dict = {}
+        found = [(x, W_TYPED) for x in PATH_RE.findall(text)]
+        for _, pairs in calls[bisect.bisect_left(at, p):bisect.bisect_left(at, nxt)]:
+            found += pairs
+        for path, w in found:
+            name = named(path)
+            if name and w > 0:
+                counts[name] = counts.get(name, 0) + w
+                if w >= HARD:
+                    hard[name] = hard.get(name, 0) + w
+        out.append({"p": p, "project": max(counts, key=counts.get) if counts else None, "hard": hard})
+    title = (s.get("title") or "").strip()[:40] or None
+    last = "Claude Code"  # nothing named it
+    named_by = _named_turns(s, turns) if turns and "strings" in s else None
+    if named_by is not None:  # the other naming, with its own last resorts
+        projects, title, folder, last = named_by
+        for t, project in zip(out, projects):
+            t["project"] = project
+    for i, t in enumerate(out):
         if t["project"] is None:
-            before = next((turns[j]["project"] for j in range(i - 1, -1, -1) if turns[j]["project"]), None)
-            after = next((turns[j]["project"] for j in range(i + 1, len(turns)) if turns[j]["project"]), None)
-            t["project"] = before or after or named or folder or "Claude Code"  # the last: nothing named it
-    s["turns"] = turns
+            before = next((out[j]["project"] for j in range(i - 1, -1, -1) if out[j]["project"]), None)
+            after = next((out[j]["project"] for j in range(i + 1, len(out)) if out[j]["project"]), None)
+            t["project"] = before or after or title or folder or last
+        if named_by is not None and t["hard"]:  # its hard calls count for the project the other naming gave it
+            t["hard"] = {t["project"]: max(t["hard"].values())}
+    s["turns"] = out
+    events = s.get("events") or [t for t, _ in s.get("assistant") or []]
     running, trig = [], s["triggers"]
     for k, tk in enumerate(trig):
         nxt = trig[k + 1] if k + 1 < len(trig) else float("inf")
-        ends = [t for t, _ in assistant if tk <= t < nxt]
+        ends = [t for t in events[bisect.bisect_left(events, tk):bisect.bisect_left(events, nxt)]]
         if ends and ends[-1] > tk:
             running.append((tk, ends[-1]))
     s["running"] = running
+    s["chains"] = chains(trig, set(s.get("notified") or ()), events)
 
 
-def project_at(s: dict, t: float) -> str:
+def _named_turns(s: dict, turns: dict):
+    """([project or None per turn], title, folder, last resort) as the other naming names them: its count(strings,
+    counts) over what was typed and each agent message's strings in the turn; its fallbacks are the session's title
+    without a leading "IMPORTANT!", the folder as it names it, then "unknown". None when it fails on this session."""
+    count = turns["count"]
+    try:
+        at = [t for t, _ in s["strings"]]
+        projects = []
+        for i, (p, text) in enumerate(s["prompts"]):
+            nxt = s["prompts"][i + 1][0] if i + 1 < len(s["prompts"]) else float("inf")
+            counts: dict = {}
+            count([text], counts)
+            for _, strings in s["strings"][bisect.bisect_left(at, p):bisect.bisect_left(at, nxt)]:
+                count(strings, counts)
+            projects.append(max(counts, key=counts.get) if counts else None)
+        folder = None
+        if s.get("cwd"):
+            c: dict = {}
+            count([s["cwd"]], c)
+            folder = max(c, key=c.get) if c else os.path.basename(s["cwd"].rstrip("/"))
+    except Exception:  # noqa: BLE001 - the naming changed shape: the weights name this session
+        return None
+    title = re.sub(r"^important!\s*", "", s.get("title") or "", flags=re.I).strip()[:40] or None
+    return projects, title, folder, "unknown"
+
+
+def chains(triggers: list, notified: set, events: list) -> list:
+    """[(start, end)]: the stretches an agent worked on a chain started by a message the person typed. A background
+    task reporting back (a notification) carries the chain on; a silence of more than SILENCE seconds ends it, and
+    only the next typed message starts another. Silences up to SILENCE inside a stretch are part of it."""
+    out, cur, last, live = [], None, None, False
+    for k, tk in enumerate(triggers):
+        nxt = triggers[k + 1] if k + 1 < len(triggers) else float("inf")
+        if tk not in notified:  # typed
+            if cur:
+                out.append(tuple(cur))
+            cur, last, live = [tk, tk], tk, True
+        elif live and tk - last > SILENCE:
+            out.append(tuple(cur))
+            cur, live = None, False
+        for t in events[bisect.bisect_left(events, tk):bisect.bisect_left(events, nxt)]:
+            if not live:
+                break
+            if t - last > SILENCE:
+                out.append(tuple(cur))
+                cur, live = None, False
+                break
+            cur[1], last = t, t
+    if cur:
+        out.append(tuple(cur))
+    return [(a, b) for a, b in out if b > a]
+
+
+def turn_at(s: dict, t: float) -> dict:
     turn = s["turns"][0]
     for x in s["turns"]:
         if x["p"] > t:
             break
         turn = x
-    return turn["project"]
+    return turn
 
 
-def propose(t0: float, t1: float, items: list, tracker: str, projects_dir: str = PROJECTS_DIR,
-            away: int | None = None) -> dict:
-    """The Likely column for the day [t0, t1): blocks of minutes, each with its project, the sessions' titles, how many
-    messages were typed in it and the first one. `items` are the day's activity (minutes from t0, as trackers.py makes
-    them); without any, the agents' run time stands in for the tracker. `away`: the minutes without a sign of work
-    that end a sitting, Settings' "Away after" (config.away_after) when not given."""
-    away = config.away_after() if away is None else away
+def project_at(s: dict, t: float) -> str:
+    return turn_at(s, t)["project"]
+
+
+def load(t0: float, t1: float, projects_dir: str = PROJECTS_DIR, namer=None, turns=None) -> list:
+    """The sessions someone typed in during [t0, t1), each read with its subagents and analysed (turns: analyse)."""
     sessions = []
     for path in glob.glob(os.path.join(projects_dir, "*", "*.jsonl")):
         try:
             if os.path.getmtime(path) < t0 - 3600:
                 continue
-            s = read_session(path, t0, t1)
+            s = read_session(path, t0, t1, subagents=True, strings_of=(turns or {}).get("strings"))
+            if s:
+                analyse(s, namer, turns)
+                sessions.append(s)
         except (OSError, ValueError, TypeError, AttributeError):  # a file that cannot be read: that session only
             continue
-        if s:
-            analyse(s)
-            sessions.append(s)
+    return sessions
+
+
+def propose(t0: float, t1: float, items: list, tracker: str, projects_dir: str = PROJECTS_DIR, namer=None,
+            logging_name: str | None = None, turns=None, away: int | None = None) -> dict:
+    """The Likely column for the day [t0, t1): blocks of minutes, each with its project, the sessions' titles, how many
+    messages were typed in it and the first one; and the agents' background work at its real time. `items` are the
+    day's activity (minutes from t0, as trackers.py makes them); without any, the agents' run time stands in for the
+    tracker. namer, turns: see analyse. logging_name: a project name that means time spent logging time (the
+    fi-time-from-activity script's): its minutes go to no session, as Pulsar's own window does. away: the minutes
+    without a sign of work that end a sitting, Settings' "Away after" (config.away_after) when not given."""
+    return propose_from(load(t0, t1, projects_dir, namer, turns), t0, t1, items, tracker, logging_name, away)
+
+
+def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str, logging_name: str | None = None,
+                 away: int | None = None) -> dict:
+    """propose() on sessions already read (load): the same rows."""
+    away = config.away_after() if away is None else away
     n = max(1, int(round((t1 - t0) / 60)))
     m = lambda t: int((t - t0) // 60)  # noqa: E731 - a moment as the day's minute
 
@@ -354,6 +572,7 @@ def propose(t0: float, t1: float, items: list, tracker: str, projects_dir: str =
     by_title: dict = {}
     projects_of = [{t["project"] for t in s["turns"]} for s in sessions]
     owner: list = [None] * n
+    logged_turn = 0  # minutes of a turn that was time logging (logging_name)
     for x in range(n):
         if not present[x]:
             continue
@@ -366,13 +585,39 @@ def propose(t0: float, t1: float, items: list, tracker: str, projects_dir: str =
             cands = (by_title.get(key) if key else None) or run_at[x] or [i for i in [latest(x)] if i is not None]
         elif not MEETING.search(" ".join((f.get("app") or "", f.get("title") or "", f.get("host") or ""))):
             page = " ".join((f.get("title") or "", f.get("url") or "")).lower()
-            cands = [i for i, ps in enumerate(projects_of) if any(len(p) >= 4 and p.lower() in page for p in ps)] \
+            cands = [i for i, ps in enumerate(projects_of)
+                     if any(len(p) >= 4 and p != logging_name and p.lower() in page for p in ps)] \
                 or [i for i in [nearest(x)] if i is not None]
         if len(cands) > 1:
             pick = latest(x, set(cands))
             cands = [pick if pick is not None else cands[0]]
         if cands:
-            owner[x] = (cands[0], project_at(sessions[cands[0]], t0 + x * 60 + 59))
+            project = project_at(sessions[cands[0]], t0 + x * 60 + 59)
+            if logging_name and project == logging_name:
+                logged_turn += 1  # time spent logging time, in a Claude session: no session's work
+                continue
+            owner[x] = (cands[0], project)
+
+    def single(i: int, project: str, until: float) -> bool:
+        """Every turn of the session today, up to `until`, was in this project."""
+        return all(t["project"] == project for t in sessions[i]["turns"] if t0 - 6 * 3600 <= t["p"] <= until)
+
+    def links(ids: set, project: str, a: float, b: float) -> list:
+        """Task links typed in these sessions, in a turn of this project, from LINK_BEFORE before a to b: newest first."""
+        found = sorted(((t, tid) for i in ids for t, text in sessions[i]["prompts"] if a - LINK_BEFORE <= t <= b
+                        and project_at(sessions[i], t) == project for tid in TASK_LINK.findall(text)), reverse=True)
+        return list(dict.fromkeys(tid for _, tid in found))[:4]
+
+    def row_of(e: dict, kind: str) -> dict:
+        a, b = t0 + e["s"] * 60, t0 + e["e"] * 60
+        typed = sorted((t, text) for i in e["_sessions"] for t, text in sessions[i]["prompts"]
+                       if a <= t < b and project_at(sessions[i], t) == e["project"])
+        return {"s": e["s"], "e": e["e"], "minutes": e["_minutes"], "project": e["project"], "kind": kind,
+                "titles": sorted({sessions[i]["title"] for i in e["_sessions"] if sessions[i]["title"]}),
+                "messages": len(typed), "first_message": (typed[0][1] if typed else "")[:200],
+                "sessions": sorted(sessions[i]["id"] for i in e["_sessions"]),
+                "single": all(single(i, e["project"], b) for i in e["_sessions"]),
+                "repoLinks": links(e["_sessions"], e["project"], a, b)}
 
     entries: list = []
     for x in range(n):
@@ -386,16 +631,46 @@ def propose(t0: float, t1: float, items: list, tracker: str, projects_dir: str =
             e["_sessions"].add(i)
         else:
             entries.append({"s": x, "e": x + 1, "_last": x, "_minutes": 1, "project": project, "_sessions": {i}})
-    rows = []
-    for e in entries:
-        typed = sorted((t, text) for i in e["_sessions"] for t, text in sessions[i]["prompts"]
-                       if t0 + e["s"] * 60 <= t < t0 + e["e"] * 60 and project_at(sessions[i], t) == e["project"])
-        rows.append({"s": e["s"], "e": e["e"], "minutes": e["_minutes"], "project": e["project"], "kind": "focused",
-                     "titles": sorted({sessions[i]["title"] for i in e["_sessions"] if sessions[i]["title"]}),
-                     "messages": len(typed), "first_message": (typed[0][1] if typed else "")[:200],
-                     "sessions": sorted(sessions[i]["id"] for i in e["_sessions"])})
+    rows = [row_of(e, "focused") for e in entries]
+
+    # the background: agents that ran while another session (or none) had the minute, in another repository. A
+    # minute counts as attended (qualifies) on a chain started by a typed message with no silence of over SILENCE, in a
+    # turn whose calls did work in that repository (HARD); the rest is shown, never more
+    chain_at = [set() for _ in range(n)]
+    for i, s in enumerate(sessions):
+        for a, b in s.get("chains") or []:
+            for x in range(max(0, m(a)), min(n, m(b) + 1)):
+                chain_at[x].add(i)
+    open_bg: dict = {}  # (session, project, qualifies) -> the row being built
+    background: list = []
+    for x in range(n):
+        front = owner[x]
+        for i in sorted(set(run_at[x]) | chain_at[x]):
+            if front and front[0] == i:
+                continue
+            t = t0 + x * 60 + 59
+            turn = turn_at(sessions[i], t)
+            project = turn["project"]
+            if project == logging_name or (front and front[1] == project):
+                continue  # time logging, or the repository in front already has the minute
+            ok = i in chain_at[x] and turn.get("hard", {}).get(project, 0) >= HARD
+            k = (i, project, ok)
+            e = open_bg.get(k)
+            if e and x - e["_last"] <= 2:
+                e["_last"], e["e"] = x, x + 1
+                e["_minutes"] += 1
+            else:
+                e = {"s": x, "e": x + 1, "_last": x, "_minutes": 1, "project": project, "_sessions": {i}, "_ok": ok}
+                open_bg[k] = e
+                background.append(e)
+    bg_rows = []
+    for e in sorted(background, key=lambda e: (e["s"], e["project"])):
+        r = row_of(e, "background")
+        r["qualifies"] = e["_ok"]
+        bg_rows.append(r)
     return {"tracker": tracker, "working": sum(present), "proposed": sum(r["minutes"] for r in rows),
-            "unplaced": [], "logging": sum(1 for x in range(n) if logging_at[x] and owner[x] is None), "entries": rows}
+            "unplaced": [], "logging": sum(1 for x in range(n) if logging_at[x] and owner[x] is None) + logged_turn,
+            "entries": rows, "background": bg_rows}
 
 
 # ---- Productive tasks named in a session ------------------------------------------------------------------
@@ -477,8 +752,14 @@ LINK_BEFORE = 3 * 3600  # a link typed this long before a row still names its ta
 def attach_tasks(rows: list, t0: float, found: list) -> None:
     """Give each Likely row the Productive tasks linked in its sessions while it ran or in the three hours before,
     the latest first. Older links are left out: a long session moves through many tasks
-    (on one person's real days, links from any time picked the logged task for 3 rows of 25; this window, for 6 of 8)."""
+    (on one person's real days, links from any time picked the logged task for 3 rows of 25; this window, for 6 of 8).
+    A row propose() made carries its own (repoLinks): only the links typed in a turn of its repository, so a link to
+    one client's task in a session that also worked elsewhere names the task of that work alone."""
     for row in rows:
+        if "repoLinks" in row:
+            if row["repoLinks"]:
+                row["tasks"] = list(row["repoLinks"])[:4]
+            continue
         keys = {k for k in (norm_title(t) for t in row.get("titles") or []) if len(k) >= 5}
         a, b = t0 + row["s"] * 60 - LINK_BEFORE, t0 + row["e"] * 60
         links = [x for f in found if any(t.startswith(k) or k.startswith(t) for k in keys for t in f["titles"])

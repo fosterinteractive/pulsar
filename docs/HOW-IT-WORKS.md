@@ -425,11 +425,15 @@ Which Claude Code session, and so which project, each minute of work most likely
 
 - **Source**: Claude Code keeps every session as JSON lines in `~/.claude/projects/<folder>/<id>.jsonl`: what you
   typed, what the agent did (its tool calls name the files it touched) and the session's title.
-- **A session's project** is the git repository of the files each turn touched: the folder that holds `.git`, named
-  after its `origin` address (a clone in a folder called `repo` is still `fi-drupal-qa`). Names that say nothing
-  (`repository.git`, `repo`, `src`, `app`…) fall back to the folder name. A turn that touched no files takes its
-  neighbours' project, then the session's title, then the folder the session ran in. `~/.claude` itself is tooling,
-  never a project.
+- **A turn's project** is the git repository its tool calls worked in: the folder that holds `.git`, named after its
+  `origin` address (a clone in a folder called `repo` is still `fi-drupal-qa`). Names that say nothing
+  (`repository.git`, `repo`, `src`, `app`…) fall back to the folder name. Each call weighs by what it did there: a file
+  changed (Edit, Write) 3, a command run in a folder of it (Bash `cd`, `git -C`, a path that exists) 2, a file read or
+  searched (Read, Grep, Glob) 1, a path you typed 1; a word that only names a project (a search for it, a commit
+  message, an instruction to a subagent) counts nothing. A subagent's calls (`<session>/subagents/*.jsonl`) count for
+  the turn that started it. So one session that works in a client's site, then in an internal tool, splits into one
+  row per repository, turn by turn. A turn that touched no files takes its neighbours' project, then the session's
+  title, then the folder the session ran in. `~/.claude` itself is tooling, never a project.
 - **Each minute** the tracker saw work goes to one session: the one whose title the editor window showed; else one
   whose agent was running; else the one last used in that sitting (a sitting ends after Away after with no sign of
   work, 4.1). In a
@@ -437,10 +441,27 @@ Which Claude Code session, and so which project, each minute of work most likely
   windows and time logging (a minute that went mostly to Pulsar or Productive) go to none.
 - **Without a tracker**, the time an agent ran on a request, and answers typed within Away after, count as work.
 - **Rows**: neighbouring minutes of one project join into rows `{s, e, minutes, project, titles, messages,
-  first_message}`.
+  first_message, sessions, single, repoLinks}`, at the real time of the work. `single`: each of the row's sessions was
+  in this repository all day so far (learning, 5.5). `repoLinks`: the task links typed in a turn of this repository.
+- **The background** (`background`): another session's agent that ran meanwhile, in another repository, at its real
+  time, as rows of their own (`kind: "background"`), never in the column's minutes. A stretch is attended
+  (`qualifies`) while its agent runs on a chain started by a message you typed (a background task reporting back
+  carries it on), with no silence of the agent longer than 10 minutes (a silence up to 10 minutes counts, a longer one
+  ends the chain until you type again), in a turn whose calls did work in that repository (weight 2 or more). Log the
+  day uses it (5.4); the column draws it as a thin dashed rail on its right edge, and the block's popover lists it.
 - **The fi-time-from-activity skill**: where `~/.claude/skills/fi-time-from-activity/scripts/activity_blocks.py`
-  exists, it makes the rows instead (it carries its owner's own logging rules). It is never part of the repository.
-- **Caching**: a past day is worked out once (about 3 to 6 seconds), today again after 3 minutes or on ↻. A past day
+  exists, its project names are used (`likely.skill_names`: its `projects_in` rules, and its `LOGGING` name: a turn
+  it names "time logging", such as a Productive call on time entries, goes to no session), and each turn is named as
+  it names it (`likely.skill_turns`, `sessions._named_turns`): every string of the turn's tool calls and what was
+  typed, counted by `projects_in`, words included, with its own last resorts (the title without a leading
+  "IMPORTANT!", the folder, "unknown"); the turn's hard calls count for that project at their highest weight. On one
+  person's 52 days this named the client logged more often than the weights above (right task at the right time 33.9%
+  against 30.4%). Without the script, or when it cannot be read, Pulsar's own names and weights. Pulsar reads the sessions
+  itself; the script's own rows are not used: they laid each sitting's minutes out one project after another (on one
+  person's days, only 57% of the minutes in front had the same project in the script's row) and moved the agents'
+  parallel time into free time. It is never part of the repository.
+- **Caching**: a past day is worked out once (about 3 to 6 seconds), today again after 3 minutes or on ↻. Copies kept
+  in the older shape (`likely-full` format 1, `likely-days` format 2) are worked out again. A past day
   worked out while no tracker answered (ActivityWatch not up yet at login) is not final: it is reused for 3 minutes, as
   today is, never kept on disk (`likely-full`), and learning never takes it from memory, so it is worked out again
   once a tracker answers.
@@ -747,10 +768,34 @@ claim wins:
    calendar entry. A repeat and a calendar meeting on the same call are one entry (when the repeat covers half of the
    meeting, so a repeat that runs on into the next meeting never swallows it); a Likely row inside a meeting gives
    it its minutes;
-3. Likely rows at their own time, never on away minutes or time spent logging (Pulsar, Productive);
-4. on free active minutes only: agent-only rows (Claude's agent ran while you did something else), calendar meetings
-   with no call seen, and work outside Claude, an editor or terminal with no session row included (it takes the task
-   of the work next to it, never a meeting's, and starts unticked).
+3. Likely rows at their own time, never on away minutes or time spent logging (Pulsar, Productive), in this order
+   (parallel work, below): a client's work in front; then a client's agent that ran attended while internal work was
+   in front (a **shared** row); then the rest of the work in front. The agents' other background time is noted, never
+   placed ("Left out: pulsar 48 min (ran in parallel)");
+4. on free active minutes only: calendar meetings with no call seen, and work outside Claude, an editor or terminal
+   with no session row included (it takes the task of the work next to it, never a meeting's, and starts unticked).
+
+**Parallel work.** Each stretch of work has a billing class (`attribution.segment_class`): from a rule, a task link or
+a ticket key in the work itself, the class of that task; else the repository's 60 days of logged minutes (75% or more
+billable and an hour or more: client; 75% or more not billable: internal; else mixed); else the class of the project
+the repository's name points to; else unknown. Internal is a non-billable service or a project of the agency's own
+(`FI-…`); fixed-price ongoing support is billable, so client. The task picked for the work never sets its class. A
+billable minute needs evidence: the person there (a work window, not away, not personal, not logging) and either its
+own work in front, or its agent attended (above) with internal work in front: then the client gets the minute first,
+as a shared row, when the agent's task is a known client's task and the stretch runs 10 minutes or more (a shorter one
+stays with the work in front). Mixed and unknown work gets no priority, and a client's work in front is never given to
+another client's agent. Priority never adds a minute, never makes a task or service billable, never touches away
+time. A shared row stays at its real time: it never joins other pieces, and nothing joins across it. Under the cap,
+internal work is cut first, then mixed and unknown, a client's last. The **evidence cap**: a task that may be billable
+(any not known to be internal) never gets more minutes than the person was seen at work on it, whatever the grid and
+the joins did, and a client's entry is never joined across time away. Agent time moved into free slots (the skill
+script's rows) is not used at all. Replayed on one person's 52 days (14 September to 4 November 2026), each planned as
+if nothing were logged from the days before it only, against what was logged and against the planner before this:
+billable minutes with no evidence 0 (464 before), over-billed minutes 3038 (3792), billable proposed on minutes not
+logged 2457 (2987), wrong client 3711 minutes (4273), the right task at the right time 33.9% (35.0%), with each turn
+named as the fi-time-from-activity script names it (4.4). With Pulsar's own weights instead it was 30.4%: QA hub
+turns that run commands in clients' checkouts read as those clients' work. Shared rows were rare (45 minutes in the 52
+days): most work in front had no settled class yet, or the client's agent was not attended.
 
 Pieces of one task in one sitting (it ends after Away after with no activity) join, pieces under 10 minutes join a
 neighbour within 30 minutes in the same sitting
@@ -763,19 +808,24 @@ attended meetings**: the rest is listed as not placed, never placed (what the ca
 it). The grid and the shortest entry follow Settings' **Round entries to** (`dayplan.opts_for`): 5 minutes keeps the
 5-minute grid and the 10-minute shortest entry, 10 gives 10 and 10, 15 gives quarter hours and 15. Each row shows its
 ticket flags (5.3). "Not covered" lists only stretches of a step or more (`uncovered`, `totals.notCovered`). A
-row's task comes from, in this order: a rule, a task link pasted in the session, a ticket key in the title, the
-tasks logged in the same session, then the same repository (votes from the last 60 days, older days counting half
-every 7 days), the same session earlier that day, and task names that share words with the work (your own name and
-common words such as "not" and "the" do not count). A session's task does not carry over to another client's
-repository: once a repository has an hour of votes, a session's task counts there only when its project has a quarter
-of them or more (`dayplan.fits`; on the replay: no change 43.7% to 45.2%, the right task at the right time 36.4% to
-37.6%, client work 13.4% to 15.1%, no slice worse by more than half a point). A task you never logged to that the work
+row's task comes from, in this order: a rule, a task link pasted in the session (in a turn of that repository), a
+ticket key in the title, the tasks logged in the same session in the same repository, then the same repository
+(votes from the last 60 days, older days counting half every 7 days), the same session earlier that day, and task
+names that share words with the work (your own name and common words such as "not" and "the" do not count). A
+session's history applies per repository (`attribution.session_votes`): its votes from another repository count only
+for a task this repository is logged to (a quarter of its votes or more, once it has an hour of them, `dayplan.fits`),
+or when the session has been in this repository all day (`single`); never in a repository with no history otherwise
+(2026-11-06: a session's client task went to hours of work in a repository of the agency's own). On internal work a
+client's task is the pick only from a rule, a link or a ticket key in that work; on a client's repository, another
+client's task from the session's history is never the pick; with no task the class admits, no task rather than a
+wrong billable one (`dayplan.admissible`; such tasks stay among the alternatives). So QA hub work for a client goes to
+that client when the work names the client's task. A task you never logged to that the work
 names (5.5) is the first alternative, and the pick where the answer is unsure and not one you gave (a rule, a link, a
 ticket key): a ticket key it names, or words it shares strongly (cosine 0.5). A repository you work in for an hour or
 more and log under a tenth of is set aside as one you never log; days with entries that have no start time do not
 count, since they cannot be matched to the work. Confidence: high, medium or low, in words and a three-bar meter; the
 same session's votes are high from 60% (and 30 minutes), else low. **Unticked at the start**: low confidence, no task,
-no service, agent-only time, meetings with no call seen, **Claude's pick of a task you did not log to in the last 30
+no service, meetings with no call seen, **Claude's pick of a task you did not log to in the last 30
 days** (one it found by searching Productive), **a note Claude drafted**, and a task that already has time logged with
 **no start time** that day: such an entry is on no timeline, so no overlap check sees it, and it may be the same work. The review
 lists it ("no start"), the confirm step names it, and under the cap that task's proposals give way first, up to its
@@ -830,7 +880,13 @@ that has a task and a service, except one whose task Claude found by searching P
 last 30 days) that nobody opened: that rule stays, for the reason above, and the panel says how many it held back.
 Enter on the open row (its line or its tick box) ticks it and opens the next row still to log; on a row with no task
 or service it opens the task picker. The confirm step is the check for all of them: it lists every entry with its
-note, marks a note Claude drafted ("Claude's note:") and a task Claude found by searching.
+note, marks a note Claude drafted ("Claude's note:"), a task Claude found by searching, and a shared row ("Shared: its
+agent ran while you did internal work."). **Shared rows** start ticked, with a short note ("Client work went first:
+its agent ran while you did internal work. Check it.") and a choice: **Client** (as proposed), **Half each** (the first
+half the client's, the second half the internal work's, both at their real time) or **Internal** (the stretch goes to
+the work that was in front, `sharedWith`, with its service). The choice is kept with the day's work (`ldkeep.js`
+`ldChoice`). A **Parallel** chip says how long agents ran while you did other work; its tooltip, how much of it went
+to a client first and how much was left out.
 
 **Writing.** The confirm step shows the totals, overlaps, unopened rows marked "check", and active time left
 unlogged; **Dry run** sends every row with `"dry": true` and shows exactly what would be sent. The confirm step keeps
@@ -987,16 +1043,15 @@ not a verdict.
 - **Learned tasks** (`pulsar/learn.py`): for each Likely row, the task you logged while working in the same Claude
   session, then in the same repository, over the last 60 days. Each earlier row votes, with its minutes, for the task
   that took most of it. Older logging counts less: a day's votes halve every 7 days (`HALF_LIFE`, as in
-  `dayplan.py`), which sets the order; the "why" shows the minutes actually logged. A session's votes count in every
-  repository it worked in, here unlike in Log the day (5.4): putting another client's tasks after the repository's
-  own helped the first place (34.5% to 35.7% of entries, logged in time order) but lost the fifth (62.6% to 61.1%, and
-  up to 4.6 points for some weekdays and for meetings), because the work in a shared repository (the QA hub, the
-  skills) is often for the client the session worked for. Preferring the same session in the same repository was
-  measured on 30 days of one
-  person's logging, each day learned from the days before it: the right task came first for fewer minutes (39%
-  instead of 43%, and 44% instead of 51% for sessions that worked in two or more repositories that day). A long
-  session moves from task to task over the weeks more than it changes task between repositories, and a row shared
-  by two sessions has one repository, which may be the other session's.
+  `dayplan.py`), which sets the order; the "why" shows the minutes actually logged. A session's history applies per
+  repository, as in Log the day (5.4): its votes earned in this repository first; its other votes only for a task
+  this repository is logged to, or when the session has been here all day. Each logged stretch teaches the unit
+  whose repository is logged to that task's project, not always the one in front (`attribution.credits`): while
+  internal work was on screen and a client's agent ran in the background, the person logged the client, and that
+  teaches the client's repository and session, never the internal one (a repository of Pulsar's own had learned a
+  client's task this way). With no history to tell them apart, the row in front learns, as before. The stored days
+  keep the background rows for this. Repositories with two names are one (`attribution.REPO_ALIASES`: chronodeck,
+  Pulsar's first name, and pulsar-preview are pulsar).
 - **Tasks you never logged to** (`learn.new_tasks`, after Aidan's habit of looking up all the tickets): 14% of one
   person's logged minutes, and 41% of the client work, went to tasks with no entry in the 60 days before, which the
   votes cannot know. The pool is the tasks worked on in the last 30 days (`productive.recent_tasks`, one read kept ten
@@ -1156,11 +1211,11 @@ new session.
 |---|---|
 | `pulsar_status` | never fails: whether Pulsar answers, its version and the MCP's, whether writes are blocked and why, whether `pulsar_log` works from this app, today's date, time and time zone |
 | `pulsar_day` | the day in numbers: logged, active stretches with no entry, Likely by project, meetings (times only), repeats |
-| `pulsar_propose` | Log the day's proposal (5.4): start, minutes, task, service, confidence, why, alternatives |
-| `pulsar_session` | the calling session's own minutes (Claude Code gives every MCP server `CLAUDE_CODE_SESSION_ID`; Likely rows carry their sessions' ids), with a task for each and what is not logged yet; stretches another session also had are kept apart, and so are stretches whose task already has time logged that day with no start time (`maybeLoggedWithoutStart`, with a warning: no overlap check sees such time, and it may be this work) |
+| `pulsar_propose` | Log the day's proposal (5.4): start, minutes, task, service, confidence, why, alternatives; a shared row with `shared`, `sharedWith` (the work that was in front: task, service, repository) and `choice`; `leftOut` (agent time that ran in parallel, by repository) and `totals.parallel`, `shared`, `leftOut`. `prefer` (client, half, internal) re-plans every shared stretch that way in this answer only (read only) |
+| `pulsar_session` | the calling session's own minutes (Claude Code gives every MCP server `CLAUDE_CODE_SESSION_ID`; Likely rows carry their sessions' ids), by repository, with a task for each and what is not logged yet; `givenAway`: a row's minutes another session's client agent got as a shared row (never in `notLoggedYet`); a background row (`shared`) for the minutes this session's agent got that way; stretches another session also had are kept apart, and so are stretches whose task already has time logged that day with no start time (`maybeLoggedWithoutStart`, with a warning: no overlap check sees such time, and it may be this work) |
 | `pulsar_suggest` | the log dialog's task list for one stretch |
 | `pulsar_tasks` | tasks logged to lately (with the service used last), assigned ones, and a Productive search |
-| `pulsar_preview` | read only: services resolved, notes checked (`guard_note`), every entry through `server.api_log` with `dry` (overlaps, the journal); with no problem, a code of 16 hex characters (once, 10 minutes) holding exactly those entries, and `summary`, Pulsar's own text of what would be written, one line per entry: `Wed 4 Nov 2026 09:00-10:00 (60 min): Build (Acme), Dev in B, billable. Note: "Search fixed."` (when the task already has time logged that day with no start time, the line ends "This task already has 120 min logged that day with no start time: check it is not this work."; the budget after "in"; names without control, format or direction characters and without double quotation marks; a note is one line, at most 200 characters, passes `guard_note`, and has no double quotation mark of any script and no character nobody sees, so it cannot pass for the summary's own words or another entry) |
+| `pulsar_preview` | read only: services resolved, notes checked (`guard_note`), every entry through `server.api_log` with `dry` (overlaps, the journal); with no problem, a code of 16 hex characters (once, 10 minutes) holding exactly those entries, and `summary`, Pulsar's own text of what would be written, one line per entry: `Wed 4 Nov 2026 09:00-10:00 (60 min): Build (Acme), Dev in B, billable. Note: "Search fixed."` (an entry over a shared row of the day's plan says so before the note: "Its agent ran while you did internal work."; when the task already has time logged that day with no start time, the line ends "This task already has 120 min logged that day with no start time: check it is not this work."; the budget after "in"; names without control, format or direction characters and without double quotation marks; a note is one line, at most 200 characters, passes `guard_note`, and has no double quotation mark of any script and no character nobody sees, so it cannot pass for the summary's own words or another entry) |
 | `pulsar_log` | `code` (exactly as given) and `summary` (word for word), and no other argument: writes the entries the code holds through `server.api_log`, one at a time, journalled as a Log the day run (Undo works), stopping at the first that is not logged. Each result is `logged`, `not logged` (refused, with the reason), `not known` (no clear answer, an HTTP 5xx or any unexpected error: it may be in Productive, and the journal never sends it again) or `not sent` (after the stop, or once a minute has passed: `mcptools.LOG_BUDGET`, so the answer always comes back in time, and the rest are previewed again); what was written before a failure is always returned |
 
 A read tool that had to leave a source out (Likely, the activity, meetings, repeats, your tasks, the logged entries,

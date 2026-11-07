@@ -10,7 +10,46 @@
 /* the fields the person can change, and the marks of having looked */
 const LD_KEEP_FIELDS = ['checked', 'opened', 'edited', 'taskId', 'title', 'project', 'serviceId', 'service', 'services',
   'billable', 'budget', 's', 'e', 'minutes', 'note', 'noteFrom', 'noteEdited', 'noteTried', 'noteError', 'flags',
-  'source', 'why', 'confidence', 'confidenceWords', 'ticket', 'alts', 'claudeNone', 'serviceProblem'];
+  'source', 'why', 'confidence', 'confidenceWords', 'ticket', 'alts', 'claudeNone', 'serviceProblem', 'choice'];
+
+/* A shared row: a client's agent ran on a request the person typed while internal work was in front, so the client got
+   the stretch first (pulsar/dayplan.py). The person decides who it goes to, at its real time: Client (as proposed),
+   Half each (the first half the client's, the second the internal work's: two rows), Internal (all of it the
+   internal work's). r.client holds the client's fields as proposed, r.sharedWith the internal work's, r.whole the
+   stretch [s, e]. Pure, as dayplan.apply_choice: the rows it returns replace r (and its second half, if any). */
+const LD_SHARED_TEXT = {client: 'Client work went first: its agent ran while you did internal work. Check it.',
+                        half: 'Half each: the client first, then your internal work.',
+                        internal: 'Given to the internal work that was on screen.'};
+function ldInner(w) {
+  return {taskId: w.taskId ? String(w.taskId) : null, title: w.title || '', project: w.project || '',
+          serviceId: w.serviceId || null, service: w.service || '', services: w.services || [], billable: w.billable,
+          budget: w.budget || '', why: w.why || '', source: w.source || '', confidence: w.confidence || 'low',
+          alts: [], repo: w.repo || '', note: '', noteFrom: ''};
+}
+function ldChoice(r, choice, step) {
+  const [s, e] = r.whole || [r.s, r.e ?? r.s + r.minutes];
+  const base = {...r, ...(r.client || {}), s, e, minutes: e - s, choice};
+  const ready = x => ({...x, checked: !!(x.taskId && x.serviceId)});
+  if (choice === 'internal') return [ready({...base, ...ldInner(r.sharedWith || {})})];
+  if (choice !== 'half') return [ready({...base, choice: 'client'})];
+  const g = Math.max(1, step || 5), half = Math.round((e - s) / 2 / g) * g;
+  if (!(half >= g && half <= e - s - g)) return [ready({...base, choice: 'client'})];  // too short to halve on the grid
+  return [ready({...base, e: s + half, minutes: half}),
+          ready({...base, ...ldInner(r.sharedWith || {}), id: r.id + 'h', key: r.key + '|half', s: s + half,
+                 minutes: e - s - half, halfOf: r.id})];
+}
+/* after ldReapply: a shared row kept as Half each gets its second half back */
+function ldWithHalves(rows, step) {
+  const out = [];
+  for (const r of rows) {
+    out.push(r);
+    if (r.shared && r.choice === 'half' && !r.halfOf && !rows.some(x => x.halfOf === r.id)) {
+      const pair = ldChoice(r, 'half', step);
+      if (pair.length === 2) out.push(pair[1]);
+    }
+  }
+  return out;
+}
 
 function ldRowKey(date, r) {
   const work = r.repo || (r.meeting ? 'meeting:' + r.meeting : r.kind || '');

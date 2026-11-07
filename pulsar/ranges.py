@@ -45,7 +45,7 @@ def _minute(keep: dict, at: list, x: int) -> tuple:
         return "logged", ("logged",), o, None
     p = at[x]
     kind = (p or c)["kind"]
-    if kind in ("focused", "agent"):
+    if kind in ("focused", "agent", "shared"):
         return "claude", ("claude", c.get("project") or ""), o, p
     if kind == "skip":
         return "skip", ("skip", c.get("project") or ""), o, p

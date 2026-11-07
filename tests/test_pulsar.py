@@ -679,19 +679,20 @@ class LearnTest(unittest.TestCase):
                     "task": "Releases", "project": "Acme"},
                    {"date": "2026-11-03", "start": t0("2026-11-03") + 600 * 60, "minutes": 40, "taskId": "2",
                     "task": "Releases", "project": "Acme"}]
-        sess, repo = learn.votes(days, entries, t0, "2026-11-04")
+        sess, repo, sr = learn.votes(days, entries, t0, "2026-11-04")
         names = {r["taskId"]: r for r in entries}
-        same_session = learn.suggest({"k": [k1], "p": "acme-site"}, sess, repo, names)
+        same_session = learn.suggest({"k": [k1], "p": "acme-site"}, sess, repo, names, sr=sr)
         self.assertEqual([(t["taskId"], t["why"]) for t in same_session],
                          [("1", "logged while in this Claude session: 1 h 0 min"), ("2", "logged while in acme-site: 2 h 10 min")])
-        new_session = learn.suggest({"k": [learn.key("Something new")], "p": "acme-site"}, sess, repo, names)
+        new_session = learn.suggest({"k": [learn.key("Something new")], "p": "acme-site"}, sess, repo, names, sr=sr)
         self.assertEqual([t["taskId"] for t in new_session], ["2", "1"])     # the repository's, most minutes first
         self.assertEqual(learn.suggest({"k": [], "p": "elsewhere"}, sess, repo, names), [])
         self.assertEqual(learn.key("tiny"), "")                               # titles too short to tell sessions apart
 
-    def test_a_session_votes_in_every_repository_it_worked_in(self):
-        """Measured on 30 days of real logging: preferring the same session in the same repository put the right
-        task first less often (39% of minutes instead of 43%), so a session's votes ignore the repository."""
+    def test_a_sessions_votes_count_in_the_repository_they_were_learned_in(self):
+        """A session that did one client's database upgrade gave that task to another client's work the next day
+        (the old rule, votes across repositories). Its votes now count where they were learned; elsewhere only for a
+        task that repository is logged to, or when the session has been in that repository all along."""
         from pulsar import learn
         t0 = lambda d: datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()  # noqa: E731
         k = learn.key("Database upgrade")
@@ -701,11 +702,15 @@ class LearnTest(unittest.TestCase):
                     "task": "Client A upgrade", "project": "A"},
                    {"date": "2026-11-02", "start": t0("2026-11-02") + 700 * 60, "minutes": 30, "taskId": "2",
                     "task": "Client B upgrade", "project": "B"}]
-        sess, repo = learn.votes(days, entries, t0, "2026-11-03")
-        got = learn.suggest({"k": [k], "p": "client-b"}, sess, repo, {r["taskId"]: r for r in entries})
-        self.assertEqual([(t["taskId"], t["why"]) for t in got],
-                         [("1", "logged while in this Claude session: 1 h 30 min"),
-                          ("2", "logged while in this Claude session: 30 min")])
+        sess, repo, sr = learn.votes(days, entries, t0, "2026-11-03")
+        names = {r["taskId"]: r for r in entries}
+        got = learn.suggest({"k": [k], "p": "client-b"}, sess, repo, names, sr=sr)
+        self.assertEqual([(t["taskId"], t["why"]) for t in got], [("2", "logged while in this Claude session: 30 min")])
+        # a repository the session never worked in: none of its votes, however many
+        self.assertEqual(learn.suggest({"k": [k], "p": "client-c"}, sess, repo, names, sr=sr), [])
+        # ...unless the session has been in that repository all along (a session's first day there)
+        got = learn.suggest({"k": [k], "p": "client-c", "single": True}, sess, repo, names, sr=sr)
+        self.assertEqual([t["taskId"] for t in got], ["1", "2"])
 
     def test_recent_logging_comes_first_and_the_minutes_shown_are_real(self):
         """A day's votes halve every HALF_LIFE days: an hour logged yesterday beats two hours three weeks ago, and the
@@ -720,8 +725,8 @@ class LearnTest(unittest.TestCase):
                    {"date": "2026-11-03", "start": t0("2026-11-03") + 600 * 60, "minutes": 60, "taskId": "2",
                     "task": "New sprint", "project": "Acme"}]
         names = {r["taskId"]: r for r in entries}
-        sess, repo = learn.votes(days, entries, t0, "2026-11-04")
-        self.assertEqual([(t["taskId"], t["why"]) for t in learn.suggest({"k": [k], "p": "acme-site"}, sess, repo, names)],
+        sess, repo, sr = learn.votes(days, entries, t0, "2026-11-04")
+        self.assertEqual([(t["taskId"], t["why"]) for t in learn.suggest({"k": [k], "p": "acme-site"}, sess, repo, names, sr=sr)],
                          [("2", "logged while in this Claude session: 1 h 0 min"),
                           ("1", "logged while in this Claude session: 2 h 0 min")])
         self.assertEqual([t["taskId"] for t in learn.suggest({"k": [], "p": "acme-site"}, sess, repo, names)], ["2", "1"])
@@ -2521,28 +2526,47 @@ class ClockChangeTest(unittest.TestCase):
             ten = datetime.strptime(day + " 10:00", "%Y-%m-%d %H:%M").replace(tzinfo=kyiv).timestamp()
             self.assertEqual(server.clock(ten, t0, kyiv), expect, day)
 
-    def test_likely_rows_from_the_script_are_drawn_where_the_script_put_them(self):
-        """The fi-time-from-activity script writes wall-clock times. On the day the clocks went back in Kyiv, a row it
-        put at 10:00 must be drawn at 10:00, not an hour early; the cached proposal keeps elapsed minutes."""
-        import json
+    def test_with_the_skill_installed_its_names_are_used_never_its_layout(self):
+        """The fi-time-from-activity script laid each sitting's minutes out one project after another and moved the
+        agents' parallel time into free time. Pulsar reads the sessions itself, at the real time of the work, and takes
+        only the script's names: its rules for repositories (projects_in), its name for time spent logging, and its
+        naming of each turn (tool_strings counted by projects_in). Without the script, or with one that cannot be read,
+        Pulsar's own names and weights."""
         from pulsar import likely
+        folder = tempfile.mkdtemp()
+        script = os.path.join(folder, "activity_blocks.py")
+        with open(script, "w") as fh:
+            fh.write('LOGGING = "time logging"\n'
+                     'def projects_in(strings, counts):\n'
+                     '    for s in strings:\n'
+                     '        if "/acme" in s: counts["Acme"] = counts.get("Acme", 0) + 1\n'
+                     'def tool_strings(r):\n'
+                     '    return [str(r)]\n')
+        seen = {}
 
-        def script(args, **k):
-            with open(args[args.index("--json") + 1], "w") as fh:
-                json.dump({"entries": [{"start": "02:00", "end": "02:30", "minutes": 30, "project": "p", "kind": "focused"},
-                                       {"start": "10:00", "end": "10:30", "minutes": 30, "project": "p", "kind": "focused"}]}, fh)
-            return mock.Mock(returncode=0, stdout="", stderr="")
-        s = {**config.DEFAULTS, "timezone": "Europe/Kyiv", "likely": "on"}
+        def built_in(date, settings, names=(None, None), turns=None):
+            seen["names"], seen["turns"] = names, turns
+            return {"entries": [{"s": 600, "e": 630, "minutes": 30, "project": names[0]("/x/acme/a.js")}]}
         likely._cache.clear()
-        with mock.patch.object(likely, "own_script", lambda: True), mock.patch.object(likely.subprocess, "run", script), \
-             mock.patch.object(likely, "_with_tasks", lambda *a: None), \
-             mock.patch.object(server.config, "load", lambda: dict(s)), mock.patch.object(server, "current_settings", lambda: dict(s)), \
-             mock.patch.object(server.likely, "enabled", lambda s: True):
-            shown = server.api_proposal({"date": "2026-10-25"})["entries"]
-            kept = likely._cache[("2026-10-25", "Europe/Kyiv")][1]["entries"]
+        likely._kept.clear()
+        with mock.patch.object(likely, "SCRIPT", script), mock.patch.object(likely, "_built_in", built_in), \
+                mock.patch.object(likely, "_with_tasks", lambda *a, **k: None):
+            got = likely.proposal("2026-10-25", "UTC", "2026-11-06", False, dict(config.DEFAULTS), keep=False)
         likely._cache.clear()
-        self.assertEqual([(e["s"], e["e"]) for e in shown], [(120, 150), (600, 630)])  # as the script said
-        self.assertEqual([(e["s"], e["e"]) for e in kept], [(120, 150), (660, 690)])   # elapsed: the day had 25 hours
+        self.assertEqual(got["entries"][0]["project"], "Acme")
+        self.assertEqual(seen["names"][1], "time logging")
+        self.assertIsNone(seen["names"][0]("/nowhere/at/all"))  # neither the script nor a repository names it
+        counts = {}
+        seen["turns"]["count"](seen["turns"]["strings"]({"x": "/x/acme/b.js"}), counts)
+        self.assertEqual(counts, {"Acme": 1})                     # the script's own counting of a turn
+        with open(script, "w") as fh:  # a script of another shape: Pulsar's own names and weights
+            fh.write("x = 1\n")
+        os.utime(script, (time.time() + 5, time.time() + 5))
+        with mock.patch.object(likely, "SCRIPT", script):
+            self.assertEqual((likely.skill_names(), likely.skill_turns()), ((None, None), None))
+        with mock.patch.object(likely, "SCRIPT", os.path.join(folder, "gone.py")):  # not installed
+            self.assertEqual((likely.skill_names(), likely.skill_turns()), ((None, None), None))
+        likely._kept.clear()
 
     def test_the_week_heatmap_uses_the_clock_hour(self):
         from zoneinfo import ZoneInfo
@@ -3282,7 +3306,7 @@ class KeptDaysTest(unittest.TestCase):
         runs = []
         proposal = {"entries": [{"s": 600, "e": 660, "minutes": 60, "project": "acme-web", "titles": ["Fix it"]}]}
 
-        def run(date, tz_name, tz=None):
+        def run(date, tz_name, tz=None, settings=None):
             runs.append(date)
             return {**proposal, "entries": [dict(e) for e in proposal["entries"]]}
         with mock.patch.object(self.likely, "own_script", lambda: True), mock.patch.object(self.likely, "_run", run), \
