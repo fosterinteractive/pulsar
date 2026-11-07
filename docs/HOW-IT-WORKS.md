@@ -1053,8 +1053,8 @@ word: the person approves Pulsar's words, not the model's. Other apps ignore the
 client whose name is not `claude-code` (from `initialize`, or from each request's `_meta` in the 2026-07-28 protocol).
 A code that is refused (wrong summary, wrong app, Pulsar closed, writes blocked) is not used up. The instructions, the
 preview's `next` and `pulsar_log`'s description all say the same: show the person the summary, stop, and call
-`pulsar_log` only after their yes in a new message, never in the same turn as the preview unless they already said yes
-to exactly that summary. In a simulation, Haiku asked to "Log my time" called `pulsar_log` straight after the preview
+`pulsar_log` only after their yes in a new message, never in the same turn as the preview, with no exception a text
+could claim ("they already said yes" is just what an injected instruction would say). In a simulation, Haiku asked to "Log my time" called `pulsar_log` straight after the preview
 before this was said.
 
 **Protocols.** Claude Code 2.1.301 first sends `server/discover` (2026-07-28): Pulsar answers it, and every request

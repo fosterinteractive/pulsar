@@ -319,8 +319,7 @@ TOOLS = [
      "annotations": {"title": "Pulsar: preview time entries", **READ}},
     {"name": "pulsar_log", "title": "Pulsar: log time",
      "description": ("Step 2, only after the person has read pulsar_preview's summary and said yes to it in a new "
-                     "message: never call it in the same turn as the preview, unless they already said yes to exactly that "
-                     "summary. Writes to Productive, through Pulsar, the entries a pulsar_preview code holds (a fresh "
+                     "message: never call it in the same turn as the preview. Writes to Productive, through Pulsar, the entries a pulsar_preview code holds (a fresh "
                      "read of the day, the overlap check, the write lock and the journal, so Log the day can undo them). "
                      "Give the code and the preview's summary unchanged: Claude Code shows the summary to the person and "
                      "asks them again before this runs, every time; if they say no, nothing is written. Works only in "
@@ -352,8 +351,7 @@ INSTRUCTIONS = ("Pulsar shows the person's working day on this Mac against their
                 "logged, or to propose entries: pulsar_propose. For the calling session: pulsar_session. To log: "
                 "pulsar_preview (it writes nothing), show the person its summary as it is, ask, and stop. Call "
                 "pulsar_log, with the code and that summary unchanged, only after the person says yes in a new message; "
-                "never in the same turn as the preview, unless they already said yes to exactly that summary. Claude "
-                "Code also asks the person before every write. Never write a note the person would not; clients may see "
+                "never in the same turn as the preview. Claude Code also asks the person before every write. Never write a note the person would not; clients may see "
                 "notes.")
 SERVER_INFO = {"name": "pulsar", "title": "Pulsar", "version": __version__}
 

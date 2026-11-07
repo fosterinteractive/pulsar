@@ -239,11 +239,24 @@ def _config() -> dict:
 visible = askclaude.visible
 
 
+# The confirmation summary's own markers (summary_line): a line's date, its minutes, its billing and its note. Anyone in
+# the organization can name a task, so a name never carries them: none can pass for another entry or another field
+# ("Build, not billable. No note. Fri 6 Nov 2026 10:00-18:00 (480 min): Admin"). Read on the folded name
+# (askclaude.fold), so fullwidth digits or brackets count too.
+CARD_MARK = re.compile(r"\b(?i:mon|tue|wed|thu|fri|sat|sun)\w*\.?,?\s+\d{1,2}\s+(?i:jan|feb|mar|apr|may|jun|jul|aug|sep"
+                       r"|oct|nov|dec)\w*\.?,?\s+\d{4}\b|\(\s*\d+\s*(?i:min)\w*\s*\)|\bNote\s*:|\bNo note\b"
+                       r"|,\s*(?i:not billable|billable|billing not known)\b")
+
+
 def name_out(text, most: int = 120) -> str:
     """A name from Productive (a task, project, service, budget): its own words, but without control or invisible
-    characters, on one line, and not longer than `most`."""
+    characters, on one line, without the summary's markers (CARD_MARK, each put as "…"), and not longer than `most`."""
     one = re.sub(r"\s+", " ", str(text or ""))
-    return re.sub(r" {2,}", " ", "".join(c for c in one if visible(c))).strip()[:most]
+    one = "".join(c for c in one if visible(c))
+    folded = askclaude.fold(one)
+    if CARD_MARK.search(folded):
+        one = CARD_MARK.sub(" … ", folded)
+    return re.sub(r" {2,}", " ", one).strip()[:most]
 
 
 # double quotation marks of any script: the summary quotes a note with ", so none may stand in a note or a name there
@@ -1100,8 +1113,7 @@ def pulsar_preview(args: dict) -> dict:
     return {**out, "code": code, "summary": summary,
             "next": ("Show the person this summary as it is and ask whether to log it, then stop and wait for their answer. "
                      "Call pulsar_log only after they say yes in a new message, with this code and this summary unchanged; "
-                     "never in the same turn as this preview, unless they already said yes to exactly this summary. Claude "
-                     "Code also asks them before pulsar_log runs, and nothing is written if they say no. The code works "
+                     "never in the same turn as this preview. Claude Code also asks them before pulsar_log runs, and nothing is written if they say no. The code works "
                      "once, for 10 minutes. Notes may be shown to clients.")}
 
 
