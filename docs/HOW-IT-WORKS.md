@@ -7,7 +7,7 @@ releasing, see [macos/README.md](../macos/README.md).
 Pulsar is a small local web app. A Python 3.9 server (standard library only) reads your activity tracker, your
 Claude Code sessions, Productive and, if you connect it, Google Calendar. It serves one page, which draws the day and
 the report. On a Mac a thin app shows that page in a window of its own. Nothing runs anywhere but on your computer,
-except what the Claude Code switch sends to Anthropic when it is on (5.5, 5.7). Nothing is written to Productive
+except what the Claude Code switch sends to Anthropic when it is on (5.4c, 5.5, 5.7). Nothing is written to Productive
 without a click and a confirmation: logging, changing or deleting an entry, Log the day and its Undo, or `pulsar_log`
 from a Claude Code session after Claude Code asked you.
 
@@ -103,7 +103,8 @@ yours.
   inside a Log the day run (`run` and `row`, so the entry is journalled, never sent twice, listed with Undo) and never
   with `force` or `pieces` (the dialog's, 5.1), so the overlap check always holds. Everything else is refused with
   403 and needs the page's session: changing or deleting an entry, settings (the token, `preview_writes`, the Claude
-  Code switch), updates, Ask Claude, the session note, Google Calendar, Productive's test.
+  Code switch), updates, Ask Claude, Log the day with Claude's review, the session note, Google Calendar,
+  Productive's test.
 - **What a program of the person's can still do.** This is not a wall between the person's own programs and Pulsar,
   and nothing on one account can be. Such a program can log new entries with the key as above (a Claude Code session
   in bypass mode or with a prompt injection can therefore log time without the `pulsar_log` prompt); it can write a
@@ -552,6 +553,101 @@ day of how many it is and how much this catch-up has logged so far (what each da
 back), with **Next day** (**Finish** on the last). The catch-up writes nothing itself: each day is written only from
 its own confirm step, one entry at a time, and moving on writes nothing. Closing Log the day, or going to another
 day, ends it.
+
+### 5.4c Log the day with Claude (`pulsar/dayreview.py`, `web/js/ldreview.js`, experimental)
+
+A second look at Log the day's plan, the way a Claude Code session looks at a day when it is asked to log it, with
+FI's rules for where time goes. Everything here is a suggestion under a row (or, for the whole day, above the list),
+with **Accept** and **Reject**. Accepting changes the row in the review as a change by hand would; nothing is written
+until Log the day's own confirm step, one entry at a time, journalled, with Undo (5.4).
+
+**What the sessions did that Log the day did not.** 104 logging requests in Claude Code sessions (1 October to 6
+November 2026, read only from the transcripts), compared with the replay of Log the day on the same days:
+
+| Decision | How often | What it changed |
+|---|---|---|
+| Asked a question before writing | 59 requests | after 36 the person changed something; the questions: which task 18, agent time to add 13, minutes 6, a closed task or a new period 4 |
+| Searched Productive for the task | 46 | the task; 11.7% of the logged minutes went to tasks created that day, 3.2% to tasks never logged to before |
+| Created a task, mostly a subtask of the period's contingency task | 12 (21 tasks) | always: the time went there |
+| Chose between period tasks (Aug/Sep, Oct/Nov), noticed a closed task | 15 and 7 | the task; the plan picked a task closed before the day for 3.7% of the logged minutes |
+| Read services or budgets | 24 | Productive refused 7 writes (a closed or ended budget, no access); 89% of the minutes kept the service used last on the task, 9.6% were on a task with none yet |
+| Estimates to the estimations task, internal work to internal tasks | 15 | 4.2% of the logged minutes were another internal task in the plan |
+| Split one block across several tasks or sites | 8 | the minutes per task |
+| Said the day's total against the time worked | 34 | nothing directly; Log the day shows it already |
+| Split a meeting by topic | 2 | rare |
+
+**FI's rules in code** (`fi_rules`, with the plan: `GET /api/dayplan` returns `suggestions`). On this Mac, no
+Claude, read only:
+- A task whose title names a period (a month, two months, a quarter: "Oct/Nov 2026", "2026-09/10", "2026/Q4") used
+  on a day outside it: the same task of the day's period (same project, same title but for the period and its
+  ticket key), open on the day, starts as a sure suggestion; with none, and when it is a period's container
+  (contingency, core updates, ongoing support, PM), a task to create for the day's period, in the same form
+  ("Aug/Sep" then "Oct/Nov"): FI creates each period's task by hand, and a new period's is often missing.
+- A task closed before the day (by its closing date in the recent tasks, never by "closed now"): the open task of the
+  same name in the project when it was made again, else a question. Not the next alternative: on the replay those
+  were right for 75 of 595 minutes.
+- `service_by_kind`: for a task with no service used before, the line its kind goes to (contingency to "Service
+  Request / Contingency", core updates to the maintenance line, PM, meetings), never an overage or rollover line
+  while another fits. A subtask's parent is not read, so this only knows the containers by their own names.
+
+On 36 replayed days (1 October to 5 November 2026) the period rule never fired: the plan did not pick a past
+period's task. The closed-task rule asked about 15 rows (650 minutes), and the plan's task was wrong for all of them.
+
+**The digest** (`digest`): what Pulsar knows of the day, as compact JSON for Claude, at most about 15,000 tokens
+(4 characters a token): the totals (active, meetings, logged, proposed, not covered, over the day, the target), away
+stretches of 10 minutes or more, activity by hour by kind (editor or terminal, browser, chat, call, logging, other,
+personal counted) with up to three app names per hour, the plan's rows (time, task, project, service, budget,
+billable, confidence, why, flags, ticket flags, three alternatives with why, the project's services, the note and
+where it came from), what Pulsar could not place, the Likely work (time, repository, session titles, up to eight
+steps of what was typed and Claude's reply, `askclaude.steps`, up to eight commit subjects, learned tasks with why,
+linked tasks), meetings (time, title, declined, their tasks), entries already logged (time, task, service, note),
+repeats, the tasks logged to in the last 30 days (with the service used last, up to 60) and the period tasks open
+on the day in those projects (up to 30). Never in it: window titles, sites, addresses, the names of personal
+windows, the rule words. Steps about logging time are left out: they say nothing about the work and on a past day
+they would give the answer away. Over the budget, in this order: steps cut to 8, 4, then 2 per block (the newest
+kept), replies to 200 characters, the tasks list to 30 and the apps per hour left out, then only what was typed.
+Measured on the 30 replayed days with work: 4,600 to 25,400 tokens uncut, 4,600 to 15,000 after the cut; the steps
+are most of it (up to 17,000 tokens), the tasks lists about 3,700.
+**What goes to Anthropic** is the prompt: FI's rules and the digest. Unlike Ask Claude's prompt it holds the
+meetings' titles, the apps' names by hour and the notes of the entries already logged that day; like it, never a
+window's title, a site or an address.
+
+**The review** (`review`, `POST /api/dayplan/review`, the page's session only; the key alone is refused). It runs
+the person's own Claude Code with Ask Claude's isolation (5.5): `claude -p --no-session-persistence --tools ""
+--permission-mode dontAsk --strict-mcp-config --setting-sources "" --json-schema`, Productive's read tools only,
+auto memory off, `--max-budget-usd` as for Ask Claude, the model from Settings. The prompt is FI's rules (from the
+fi-productive-process and fi-time-from-activity skills, written without names), what each kind of suggestion means
+and the digest, which it is told is data. Kinds: another task, another service (by name, from the row's list),
+minutes, a split (up to four parts that add up to the row), a task to create (title, project, parent, one-line
+description), a question, leave the row out. Every suggestion is checked here before the page sees it
+(`validate`), and one that fails is dropped, never repaired: its row must be one of the plan's, a task must be one
+the digest named or one Productive names now (`task_details`), the page shows Pulsar's name for it, never Claude's
+words; minutes inside the day, a split that adds up, a service on the row's list; a reason or a question is plain
+text with no link and no invisible character (the page shows it as text), a new task's title and description pass
+the note's checks (`guard_note`), since they would go to Productive. What was dropped is said in Logs. The page
+matches each suggestion to its row by the row's start and task, so a row changed since shows its suggestion as
+"the row changed since".
+
+**Measured** on five replayed days (8, 15, 28 and 29 October, 3 November 2026; 2,839 logged minutes with a start
+time), each planned as if nothing were logged, Claude with no tools at all (it could name only tasks the digest
+names), every suggestion of the kinds counted taken as accepted (`tools/replay/review_replay.py`):
+
+| | Right task at the right time | Right task, right amount | Cost a day | Time |
+|---|---|---|---|---|
+| Log the day | 23.5% | 34.4% | | |
+| Plan only (no digest), Haiku, tasks and services | 27.6% | 39.6% | $0.009 | |
+| Plan only, Sonnet | 27.6% | 39.2% | $0.071 | 10-15 s |
+| Digest, Haiku, tasks and services | 33.7% | 50.2% | $0.018 | 70-100 s |
+| Digest, Sonnet, tasks and services | 35.7% | 51.7% | $0.154 | 30-40 s |
+| Digest, Sonnet, all suggestions (minutes and leave out too) | 30.0% | 45.4% | | |
+
+Every task suggestion with the digest was on a row whose task was wrong (22 of 22 with Sonnet, 18 of 18 with
+Haiku), and most questions were too (12 of 17, 17 of 24). Minutes suggestions cut the day: with all of Sonnet's,
+2,227 minutes proposed against 2,839 logged; the person logs more than the time at the keys on days with agents
+working, so they are suggestions to read, not to accept in a batch. The service was right for 94% to 95% of the
+minutes with the right task, before and after. No task to create was suggested with the digest. Claude Code's own
+prompt and the schema are about 15,000 tokens of each run's 28,000 to 32,000. Five days of one person: a direction,
+not a verdict.
 
 ### 5.5 Where the suggestions come from
 

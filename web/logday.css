@@ -225,3 +225,27 @@ dialog.dlg::backdrop { background: rgba(0,0,0,.35); }
   .ed { padding-left: 14px; }
   #log-day { right: 92px; }
 }
+
+/* Log the day with Claude (js/ldreview.js): suggestions under a row, and for the whole day */
+.sg-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.sg-head .rv-ask { margin: 0; flex: 1 1 200px; }
+.sg-head .btn .cl-mark { width: 13px; height: 13px; margin-right: 5px; vertical-align: -2px; }
+.sg-list { flex: 0 0 100%; list-style: none; margin: -4px 0 0; padding: 0 14px 10px 104px; display: grid; gap: 6px; }
+.sg-day { list-style: none; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+.sg-list.day { padding: 0; margin: 0; }
+.sg { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 4px 8px; align-items: start; font-size: 12px; line-height: 1.4;
+  border: 1px dashed var(--line); border-radius: 8px; padding: 7px 8px; background: var(--card); }
+.sg .cl-mark { width: 14px; height: 14px; margin-top: 1px; }
+.sg-rule { font-size: 9px; font-weight: 700; letter-spacing: .02em; color: var(--muted); border: 1px solid var(--line); border-radius: 4px;
+  padding: 0 2px; line-height: 14px; text-align: center; }
+.sg-k { color: var(--muted); font-weight: 600; }
+.sg-t { font-weight: 600; }
+.sg-p { color: var(--muted); font-weight: 400; }
+.sg-w { display: block; color: var(--muted); }
+.sg-a { display: flex; gap: 4px; grid-column: 2; }
+.sg-done { grid-column: 2; }
+.sg-a .btn.sm, .sg-head .btn.sm { padding: 3px 9px; font-size: 12px; min-height: 0; }
+.sg-done { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
+.sg.accepted, .sg.rejected, .sg.gone { opacity: .6; }
+.sg.accepted { border-style: solid; }
+@media (max-width: 700px) { .sg-list { padding-left: 14px; } }

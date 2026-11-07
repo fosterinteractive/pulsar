@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Log the day with Claude (experimental): FI's rules and Claude's review of the whole day, as suggestions to accept or reject.
 - A full budget and a closed service are said in plain words when Productive refuses an entry.
 - Log dialog: an End time, kept in step with Start and Minutes; an entry cannot run past midnight.
 - Pulsar in Claude Code: reasons are fixed phrases only, names are cleaned, and no model-written note is returned.

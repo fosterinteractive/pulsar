@@ -53,6 +53,7 @@ async function openLogDay() {
   LD.rows = (r.entries || []).map((e, i) => ({...e, id: 'r' + i, opened: false, edited: false,
                                                status: e.sent === 'logged' ? 'logged' : e.sent ? 'unknown' : null,
                                                reason: e.sent ? 'A run of this day already sent it.' : ''}));
+  sgFromPlan(r);  // ldreview.js: FI's rules on this plan
   renderReview(); render();
   document.body.classList.toggle('rv-ignore', !!r.ignoreLogged);
   // Ask Claude (when it is on in Settings): the whole day goes to it, its picks fill in unsure rows as they arrive
@@ -213,9 +214,9 @@ function renderReview() {
       <div class="rv-sum"><b>${dur(T.minutes)}</b> ticked in ${n} ${n === 1 ? 'entry' : 'entries'} · ${dur(T.billable)} billable · ${dur(T.logged)} logged</div>
       <div class="rv-bar" role="img" aria-label="${esc(`${dur(withThese)} with these, against a target of ${dur(target)}`)}"><i class="lg" style="width:${pct(T.logged)}%"></i><i class="pp" style="width:${pct(T.minutes)}%"></i></div>
       <div class="rv-bl"><span>${dur(withThese)} with these</span><span>target ${dur(target)}</span></div>
-      <div class="rv-iss">${chips}</div>${askLine}${testNote}${historyNote}${cuStrip()}</div>
+      <div class="rv-iss">${chips}</div>${askLine}${sgHead()}${testNote}${historyNote}${cuStrip()}</div>
     ${results}
-    ${empty || `<ul class="rv-list" aria-label="Proposed entries">${items.map(x => x.html).join('')}${skipped}</ul>`}
+    ${empty || `<ul class="rv-list" aria-label="Proposed entries">${sgDayHTML()}${items.map(x => x.html).join('')}${skipped}</ul>`}
     <div class="rv-f">${LD.writing
       ? `<span class="hint" role="status">Writing ${LD.rows.filter(r => r.status === 'logged' && r.thisRun).length + 1} of ${LD.writeCount}…</span><button type="button" class="btn bordered" id="ld-stop"${LD.stop ? ' disabled' : ''}>${LD.stop ? 'Stopping after this one' : 'Stop after this one'}</button>`
       : `<button type="button" class="btn bordered" id="ld-redo" title="Work the day out again; your changes go">Start over</button>
@@ -258,6 +259,7 @@ function rowHTML(r, overlaps) {
       ${quiet.map(w => `<span class="e-warn neutral">${esc(w)}</span>`).join('')}
     </button>
     ${ticketLine(r)}
+    ${sgRowHTML(r)}
     ${open ? editorHTML(r) : ''}</li>`;
 }
 
