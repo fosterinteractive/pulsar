@@ -224,12 +224,29 @@ class Link(unittest.TestCase):
         home = os.path.expanduser("~")
         release = os.path.join(self.dir, "pulsar-release")
         with mock.patch.object(claudelink.config, "MAIN_CONFIG_DIR", os.path.join(home, ".config", "pulsar")), \
+                mock.patch.object(claudelink.config, "CACHE_DIR", os.path.join(home, ".cache", "pulsar-preview")), \
                 mock.patch.object(claudelink, "RELEASE_DIR", release):
-            self.assertEqual(claudelink.deny_rules(), ["Read(~/.config/pulsar/**)", "Edit(~/.config/pulsar/**)",
-                                                       "Read(~/.config/pulsar-preview/**)",
-                                                       "Edit(~/.config/pulsar-preview/**)"])
+            # settings and keys, the installed code (Pulsar and Preview), the window's WebKit data, the cache
+            self.assertEqual(claudelink.deny_rules(), [
+                "Read(~/.config/pulsar/**)", "Edit(~/.config/pulsar/**)",
+                "Read(~/.config/pulsar-preview/**)", "Edit(~/.config/pulsar-preview/**)",
+                "Read(~/Library/Application Support/Pulsar*/**)", "Edit(~/Library/Application Support/Pulsar*/**)",
+                "Read(~/Library/WebKit/com.fosterinteractive.pulsar*/**)",
+                "Edit(~/Library/WebKit/com.fosterinteractive.pulsar*/**)",
+                "Read(~/.cache/pulsar*/**)", "Edit(~/.cache/pulsar*/**)"])
             os.makedirs(release)
             self.assertEqual(claudelink.deny_rules()[-2:], [f"Read(/{release}/**)", f"Edit(/{release}/**)"])
+
+    def test_the_new_deny_rules_are_tracked_and_taken_back_with_the_others(self):
+        old = [r for r in claudelink.deny_rules() if ".config/" in r]  # what a copy switched on earlier added
+        self.write({"permissions": {"deny": old + ["Read(./secrets/**)"]}})
+        on = {"ask_claude": True, "claude_rules_added": [], "claude_denies_added": old}
+        self.assertFalse(claudelink.status(5610, on)["rules"])  # Settings offers to add them again
+        got = claudelink.connect(5610, on)
+        self.assertEqual(sorted(got["deniesAdded"]), sorted(claudelink.deny_rules()))
+        self.assertTrue(claudelink.status(5610, on)["rules"])
+        claudelink.disconnect({**on, "claude_rules_added": got["rulesAdded"], "claude_denies_added": got["deniesAdded"]})
+        self.assertEqual(self.read()["permissions"]["deny"], ["Read(./secrets/**)"])  # the person's own rule stays
 
     def test_claude_config_dir_moves_the_files_pulsar_reads_and_writes(self):
         import importlib

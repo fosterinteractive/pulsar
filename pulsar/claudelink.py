@@ -7,10 +7,13 @@ On, it does three things, so nothing else needs setting up:
    one pulsar_log call, holds up to 40 entries).
 3. Rules in Claude Code's user settings (~/.claude/settings.json, or $CLAUDE_CONFIG_DIR/settings.json): an "ask" rule
    for pulsar_log, a fallback to the mark mcp.py puts on it; and "deny" rules so Claude Code's file tools cannot read
-   or change Pulsar's folders (its key, sign-in code, settings and tokens; the release key's folder too, where there is
-   one). A Read or Edit deny rule binds Claude Code's own file tools and the file commands it recognizes in a shell
-   command (cat, head, sed, a redirection); a script that opens the file itself is bound only with Claude Code's sandbox
-   on, which Pulsar leaves to the person.
+   or change Pulsar's folders (its key, sign-in code, settings and tokens; its installed code, the window's WebKit
+   data and its cache; the release key's folder too, where there is one). A Read or Edit deny rule binds Claude Code's
+   own file tools and the file commands it recognizes in a shell command (cat, head, sed, a redirection). It does not
+   bind a script that opens the file itself (python3 -c, node -e, a script on disk), a command that reaches Pulsar
+   without naming its files (pulsar.py --mcp or --signin-url, curl to its port), or any program that is not Claude
+   Code; those are bound only by Claude Code's sandbox, which Pulsar leaves to the person. A session in bypass mode
+   can also remove the rules from the settings file. They are a speed bump for Claude's own tools, not a wall.
 A second setting, off by default, "Ask before any Claude Code session changes Productive", adds "ask" rules for the
 create, update, delete and action tools of the Productive server named "productive": every Claude Code session then
 asks before each such change, not only Pulsar's, so it is the person's choice. Pulsar 1.2 added them with the switch;
@@ -51,6 +54,7 @@ SETTINGS = os.path.join(CLAUDE_DIR, "settings.json")
 CLAUDE_JSON = os.path.join(CONFIG_DIR_ENV, ".claude.json") if CONFIG_DIR_ENV else \
     os.path.join(os.path.expanduser("~"), ".claude.json")
 INSTALL = os.path.join(os.path.expanduser("~"), "Library", "Application Support", "Pulsar")
+WEBKIT = os.path.join(os.path.expanduser("~"), "Library", "WebKit", "com.fosterinteractive.pulsar")  # the window's data
 WRITE_TOOLS = ("create_resource", "update_resource", "delete_resource", "perform_action")
 LOG_RULES = ("mcp__pulsar__pulsar_log", "mcp__pulsar-preview__pulsar_log")  # both Pulsars: one set, as below
 RELEASE_DIR = os.path.join(os.path.expanduser("~"), ".config", "pulsar-release")  # macos/release.sh: the release key
@@ -98,14 +102,19 @@ def _rule_path(folder: str) -> str:
 
 
 def deny_rules() -> list:
-    """Read and Edit deny rules for Pulsar's folders and Pulsar Preview's (the key, the sign-in code, settings,
-    sessions, tokens), and the release key's folder when this Mac has one (only checked to exist, never read). Edit
-    covers every file tool that writes (Write too): a session cannot write a sign-in code there and trade it."""
+    """Read and Edit deny rules for Pulsar's folders and Pulsar Preview's: settings (the key, the sign-in code,
+    tokens), the installed code (an edit there would take out Pulsar's own checks at the next restart), the window's
+    WebKit data (its sign-in token) and the cache (copies of days with their notes, Ask Claude's answers, Logs); and
+    the release key's folder when this Mac has one (only checked to exist, never read). Edit covers every file tool
+    that writes (Write too): a session cannot write a sign-in code there and trade it. They bind Claude Code's own
+    tools only, not every program (module docstring)."""
     base = os.path.dirname(config.MAIN_CONFIG_DIR)
-    folders = [os.path.join(base, "pulsar"), os.path.join(base, "pulsar-preview")]
+    folders = [_rule_path(os.path.join(base, "pulsar")), _rule_path(os.path.join(base, "pulsar-preview")),
+               _rule_path(INSTALL) + "*", _rule_path(WEBKIT) + "*",
+               _rule_path(os.path.join(os.path.dirname(config.CACHE_DIR), "pulsar")) + "*"]
     if os.path.isdir(RELEASE_DIR):
-        folders.append(RELEASE_DIR)
-    return [f"{tool}({_rule_path(f)}/**)" for f in folders for tool in ("Read", "Edit")]
+        folders.append(_rule_path(RELEASE_DIR))
+    return [f"{tool}({f}/**)" for f in folders for tool in ("Read", "Edit")]
 
 
 def _claude():

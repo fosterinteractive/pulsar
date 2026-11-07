@@ -207,15 +207,29 @@ yours.
   who sets `user.email` per repository, an email that another repository of the day's sessions sets too. A
   repository that names its own author as `user.email` cannot turn that author's commit subjects into your note or
   into Ask Claude's prompt.
-- **Claude Code's file tools and Pulsar's folders.** The Claude Code switch (5.7) adds deny rules to Claude Code's
-  user settings: `Read(~/.config/pulsar/**)` and `Edit(~/.config/pulsar/**)`, the same for `pulsar-preview`, and for
-  `~/.config/pulsar-release` (the release key) only on a Mac that has that folder. Claude Code applies a Read or Edit
-  deny rule to its own file tools (Read, Grep, Glob, Edit, Write) and to the file commands it recognizes in a shell
-  command (`cat`, `head`, `tail`, `sed`, `tee`, a redirection), but not to a command that reads files without naming
-  them or to a script that opens the file itself; with Claude Code's sandbox on, the same paths bind every shell
-  command (its `sandbox.filesystem.denyRead` applies only while `sandbox.enabled` is on, and no setting applies it
-  to shell commands without the sandbox). Pulsar does not turn the sandbox on; Settings links its documentation.
-  So the rules stop a session's casual or injected `cat ~/.config/pulsar/secret`, not a program set on it.
+- **Claude Code's file tools and Pulsar's folders.** The Claude Code switch (5.7) adds a Read and an Edit deny rule
+  to Claude Code's user settings for each of Pulsar's folders (`claudelink.deny_rules`): `~/.config/pulsar` and
+  `~/.config/pulsar-preview` (the key, the sign-in code, settings, tokens); `~/Library/Application Support/Pulsar*`
+  (the installed code: an edit there would take out Pulsar's own checks at the next restart);
+  `~/Library/WebKit/com.fosterinteractive.pulsar*` (the window's data, its sign-in token among it); `~/.cache/pulsar*`
+  (copies of days with their notes, Ask Claude's answers, Logs); and `~/.config/pulsar-release` (the release key)
+  only on a Mac that has that folder. Switching off takes back only the ones Pulsar added (`claude_denies_added`); a
+  copy switched on before a rule existed says in Settings that rules are missing and offers to add them again.
+  Claude Code applies a Read or Edit deny rule to its own file tools (Read, Grep, Glob, Edit, Write) and to the file
+  commands it recognizes in a shell command (`cat`, `head`, `tail`, `sed`, `tee`, a redirection), in every mode,
+  bypass included. **What they do not stop:**
+  - a script that opens the file itself (`python3 -c "open(…)"`, `node -e`, a script on disk);
+  - a command that reaches Pulsar without naming its files: `pulsar.py --mcp` or `--signin-url`, `curl` to its port;
+  - a command that reads files without naming them, and any path Claude Code does not recognize as the same folder
+    (a symbolic link into it, for one);
+  - any program that is not Claude Code (an editor extension, an npm install script);
+  - a session in bypass mode that first removes the rules from `~/.claude/settings.json` (Claude Code re-reads it
+    while running).
+
+  With Claude Code's sandbox on, the same paths bind every shell command (its `sandbox.filesystem.denyRead` applies
+  only while `sandbox.enabled` is on, and no setting applies it to shell commands without the sandbox). Pulsar does
+  not turn the sandbox on; Settings links its documentation. So the rules stop a session's casual or injected
+  `cat ~/.config/pulsar/secret` or an edit of Pulsar's code by Claude's own Edit tool, not a program set on it.
 - **Claude Code runs Pulsar starts** (Ask Claude, the session note) get a short list of Pulsar's environment
   (`askclaude.ENV_KEEP`: `HOME`, `PATH`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LC_*`, `TMPDIR`, `TZ`,
   `CLAUDE_CONFIG_DIR`, a sign-in key or token, a proxy and its certificates), never all of it: Pulsar started from a
