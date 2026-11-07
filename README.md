@@ -65,7 +65,8 @@ right-click Pulsar, **Open**, then **Open** again). Only once.
 
 After that, open Pulsar like any other app. If it is already running, its window comes to the front. Downloads
 ask where to save; **Print or save as PDF** in the Report opens the print dialog. Cmd+= and Cmd+- make the page
-bigger or smaller. The window needs Safari 16.2 or newer (macOS 13 has it; on macOS 12, update Safari); on an
+bigger or smaller. Keys: **L** Log the day, **N** + Log, **←** **→** another day, **T** today, **⌘↩** logs in the log
+dialog, **?** lists them all; Tab reaches every button. The window needs Safari 16.2 or newer (macOS 13 has it; on macOS 12, update Safari); on an
 older Safari, Pulsar opens in your browser instead.
 
 - **Open it at login**: **System Settings → General → Login Items** (Login Items & Extensions on newer macOS),

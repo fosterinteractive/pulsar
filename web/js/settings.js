@@ -121,6 +121,27 @@ settingsSearch.addEventListener('keydown', ev => {
   if (ev.key === 'Escape' && settingsSearch.value) { ev.preventDefault(); clearSearch(); }
 });
 
+/* Unsaved changes: closing Settings (✕, Close, Escape, the error log) with a field changed and not saved asks first:
+   Save, Discard or Keep editing. The search box and the warp switch (kept at once) are not changes. */
+let settingsDirty = false;
+form.addEventListener('input', markDirty); form.addEventListener('change', markDirty);
+function markDirty(ev) { if (ev.target.name || ev.target.matches('#claude-uses select')) settingsDirty = true; }
+function closeSettings(then) {
+  if (!settingsDirty) { dlg.close(); then?.(); return; }
+  const msg = $('#settings-msg');
+  msg.className = 'msg warn ask-discard';
+  msg.innerHTML = '<span>Your changes are not saved.</span> <button type="button" class="btn sm primary" data-sd="save">Save</button> '
+    + '<button type="button" class="btn sm bordered" data-sd="discard">Discard</button> <button type="button" class="btn sm bordered" data-sd="keep">Keep editing</button>';
+  msg.onclick = ev => {
+    const k = ev.target.closest('[data-sd]')?.dataset.sd; if (!k) return;
+    msg.onclick = null; msg.className = 'msg'; msg.textContent = '';
+    if (k === 'save') saveSettings().then(() => { if (!dlg.open) then?.(); });
+    if (k === 'discard') { settingsDirty = false; dlg.close(); then?.(); }
+  };
+  msg.querySelector('[data-sd="save"]').focus();
+}
+dlg.addEventListener('cancel', ev => { if (settingsDirty) { ev.preventDefault(); closeSettings(); } });
+
 function openSettings(tab) {
   if (!CONFIG) return;
   clearSearch();
@@ -128,6 +149,7 @@ function openSettings(tab) {
   try { last = localStorage.getItem(TAB_KEY); } catch { /* storage off */ }
   showTab(typeof tab === 'string' ? tab : last || 't-conn');
   fillSettings(CONFIG);
+  settingsDirty = false; $('#settings-msg').onclick = null;
   paintWarp();
   /* the connection may have changed since the page loaded (a token renewed or expired): ask again, and refresh only
      what the person does not type into */
@@ -251,6 +273,7 @@ async function saveSettings(extra = {}) {
   if (r.error) { msg.className = 'msg warn'; msg.textContent = r.error; return; }
   applyConfig(r.config);
   fillSettings(r.config);
+  settingsDirty = false;
   // Productive was asked again only if the connection changed. Saved and fine: the dialog closes, as Save does
   // everywhere; a connection that now fails keeps it open, with the reason, so it can be fixed at once.
   reloadView();
@@ -272,7 +295,7 @@ async function saveSettings(extra = {}) {
 form.addEventListener('submit', ev => { ev.preventDefault(); saveSettings(); });
 $('#remove-token').onclick = () => saveSettings({remove_token: true});
 $('#claude-relink').onclick = () => saveSettings({relink: true});
-$('#settings-cancel').onclick = $('#settings-x').onclick = () => dlg.close();
+$('#settings-cancel').onclick = $('#settings-x').onclick = () => closeSettings();
 $('#open-settings').onclick = openSettings;
 
 /* version and updates: what runs, since when, what is newer, and whether it installs by itself */

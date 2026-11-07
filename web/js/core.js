@@ -350,3 +350,15 @@ function applyTheme(t) {
 }
 $('#theme-btn').onclick = () => applyTheme({system: 'light', light: 'dark', dark: 'system'}[$('#theme-btn').dataset.v]);
 applyTheme(document.documentElement.dataset.theme);
+
+/* Tab reaches every button and link. WebKit (the app's window) skips them unless macOS's keyboard navigation is on,
+   so each one with no tabindex of its own gets 0, now and whenever the page draws new ones; a tabindex already set
+   (a tab list's -1, a card's 0) stays as it is. */
+const TABBABLE = 'button:not([tabindex]), a[href]:not([tabindex]), summary:not([tabindex])';
+function makeTabbable(root) {
+  if (root.matches?.(TABBABLE)) root.tabIndex = 0;
+  root.querySelectorAll?.(TABBABLE).forEach(el => { el.tabIndex = 0; });
+}
+makeTabbable(document);
+new MutationObserver(list => { for (const m of list) for (const n of m.addedNodes) if (n.nodeType === 1) makeTabbable(n); })
+  .observe(document.body, {childList: true, subtree: true});

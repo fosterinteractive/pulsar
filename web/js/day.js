@@ -653,12 +653,16 @@ document.addEventListener('keydown', ev => {
     ev.preventDefault(); activateByKey(ev.target); return;
   }
   if (ev.key === 'Escape') closePop(true);
+  if (ev.key === '?' && !ev.metaKey && !ev.ctrlKey && !ev.altKey) { ev.preventDefault(); $('#keysdlg').showModal(); return; }
   if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey) return;  // Cmd+← and friends belong to the browser
+  if (ev.code === 'KeyL') { ev.preventDefault(); $('#log-day').click(); return; }  // on any layout, as T
+  if (ev.code === 'KeyN') { ev.preventDefault(); $('#log-new').click(); return; }
   if (ev.key === 'ArrowLeft') go(shiftDate(state.date, -1));
   if (ev.key === 'ArrowRight') go(shiftDate(state.date, 1));
   if (ev.code === 'KeyT') go(todayLocal());  // the T key on any layout
 });
 
+$('#keysdlg').querySelectorAll('[data-close]').forEach(b => b.onclick = () => $('#keysdlg').close());
 function go(date) { if (!validDate(date)) return; if (ldActive()) closeLogDay(); state.date = date; closePop(); syncURL(); load(); }
 $('#prev').onclick = () => go(shiftDate(state.date, -1));
 $('#next').onclick = () => go(shiftDate(state.date, 1));

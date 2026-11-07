@@ -7,6 +7,8 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Keys: L Log the day, N + Log, ? lists every shortcut; Tab reaches every button; ⌘↩ shows on the Log button.
+- Settings asks before closing with changes not saved; Settings → Claude no longer runs off its edge.
 - The now line moves every minute, and at midnight (or when the Mac wakes) today becomes the new day.
 - Log the day is the main button while time is unlogged, and "Active, not logged" opens it; one zoom menu, one refresh; the error log moved to Settings → Updates.
 - Log the day lists what is still to log; what is logged folds into one line (To review / All).

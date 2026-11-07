@@ -22,7 +22,7 @@ async function openLogs(days = logsDays) {
 }
 
 $('#open-logs').onclick = () => openLogs();
-$('#settings-logs').onclick = () => { $('#settings').close(); openLogs(); };
+$('#settings-logs').onclick = () => closeSettings(() => openLogs());  // settings.js: asks first about unsaved changes
 document.querySelectorAll('#logs-range button').forEach(b => b.onclick = () => openLogs(+b.dataset.v));
 logsDlg.querySelectorAll('[data-close]').forEach(b => b.onclick = () => logsDlg.close());
 

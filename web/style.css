@@ -324,7 +324,8 @@ ul.hint { padding-left: 18px; display: grid; gap: 2px; }
 .cu-m select { font: inherit; font-size: 12.5px; color: var(--text); background: var(--bg); border: 1px solid var(--line);
   border-radius: 7px; padding: 3px 6px; }
 .cu-m select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.cu-m small { color: var(--muted); font-size: 11px; }
+.cu-m small { color: var(--muted); font-size: 11px; white-space: normal; max-width: 100%; }  /* wraps inside its column */
+.cu-m select { max-width: 100%; }
 @media (max-width: 640px) { .cu { grid-template-columns: 1fr; } .cu-m { justify-items: start; text-align: left; width: auto; } }
 .sub.warnish { color: var(--gap-text); }
 /* the edges of a logged entry that can change: drag to move its start or end */
@@ -606,3 +607,17 @@ dialog#updprompt::backdrop { background: rgba(0,0,0,.35); }
 #worktime .kv.go { width: 100%; border: 0; background: none; font: inherit; color: inherit; padding: 0; cursor: pointer; text-align: left; }
 #worktime .kv.go:hover span:first-child { text-decoration: underline; }
 #worktime .kv.go:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+.msg.ask-discard { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* the app's chrome is not text to select: a drag on the timeline or a double-click on a button selects nothing. What
+   people copy stays selectable: notes, popovers, the error log, dialogs' text and every field. */
+header, .colhead, #axis, .lane, aside h2, .seg, .btn, button, .tabs, .rv-h, .rv-f, .df, .dh, .iss, .toast { -webkit-user-select: none; user-select: none; }
+.lane .n, .pop, #logsdlg .scrollarea, input, textarea, select, [contenteditable] { -webkit-user-select: text; user-select: text; }
+/* ⌘↩ on the log dialog's Log button: the shortcut that logs from anywhere in it */
+#log-save::after { content: "⌘↩"; margin-left: 8px; font-size: 11px; opacity: .6; font-weight: 400; }
+/* the keyboard shortcuts (the ? key) */
+#keysdlg { width: min(420px, calc(100vw - 32px)); }
+#keysdlg dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 4px 0 0; font-size: 13px; }
+#keysdlg dt { text-align: right; white-space: nowrap; }
+#keysdlg dd { margin: 0; color: var(--muted); }
+kbd { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; background: var(--panel); color: var(--text); }

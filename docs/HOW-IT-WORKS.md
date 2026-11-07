@@ -1493,7 +1493,11 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 
 - **`core.js`**: the shared state (`state`: date, zoom, tracker, and each column's data), the session token and
   requests (`getJSON`, `postJSON` add the headers; a 401 shows **Sign in**), formatting, the theme, the toast, the
-  warp, and `todayLocal()` built from date parts (a locale's date format broke macOS 14 once).
+  warp, and `todayLocal()` built from date parts (a locale's date format broke macOS 14 once). Every button, link
+  and summary with no tabindex of its own gets `tabindex="0"`, now and as the page draws new ones (`makeTabbable`):
+  WebKit, the app's window, skips them on Tab unless macOS's keyboard navigation is on. The chrome (header, column
+  heads, the timeline, buttons, dialog bars) is not selectable text (`user-select: none`), so a drag on the timeline
+  selects nothing; notes, popovers, the error log and every field are.
 - **`day.js`**: `load()` asks for the columns, `render()` draws everything from `state` (the axis, the four columns,
   the rails, the side panels), and one click handler opens popovers and the log dialog. The answers draw through
   `drawSoon()` (core.js): the ones of the same frame once, none while the warp pulls in, and `setHTML` leaves a part
@@ -1519,7 +1523,10 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 - **`meetings.js`**: the Meetings column and the Google part of Settings.
 - **`settings.js`**: Settings (a sidebar of categories, each with its own icon, and a search that shows the matching
   sections of every category; the last category open opens again), updates and the reminder, the changelog. Saving
-  asks Productive again only when the connection changed.
+  asks Productive again only when the connection changed. Closing it (✕, Close, Escape, the error log) with a change
+  not saved asks first: Save, Discard or Keep editing. Settings → Updates also opens the error log.
+- **Keys** (`day.js`, the `?` list in `#keysdlg`): L Log the day, N + Log, ← → another day, T today, Enter on a block
+  or a rail opens it; in the log dialog ⌘↩ logs (shown on the button) and ⌘⇧↩ is Log and next.
 - **`report.js`**: the report, its charts (SVG, drawn here) and downloads.
 - **`datepick.js`**: the calendar behind every date field (the native fields stay underneath, hidden, so the rest of
   the code still reads `YYYY-MM-DD`).
