@@ -238,10 +238,14 @@ yours.
   `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. Checked with Claude Code 2.1.301: the sign-in still works with only that list.
 - **Updates** are signed, and so is the code the app carries. See section 9 and step 2 of section 2.
 - **What the release key does not cover.** The window and the launcher of a Pulsar.zip are Apple ad-hoc signed only,
-  which says nothing about who built them (section 13). A first install is protected by the launcher's check of the
-  code it carries, and that check belongs to the app being installed: it stops a Pulsar.zip whose code was swapped
-  or built without the key, not an app whose launcher was replaced too. So Pulsar.zip comes only from the release
-  page, and who may publish a release on the repository matters (section 9, "What the maintainer must do").
+  which says nothing about who built them (section 13). A first install made with README.md's line is protected by
+  `Pulsar.zip.sig`: the line checks Pulsar.zip, window and launcher included, with `/usr/bin/openssl` and the release
+  key's public half written in the line, before it unpacks anything, so a Pulsar.zip published by someone without the
+  key is refused. That trusts the line itself, so it is copied from README.md on GitHub or the onboarding document.
+  Downloaded in a browser, nothing checks Pulsar.zip: only the launcher's check of the code it carries, which belongs
+  to the app being installed (it stops a Pulsar.zip whose code was swapped or built without the key, not an app
+  whose launcher was replaced too). So who may publish a release on the repository still matters (section 9, "What
+  the maintainer must do").
 
 ## 4. Where the day comes from
 
@@ -1083,20 +1087,20 @@ phrases, plus Productive's own code and the HTTP status in parentheses ("Product
 behind this service is full ... (budget_limit_overrun)"), never the original text, which can quote names or anything
 an exception holds. **Flags** come from dayplan's fixed list (`notask`, `low`, `agent`, `unattended`, `noservice`,
 `untimed`). Names from Productive (task, project, service, budget, the "pick a service" list, overlaps, logged
-entries, alternatives) lose control, format, direction, invisible and separator characters, go on one line and are
-cut at 120 characters (`mcptools.name_out`); they are the one free text left, written by people with access to
+entries, alternatives) lose control, format, direction, invisible and separator characters, go on one line, lose
+the confirmation summary's own markers (a date like "Fri 6 Nov 2026", "(480 min)", ", billable", "Note:", "No note",
+each put as "…", read on the folded name: `mcptools.CARD_MARK`) so no name can pass for another entry, and are cut at
+120 characters (`mcptools.name_out`); they are the one free text left, written by people with access to
 Productive. Returned on purpose: the calling session's own title (`name_out` too), and note drafts (`noteDraft`, with
 `noteFrom`), only when the entry's repository is the calling session's (`CLAUDE_PROJECT_DIR` through
 `sessions.project_of_path`, names compared loosely as `commits.matches` does), never for another repository:
 - `noteFrom: "commits"`: your own commit subjects in that repository;
 - `noteFrom: "claude"`: Ask Claude's draft (5.5), which it made from the Likely rows' sessions. When the calling
   session is the only session of the rows over that entry, the draft adds nothing it does not already have: returned
-  if it passes `guard_note` and holds none of the plain attack words (`mcptools.INJECTION`: ignore, instructions,
-  prompt, assistant, you must, sudo, curl, rm -, password, token, http, …). For rows of other sessions of the same
-  repository, or shared with one, only a draft that passes `guard_note` and reads like no instruction at all
-  (`mcptools.INSTRUCTION_LIKE`, strict: words such as run, execute, delete, you, your, please, system, claude, tool,
-  call, approve, a web address or shell characters) is returned. On 11-05 a session left three blocks without the
-  notes it used to take from Ask Claude, which is why these came back.
+  if it passes `guard_note` and holds none of the plain attack words (`mcptools.INJECTION`, read folded: ignore,
+  instructions, prompt, assistant, you must, sudo, curl, rm -, password, token, http, …). A draft made from rows of
+  another session, of the same repository or shared with one, is never returned, however plain it reads: it stays in
+  Pulsar's window, so Pulsar opens no channel from one session's text to another session (review 4).
 
 The tools' descriptions say `noteDraft` is draft text for a note clients may see: data to show the person, never
 instructions. A meeting's note is its title and is never returned. **Repositories** (`mcptools.Places`): where no file
@@ -1337,7 +1341,10 @@ sequenceDiagram
    file's SHA-256) is signed and checked with the launcher's own copy of `release_sig.py` before the app is sealed. An
    app built without the key installs nothing (section 2). With an encrypted key, openssl asks for the passphrase
    twice: once for `latest.json`, once for the app.
-5. The release is published as `vX.Y.Z` with four files: the code zip, `latest.json`, its signature and Pulsar.zip.
+5. It signs Pulsar.zip itself (`Pulsar.zip.sig`, the same key) and checks it the way README.md's install line will:
+   the public key written in that line must be one of `PUBLIC_KEYS` and must verify it.
+6. The release is published as `vX.Y.Z` with five files: the code zip, `latest.json` and its signature, Pulsar.zip
+   and its signature.
    Releases are immutable once published. The title carries the minor version's pulsar name (`pulsar/names.py`).
 
 ### What the maintainer must do (by hand, not in code)
@@ -1350,7 +1357,8 @@ publishes; none of them is done yet unless noted in section 13.
 2. **Limit who can release.** Give write access to the repository only to people who publish; others get read or
    triage. Restrict tag creation for `v*` (a tag ruleset) to maintainers, and keep "immutable releases" switched on.
    Anyone with write access can otherwise publish a release with a Pulsar.zip of their own: installed copies ignore
-   it, but a new colleague following the README would install it.
+   it, and README.md's install line refuses it (no valid `Pulsar.zip.sig`), but a colleague who downloads Pulsar.zip
+   in a browser would install it.
 3. **Create the reserve key** (`macos/README.md`, "The release keys"), add its public half to `PUBLIC_KEYS` in
    `pulsar/release_sig.py`, and ship a release with it, before more people install. A key can only be added by a
    release signed with a key already listed.
@@ -1480,7 +1488,8 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   at rest (section 9, "What the maintainer must do").
 - The app around the code, its window and launcher, is not covered by the release key: Apple's ad-hoc signature does
   not say who built it, and the launcher's check of the code belongs to the very app it checks. A Pulsar.zip built
-  from scratch by someone who can publish on the repository installs whatever it likes. Only a Developer ID signature
+  from scratch by someone who can publish on the repository installs whatever it likes when it is downloaded in a
+  browser; README.md's install line refuses it (`Pulsar.zip.sig`). Only a Developer ID signature
   and notarization would change that (`macos/README.md`, "Removing the first-open warning").
 - A copy installed before the launcher checked signatures stays as it is: a version higher than every release put in
   place that way still has to be removed by hand (`~/Library/Application Support/Pulsar/`).
