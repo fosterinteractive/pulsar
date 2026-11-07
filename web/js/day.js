@@ -553,7 +553,7 @@ document.addEventListener('click', ev => {
     pop.classList.remove('on');
     if (!meet && logBtn.dataset.likely == null) { logStretch(a, b); return; }  // a rail or an Activity block
     const linked = logBtn.dataset.likely != null ? likelyTasks(likelyCache[+logBtn.dataset.likely]) : {ids: [], learned: [], claude: [], draft: null};
-    openLog({start: a, minutes: b - a, hint: rulesInRange(a, b), note: meet?.title || linked.draft?.note || '',
+    openLog({start: a, minutes: b - a, hint: rulesInRange(a, b), note: (meet ? meet.note : linked.draft?.note) || '',
              drafted: meet ? null : linked.draft,
              lead: meet ? {label: 'For this meeting', url: `/api/meeting-tasks?date=${state.date}&uid=${
                              encodeURIComponent(meet.uid || '')}&title=${encodeURIComponent(meet.title || '')}`}

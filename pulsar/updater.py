@@ -9,9 +9,11 @@ A release is `pulsar-<version>.zip` (one top folder `pulsar-<version>/`), `lates
 latest.json made with the release key, which only the maintainer holds (see macos/README.md). The keys' public halves
 are in release_sig.PUBLIC_KEYS; a manifest that does not verify against one of them is ignored, so nobody else can
 ship code to installed copies, even with write access to the repository, and one past its `expires` is ignored too,
-so an old one served again cannot hold copies back for ever. A newer version is downloaded, its checksum checked,
-unpacked next to the others and asked to test itself (`pulsar.py --self-test`); only then does `current` move to it,
-and the server restarts into it when the person clicks to.
+so an old one served again cannot hold copies back for ever; within that time, one older than the newest already
+seen (`seen-release`) or than the installed copy is refused as well, so it cannot hide a newer release. A newer
+version is downloaded, its checksum checked, unpacked next to the others and asked to test itself
+(`pulsar.py --self-test`); only then does `current` move to it, and the server restarts into it when the person
+clicks to.
 A copy run from a git checkout only says that a newer version exists.
 """
 
@@ -75,6 +77,26 @@ def manifest_problem(manifest: dict, now: Optional[float] = None) -> str:
         return (f"The latest release's description expired on {until.strftime('%d %b %Y')}, so it was ignored; "
                 f"Pulsar {__version__} keeps running. A new release brings updates back.")
     return ""
+
+
+def seen_newest(root: str = ROOT) -> dict:
+    """The newest signed latest.json this copy has believed: {"version", "expires"} ({} when none), kept in root."""
+    try:
+        with open(os.path.join(root, "seen-release"), encoding="utf-8") as fh:
+            got = json.load(fh)
+        return got if isinstance(got, dict) and VERSION_RE.fullmatch(str(got.get("version") or "")) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def remember_newest(version: str, expires: str, root: str = ROOT) -> None:
+    try:
+        tmp = os.path.join(root, ".seen-release.tmp")
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"version": version, "expires": expires}, fh)
+        os.replace(tmp, os.path.join(root, "seen-release"))
+    except OSError:  # it is remembered for as long as this server runs
+        pass
 
 
 def vtuple(v: str) -> tuple:
@@ -206,6 +228,7 @@ class Updater:
         self.state = {"status": "idle", "current": __version__, "latest": None, "behind": 0, "message": "", "notes": "",
                       "checked": None}
         self.ready: Optional[str] = None
+        self.seen: dict = {}  # the newest manifest believed while this server runs (seen_newest keeps it on disk)
         self.lock = threading.Lock()
 
     def public(self) -> dict:
@@ -264,6 +287,14 @@ class Updater:
             latest = str(manifest.get("version") or "")
             if not VERSION_RE.fullmatch(latest):
                 return self._set("failed", "The update server sent a version Pulsar does not understand; nothing was changed.")
+            # A genuine but older latest.json, served again within its 60 days, would hide a newer release (a security
+            # fix): never believe one older than the newest already seen, or than the installed copy itself (it came
+            # from a release at least that new). Same version: the later expiry is the newer description.
+            stale = self._older_than_seen(latest, str(manifest["expires"]))
+            if stale:
+                from . import logbook
+                logbook.record("updater", stale, kind="warning", once_per=86400)
+                return self._set("stale", stale)
             # how many releases are newer than this copy: the signed list of every version, when the release has one
             listed = [v for v in manifest.get("versions") or [] if isinstance(v, str) and VERSION_RE.fullmatch(v)]
             behind = len({v for v in listed + [latest] if vtuple(v) > vtuple(__version__)})
@@ -299,6 +330,25 @@ class Updater:
                 return self._set("failed", f"Pulsar {latest} failed its own test twice, so it was not installed.")
             self.ready = copy
             return self._set("ready", f"Pulsar {latest} is downloaded and tested.")
+
+    def _older_than_seen(self, version: str, expires: str) -> str:
+        """'' when this signed manifest is no older than any seen before (and remembers it as the newest); else why
+        it is refused. Called with the lock held."""
+        mounted = installed(self.root)  # a copy run from source (Preview) keeps its record in memory only
+        order = lambda x: (vtuple(x.get("version", "")), str(x.get("expires") or ""))  # noqa: E731
+        newest = max((self.seen, seen_newest(self.root) if mounted else {}), key=order)
+        mine, theirs = (vtuple(version), expires), order(newest)
+        known = newest.get("version") if mine < theirs else \
+            __version__ if mounted and vtuple(version) < vtuple(__version__) else ""
+        if known:
+            return (f"The update server sent an older release description (Pulsar {version}) than one this copy has "
+                    f"already seen (Pulsar {known}), so it was ignored; nothing was changed. Someone may be serving an "
+                    "old release again: tell whoever maintains Pulsar.")
+        if mine > theirs:
+            self.seen = {"version": version, "expires": expires}
+            if mounted:
+                remember_newest(version, expires, self.root)
+        return ""
 
     def _switch(self) -> None:
         """Point `current` at the ready version (and `previous` at the one running now). Called with the lock held."""

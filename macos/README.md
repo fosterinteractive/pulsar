@@ -26,19 +26,27 @@ macos/release.sh 1.1.0 --notes "Adds the week view. Fixes the totals on days wit
 Run it from a clean `main` with the changes you want to ship committed, and their entry in `CHANGELOG.md`
 (`## 1.1.0 (2026-11-20)` and a `- ` line, a few words per change). The Google sign-in client for Google Calendar
 is not in git: keep the JSON Google Cloud gave for the "Pulsar" Desktop client at `~/.config/pulsar/google_client.json`
-(or point `PULSAR_GOOGLE_CLIENT` at it); the release and the app carry it in place of the repo's placeholder. It refuses a git tree with changes, a version
+(or point `PULSAR_GOOGLE_CLIENT` at it); the release and the app carry it in place of the repo's placeholder. It
+signs only `main` exactly as it is on GitHub: it refuses when HEAD is not `origin/main` (another branch, a commit not
+pushed) or the tree has changes, at the start and again right before the first signature, so what protects `main`
+on GitHub also decides what the release key signs. It refuses as well a version
 that is not newer than `__version__` in `pulsar/__init__.py`, a version with no `CHANGELOG.md` entry, and failing
 tests. Then it sets the version, builds into `dist/`, shows what it will do and asks before it:
 
-1. commits the version change as "Pulsar 1.1.0" and pushes the branch;
-2. creates the public release `v1.1.0` on `fosterinteractive/pulsar` at that commit, with four files:
+1. commits the version change as "Pulsar 1.1.0" on top of `origin/main` and pushes it to `main`;
+2. creates the public release `v1.1.0` on `fosterinteractive/pulsar` at that commit, with five files:
    - `pulsar-1.1.0.zip`: the code git tracks, in one folder `pulsar-1.1.0/` (what installed copies download);
    - `latest.json`: version, download address, SHA-256 of the zip, the notes, the date and an expiry date 60 days
      ahead (what they read; past that date they ignore it, so release at least every 60 days);
    - `latest.json.sig`: the release key's signature of `latest.json` (see below);
    - `Pulsar.zip`: the whole app, for new installs, with the code it carries signed by the same key
-     (`Contents/Resources/app.manifest.json.sig`): its launcher installs that code only as signed. Share
-     `https://github.com/fosterinteractive/pulsar/releases/latest/download/Pulsar.zip` with new colleagues.
+     (`Contents/Resources/app.manifest.json.sig`): its launcher installs that code only as signed. Share the
+     install line in README.md (it downloads
+     `https://github.com/fosterinteractive/pulsar/releases/latest/download/Pulsar.zip`) with new colleagues;
+   - `Pulsar.zip.sig`: the release key's signature of `Pulsar.zip` itself. README.md's install line checks it with
+     `/usr/bin/openssl` and the public key written in the line before it unpacks anything; `release.sh` refuses to
+     finish when that key is not one of `PUBLIC_KEYS` or does not verify this signature, so after a key change the
+     line in README.md (and in the onboarding document) must change with it.
 
 Without `--publish` it only builds and prints the commands to publish by hand. It needs the GitHub CLI
 (`gh auth login`) for `--publish`. Write the notes for colleagues: one or two plain sentences.

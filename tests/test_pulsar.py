@@ -1350,6 +1350,14 @@ class MeetingTasksTest(unittest.TestCase):
         got = server.meeting_tasks({"uid": "scrum", "title": "Daily Scrum"}, past, rows, offered, skip={"nick"})
         self.assertEqual([(t["taskId"], t["why"]) for t in got],
                          [("7", "logged during 2 of the last 3 like it"), ("8", "the title says “scrum”")])
+        self.assertEqual(got[0]["lastTitle"], "Daily Scrum")  # the latest earlier meeting it was logged in
+        # the organizer renamed the series on the 3rd: the series' task says so, and Log the day starts it unticked
+        past[1]["title"] = "Scrum (new room)"
+        got = server.meeting_tasks({"uid": "scrum", "title": "Scrum (new room)"}, past, rows, offered, skip={"nick"})
+        self.assertEqual((got[0]["taskId"], got[0]["lastTitle"]), ("7", "Scrum (new room)"))
+        past[1]["title"], past[0]["title"] = "Daily Scrum", "Old name"
+        got = server.meeting_tasks({"uid": "scrum", "title": "Daily Scrum"}, past, rows, offered, skip={"nick"})
+        self.assertEqual(got[0]["lastTitle"], "Daily Scrum")  # the newest one counts, not an older name
 
     def test_names_and_words_every_meeting_has_do_not_match(self):
         offered = [{"taskId": "1", "title": "Estimations - Nick", "project": "FI-PR"},
@@ -2205,6 +2213,65 @@ class UpdaterTest(unittest.TestCase):
         with mock.patch.object(updater.threading, "Timer") as timer:
             self.assertEqual(u.install_now()["status"], "ready")
         self.assertEqual(timer.call_args[0][1], u.apply)  # the restart into it is scheduled
+
+    def serve(self, u, manifest, zip_bytes=b""):
+        """The next check gets this signed manifest (a replay: genuine, signed with the release key, not expired)."""
+        raw = json_bytes({**manifest, "expires": manifest.get("expires") or expires_in(60)})
+        sig = sign(self.key, raw)
+        for p in self.patches:
+            if getattr(p, "attribute", "") == "fetch":
+                p.stop()
+                self.patches.remove(p)
+                break
+        p = mock.patch.object(updater, "fetch", lambda url, limit, timeout=30: raw if url == u.manifest_url
+                              else sig if url == u.manifest_url + ".sig" else zip_bytes)
+        p.start()
+        self.patches.append(p)
+
+    def test_an_older_signed_manifest_served_again_is_refused(self):
+        """Rollback (review 4, B4): within its 60 days, a genuine latest.json older than one already seen would hide
+        the newer release. It is refused, never downloaded, and the state keeps the newer one."""
+        import hashlib
+        data = release_zip("1.2.0")
+        new = {"version": "1.2.0", "url": URL.replace("1.1.0", "1.2.0"), "sha256": hashlib.sha256(data).hexdigest(),
+               "expires": expires_in(50)}
+        u = self.make(new, data)
+        self.assertEqual(u.check()["status"], "available")
+        old, old_data = self.release(expires=expires_in(30))  # 1.1.0, published before 1.2.0
+        self.serve(u, old, old_data)
+        with mock.patch.object(updater, "unpack", lambda *a: self.fail("an older release was downloaded")):
+            state = u.check(install=True)
+        self.assertEqual(state["status"], "stale")
+        self.assertIn("older release description (Pulsar 1.1.0)", state["message"])
+        self.assertEqual(state["latest"], "1.2.0")  # what Settings offers stays the newer release
+        # a new process (after a restart) remembers it too: the record is on disk, in the install folder
+        fresh = updater.Updater(root=self.root)
+        fresh.manifest_url = u.manifest_url
+        self.assertEqual(fresh.check()["status"], "stale")
+        # the same version re-signed with an earlier expiry is older as well; a later one is newer and believed
+        self.serve(u, {**new, "expires": expires_in(40)})
+        self.assertEqual(u.check()["status"], "stale")
+        self.serve(u, {**new, "expires": expires_in(55)})
+        self.assertEqual(u.check()["status"], "available")
+        self.serve(u, {**new, "expires": expires_in(50)})  # the first one again: now older than the newest seen
+        self.assertEqual(u.check()["status"], "stale")
+
+    def test_a_manifest_older_than_the_installed_copy_is_refused_and_never_installed(self):
+        """Downgrade: an installed copy came from a release at least as new as itself, so a signed latest.json of an
+        older version is a replay; nothing older than the running version is ever offered or installed."""
+        manifest, data = self.release()
+        u = self.make(manifest, data)
+        with mock.patch.object(updater, "__version__", "1.2.0"), \
+                mock.patch.object(updater, "unpack", lambda *a: self.fail("downloaded an older version")):
+            state = u.check(install=True)
+        self.assertEqual(state["status"], "stale")
+        self.assertIn("(Pulsar 1.2.0)", state["message"])
+        self.assertFalse(os.path.exists(os.path.join(self.root, "versions", "1.1.0")))
+        self.assertEqual(updater.seen_newest(self.root), {})  # nothing older is remembered as the newest
+        # a copy run from source (Pulsar Preview, a checkout) just says it is the latest, and writes nothing there
+        with mock.patch.object(updater, "__version__", "1.2.0"), mock.patch.object(updater, "installed", lambda root=None: False):
+            self.assertEqual(updater.Updater(root=self.root).check()["status"], "latest")
+        self.assertFalse(os.path.exists(os.path.join(self.root, "seen-release")))
 
     def test_versions_compare_as_numbers(self):
         self.assertGreater(updater.vtuple("1.10.0"), updater.vtuple("1.9.3"))

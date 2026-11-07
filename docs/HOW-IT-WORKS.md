@@ -238,10 +238,14 @@ yours.
   `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. Checked with Claude Code 2.1.301: the sign-in still works with only that list.
 - **Updates** are signed, and so is the code the app carries. See section 9 and step 2 of section 2.
 - **What the release key does not cover.** The window and the launcher of a Pulsar.zip are Apple ad-hoc signed only,
-  which says nothing about who built them (section 13). A first install is protected by the launcher's check of the
-  code it carries, and that check belongs to the app being installed: it stops a Pulsar.zip whose code was swapped
-  or built without the key, not an app whose launcher was replaced too. So Pulsar.zip comes only from the release
-  page, and who may publish a release on the repository matters (section 9, "What the maintainer must do").
+  which says nothing about who built them (section 13). A first install made with README.md's line is protected by
+  `Pulsar.zip.sig`: the line checks Pulsar.zip, window and launcher included, with `/usr/bin/openssl` and the release
+  key's public half written in the line, before it unpacks anything, so a Pulsar.zip published by someone without the
+  key is refused. That trusts the line itself, so it is copied from README.md on GitHub or the onboarding document.
+  Downloaded in a browser, nothing checks Pulsar.zip: only the launcher's check of the code it carries, which belongs
+  to the app being installed (it stops a Pulsar.zip whose code was swapped or built without the key, not an app
+  whose launcher was replaced too). So who may publish a release on the repository still matters (section 9, "What
+  the maintainer must do").
 
 ## 4. Where the day comes from
 
@@ -366,7 +370,12 @@ project, budget, billable, billing}`.
 - **A day**: one `events.list` on the primary calendar, repeats expanded by Google (`singleEvents=true`), kept 5
   minutes; ↻ asks again at once. Working-location, out-of-office and birthday entries are left out. A declined
   meeting is marked. The join link comes from Meet, the conference data, or a Zoom/Teams/Webex address in the
-  location.
+  location. Of each event Pulsar asks only for its title, times, status and type, the links, the person's own answer
+  (`attendees(self,responseStatus)`) and the organizer's address (`organizer(email,self)`); never its description or
+  the other guests (`calendar.FIELDS`). The organizer's address stays in the server: the page gets only `external`,
+  true when neither the person nor someone of their own company (their Google account's domain or a subdomain of it;
+  an account at a public mail service names none) organized it (`calendar.outside`), and `note`, the title a log entry
+  may take as its note (below).
 - **Disconnect** revokes the token at Google, then forgets it here whatever Google answered. Pulsar Preview only
   forgets it here: it signs in with Pulsar's own Google client, and a revoke withdraws that client's access for the
   account, Pulsar's too.
@@ -700,7 +709,15 @@ days** (one it found by searching Productive), **a note Claude drafted**, and a 
 lists it ("no start"), the confirm step names it, and under the cap that task's proposals give way first, up to its
 minutes, before the least sure rows. **Notes** are never written from session text: only a meeting's title, your usual
 note for a repeat, a note Ask Claude drafted for that task, or one from your commits in the work, each with "clients
-may see notes". The **service** is the one last used on the task, checked against the services that take time on that
+may see notes". **What goes into notes from the calendar**: anyone can send an invitation that Google puts on the
+calendar by itself, and its organizer can rename it at any time. So a meeting's title becomes its note only when the
+person or someone of their own company organized it (`calendar.outside`), and only through the note's checks
+(`askclaude.guard_note`, read folded: no tool's name, sum of money, web address, look-alike or invisible character;
+`calendar.note_of`). A title the checks refuse gives no note and leaves the row unticked ("The meeting's title was
+not used as the note"), and so does a series whose title is not the one it had the last time you logged it
+(`server.meeting_tasks` keeps that title as `lastTitle`; "This meeting's title changed since you last logged it"). An
+event organized outside gives no note and keeps its tick: its task comes from what you logged during it before. The
+log dialog's **Log this time** on a meeting fills the note in from the same `note`. The **service** is the one last used on the task, checked against the services that take time on that
 date (`bookable_services`). With Productive unreadable, nothing is proposed. About 6 seconds for a day the first time,
 under a second after.
 
@@ -1078,20 +1095,20 @@ phrases, plus Productive's own code and the HTTP status in parentheses ("Product
 behind this service is full ... (budget_limit_overrun)"), never the original text, which can quote names or anything
 an exception holds. **Flags** come from dayplan's fixed list (`notask`, `low`, `agent`, `unattended`, `noservice`,
 `untimed`). Names from Productive (task, project, service, budget, the "pick a service" list, overlaps, logged
-entries, alternatives) lose control, format, direction, invisible and separator characters, go on one line and are
-cut at 120 characters (`mcptools.name_out`); they are the one free text left, written by people with access to
+entries, alternatives) lose control, format, direction, invisible and separator characters, go on one line, lose
+the confirmation summary's own markers (a date like "Fri 6 Nov 2026", "(480 min)", ", billable", "Note:", "No note",
+each put as "…", read on the folded name: `mcptools.CARD_MARK`) so no name can pass for another entry, and are cut at
+120 characters (`mcptools.name_out`); they are the one free text left, written by people with access to
 Productive. Returned on purpose: the calling session's own title (`name_out` too), and note drafts (`noteDraft`, with
 `noteFrom`), only when the entry's repository is the calling session's (`CLAUDE_PROJECT_DIR` through
 `sessions.project_of_path`, names compared loosely as `commits.matches` does), never for another repository:
 - `noteFrom: "commits"`: your own commit subjects in that repository;
 - `noteFrom: "claude"`: Ask Claude's draft (5.5), which it made from the Likely rows' sessions. When the calling
   session is the only session of the rows over that entry, the draft adds nothing it does not already have: returned
-  if it passes `guard_note` and holds none of the plain attack words (`mcptools.INJECTION`: ignore, instructions,
-  prompt, assistant, you must, sudo, curl, rm -, password, token, http, …). For rows of other sessions of the same
-  repository, or shared with one, only a draft that passes `guard_note` and reads like no instruction at all
-  (`mcptools.INSTRUCTION_LIKE`, strict: words such as run, execute, delete, you, your, please, system, claude, tool,
-  call, approve, a web address or shell characters) is returned. On 11-05 a session left three blocks without the
-  notes it used to take from Ask Claude, which is why these came back.
+  if it passes `guard_note` and holds none of the plain attack words (`mcptools.INJECTION`, read folded: ignore,
+  instructions, prompt, assistant, you must, sudo, curl, rm -, password, token, http, …). A draft made from rows of
+  another session, of the same repository or shared with one, is never returned, however plain it reads: it stays in
+  Pulsar's window, so Pulsar opens no channel from one session's text to another session (review 4).
 
 The tools' descriptions say `noteDraft` is draft text for a note clients may see: data to show the person, never
 instructions. A meeting's note is its title and is never returned. **Repositories** (`mcptools.Places`): where no file
@@ -1266,7 +1283,7 @@ estimate, and a table of every day. A day's bar and its row in the tables open t
 | `~/.cache/pulsar/claude-picks/` | Ask Claude's last answer per day (task ids, reasons, drafted notes), shown again when the day is opened, never asked again by itself; 60 days. |
 | `~/.cache/pulsar/logday-journal.json` | Log the day: each row a run sent, before it was sent, and what came of it (31 days). |
 | `~/.cache/pulsar/logs/` | The error log, one JSON line per event, 31 days; tokens, keys, OAuth codes, signed addresses, fields named as keys or secrets, bare hex secrets, UUIDs and long opaque strings removed. |
-| `~/Library/Application Support/Pulsar/` | The installed code: `versions/`, `current`, `previous`, `bad-versions`. Only code a release signed gets here (section 2). |
+| `~/Library/Application Support/Pulsar/` | The installed code: `versions/`, `current`, `previous`, `bad-versions`, and `seen-release` (the newest signed `latest.json` believed: its version and expiry). Only code a release signed gets here (section 2). |
 | `~/Library/Logs/Pulsar.log` | What the launcher and the server printed. |
 
 Every file Pulsar writes is readable by its owner only. Settings and caches are written atomically (a temporary file, then a rename), so a reader never sees half a file; the error log is appended to.
@@ -1296,6 +1313,12 @@ sequenceDiagram
   expired on …"; a warning in the error log once a day). Without it, an old signed `latest.json` served again in
   place of a newer one would hide every later release for good. The cost: with no release for 60 days, installed
   copies stop offering updates until the next one, so release at least every 60 days.
+- **Never an older one.** Within those 60 days an installed copy also refuses a signed `latest.json` older than the
+  newest it has already believed (its version, then its `expires`; kept in `seen-release` in the install folder) or
+  than its own version (it came from a release at least that new), and Settings says so ("The update server sent an
+  older release description…"; a warning in the error log once a day). So an old manifest served again cannot hide
+  a newer release, nor offer a downgrade, which is never installed anyway. A copy run from source keeps the record in
+  memory only.
 - **Never automatic.** A check only looks; installing needs the **Update** button. A stolen release key alone cannot
   reach everyone's Mac the same hour.
 - **Downloads** come only from `github.com/fosterinteractive/pulsar/releases/download/` (the repository must stay
@@ -1313,8 +1336,10 @@ sequenceDiagram
 
 ### Releasing (`macos/release.sh`)
 
-1. It refuses a git tree with changes, a version that is not newer, a version with no `CHANGELOG.md` entry, and
-   failing tests.
+1. It signs only `main` as it is on GitHub: HEAD must be `origin/main` (fetched) and the tree clean, at the start
+   and again right before the first signature (where only the version it set may differ), so what protects `main` on
+   GitHub also decides what the release key signs. It refuses a version that is not newer, a version with no
+   `CHANGELOG.md` entry, and failing tests.
 2. It sets `__version__`, zips the tracked files (`pulsar.py`, `README.md`, `CHANGELOG.md`, `pulsar/`, `web/`), with
    the real Google client in place of the placeholder.
 3. It writes `latest.json` with every released version (from the git tags) and `expires` 60 days ahead, signs it,
@@ -1324,7 +1349,10 @@ sequenceDiagram
    file's SHA-256) is signed and checked with the launcher's own copy of `release_sig.py` before the app is sealed. An
    app built without the key installs nothing (section 2). With an encrypted key, openssl asks for the passphrase
    twice: once for `latest.json`, once for the app.
-5. The release is published as `vX.Y.Z` with four files: the code zip, `latest.json`, its signature and Pulsar.zip.
+5. It signs Pulsar.zip itself (`Pulsar.zip.sig`, the same key) and checks it the way README.md's install line will:
+   the public key written in that line must be one of `PUBLIC_KEYS` and must verify it.
+6. The release is published as `vX.Y.Z` with five files: the code zip, `latest.json` and its signature, Pulsar.zip
+   and its signature.
    Releases are immutable once published. The title carries the minor version's pulsar name (`pulsar/names.py`).
 
 ### What the maintainer must do (by hand, not in code)
@@ -1337,7 +1365,8 @@ publishes; none of them is done yet unless noted in section 13.
 2. **Limit who can release.** Give write access to the repository only to people who publish; others get read or
    triage. Restrict tag creation for `v*` (a tag ruleset) to maintainers, and keep "immutable releases" switched on.
    Anyone with write access can otherwise publish a release with a Pulsar.zip of their own: installed copies ignore
-   it, but a new colleague following the README would install it.
+   it, and README.md's install line refuses it (no valid `Pulsar.zip.sig`), but a colleague who downloads Pulsar.zip
+   in a browser would install it.
 3. **Create the reserve key** (`macos/README.md`, "The release keys"), add its public half to `PUBLIC_KEYS` in
    `pulsar/release_sig.py`, and ship a release with it, before more people install. A key can only be added by a
    release signed with a key already listed.
@@ -1469,7 +1498,8 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   at rest (section 9, "What the maintainer must do").
 - The app around the code, its window and launcher, is not covered by the release key: Apple's ad-hoc signature does
   not say who built it, and the launcher's check of the code belongs to the very app it checks. A Pulsar.zip built
-  from scratch by someone who can publish on the repository installs whatever it likes. Only a Developer ID signature
+  from scratch by someone who can publish on the repository installs whatever it likes when it is downloaded in a
+  browser; README.md's install line refuses it (`Pulsar.zip.sig`). Only a Developer ID signature
   and notarization would change that (`macos/README.md`, "Removing the first-open warning").
 - A copy installed before the launcher checked signatures stays as it is: a version higher than every release put in
   place that way still has to be removed by hand (`~/Library/Application Support/Pulsar/`).

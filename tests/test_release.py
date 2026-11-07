@@ -188,6 +188,87 @@ class BundleSignatureTest(unittest.TestCase):
 
 
 @unittest.skipUnless(os.path.exists(OPENSSL) and os.path.exists("/usr/bin/xcode-select"), "needs a Mac with openssl")
+@unittest.skipUnless(os.path.exists(OPENSSL) and os.path.exists("/bin/zsh"), "needs openssl and zsh")
+class InstallLineTest(unittest.TestCase):
+    """README.md's install line, pasted in zsh: it installs Pulsar.zip only when Pulsar.zip.sig is the release key's
+    signature of it, checked with /usr/bin/openssl and the public key written in the line (review 4, B1). Run here
+    on local files, with a throwaway key in place of the release key and a folder in place of /Applications."""
+    BASE = "https://github.com/fosterinteractive/pulsar/releases/latest/download/"
+
+    def setUp(self):
+        with open(os.path.join(REPO, "README.md"), encoding="utf-8") as fh:
+            readme = fh.read()
+        self.line = next(x.strip() for x in readme.splitlines() if "Pulsar.zip.sig" in x and "openssl" in x)
+        self.key_in_line = release_sig.install_line_key(readme)
+        self.work = tempfile.mkdtemp(prefix="install-line-")
+        for name in ("srv", "apps", "tmp"):
+            os.makedirs(os.path.join(self.work, name))
+        self.key, pub = make_key(self.work, "throwaway")
+        lines = pub.strip().splitlines()
+        real = self.key_in_line.strip().splitlines()
+        self.test_line = (self.line.replace(self.BASE, "file://" + os.path.join(self.work, "srv") + "/")
+                          .replace(real[1], lines[1]).replace(real[2], lines[2])
+                          .replace("/Applications", os.path.join(self.work, "apps"))
+                          .replace("/usr/bin/open ", "/bin/echo opened "))
+
+    def tearDown(self):
+        shutil.rmtree(self.work, ignore_errors=True)
+
+    def serve(self, zip_bytes, sig):
+        with open(os.path.join(self.work, "srv", "Pulsar.zip"), "wb") as fh:
+            fh.write(zip_bytes)
+        sig_path = os.path.join(self.work, "srv", "Pulsar.zip.sig")
+        if sig is None:
+            if os.path.exists(sig_path):
+                os.remove(sig_path)
+        else:
+            with open(sig_path, "wb") as fh:
+                fh.write(sig)
+
+    def paste(self, shell="/bin/zsh"):
+        """The line as Terminal's shell runs it: zsh, macOS's default, without the person's own settings (bash too)."""
+        env = {"PATH": "/usr/bin:/bin", "HOME": os.path.join(self.work, "tmp"), "TMPDIR": os.path.join(self.work, "tmp")}
+        flag = "-f" if shell.endswith("zsh") else "--norc"
+        return subprocess.run([shell, flag, "-c", self.test_line], capture_output=True, text=True, timeout=60, env=env)
+
+    def app_zip(self, marker="1"):
+        import io
+        import zipfile
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("Pulsar.app/Contents/Info.plist", f"<plist>{marker}</plist>")
+        return buf.getvalue()
+
+    def test_the_line_is_one_line_with_full_paths_and_the_release_key(self):
+        self.assertEqual(self.key_in_line, release_sig.PUBLIC_KEYS[0])  # release.sh checks the same before it publishes
+        self.assertNotIn("\n", self.line)
+        for tool in ("mktemp", "curl", "openssl", "ditto", "open", "rm"):
+            self.assertRegex(self.line, rf"/(?:usr/)?bin/{tool} ")
+        self.assertLess(self.line.index("openssl dgst"), self.line.index("ditto"))  # checked before anything unpacks
+        self.assertNotEqual(self.test_line, self.line)
+
+    def test_only_a_zip_the_key_signed_is_installed(self):
+        app = os.path.join(self.work, "apps", "Pulsar.app")
+        other, _ = make_key(self.work, "someone-else")
+        good = self.app_zip()
+        for zip_bytes, sig, why in ((good, sign(other, good), "signed with another key"),
+                                    (self.app_zip("2"), sign(self.key, good), "a swapped zip"),
+                                    (good, None, "no signature"), (good, b"", "an empty signature")):
+            self.serve(zip_bytes, sig)
+            run = self.paste()  # its status is the clean-up's: what counts is that nothing was installed
+            self.assertFalse(os.path.exists(app), why)
+            self.assertNotIn("Verified OK", run.stdout, why)
+            self.assertNotIn("opened", run.stdout, why)
+        self.serve(good, sign(self.key, good))
+        for shell in ("/bin/zsh", "/bin/bash"):
+            shutil.rmtree(app, ignore_errors=True)
+            run = self.paste(shell)
+            self.assertIn("Verified OK", run.stdout, (shell, run.stderr))
+            self.assertTrue(os.path.isfile(os.path.join(app, "Contents", "Info.plist")), shell)
+            self.assertIn("opened", run.stdout)
+            self.assertEqual(os.listdir(os.path.join(self.work, "tmp")), [])  # its temporary folder is gone, every time
+
+
 class LauncherInstallTest(unittest.TestCase):
     """launcher.sh, run as the app runs it: what it installs from the app, and what a port taken at start does."""
 

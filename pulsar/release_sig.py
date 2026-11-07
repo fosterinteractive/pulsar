@@ -55,6 +55,17 @@ BUNDLE_KIND = "pulsar-app-code"  # so latest.json, signed with the same key, can
 IGNORED = {".DS_Store"}          # Finder leaves these in folders it has shown: never code
 
 
+# README.md's install line writes the release key's public half into the line itself, so a new install can check
+# Pulsar.zip.sig with /usr/bin/openssl before anything is unpacked (release.sh and the tests read it back from there)
+INSTALL_KEY = re.compile(r"'-----BEGIN PUBLIC KEY-----' '([A-Za-z0-9+/=]+)' '([A-Za-z0-9+/=]+)' '-----END PUBLIC KEY-----'")
+
+
+def install_line_key(readme: str) -> str:
+    """The public key README.md's install line checks Pulsar.zip with, as a PEM like PUBLIC_KEYS', or ""."""
+    m = INSTALL_KEY.search(readme)
+    return f"-----BEGIN PUBLIC KEY-----\n{m.group(1)}\n{m.group(2)}\n-----END PUBLIC KEY-----\n" if m else ""
+
+
 def openssl() -> Optional[str]:
     for path in ("/usr/bin/openssl", shutil.which("openssl")):
         if path and os.path.exists(path):
