@@ -21,8 +21,8 @@ boundaries go on a grid (5 minutes, or Settings' "Round entries to": opts_for), 
 logged, and the total is capped: proposed plus logged never exceeds active time plus attended meetings. What does not
 fit is shown in `unplaced`, never placed.
 
-Notes are never written from session text: only a meeting's title, a repeat's usual note, a note Claude drafted
-(Ask Claude) for that task, or the subjects of the person's own commits in the work (commits.py), each marked so the
+Notes are never copied from session text: only a meeting's title, a repeat's usual note, a note Claude drafted
+(Ask Claude, from the session's messages; its row starts unticked) for that task, or the subjects of the person's own commits in the work (commits.py), each marked so the
 page can say "clients may see notes".
 """
 

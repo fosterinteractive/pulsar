@@ -5,8 +5,9 @@
     python3 pulsar.py --mcp [--port 5610]     # for Claude Code: an MCP server over the running Pulsar (pulsar/mcp.py)
     python3 pulsar.py --instance preview ...  # Pulsar Preview's own folders and keychain items (launcher.sh)
 
-Then open http://127.0.0.1:5610/. Activity stays on this computer; Productive gets a time entry only when you
-log one yourself in the page.
+Then open http://127.0.0.1:5610/. Activity stays on this computer; Productive is written only after you confirm:
+the log dialog, Log the day, a task created in the page, or pulsar_log once Claude Code asked you (in normal use: a
+program of yours with full access can get around any confirmation, docs/HOW-IT-WORKS.md section 3).
 Python 3.9 or newer, standard library only.
 """
 

@@ -5,13 +5,13 @@ The installed layout (the Mac launcher creates it), under ~/Library/Application 
     current, previous   relative symlinks into versions/
     bad-versions        versions that failed to start, or failed their self-test twice; never used again
 A release is `pulsar-<version>.zip` (one top folder `pulsar-<version>/`), `latest.json`
-({version, url, sha256, notes, published, expires, versions}) and `latest.json.sig`: an ECDSA P-256 signature of
+({version, url, sha256, notes, published, expires, versions: every release, for the reminder}) and `latest.json.sig`: an ECDSA P-256 signature of
 latest.json made with the release key, which only the maintainer holds (see macos/README.md). The keys' public halves
 are in release_sig.PUBLIC_KEYS; a manifest that does not verify against one of them is ignored, so nobody else can
 ship code to installed copies, even with write access to the repository, and one past its `expires` is ignored too,
 so an old one served again cannot hold copies back for ever. A newer version is downloaded, its checksum checked,
-unpacked next to the others and asked to test itself (`pulsar.py --self-test`); only then does `current` move to it,
-and the server restarts into it when the person clicks to.
+unpacked next to the others and asked to test itself (`pulsar.py --self-test`), all after the person clicks Update;
+only then does `current` move to it, and the server restarts into it. Nothing is installed by itself.
 A copy run from a git checkout only says that a newer version exists.
 """
 

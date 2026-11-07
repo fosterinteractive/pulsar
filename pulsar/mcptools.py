@@ -10,11 +10,13 @@ user can read, so on its own it opens these routes, /api/whoami, /api/version an
 What leaves: every answer is built field by field. Names from Productive go through name_out, reasons through reason()
 (a fixed phrase and digits), repositories through Places, flags through a fixed list, Pulsar's and Productive's errors
 through error_out (a fixed phrase, with Productive's code). Never: window titles, apps, addresses, typed messages,
-meeting titles, other sessions' titles, notes of logged entries, rule words, Ask Claude's reasons.
+meeting titles, the titles of sessions other than the one the request names (the server cannot tell who called),
+notes of logged entries, rule words, Ask Claude's reasons.
 
 Writes: only pulsar_preview then pulsar_log. The preview checks every entry (services, notes through
 askclaude.guard_note and a 200-character cap, quotation marks, Pulsar's own dry run) and keeps the entries, the run and
-Pulsar's own summary under a code of 16 hex characters, in this process: the caller holds neither. pulsar_log takes
+Pulsar's own summary under a code of 16 hex characters, in this process: the caller gets the code and the summary,
+never the entries to change. pulsar_log takes
 that code and that summary, word for word, and nothing else, and writes through server.api_log as a Log the day run
 marked "claude-code" in the journal (the page shows "from Claude Code"). Never `force`, never pieces, never a change or
 a delete. Each tool has a rate limit, and every date is between 120 days ago and today.

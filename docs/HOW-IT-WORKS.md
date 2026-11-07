@@ -7,9 +7,11 @@ releasing, see [macos/README.md](../macos/README.md).
 Pulsar is a small local web app. A Python 3.9 server (standard library only) reads your activity tracker, your
 Claude Code sessions, Productive and, if you connect it, Google Calendar. It serves one page, which draws the day and
 the report. On a Mac a thin app shows that page in a window of its own. Nothing runs anywhere but on your computer,
-except what the Claude Code switch sends to Anthropic when it is on (5.4c, 5.5, 5.7). Nothing is written to Productive
-without a click and a confirmation: logging, changing or deleting an entry, creating a task, Log the day and its Undo,
-or `pulsar_log` from a Claude Code session after Claude Code asked you.
+except what the Claude Code switch sends to Anthropic when it is on (5.4c, 5.5, 5.7). In normal use nothing is written
+to Productive without a click and a confirmation: logging, changing or deleting an entry, creating a task, Log the day
+and its Undo, or `pulsar_log` from a Claude Code session after Claude Code asked you. Pulsar writes only after you
+confirm, in normal use; a session with full access to the computer can get around any confirmation, as with any
+other app (section 3, "What a program of the person's can still do").
 
 ## 1. The pieces
 
@@ -133,7 +135,8 @@ yours.
   - one write, `pulsar_preview` then `pulsar_log`. The preview checks every entry (services, the note through
     `guard_note`, at most 200 characters, no double quotation mark, no character nobody sees, Pulsar's own dry run)
     and keeps the entries, the run and Pulsar's summary in the server, under a code of 16 hex characters: the caller
-    holds neither. `pulsar_log` takes that code, exactly, and that summary, word for word, and no other argument. It
+    gets the code and the summary back, but the entries the code stands for stay in the server and cannot be
+    changed. `pulsar_log` takes that code, exactly, and that summary, word for word, and no other argument. It
     writes new entries only, as a Log the day run (journalled, never sent twice, never `force`, never the dialog's
     pieces), and the journal marks each row `via: "claude-code"`: the Logged column says "from Claude Code" on those
     entries (`server.from_claude_code`).
@@ -165,10 +168,13 @@ yours.
   narrow key does stop is the one-line `curl` that reads the day's window titles, meetings and notes, writes any
   entry, changes or deletes entries, or switches Preview's writing on.
 - **Claude Code: recommended settings.** Deny rules in `~/.claude/settings.json`, so no session reads Pulsar's
-  folders by accident or because a prompt injection asked:
-  `"permissions": {"deny": ["Read(~/.config/pulsar/**)", "Read(~/.config/pulsar-preview/**)", "Read(~/.config/pulsar-release/**)"]}`.
-  Claude Code applies them to its Read tool and to the file commands it recognizes in Bash (`cat`, `head`, `tail`,
-  `sed`, `tee`), not to a script that opens the file itself (`python3 -c "open(…)"`). For bypass mode, or wherever
+  settings folders, or writes a sign-in code into them, by accident or because a prompt injection asked (the switch,
+  5.7, adds these same rules):
+  `"permissions": {"deny": ["Read(~/.config/pulsar/**)", "Edit(~/.config/pulsar/**)", "Read(~/.config/pulsar-preview/**)", "Edit(~/.config/pulsar-preview/**)", "Read(~/.config/pulsar-release/**)", "Edit(~/.config/pulsar-release/**)"]}`.
+  The `Edit` rules matter most: they stop "write a sign-in code there and trade it". Claude Code applies them to its
+  file tools and to the file commands it recognizes in Bash (`cat`, `head`, `tail`, `sed`, `tee`, a redirection), not
+  to a script that opens the file itself (`python3 -c "open(…)"`). They cover the settings folders only, not
+  `~/.cache/pulsar` or the window's own storage (`~/Library/WebKit/com.fosterinteractive.pulsar*`). For bypass mode, or wherever
   Bash runs without asking, turn on Claude Code's sandbox (`/sandbox`) and list the same three folders under
   `sandbox.filesystem.denyRead`; its Config tab shows what applies. Claude Code's documentation does not say whether
   the sandbox stays on under `--dangerously-skip-permissions`: check it with
@@ -215,7 +221,7 @@ yours.
   to shell commands without the sandbox). Pulsar does not turn the sandbox on; Settings links its documentation.
   So the rules stop a session's casual or injected `cat ~/.config/pulsar/secret`, not a program set on it.
 - **Claude Code runs Pulsar starts** (Ask Claude, the session note) get a short list of Pulsar's environment
-  (`askclaude.ENV_KEEP`: `HOME`, `PATH`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LC_*`, `TMPDIR`, `TZ`,
+  (`askclaude.ENV_KEEP`: `HOME`, `PATH`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LC_ALL`, `LC_CTYPE`, `TMPDIR`, `TZ`,
   `CLAUDE_CONFIG_DIR`, a sign-in key or token, a proxy and its certificates), never all of it: Pulsar started from a
   Claude Code session carries that session's `CLAUDECODE`, session id, messaging socket and token, and any
   `ANTHROPIC_BASE_URL`. They also get `ENABLE_CLAUDEAI_MCP_SERVERS=false` (no claude.ai connectors) and
@@ -311,8 +317,10 @@ project, budget, billable, billing}`.
   developer's role does not set a task's service, a PM does (fi-productive-process, and below). A time entry takes its
   own service anyway, from the project's budgets (5.1). Through Claude Code's connection it is `create_resource` with bare ids, as
   Claude Code sessions create tasks; only Productive's sentence "task created (ID: n)" or "Created 1 task (ID: n)"
-  counts as created, "Failed to create task …" is a refusal said in plain words, and any other answer may have
-  created it (said so, never tried again). Through the token it is a JSON:API `POST /tasks` with relationships, as
+  counts as created, "Failed to create task …" is a refusal said in plain words, followed by Productive's own words
+  (the page and Logs keep them: a read-only token, a member missing from the project), unless it names a server error,
+  a timeout or a dropped connection behind the MCP: that, and any other answer, may have created it (said so, never
+  tried again). Through the token it is a JSON:API `POST /tasks` with relationships, as
   Productive's API reference shows it (not yet tried against Productive). The role: one person's Staff role created 43
   tasks from 22 September to 4 November 2026, in 12 projects (10 of clients), 29 of them as subtasks, through Claude
   Code; Productive's own permission is "Add, edit, and delete tasks", and a role without it in a project gets "your role
@@ -375,7 +383,10 @@ Which Claude Code session, and so which project, each minute of work most likely
   first_message}`.
 - **The fi-time-from-activity skill**: where `~/.claude/skills/fi-time-from-activity/scripts/activity_blocks.py`
   exists, it makes the rows instead (it carries its owner's own logging rules). It is never part of the repository.
-- **Caching**: a past day is worked out once (about 3 to 6 seconds), today again after 3 minutes or on ↻.
+- **Caching**: a past day is worked out once (about 3 to 6 seconds), today again after 3 minutes or on ↻. A past day
+  worked out while no tracker answered (ActivityWatch not up yet at login) is not final: it is reused for 3 minutes, as
+  today is, never kept on disk (`likely-full`), and learning never takes it from memory, so it is worked out again
+  once a tracker answers.
 
 ## 5. Logging time
 
@@ -404,14 +415,6 @@ the commit draft; then range.js (below) leads with the task of the work that hol
 note, and, with the Claude Code switch on, asks for its session note (5.7). A stretch with no Likely row in it
 gets neither. Earlier versions drafted no note for a stretch, and took its first group from the Likely block that
 covered half of it at the zoom on screen: it changed with the zoom and could name a project with no row in it.
-| Dragging in the Logged column | the dragged stretch | Log the day's task for its main work (below), then the Likely block or meeting over most of it |
-| The yellow rail (active, not logged) | the stretch | the same |
-| The hatched rail (away) | the stretch | the same |
-| An Activity block, **Log this time** | the block | the same |
-| A Likely block, **Log this time** | the block; note = Claude's draft, if it wrote one | "For this work": Claude's pick, task links, learned tasks |
-| A meeting, **Log this time** | the meeting; note = its title | "For this meeting" |
-| A dashed card (a repeat) | the call as seen; note = the usual note | "Usually at this time" |
-| **+ Log** | the first yellow-rail stretch, else after the last entry | the same |
 
 After the first group come **From your rules**, **You logged to these lately** (tasks of your last 30 days, with the
 service you used last) and **Assigned to you** (open tasks in active projects, the urgent ones first: overdue, due
@@ -430,17 +433,20 @@ new End changes Minutes, new Minutes move End. Only the start and minutes are se
 stays in its day, so End is `24:00` at the latest (typed `24:00` or `00:00`). A Start or Minutes that would run past
 midnight shows End `24:00` and a line saying so while typing; leaving the field cuts Minutes to midnight, and the next
 Log stops once to show the cut. An End before Start (or equal to it, or not a time) is said under the times, and Log
-sends nothing until it is fixed. A note Pulsar filled in, a meeting's title or a repeat's
+sends nothing until it is fixed. Minutes are real minutes and End a time on the clock: the two nights a year the
+clocks change they differ (`core.js` `realMinutes`, `clockAfter`), so 01:30 to 03:30 the night they go forward is 60
+minutes, and 00:30 to 02:30 the night they go back is 180, as the server counts an entry. A drag, a dragged edge and
+the split count the same way. A note Pulsar filled in, a meeting's title or a repeat's
 usual note, says "Filled in for you: clients may see notes on invoices; check it" until it is edited. On a Likely
 block with commits of yours, the note is drafted from them (below), with "From your commits: check it before logging;
 clients may see notes"; a note Ask Claude drafted comes first. The picked task has an **Open in Productive** link (see
 5.2b for where its address comes from), and under the task list its ticket flags, if it has any (5.3).
 
-The minutes of a block (a stretch of the rail, an Activity, Likely or meeting block, a drag) are rounded to Settings'
+The minutes of a block (a stretch of the rail, an Activity, Likely or meeting block) are rounded to Settings'
 **Round entries to** (5, 10 or 15 minutes): to the nearest step, and at least one step. When rounding up would run into
 an entry already logged that day, they are rounded down instead, and a block shorter than one step that would still
-run into it keeps its own minutes. Minutes typed in the dialog (or worked out from a typed End), and an entry being
-changed, are never rounded.
+run into it keeps its own minutes. Minutes typed in the dialog (or worked out from a typed End), a drag in the Logged
+column (in 1-minute steps: the person picked those minutes) and an entry being changed are never rounded.
 
 **Around time already logged.** When the overlap check (5.2) finds entries inside the time asked for, the answer also
 has the pieces around them (`server.pieces_around`): the time asked for less the time logged, never more and never
@@ -478,7 +484,8 @@ for it (with its confidence and why) and a note source: its commits, Claude's dr
 or a repeat's usual note. Parts with the same task are one group, and the group with most minutes leads:
 
 - Its task comes first, in a group "For this time (mostly fi-drupal-qa, 50 min of 1 h)", with the other groups' tasks
-  and its alternatives after it; the dialog's other groups follow. It is picked unless a task was picked by hand. Not
+  and its alternatives after it; the dialog's other groups follow. It is picked unless a task was picked by hand or
+  just created there (Create a task), and not at all once the day or time was changed meanwhile. Not
   when the main work is work outside Claude: its task is only the neighbour's, and on the replay the dialog's own
   first task was right more often there (29% of those minutes against 22%). Everywhere else Log the day's task was the
   better first pick: for entries logged as one, the logged task came first for 47% of the minutes instead of 44%; for
@@ -502,8 +509,10 @@ runs (in the rest one session moved between tasks), and the line shows for 89.5%
 46% of the logged minutes, one entry with the main task for 37%.
 
 The question lists the entries, each with its time, task, project and service (the one Log the day picks: last used
-on the task, checked against the date) and its note, which can be changed there. **Log these N entries** sends them
-one at a time through `POST /api/log`, with the dialog's checks: an overlap or a refusal stops the rest and says why,
+on the task, checked against the date) and its note, which can be changed there. As in Log the day, an entry whose
+task Claude found by searching Productive, or whose note Claude drafted, starts unticked with the reason beside it:
+it is sent only once ticked (editing the note ticks nothing; it only removes the draft's mark). **Log these N
+entries** sends the ticked ones one at a time through `POST /api/log`, with the dialog's checks: an overlap or a refusal stops the rest and says why,
 and nothing is forced. An entry with no task (a call with no calendar entry) is listed and left to log on its own.
 **Log in Productive** still logs the stretch as one entry. This is a minimal way to log several entries from the
 dialog; the dialog's own (around entries already logged) should take its place once both are in.
@@ -567,7 +576,10 @@ whether one fits is the person's call. It opens a small form over the dialog:
 
 **Create in Productive** sends it (`POST /api/task/create`). Read-only and Preview refuse it before anything is sent,
 and the form says so when it opens. The same title in the same project within a minute is refused: a second click
-would create a second task. A refusal is said in plain words and the form stays open. Once created, the form closes,
+would create a second task. After an answer that is not clear (a timeout, a server error, Productive's MCP passing on
+a failure behind it, a reply that is not its success sentence) the task may exist: the button stays off until the form
+opens again, the form says to search for it first, and the server refuses the same title in that project for ten
+minutes. A refusal is said in plain words and the form stays open. Once created, the form closes,
 and the task is first in the dialog's list, under "Just created", and picked; its services load as for any task,
 with the form's service picked.
 
@@ -593,7 +605,11 @@ $0.0032 a draft, 6 to 8 seconds. Hence the local draft at once and Haiku's after
    and never sent with the key alone (section 3).
 3. One write at a time (a lock), and the same entry sent twice within a minute is refused.
 4. `create_entry` writes it as the person in Settings, with its start time. `"dry": true` does everything except the
-   write (tests).
+   write (tests). Only an answer that names the new entry counts as logged: Productive's success sentence through
+   Claude Code's connection, a JSON body with the new id through the token. Anything else after the request went out
+   is "may or may not exist" (`ProductiveUnclear`), never "not logged": a timeout, an HTTP 5xx, a created answer
+   without the entry in it, a failure Productive's MCP server passes on from behind it (a JSON-RPC error, or an error
+   naming a 5xx, a timeout or a dropped connection), or a fault in Pulsar after sending.
 
 ### 5.2b Changing a logged entry
 
@@ -611,7 +627,8 @@ repeat keeps the one of the two hours the entry is in; a start the clocks skip (
 refused, here and in `POST /api/log`, since Productive would store it an hour later. "Approved" is not refused by Pulsar: where a budget needs no
 approval, Productive approves every entry at once and its author can still change it; where an approver has approved
 it, Productive refuses and the page shows why. With
-`PULSAR_READ_ONLY` every change is refused at the lowest level, like any write.
+`PULSAR_READ_ONLY` (any value but `preview`, which leaves it to Preview's setting) every change is refused at the
+lowest level, like any write.
 
 ### 5.3 Ticket flags (`pulsar/flags.py`)
 
@@ -682,9 +699,9 @@ no service, agent-only time, meetings with no call seen, **Claude's pick of a ta
 days** (one it found by searching Productive), **a note Claude drafted**, and a task that already has time logged with
 **no start time** that day: such an entry is on no timeline, so no overlap check sees it, and it may be the same work. The review
 lists it ("no start"), the confirm step names it, and under the cap that task's proposals give way first, up to its
-minutes, before the least sure rows. **Notes** are never written from session text: only a meeting's title, your usual
-note for a repeat, a note Ask Claude drafted for that task, or one from your commits in the work, each with "clients
-may see notes". The **service** is the one last used on the task, checked against the services that take time on that
+minutes, before the least sure rows. **Notes** are never copied from session text: only a meeting's title, your
+usual note for a repeat, a note Ask Claude drafted for that task (from the session's messages, and unticked), or one
+from your commits in the work, each with "clients may see notes". The **service** is the one last used on the task, checked against the services that take time on that
 date (`bookable_services`). With Productive unreadable, nothing is proposed. About 6 seconds for a day the first time,
 under a second after.
 
@@ -709,7 +726,8 @@ at the first answer that is not "logged" (refused, with the reason, or unknown) 
 
 **The journal** (`~/.cache/pulsar/logday-journal.json`, owner-only). Before each write the server records the row as
 `sending`, then `logged` with the new entry's id, `refused` with the reason, or `unknown` when no clear answer came
-(`productive.ProductiveUnclear`: a network error or an HTTP 5xx after the write was sent; the answer then says
+(`productive.ProductiveUnclear`: a network error, an HTTP 5xx or an answer without the new entry after the write was
+sent, 5.2; the answer then says
 `"unclear": true`, and so does any unexpected error, so neither is read as "not logged"). A row that a run of that day
 already sent is refused when it is `sending` or `unknown`, and when it is `logged` while its entry is still among the
 day's entries just read: one deleted by hand, or moved to another day, can be logged again (a read that failed counts
@@ -736,8 +754,11 @@ time logged when the tracker saw nothing (8%).
 
 **Earlier days…** in Log the day's title row lists the last 7 workdays before today (Monday to Friday; **Show 7
 earlier days** gives 14), each with the active time no entry covers, and its logged and active time, from
-`/api/report` (the Report's own numbers). Days with 30 minutes or more left start ticked; a day with under 5 cannot be
-ticked. **Review N days** opens the oldest first: the Day view moves to it and Log the day opens on it exactly as if
+`/api/report` (the Report's own numbers). Time logged with no start time is on no timeline, so it counts against the
+active time not covered (as Log the day caps a day): a day logged in full from Productive's timesheet reads "nothing
+left". Days with 30 minutes or more left start ticked; a day with under 5 cannot be ticked. When no tracker gave any
+activity for those days, the list says why (the Report's `trackerWarning`), and its days read "no activity read",
+not "nothing left". **Review N days** opens the oldest first: the Day view moves to it and Log the day opens on it exactly as if
 opened there by hand, with its own plan, review, confirm step, journal and Undo. A line under the summary says which
 day of how many it is and how much this catch-up has logged so far (what each day's runs logged, less what Undo took
 back), with **Next day** (**Finish** on the last). The catch-up writes nothing itself: each day is written only from
@@ -960,7 +981,7 @@ not a verdict.
   default; 5.7); each name is Claude Code's alias for the latest model of that kind. About 15 to 60 seconds and $0.10 to
   $0.25 of the person's usage per day with Sonnet. `--max-budget-usd` caps each run (not each day) at $0.25 for
   Haiku, $0.75 for Sonnet and $2 for Opus; an empty answer runs Claude once more, so one ask may cost twice the cap,
-  and the cost shown is the second run's. Log the day asks by itself when the switch is on (5.4). Answers are kept in memory only (the last 30): asking again after a
+  and the cost shown is what both runs cost together. Log the day asks by itself when the switch is on (5.4). Answers are kept in memory only (the last 30): asking again after a
   restart, or once the day's rows changed (a new row, more commits), runs Claude again.
   **What goes to Anthropic** is exactly the prompt: for each row of ten minutes or more its time (by the clock),
   repository, up to 3 session titles, up to 15 steps (typed 400, reply 900 characters), up to 10 commit subjects and
@@ -1005,7 +1026,9 @@ says which app is asking (pulsar_log works only from Claude Code), and passes on
 (`CLAUDE_CODE_SESSION_ID`) and folder (`CLAUDE_PROJECT_DIR`). Before every call it checks `/api/whoami` for its own
 port (section 3), so a program on the port, or one passing the question on to a Pulsar on another port, never sees the
 key. Pulsar must be open: when it is not, every tool fails with "Pulsar is not answering ... Open Pulsar, then ask
-again", except `pulsar_status`. An older Pulsar (no `/api/mcp/` routes) gets "older than them": quit and open it again.
+again", except `pulsar_status`. `pulsar_log` never says that once it reached Pulsar: it waits up to five minutes
+(`mcp.LOG_WAIT`), and an answer that does not come, or a fault in Pulsar, is "Not known: Pulsar may have written some
+of these entries, or still be writing them; read pulsar_day before logging them again". An older Pulsar (no `/api/mcp/` routes) gets "older than them": quit and open it again.
 A Claude Code session started before an update keeps the older proxy, whose reads the key no longer opens: start a
 new session.
 
@@ -1014,13 +1037,18 @@ new session.
 | `pulsar_status` | never fails: whether Pulsar answers, its version and the MCP's, whether writes are blocked and why, whether `pulsar_log` works from this app, today's date, time and time zone |
 | `pulsar_day` | the day in numbers: logged, active stretches with no entry, Likely by project, meetings (times only), repeats |
 | `pulsar_propose` | Log the day's proposal (5.4): start, minutes, task, service, confidence, why, alternatives |
-| `pulsar_session` | the calling session's own minutes (Claude Code gives every MCP server `CLAUDE_CODE_SESSION_ID`; Likely rows carry their sessions' ids), with a task for each and what is not logged yet; stretches another session also had are kept apart |
+| `pulsar_session` | the calling session's own minutes (Claude Code gives every MCP server `CLAUDE_CODE_SESSION_ID`; Likely rows carry their sessions' ids), with a task for each and what is not logged yet; stretches another session also had are kept apart, and so are stretches whose task already has time logged that day with no start time (`maybeLoggedWithoutStart`, with a warning: no overlap check sees such time, and it may be this work) |
 | `pulsar_suggest` | the log dialog's task list for one stretch |
 | `pulsar_tasks` | tasks logged to lately (with the service used last), assigned ones, and a Productive search |
-| `pulsar_preview` | read only: services resolved, notes checked (`guard_note`), every entry through `server.api_log` with `dry` (overlaps, the journal); with no problem, a code of 16 hex characters (once, 10 minutes) holding exactly those entries, and `summary`, Pulsar's own text of what would be written, one line per entry: `Wed 4 Nov 2026 09:00-10:00 (60 min): Build (Acme), Dev in B, billable. Note: "Search fixed."` (the budget after "in"; names without control, format or direction characters and without double quotation marks; a note is one line, at most 200 characters, passes `guard_note`, and has no double quotation mark of any script and no character nobody sees, so it cannot pass for the summary's own words or another entry) |
-| `pulsar_log` | `code` (exactly as given) and `summary` (word for word), and no other argument: writes the entries the code holds through `server.api_log`, one at a time, journalled as a Log the day run (Undo works), stopping at the first that is not logged. Each result is `logged`, `not logged` (refused, with the reason), `not known` (no clear answer, an HTTP 5xx or any unexpected error: it may be in Productive, and the journal never sends it again) or `not sent` (after the stop); what was written before a failure is always returned |
+| `pulsar_preview` | read only: services resolved, notes checked (`guard_note`), every entry through `server.api_log` with `dry` (overlaps, the journal); with no problem, a code of 16 hex characters (once, 10 minutes) holding exactly those entries, and `summary`, Pulsar's own text of what would be written, one line per entry: `Wed 4 Nov 2026 09:00-10:00 (60 min): Build (Acme), Dev in B, billable. Note: "Search fixed."` (when the task already has time logged that day with no start time, the line ends "This task already has 120 min logged that day with no start time: check it is not this work."; the budget after "in"; names without control, format or direction characters and without double quotation marks; a note is one line, at most 200 characters, passes `guard_note`, and has no double quotation mark of any script and no character nobody sees, so it cannot pass for the summary's own words or another entry) |
+| `pulsar_log` | `code` (exactly as given) and `summary` (word for word), and no other argument: writes the entries the code holds through `server.api_log`, one at a time, journalled as a Log the day run (Undo works), stopping at the first that is not logged. Each result is `logged`, `not logged` (refused, with the reason), `not known` (no clear answer, an HTTP 5xx or any unexpected error: it may be in Productive, and the journal never sends it again) or `not sent` (after the stop, or once a minute has passed: `mcptools.LOG_BUDGET`, so the answer always comes back in time, and the rest are previewed again); what was written before a failure is always returned |
 
-**The person says yes to each write, not the model.** One write is one `pulsar_log` call, which may hold up to 40
+A read tool that had to leave a source out (Likely, the activity, meetings, repeats, your tasks, the logged entries,
+a task's name) says so in `warnings`, `"<source>: <fixed phrase>"`, and never answers as if that source had nothing
+(`mcptools.failed`).
+
+**In normal use the person says yes to each write, not the model** (section 3 says what a program of the person's can
+do without it). One write is one `pulsar_log` call, which may hold up to 40
 entries: one yes can log a whole day, so the prompt shows every line of the summary. `pulsar_log`'s definition
 carries `_meta: {"anthropic/requiresUserInteraction": true}`. This mark is not documented: Claude Code 2.1.268,
 2.1.278 and 2.1.301 (read from the binaries, not run) ask the person before every such call, also in auto or bypass
@@ -1062,7 +1090,11 @@ entries, alternatives) lose control, format, direction, invisible and separator 
 cut at 120 characters (`mcptools.name_out`); they are the one free text left, written by people with access to
 Productive. Returned on purpose: the calling session's own title (`name_out` too), and note drafts (`noteDraft`, with
 `noteFrom`), only when the entry's repository is the calling session's (`CLAUDE_PROJECT_DIR` through
-`sessions.project_of_path`, names compared loosely as `commits.matches` does), never for another repository:
+`sessions.project_of_path`, names compared loosely as `commits.matches` does), never for another repository. The
+server cannot tell who called: "the calling session" and its folder are what the request names (the proxy passes
+Claude Code's own values on), so a program holding the key can name any session or repository and get that one's
+title and drafts. The same user can read those sessions and repositories directly anyway, so this keeps sessions from
+seeing each other's words by accident, not a program set on it:
 - `noteFrom: "commits"`: your own commit subjects in that repository;
 - `noteFrom: "claude"`: Ask Claude's draft (5.5), which it made from the Likely rows' sessions. When the calling
   session is the only session of the rows over that entry, the draft adds nothing it does not already have: returned
@@ -1091,9 +1123,11 @@ Code starts there, before the person trusts the folder. So `pulsar.py --mcp` dro
 says `--instance preview` on its command line, which still counts. A repository that also sets
 `PULSAR_TESTS_OFFLINE` gets those switches back; none of them opens more than the key does: the server checks its own
 read-only switch, honours the test switch only when it runs read-only itself, and a session id only chooses whose
-minutes `pulsar_session` shows.
+minutes and title `pulsar_session` shows and which note-draft filter applies (`INJECTION` for that session's own
+drafts, the stricter `INSTRUCTION_LIKE` for others').
 
-**Writes blocked.** The server refuses a blocked write (`PULSAR_READ_ONLY`, or Preview without "allow writes") in
+**Writes blocked.** The server refuses a blocked write (`PULSAR_READ_ONLY` other than `preview`, or Preview without
+"allow writes") in
 `pulsar_log` before the code is used, and again in `_log_checked` before the journal or the Logs hear of it; a dry run
 still works. In the tests, `PULSAR_READ_ONLY` in the proxy's environment also refuses `pulsar_log` before anything is
 sent. `pulsar_status` reports both, with the server's reason as a fixed phrase. An entry for Pulsar in Claude Code
@@ -1146,10 +1180,11 @@ Code's Productive sign-in, 4.2). A new use is one entry in `USES`; the page list
 **Ask before any Claude Code session changes Productive** (Settings → Claude, `claude_ask_productive`, off by default)
 adds "ask" rules for the `create_resource`, `update_resource`, `delete_resource` and `perform_action` tools of the
 Productive server named `productive`. They bind every Claude Code session on the Mac, not only Pulsar's, so every
-session asks before each such change: the person's choice, said so under the box. Pulsar 1.2 added them with the
-switch; `claudelink.tidy`, when Pulsar starts and whenever Settings are saved, takes back the ones this copy's own
+session asks before each such change: the person's choice, said so under the box. Pulsar 1.3 and 1.4 added them
+with the switch; `claudelink.tidy`, when Pulsar starts and whenever Settings are saved, takes back the ones this copy's own
 list says it added unless the box is on, and updates the list (Pulsar and Preview each tidy their own). A rule
-Pulsar did not add is never removed, and a later Save with the switch on does not put them back.
+Pulsar did not add is never removed, and a later Save with the switch on does not put them back. The box does nothing
+while the switch is off: it cannot be ticked then, and one ticked earlier says it waits for the switch.
 
 Saving the switch off removes Pulsar from Claude Code and only the rules Pulsar added (`claude_rules_added` and
 `claude_denies_added` in Pulsar's settings). The `pulsar_log` and deny rules are one set for Pulsar and Preview: while
@@ -1202,9 +1237,9 @@ question) and cannot tell when inside it the work happened.
   stretch"). Closing the dialog gives the rail its focus back; closed from the keyboard (Escape, ⌘↩), the rail shows
   the focus ring, a blue outline around the amber line, until something else is clicked.
 - **Hatched rail**: away from the computer, on the Activity column's left edge; a click logs it the same way.
-  is "Active, not logged". A click opens the log dialog on the stretch; so does the hatched rail (away) for its own.
-- **Dragging in the Logged column**: from an empty spot, up or down, on a 5-minute grid (across entries too); letting
-  go opens the log dialog on that stretch, which says what the stretch holds and offers a split when it mixes work
+- **Dragging in the Logged column**: from an empty spot, up or down, in 1-minute steps (across entries too); letting
+  go opens the log dialog on that stretch with those minutes, never rounded, which says what the stretch holds and
+  offers a split when it mixes work
   (5.1).
 - **Work time**: logged, billable, not billable, billing unknown, active, personal, active not logged, away (breaks),
   against the daily target (Settings, else the organization's working day in Productive, else 8 h).
@@ -1242,7 +1277,7 @@ estimate, and a table of every day. A day's bar and its row in the tables open t
 | `~/.cache/pulsar/days/<person>/` | The last copy of each day's entries (120 days). |
 | `~/.cache/pulsar/names.json` | Names of projects, budgets, services, tasks; billing types; how many of a project's recent tasks have an estimate (5.3); when each was read. |
 | `~/.cache/pulsar/likely-days/` | Past days' Likely rows for learning: times, repository, title hashes. |
-| `~/.cache/pulsar/likely-full/` | Past days' Likely columns as the page shows them (rows with session titles and first messages), so a day opened again, or after a restart, shows at once; 31 days; ↻ works a day out again. |
+| `~/.cache/pulsar/likely-full/` | Past days' Likely columns as the page shows them (rows with session titles and first messages), so a day opened again, or after a restart, shows at once; 31 days; ↻ works a day out again. Never a day worked out while no tracker answered. |
 | `~/.cache/pulsar/claude-picks/` | Ask Claude's last answer per day (task ids, reasons, drafted notes), shown again when the day is opened, never asked again by itself; 60 days. |
 | `~/.cache/pulsar/logday-journal.json` | Log the day: each row a run sent, before it was sent, and what came of it (31 days). |
 | `~/.cache/pulsar/logs/` | The error log, one JSON line per event, 31 days; tokens, keys, OAuth codes, signed addresses, fields named as keys or secrets, bare hex secrets, UUIDs and long opaque strings removed. |
@@ -1407,10 +1442,16 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   `PULSAR_READ_ONLY=1`. Every test module imports `tests/isolation.py` first: one scratch folder per run holds `HOME`,
   `TMPDIR`, `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` (so `~/.claude`, `~/.config/pulsar`, MemTime's database and the
   installed copy are out of reach) and goes when the run ends, leaving nothing behind; `PULSAR_TESTS_OFFLINE` makes
-  Pulsar itself skip the keychain, Claude Code and the network. Behind that, `security`, `claude`, `osascript`, `open`
-  and `os.exec*` cannot start, no connection leaves the computer, and none reaches a local port the run did not open
-  (not the real Pulsar, a Preview or ActivityWatch). A test that tries fails with `RealWorld`, which `except
-  Exception` cannot swallow, and the run exits 1 listing what was tried (`tests/test_isolation.py`). Tests that write
+  Pulsar itself skip the keychain, Claude Code and the network. Every `GIT_*` variable is dropped and git's global
+  settings file is one in the scratch folder (`GIT_CONFIG_GLOBAL`, `GIT_CONFIG_NOSYSTEM`): git exports `GIT_DIR` into
+  hooks, so a hook that ran the tests would otherwise point them at the real repository. Behind that, `security`,
+  `claude`, `osascript` and `open` cannot start, directly or through `env`, `sh -c`, `shell=True`, `os.system` or
+  `os.posix_spawn`, nor `os.exec*` at all; no connection or UDP datagram leaves the computer, no name is looked up but
+  its own, none reaches a local port the run did not open (not the real Pulsar, a Preview or ActivityWatch), and a
+  Unix socket only inside the scratch folder. Not covered: a call into libc through ctypes, and a child Python, which
+  inherits the environment but not these checks. A test that tries fails with `RealWorld`, which `except
+  Exception` cannot swallow, and the run exits 1 listing what was tried (`tests/test_isolation.py`). McpTest refuses
+  the same way a write to Productive it did not fake. Tests that write
   fake Productive, so they pass the same under `PULSAR_READ_ONLY=1`. `test_isolation.py` also fails when a test
   module does anything before importing `isolation`, so each one is guarded when run alone too. The writes are
   checked by the whole request that reaches Productive's fake wire, REST and MCP, from `POST /api/log`, Undo and
@@ -1427,7 +1468,9 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   the stretches picked for the log dialog (5.1). Give it
   `XDG_CACHE_HOME` pointing at a copy of `~/.cache/pulsar`, so its journal and Logs are not the real ones.
 - `PULSAR_MCP_IGNORE_LOGGED=1` in the MCP's environment, with `PULSAR_READ_ONLY=1` there and on the server (else
-  every tool refuses): every tool sees the day as if nothing were logged. Log the day plans with `ignore_logged`, the
+  every tool refuses), and `PULSAR_TESTS_OFFLINE=1` there too: without it `pulsar.py --mcp` drops both before anything
+  reads them (`mcp.clean_environment`), since a repository's settings could set them. Every tool then sees the day as
+  if nothing were logged. Log the day plans with `ignore_logged`, the
   Likely rows learn their tasks from the days before only (`/api/proposal?ignore_logged=1`, refused by a server that
   is not read-only), "logged lately" stops the day before, and the preview's dry run does not report overlaps with the
   real entries. Used to measure proposals against days already logged.
@@ -1457,9 +1500,6 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 - The night the clocks go back, the repeated hour (01:00 to 02:00 in Toronto, 03:00 to 04:00 in Kyiv) is one hour on
   the clock: Log the day folds the two hours together, and an entry there is sent as the first of them. The overlap
   check of `POST /api/log` still refuses one that would clash with an entry in the second.
-- The night the clocks go forward, dragging a logged card's edge, or dragging in the Logged column to log, across the
-  hour that is skipped asks for the clock difference, an hour more than the real time (the question shows both
-  times, and Productive then ends the entry an hour later). Rare enough to leave: change the minutes in the dialog.
 - When the service last used on a task no longer takes time, Pulsar picks one of the same name, and with several
   budgets that have it, the first. The confirm step and `pulsar_preview`'s summary name the budget, so it is seen
   before anything is written.
@@ -1467,10 +1507,9 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   suggest.
 - The key in `~/.config/pulsar/secret` is readable by every program of the person's, so a session in bypass mode can
   log new entries without the `pulsar_log` prompt, and a program set on it can sign a window in itself (section 3).
-- `/api/whoami`'s proof is an HMAC of the nonce alone, not of the port: the MCP server checks it before every call,
-  which stops a program that took Pulsar's port after it quit, but a program on Pulsar's port that relays the
-  challenge to a real Pulsar on another port would pass. Binding the port needs the launcher and the server to change
-  together; not done.
+- `/api/whoami` still answers the older proof, the HMAC of the nonce alone, for the launcher inside a Pulsar.app of
+  1.4.0 or earlier; that launcher accepts it only from this user's `pulsar.py` (section 3). Pulsar in Claude Code and
+  newer launchers check `proof1`, bound to the port.
 - The Productive ask rules (the opt-in of 5.7) cover the server named `productive` only; a claude.ai connector
   (`mcp__claude_ai_<name>__…`) or a server under another name gets none. With the box on in one copy and off in the
   other, the other's tidy can take back a rule the first found already there (so not on its own list): Settings then
