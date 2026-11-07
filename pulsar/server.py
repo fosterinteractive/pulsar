@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, askclaude, calendar, claudelink, claudeuses, config, dayplan, flags, learn, likely, logbook, mcptools, newtask, productive, ranges, report, sessions, trackers, updater, names
+from . import __version__, askclaude, calendar, claudelink, claudeuses, config, dayplan, dayreview, flags, learn, likely, logbook, mcptools, newtask, productive, ranges, report, sessions, trackers, updater, names
 from .mcp import whoami_proof
 
 UPDATER = updater.Updater()
@@ -1309,6 +1309,42 @@ def api_dayplan(q: dict) -> dict:
     return dayplan.gather(q["date"], source, ignore)
 
 
+def api_dayplan_review(body: dict) -> dict:
+    """Log the day with Claude (dayreview.py): the day's plan, FI's rules and a digest of the day go to the person's own
+    Claude Code, isolated as Ask Claude is; its suggestions come back checked, for the review panel to accept or
+    reject. Nothing is written. A POST, because it runs Claude; the page's session only (key_refusal)."""
+    s = current_settings()
+    date = str(body.get("date") or "")
+    if not DATE.match(date):
+        raise ValueError("date=YYYY-MM-DD")
+    if not s["ask_claude"]:
+        raise ValueError("Claude Code is off. Switch it on in Settings first.")
+    ignore = body.get("ignore_logged") is True
+    if ignore and not config.read_only():
+        raise ValueError("ignore_logged is for read-only test servers only.")
+    source = str(body.get("source") or "auto")
+    if source not in ("auto", "aw", "memtime"):
+        raise ValueError("source is auto, aw or memtime")
+    inputs: dict = {}
+    plan = dayplan.gather(date, source, ignore, inputs=inputs)
+    if plan.get("error"):
+        return {"error": plan["error"], "suggestions": []}
+    for r in inputs["rows"]:  # what was typed and Claude's replies, as Ask Claude reads them (capped there)
+        if r["e"] - r["s"] >= 10:
+            r["steps"] = askclaude.steps(inputs["t0"], r.get("titles") or [], r["s"], r["e"])
+    doc, cut, size = dayreview.digest(date, inputs)
+    rows = [{"id": e["id"], "s": e["s"], "e": e["e"], "taskId": e.get("taskId")} for e in plan["entries"]]
+    try:
+        got = dayreview.review(date, doc, plan["entries"], model=claudeuses.model("review", s), settings=s)
+    except dayreview.ReviewError as exc:
+        logbook.record("log the day", f"Review with Claude: {exc}", kind="warning")
+        return {"error": str(exc), "suggestions": [], "cost": exc.cost, "rows": rows}
+    if got["dropped"]:
+        logbook.record("log the day", f"Review with Claude: left out {len(got['dropped'])} suggestions: "
+                       f"{'; '.join(got['dropped'][:5])}", kind="warning")
+    return {**got, "rows": rows, "digestTokens": size, "cut": cut}
+
+
 def api_range(q: dict) -> dict:
     """The log dialog for a stretch picked in the Day view (a drag, a rail, + Log, Log and next): what [s, e) holds by
     Log the day's minute ownership (ranges.py), the task and note of the part that holds most of it, and the entries
@@ -1737,6 +1773,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(api_task_draft(body))
             if urlparse(self.path).path == "/api/task/create":
                 return self.send_json(api_task_create(body))
+            if urlparse(self.path).path == "/api/dayplan/review":
+                return self.send_json(api_dayplan_review(body))
             if urlparse(self.path).path == "/api/calendar/connect":
                 url = calendar.start(self.server.server_address[1])
                 try:

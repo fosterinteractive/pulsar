@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from isolation import SCRATCH as _SCRATCH  # noqa: E402,F401  first: nothing real is reachable (isolation.py)
 
-from pulsar import askclaude, claudeuses, config, newtask, productive, server  # noqa: E402
+from pulsar import askclaude, claudeuses, config, dayreview, newtask, productive, server  # noqa: E402
 
 ROWS = [{"s": 600, "e": 660, "project": "acme", "titles": ["Fix the menu"], "commits": ["Fix the menu"], "minutes": 60}]
 
@@ -166,6 +166,15 @@ class CallSiteTest(unittest.TestCase):
             self.assertNotIn("--mcp-config", argv)
         self.assertEqual(len(self.runs), 3)  # a model of its own is a draft of its own, not the cached one
         self.assertEqual(claudeuses._spent["task"][0], 3)
+
+    def test_the_day_review(self):
+        run = self.run_claude({"structured_output": {"suggestions": []}})
+        for model, cap in ((None, "0.25"), ("sonnet", "0.75"), ("opus", "2.0")):
+            dayreview.review("2026-10-03", {}, [], run=run, model=model)
+            argv, kw = self.runs[-1]
+            self.assertEqual((flag(argv, "--model"), flag(argv, "--max-budget-usd")), (model or "haiku", cap))
+            self.isolated(argv, kw)
+        self.assertEqual(claudeuses._spent["review"][0], 3)
 
     def test_the_server_passes_each_use_its_own_choice(self):
         s = {**config.DEFAULTS, "timezone": "UTC", "likely": "on", "ask_claude": True,

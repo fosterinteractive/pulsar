@@ -47,6 +47,15 @@ USES = {
                  "commit subjects and the names of your recent tasks.",
         "model": "haiku", "cap": 0.1,
     },
+    "review": {
+        "name": "Log the day with Claude",
+        "does": "Reviews the whole day's plan in Log the day with FI's rules and suggests other tasks, splits and "
+                "services, each for you to accept or reject.",
+        "sends": "Sends a digest of the day: the plan, what you typed and Claude's replies (cut short), session titles, "
+                 "commit subjects, meeting titles, app names by hour, the notes of entries already logged, and your "
+                 "tasks of the last 30 days. Never window titles, sites or addresses. May search Productive, read only.",
+        "model": "haiku", "cap": 0.25,
+    },
     "session": {
         "name": "Pulsar in Claude Code",
         "does": "Say “log the time of this session” in Claude Code: it reads your day from Pulsar and asks "

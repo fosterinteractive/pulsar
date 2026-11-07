@@ -867,9 +867,11 @@ def ticket_flags(entries: list, found: dict, date: str, settings: dict) -> None:
         e["ticket"] = flags.for_task(b.get("task"), b.get("services"), date, settings) if b else []
 
 
-def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: dict | None = None) -> dict:
+def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: dict | None = None,
+           inputs: dict | None = None) -> dict:
     """The proposal for `date` from Pulsar's live data. ignore_logged (test servers only) plans as if nothing were
-    logged that day, to show a whole proposal on a day already logged. keep: as for plan()."""
+    logged that day, to show a whole proposal on a day already logged. keep: as for plan(). inputs: a dict to fill
+    with what the day was planned from, for Log the day with Claude's digest (dayreview.digest)."""
     from concurrent.futures import ThreadPoolExecutor
     from . import askclaude, calendar, learn as learning, likely, logbook, productive, server
     s = server.current_settings()
@@ -992,6 +994,12 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
             e["checked"] = False
             e["flags"].append("noservice")
     ticket_flags(result["entries"], found, date, s)
+    # FI's rules in code (dayreview.fi_rules): suggestions only, accepted or rejected in the review
+    from . import dayreview
+    for i, e in enumerate(result["entries"]):
+        e["id"] = f"r{i}"
+    known = {tid: {**((b or {}).get("task") or {}), "taskId": tid} for tid, (b, _) in found.items() if b}
+    result["suggestions"] = dayreview.fi_rules(result["entries"], date, got["fresh"] or [], known)
     for e in result["entries"]:
         for a in e["alts"]:
             if not a["title"] and a["taskId"] in found and found[a["taskId"]][0]:
@@ -1007,6 +1015,15 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
         if x:
             e["sent"] = x["status"]
             e["checked"] = False
+    if inputs is not None:
+        inputs.update(plan=result, items=day["items"], away=day["away"], rows=likely_rows, meetings=meetings,
+                      repeats=day["repeats"], pool=got["fresh"] or [], t0=t0, tz=tz,
+                      target=config.target_minutes(s), recent=dayreview.recent_from_history(history, date),
+                      logged=[] if ignore_logged else [
+                          {"s": None if x.get("start") is None else round(server.clock(x["start"], t0, tz), 2),
+                           "minutes": x["minutes"], "taskId": x.get("taskId"), "task": x.get("task") or "",
+                           "service": x.get("service") or "", "note": x.get("note") or ""} for x in rows],
+                      is_call=server.is_call, logging_rx=LOGGING)
     if got["likely"].get("error"):
         logbook.record("log the day", f"Likely: {got['likely']['error']}", kind="warning", once_per=600)
     # without the days before, the plan has no learned tasks and no last-used services: said, not hidden
