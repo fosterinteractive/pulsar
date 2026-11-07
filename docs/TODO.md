@@ -14,7 +14,10 @@ Agreed next steps, newest first. Done items go to `CHANGELOG.md`.
   confirmations): give each the same ✕ in the corner as Settings.
 - **Leave an entry out of learning.** A mark on a logged entry ("not an example") so Pulsar never learns from it: an
   entry logged to the right task at the wrong time (a billable task written over another project's minutes) now
-  teaches the wrong task for that repository. Kept on this Mac per entry, shown on the entry, with undo.
+  teaches the wrong task for that repository. Kept on this Mac per entry, shown on the entry, with undo. The same for
+  time moved by hand (internal work put on billable hours, or the other way): it must not shape future predictions.
+  To think through: whether Pulsar can tell such an entry by itself (its task does not match the sessions under it)
+  or only by the mark.
 - **Working days** as a setting (Monday to Friday is fixed today: Earlier days, the week line, the reminder).
 - **Advanced settings**, a small closed set (join gap, outside-Claude entry length, learning memory, daily meeting
   cards, split hint, the "No estimate" flag), and a developer override for calibration in read-only runs.
