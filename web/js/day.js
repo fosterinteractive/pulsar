@@ -406,8 +406,9 @@ function render() {
         <div class="row"><span class="t">${esc(x.title)}</span><span class="m num">${dur(x.minutes)}</span></div>
         ${h > 34 ? `<div class="d">Usual · ${esc(x.seen)} seen · click to log</div>` : ''}</div>`;
     }).join('');
-    // active minutes (not personal) with no entry on them. The number counts each minute's active share, as the
-    // report does; the amber rails mark stretches of at least 3 mostly-active minutes, for the eye and the click.
+    // active minutes (not personal) with no entry on them: the amber rails mark stretches of mostly-active minutes as
+    // long as one rounding step at least (Settings' "Round entries to"; a shorter one is rounding, not work to log),
+    // and the number counts each of their minutes' active share. Crumbs under a step count nowhere.
     if (act && !act.error) {
       const active = new Float32Array(end + 1), covered = new Uint8Array(end + 1);
       for (const it of act.items) {
@@ -416,13 +417,14 @@ function render() {
       }
       for (const e of ldActive() && LD.plan?.ignoreLogged ? [] : logged.entries) if (e.s != null) for (let m = Math.floor(e.s); m < Math.floor(e.s) + e.minutes && m < end; m++) covered[m] = 1;
       for (const [a, b] of ldActive() ? ldCoverSpans() : []) for (let m = Math.floor(a); m < b && m < end; m++) covered[m] = 1;  // ticked proposals
-      for (let m = 0; m < end; m++) if (!covered[m]) gapMin += Math.min(1, active[m]);
       let runStart = -1;
+      const shortest = Math.max(3, CONFIG?.roundTo || 5);
       for (let m = 0; m <= end; m++) {
         const gap = m < end && active[m] >= 0.5 && !covered[m];
         if (gap && runStart < 0) runStart = m;
         if (!gap && runStart >= 0) {
-          if (m - runStart >= 3) html += `<div class="gaprail" data-a="${runStart}" data-b="${m}" style="top:${runStart * ppm}px;height:${(m - runStart) * ppm}px"
+          if (m - runStart >= shortest) for (let x = runStart; x < m; x++) gapMin += Math.min(1, active[x]);
+          if (m - runStart >= shortest) html += `<div class="gaprail" data-a="${runStart}" data-b="${m}" style="top:${runStart * ppm}px;height:${(m - runStart) * ppm}px"
             title="Active, not logged: ${hm(runStart)}–${hm(m)}. Click to log it." tabindex="0" role="button"
             aria-label="Active, not logged ${hm(runStart)}–${hm(m)}, ${dur(m - runStart)}: log this time"></div>`;
           runStart = -1;

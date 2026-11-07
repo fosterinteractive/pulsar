@@ -264,16 +264,16 @@ async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = 
   rangeOpen(range && !edit ? {date, start, minutes} : null);  // range.js: what a picked stretch holds
 }
 
-/* a block's minutes on the step of Settings' "Round entries to" (5, 10 or 15): the nearest step, at least one. When
-   rounding up would run into an entry already logged that day, down instead; a block shorter than one step that
-   would still run into it keeps its own minutes. Minutes typed in the dialog are never rounded. */
+/* a block's minutes on the step of Settings' "Round entries to" (5, 10 or 15): the nearest step, at least one. Next
+   to an entry already logged that day it runs up to that entry instead, whenever rounding would run into it or leave
+   less than a step before it: those minutes are taken in, never left as a crumb "not logged". Minutes typed in the
+   dialog are never rounded. */
 function roundMinutes(date, start, minutes) {
   const step = CONFIG?.roundTo || 5;
   let m = Math.max(step, Math.round(minutes / step) * step);
-  if (m > minutes) {
-    const next = date === state.date ? Math.min(1440, ...(state.logged?.entries || []).filter(x => x.s != null && x.s > start).map(x => x.s)) : 1440;
-    if (start + m > next) m = Math.floor(minutes / step) * step || minutes;
-  }
+  const next = date === state.date ? Math.min(1440, ...(state.logged?.entries || []).filter(x => x.s != null && x.s > start).map(x => x.s)) : 1440;
+  const room = Math.floor(next - start);
+  if (next < 1440 && room >= 1 && (m > room || room - m < step)) m = room;
   return Math.max(1, Math.min(m, 1440 - start));
 }
 

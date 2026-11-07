@@ -4,7 +4,8 @@
    it already sent, and Undo deletes only what this run created (POST /api/entry/delete with the run). */
 
 const LD = {on: false, date: null, plan: null, rows: [], open: null, run: null, writing: false, stop: false,
-            loading: false, undoAsk: false, note: ''};
+            loading: false, undoAsk: false, note: '', view: 'review'};
+try { if (localStorage.getItem('pulsar.ldView') === 'all') LD.view = 'all'; } catch {}  // this viewer's last choice
 const ldActive = () => LD.on && LD.date === state.date;
 const ldRow = id => LD.rows.find(r => r.id === id);
 /* a test server can show the whole proposal of a day already logged (only PULSAR_READ_ONLY accepts it) */
@@ -217,24 +218,35 @@ function renderReview() {
   const testNote = p.ignoreLogged ? '<p class="rv-test">Test view: worked out as if nothing were logged this day. Nothing can be written from a read-only test server.</p>' : '';
   const historyNote = p.historyProblem ? `<p class="rv-test" role="status">${esc(p.historyProblem)}</p>` : '';
   const results = ldResultsBox();
-  // the list: logged entries (quiet), time not covered, and the proposals, in time order
-  const items = [];
-  if (!p.ignoreLogged) for (const x of state.logged?.entries || []) items.push({at: x.s ?? -1, html: loggedLine(x)});
-  for (const u of p.uncovered || []) items.push({at: u.s, html: `<li class="gr"><span class="e-time num">${hm(u.s)}</span><span class="gt"><b>${dur(u.minutes)}</b> active, not covered</span><span></span></li>`});
-  for (const r of LD.rows) items.push({at: r.s, html: rowHTML(r, ov.get(r.id))});
+  // the list: time not covered and the proposals, in time order; what is logged (in Productive, or by this run) only
+  // in "All", else folded into one line at the top. The timeline shows all of it either way.
+  const items = [], all = LD.view === 'all', step = CONFIG?.roundTo || 5;
+  const inProductive = p.ignoreLogged ? [] : state.logged?.entries || [], loggedRows = LD.rows.filter(r => r.status === 'logged');
+  if (all) for (const x of inProductive) items.push({at: x.s ?? -1, html: loggedLine(x)});
+  for (const u of (p.uncovered || []).filter(u => u.minutes >= step)) items.push({at: u.s, html: `<li class="gr"><span class="e-time num">${hm(u.s)}</span><span class="gt"><b>${dur(u.minutes)}</b> active, not covered</span><span></span></li>`});
+  for (const r of LD.rows) if (all || r.status !== 'logged') items.push({at: r.s, html: rowHTML(r, ov.get(r.id))});
   items.sort((a, b) => a.at - b.at);
+  const folded = inProductive.length + loggedRows.length;
+  if (!all && folded) {
+    const mins = inProductive.reduce((t, x) => t + x.minutes, 0) + loggedRows.reduce((t, r) => t + r.minutes, 0);
+    items.unshift({at: -2, html: `<li class="gr fold"><span class="e-time num" aria-hidden="true">✓</span><span class="gt"><b>${dur(mins)}</b> logged,
+      ${folded} ${folded === 1 ? 'entry' : 'entries'}${loggedRows.length ? ` (${loggedRows.length} just now)` : ''}</span>
+      <button type="button" class="btn link sm" data-ld-view="all">Show</button></li>`});
+  }
+  const viewSwitch = folded ? `<span class="seg ld-view" role="group" aria-label="Which entries the list shows">
+      <button type="button" data-ld-view="review" aria-pressed="${!all}">To review</button><button type="button" data-ld-view="all" aria-pressed="${all}">All</button></span>` : '';
   const skipped = (p.skipped || []).length ? `<li class="gr quiet"><span class="e-time num">·</span><span class="gt">Left out: ${esc(p.skipped.map(s => `${s.title || s.project} ${dur(s.minutes)} (${s.why})`).join('; '))}</span><span></span></li>` : '';
   const empty = !LD.rows.length ? `<div class="rv-empty"><div class="big-ic" aria-hidden="true">✓</div><h3>${(state.logged?.entries || []).length ? 'Everything is logged' : 'Nothing to log'}</h3>
     <p>${(state.logged?.entries || []).length ? 'Every active stretch of this day already has an entry, or is too short to log.' : 'No activity, Claude sessions or meetings were found for this day.'}</p></div>` : '';
-  const n = T.n, all = LD.writing ? [] : ldTickAllRows(), held = LD.rows.filter(r => ldTickable(r) && !all.includes(r)).length;
-  const tickAll = all.length ? `<div class="rv-tickall"><button type="button" class="btn bordered sm" id="ld-tickall"
-      title="Ticks every row that has a task and a service. The next step lists each entry and its note before anything is written.">Tick all ${all.length} with a task</button>${held
+  const n = T.n, tickRows = LD.writing ? [] : ldTickAllRows(), held = LD.rows.filter(r => ldTickable(r) && !tickRows.includes(r)).length;
+  const tickAll = tickRows.length ? `<div class="rv-tickall"><button type="button" class="btn bordered sm" id="ld-tickall"
+      title="Ticks every row that has a task and a service. The next step lists each entry and its note before anything is written.">Tick all ${tickRows.length} with a task</button>${held
       ? `<span class="hint">${held} found by Claude's search ${held === 1 ? 'stays' : 'stay'} unticked until opened</span>` : ''}</div>` : '';
   el.innerHTML = `<div class="rv-h">${head}
       <div class="rv-sum"><b>${dur(T.minutes)}</b> ticked in ${n} ${n === 1 ? 'entry' : 'entries'} · ${dur(T.billable)} billable · ${dur(T.logged)} logged</div>
       <div class="rv-bar" role="img" aria-label="${esc(`${dur(withThese)} with these, against a target of ${dur(target)}`)}"><i class="lg" style="width:${pct(T.logged)}%"></i><i class="pp" style="width:${pct(T.minutes)}%"></i></div>
       <div class="rv-bl"><span>${dur(withThese)} with these</span><span>target ${dur(target)}</span></div>
-      <div class="rv-iss">${chips}</div>${tickAll}${askLine}${sgHead()}${testNote}${historyNote}${cuStrip()}</div>
+      <div class="rv-iss">${chips}${viewSwitch}</div>${tickAll}${askLine}${sgHead()}${testNote}${historyNote}${cuStrip()}</div>
     ${results}
     ${empty || `<ul class="rv-list" aria-label="Proposed entries">${sgDayHTML()}${items.map(x => x.html).join('')}${skipped}</ul>`}
     <div class="rv-f">${LD.writing
@@ -454,6 +466,7 @@ $('#review').addEventListener('click', ev => {
   if (LD.writing && t.id !== 'ld-stop') { ev.preventDefault(); return; }  // a run (or Undo) is writing: rows stay as confirmed
   if (t.id === 'ld-redo') return openLogDay();
   if (t.id === 'ld-go') return openConfirm();
+  if (t.dataset.ldView) { LD.view = t.dataset.ldView; try { localStorage.setItem('pulsar.ldView', LD.view); } catch {} renderReview(); return; }
   if (t.id === 'ld-tickall') { for (const r of ldTickAllRows()) { r.checked = true; r.edited = true; } renderReview(); render(); return; }
   if (t.id === 'ld-stop') { LD.stop = true; renderReview(); return; }
   if (t.dataset.ldGoto) return ldOpen(t.dataset.ldGoto, true);

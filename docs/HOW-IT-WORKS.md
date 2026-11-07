@@ -473,9 +473,10 @@ clients may see notes"; a note Ask Claude drafted comes first. The picked task h
 
 The minutes of a block (a stretch of the rail, an Activity, Likely or meeting block; not a drag in the Logged column,
 which keeps the minutes dragged) are rounded to Settings'
-**Round entries to** (5, 10 or 15 minutes): to the nearest step, and at least one step. When rounding up would run into
-an entry already logged that day, they are rounded down instead, and a block shorter than one step that would still
-run into it keeps its own minutes. Minutes typed in the dialog (or worked out from a typed End), a drag in the Logged
+**Round entries to** (5, 10 or 15 minutes): to the nearest step, and at least one step. Next to an entry already
+logged that day the block runs up to that entry instead, whenever rounding would run into it or leave less than a step
+before it: a 14-minute stretch ending at an entry is logged as 14 minutes, not 10 with a 4-minute crumb left "not
+logged" (`roundMinutes`). Minutes typed in the dialog (or worked out from a typed End), a drag in the Logged
 column (in 1-minute steps: the person picked those minutes) and an entry being changed are never rounded.
 
 **Around time already logged.** When the overlap check (5.2) finds entries inside the time asked for, the answer also
@@ -715,12 +716,15 @@ claim wins:
 
 Pieces of one task in one sitting join, pieces under 10 minutes join a neighbour within 30 minutes in the same sitting
 (never one hours away, which would move it there, never across an entry already logged; a meeting someone attended
-keeps its own time, so nothing before it joins it), boundaries go on a 5-minute grid, a personal window's minutes are
+keeps its own time, so nothing before it joins it), boundaries go on a 5-minute grid except right against an entry
+already logged (an entry starts where that one ends, or stops where it starts, taking in the minutes up to the grid
+instead of leaving them as a crumb; its other end stays on the grid), a personal window's minutes are
 never in an entry, nothing overlaps an entry already logged, and **proposed plus logged never exceeds active time plus
 attended meetings**: the rest is listed as not placed, never placed (what the cap leaves under 10 minutes goes with
 it). The grid and the shortest entry follow Settings' **Round entries to** (`dayplan.opts_for`): 5 minutes keeps the
 5-minute grid and the 10-minute shortest entry, 10 gives 10 and 10, 15 gives quarter hours and 15. Each row shows its
-ticket flags (5.3). A row's task comes from, in this order: a rule, a task link pasted in the session, a ticket key in the title, the
+ticket flags (5.3). "Not covered" lists only stretches of a step or more (`uncovered`, `totals.notCovered`). A
+row's task comes from, in this order: a rule, a task link pasted in the session, a ticket key in the title, the
 tasks logged in the same session, then the same repository (votes from the last 60 days, older days counting half
 every 7 days), the same session earlier that day, and task names that share words with the work (your own name and
 common words such as "not" and "the" do not count). A session's task does not carry over to another client's
@@ -762,7 +766,9 @@ note…"; picking another task clears the first, editing the note the second's m
 left alone. An answer that arrives while the confirm step is open waits until it closes (Back to the review); once a
 run has started it is only mentioned. Haiku did as well as Sonnet here, at a small part of the cost.
 
-**Reviewing.** A row needs a look when it is unsure ("check"), has no task or service, or carries something Claude did
+**Reviewing.** The list shows, by default (**To review**), the rows still to log and the time not covered; what is
+logged, in Productive or by this run, is one line at the top ("6 h 1 min logged, 17 entries"), and **All** shows each
+entry in its place (the choice is kept in this window's storage). The timeline shows everything either way. A row needs a look when it is unsure ("check"), has no task or service, or carries something Claude did
 (a task it found by searching, a note it drafted, no task found). The "N to check" chip counts those not yet looked
 at: a row counts as checked once the person has opened it and it is ticked (one with no task or service cannot be
 ticked, so it stays until it has them). The chip opens the next such row after the open one, in time order, and reads
@@ -1291,8 +1297,10 @@ question) and cannot tell when inside it the work happened.
 - **First run**: when Productive is not connected (or does not know who you are), no tracker answers, or today has
   no activity yet, a short list at the top of the board says what is missing and gives the one action that fixes
   it (Connect Productive, Get or Open ActivityWatch).
-- **Yellow rail**: stretches of at least 3 minutes, mostly active (personal time excluded), with no entry. Its total
-  is "Active, not logged". It is an amber line on the Logged column's left edge, so it runs beside the Likely column's
+- **Yellow rail**: stretches of at least one rounding step (Settings' **Round entries to**, 5 minutes by default),
+  mostly active (personal time excluded), with no entry; a shorter stretch is rounding, not work to log, and counts
+  nowhere. The active share of the rails' minutes is "Active, not logged" (the Report still counts every uncovered
+  active minute). It is an amber line on the Logged column's left edge, so it runs beside the Likely column's
   right edge. A click, or Enter, opens the log dialog on the stretch with its Likely tasks and note (5.1, "A
   stretch"). Closing the dialog gives the rail its focus back; closed from the keyboard (Escape, ⌘↩), the rail shows
   the focus ring, a blue outline around the amber line, until something else is clicked.

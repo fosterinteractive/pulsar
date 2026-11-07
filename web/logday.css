@@ -267,3 +267,12 @@ dialog.dlg::backdrop { background: rgba(0,0,0,.35); }
 .sg.accepted, .sg.rejected, .sg.gone { opacity: .6; }
 .sg.accepted { border-style: solid; }
 @media (max-width: 700px) { .sg-list { padding-left: 14px; } }
+/* To review / All: what is logged folds into one line in "To review" */
+.rv-iss .ld-view { margin-left: auto; }
+.ld-view button { font-size: 11.5px; padding: 2px 8px; }
+.ld-view button[aria-pressed="true"] { background: var(--seg-on); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.gr.fold .e-time { color: var(--logged-text); }
+.gr.fold .btn { justify-self: end; border: 0; background: none; color: var(--accent); font-size: 12px; padding: 0 2px; }
+.gr.fold .btn:hover { text-decoration: underline; background: none; }
+.gr.fold { background: color-mix(in srgb, var(--logged) 7%, transparent); }
+.gr.fold::before { background: var(--logged); }

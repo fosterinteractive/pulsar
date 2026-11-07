@@ -7,6 +7,8 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Log the day lists what is still to log; what is logged folds into one line (To review / All).
+- No more crumbs: entries run up to the entry next to them, and stretches shorter than the rounding step are not marked unlogged.
 - Log the day: "Tick all with a task", Enter ticks the open row and opens the next; the confirm step marks Claude's notes and searches.
 - Log the day: "to check" counts down as you open and tick rows, opens the next one, and says "All checked" at the end.
 - Task search puts yours first: tasks you logged to lately, then those assigned to you; closed tasks last.

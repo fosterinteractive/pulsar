@@ -126,7 +126,7 @@ Code and reconnect Productive. A token of your own never expires, so it is the s
 |---|---|
 | Time zone | this computer's |
 | Daily target | your organization's working day in Productive, else 8 h (Pulsar reads it through Claude Code's connection; with an API token it is 8 h unless you set it) |
-| Round entries to | 5 minutes (or 10 or 15): Log the day's entries start and end on this step, and a block you log is rounded to it |
+| Round entries to | 5 minutes (or 10 or 15): Log the day's entries start and end on this step (or right against an entry already logged), a block you log is rounded to it, and active time shorter than it is not marked as unlogged |
 | Personal windows | Telegram, WhatsApp, YouTube, Netflix, Instagram, Facebook, TikTok, Reddit (one word per line; a window whose app, title or site contains one counts as personal) |
 | ActivityWatch address | `http://localhost:5600` |
 | Likely column | shown when Claude Code sessions are on this computer (`~/.claude/projects`) |
