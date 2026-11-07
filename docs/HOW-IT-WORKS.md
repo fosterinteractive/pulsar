@@ -754,7 +754,14 @@ time. A shared row stays at its real time: it never joins other pieces, and noth
 internal work is cut first, then mixed and unknown, a client's last. The **evidence cap**: a task that may be billable
 (any not known to be internal) never gets more minutes than the person was seen at work on it, whatever the grid and
 the joins did, and a client's entry is never joined across time away. Agent time moved into free slots (the skill
-script's rows) is not used at all.
+script's rows) is not used at all. Replayed on one person's 52 days (14 September to 4 November 2026), each planned as
+if nothing were logged from the days before it only, against what was logged and against the planner before this:
+billable minutes with no evidence 0 (464 before), over-billed minutes 3451 (3792), billable proposed on minutes not
+logged 2483 (2987), the right task at the right time 30.4% (35.0%). Most of that loss is the weighting: QA hub turns
+that run commands in clients' checkouts now read as those clients' work (a client's task on minutes logged as internal
+work, 1712 minutes, 1161 before); with each turn named as the skill names it, the rest of the same rules gave 33.9%.
+Shared rows were rare (45 minutes in the 52 days): most work in front had no settled class yet, or the client's
+agent was not attended.
 
 Pieces of one task in one sitting join, pieces under 10 minutes join a neighbour within 30 minutes in the same sitting
 (never one hours away, which would move it there, never across an entry already logged; a meeting someone attended
