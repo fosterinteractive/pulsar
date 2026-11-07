@@ -199,7 +199,7 @@ function ldNextCheck(list) {
 
 /* ---------- the review panel ---------- */
 function dayTitle(d) {
-  return new Intl.DateTimeFormat('en-GB', {weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC'}).format(new Date(d + 'T12:00:00Z'));
+  return new Intl.DateTimeFormat(DATE_LOCALE, {weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC'}).format(new Date(d + 'T12:00:00Z'));
 }
 function renderReview() {
   const el = $('#review');
@@ -353,7 +353,7 @@ function editorHTML(r) {
       ${r.serviceId ? '' : '<option value="">' + (svcs.length ? 'Pick a service' : r.taskId ? 'Loading or none on this date' : 'Pick a task first') + '</option>'}
       ${svcs.map(x => `<option value="${esc(x.id)}"${x.id === r.serviceId ? ' selected' : ''}>${esc(x.name)}${x.budget ? ' · ' + esc(x.budget) : ''}${x.billable ? ' · billable' : x.billable === false ? ' · not billable' : ''}</option>`).join('')}
     </select></label>
-    <div class="tl"><label class="field"><span>Start</span><input type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="5" placeholder="HH:MM" title="24-hour time, HH:MM" data-ld-start value="${hm(r.s)}"></label>
+    <div class="tl"><label class="field"><span>Start</span><input type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="9" placeholder="HH:MM" title="A time: 14:30, or 2:30 pm" data-ld-start value="${hm24(r.s)}"></label>
       <label class="field"><span>Minutes</span><input type="number" min="${CONFIG?.roundTo || 5}" max="720" step="${CONFIG?.roundTo || 5}" data-ld-min value="${r.minutes}"></label>
       <span class="endt">until ${hm(r.s + r.minutes)}</span></div>
     <label class="field"><span>Note</span><textarea rows="2" data-ld-note placeholder="What was done: the outcome, in a sentence">${esc(r.note || '')}</textarea></label>
@@ -378,7 +378,7 @@ function wireEditor(r) {
   }
   li.querySelector('[data-ld-start]').onchange = ev => {  // 24-hour HH:MM as everywhere in Pulsar (930, 9.30, 9:30 too)
     const t = startHHMM(ev.target.value), m = t && /^(\d\d):(\d\d)$/.exec(t);
-    if (!m) { ev.target.value = hm(r.s); ev.target.setAttribute('aria-invalid', 'true'); return; }
+    if (!m) { ev.target.value = hm24(r.s); ev.target.setAttribute('aria-invalid', 'true'); return; }
     ev.target.removeAttribute('aria-invalid'); ev.target.value = t;
     const s = +m[1] * 60 + +m[2]; r.s = s; r.e = Math.min(1440, s + r.minutes); r.minutes = r.e - r.s; ldChanged(r);
   };
@@ -574,7 +574,7 @@ ldDlg.addEventListener('click', ev => {
 });
 ldDlg.addEventListener('close', () => { if (LD.claudeLate) ldClaudePlan(...LD.claudeLate); });
 
-const rowBody = r => ({date: LD.date, start: hm(r.s), minutes: r.minutes, taskId: r.taskId, serviceId: r.serviceId,
+const rowBody = r => ({date: LD.date, start: hm24(r.s), minutes: r.minutes, taskId: r.taskId, serviceId: r.serviceId,
                        note: (r.note || '').trim(), run: LD.run, row: r.id});
 function newRun() {
   const hex = [...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('');

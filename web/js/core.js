@@ -90,7 +90,27 @@ function dur(m) {
   m = Math.round(m); if (m < 60) return `${m} min`;
   const h = Math.floor(m / 60), r = m % 60; return r ? `${h} h ${r} min` : `${h} h`;
 }
-function hm(m) { m = Math.round(m) % 1440; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; }
+/* a minute of the day as HH:MM, 24-hour: what the server reads and the time fields hold */
+function hm24(m) { m = Math.round(m) % 1440; return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`; }
+/* the same minute for the eye: 2:30 PM when the Mac shows 12-hour times (Pulsar's window gives PULSAR_APP.prefs), else
+   HH:MM. Never sent anywhere: requests and the time fields use hm24 */
+let CLOCK12 = !!window.PULSAR_APP?.prefs?.hour12;
+function hm(m) {
+  if (!CLOCK12) return hm24(m);
+  m = Math.round(m) % 1440;
+  const h = Math.floor(m / 60);
+  return `${(h + 11) % 12 + 1}:${String(m % 60).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+}
+/* dates in words in English, in the order of the Mac's region (Pulsar's window gives PULSAR_APP.prefs.locale: en-US
+   writes "Friday, November 6"); British English otherwise, and for a region whose language is not English, since the
+   rest of the page is in English */
+const DATE_LOCALE = (l => /^en(-|$)/i.test(l || '') ? l : 'en-GB')(window.PULSAR_APP?.prefs?.locale);
+/* "HH:MM" from the server (an overlap's start, a split's piece) for the eye */
+const hmText = t => /^\d\d:\d\d$/.test(t || '') ? hm(+t.slice(0, 2) * 60 + +t.slice(3)) : t;
+addEventListener('pulsar:prefs', ev => {
+  const on = !!ev.detail?.prefs?.hour12;
+  if (on !== CLOCK12) { CLOCK12 = on; if (typeof render === 'function') { if (typeof forgetHTML === 'function') document.querySelectorAll('.lane').forEach(forgetHTML); render(); } }
+});
 /* each project of the day gets its own hue, in name order, so the same day always looks the same */
 function assignHues(names) { projectHue = new Map([...new Set(names)].sort().map((n, i) => [n, HUES[i % HUES.length]])); }
 function color(name) { return `hsl(${projectHue.get(name) ?? 220} 45% 50%)`; }

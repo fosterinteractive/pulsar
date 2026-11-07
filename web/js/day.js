@@ -288,7 +288,7 @@ function render() {
 
   // header
   const noon = new Date(state.date + 'T12:00:00Z');  // a date it cannot read shows as written, instead of stopping the page
-  const label = isNaN(noon) ? String(state.date || '') : new Intl.DateTimeFormat('en-GB', {weekday: 'long', day: 'numeric',
+  const label = isNaN(noon) ? String(state.date || '') : new Intl.DateTimeFormat(DATE_LOCALE, {weekday: 'long', day: 'numeric',
     month: 'long', year: 'numeric', timeZone: 'UTC'}).format(noon);
   setText($('#dayname'), label.charAt(0).toUpperCase() + label.slice(1));
   $('#date').value = state.date;
@@ -301,7 +301,9 @@ function render() {
   const labelEvery = LABEL_EVERY[Z] || 30, ruleEvery = Z === 1 ? 5 : Z;
   for (let m = 0; m <= end; m += ruleEvery) {
     const hour = m % 60 === 0;
-    if (m % labelEvery === 0) axis += `<div class="${hour ? 'h' : ''} num" style="top:${m * ppm}px">${m ? hm(m) : ''}</div>`;
+    // 12-hour: "10 PM" on the hour, "10:30" between, so a label fits the axis on one line
+    const label = !CLOCK12 ? hm(m) : m % 60 ? hm(m).split(' ')[0] : `${(Math.floor(m / 60) + 11) % 12 + 1} ${m < 720 ? 'AM' : 'PM'}`;
+    if (m % labelEvery === 0) axis += `<div class="${hour ? 'h' : ''} num" style="top:${m * ppm}px">${m ? label : ''}</div>`;
     rules += `<div class="rule${hour ? ' h' : ''}" style="top:${m * ppm}px"></div>`;
   }
   setHTML($('#axis'), axis);
@@ -798,7 +800,7 @@ function markNotWork(a, b) {
 /* ---------- changing a logged entry: Edit (the log dialog), Delete (asked first), drag an edge (asked first) ---------- */
 /* the entry as the page shows it: the server changes nothing if Productive has it otherwise now. The start is the
    minute it falls in, as the server reads it. */
-const seenOf = x => ({start: x.s == null ? null : hm(Math.floor(x.s)), minutes: x.minutes, taskId: x.taskId || '',
+const seenOf = x => ({start: x.s == null ? null : hm24(Math.floor(x.s)), minutes: x.minutes, taskId: x.taskId || '',
                       serviceId: x.serviceId || '', note: x.note || ''});
 function editEntry(x) {
   openLog({date: state.date, start: x.s, minutes: x.minutes, note: x.note || '',
@@ -825,7 +827,7 @@ async function deleteEntry(x, btn) {
   refreshLogged();
 }
 async function undoDelete(x, date) {
-  const r = await postJSON('/api/log', {date, start: hm(Math.floor(x.s)), minutes: x.minutes, taskId: x.taskId,
+  const r = await postJSON('/api/log', {date, start: hm24(Math.floor(x.s)), minutes: x.minutes, taskId: x.taskId,
                                         serviceId: x.serviceId, note: x.note || ''});
   if (date === state.date) refreshLogged();
   if (r.error || r.overlap) return toast(r.error || 'Not logged again: the time is taken by another entry now.', true);
@@ -879,7 +881,7 @@ async function saveResize(btn, force) {
   const x = popEntry, start = btn.dataset.start === '' ? null : +btn.dataset.start, minutes = +btn.dataset.minutes;
   if (!x) return;
   btn.disabled = true;
-  const r = await postJSON('/api/entry/update', {id: x.id, date: state.date, ...(start == null ? {} : {start: hm(start)}),
+  const r = await postJSON('/api/entry/update', {id: x.id, date: state.date, ...(start == null ? {} : {start: hm24(start)}),
                                                  minutes, force, seen: seenOf(x)});
   if (r.overlap) { const at = btn.getBoundingClientRect(); askResize(x, start, minutes, {clientX: at.left, clientY: at.top - 60}, r.overlap); return; }
   closePop();
@@ -887,8 +889,8 @@ async function saveResize(btn, force) {
   const s = start ?? x.s, d = state.date;
   // Undo puts the start and the length back as they were (the server checks the entry is still as just changed)
   const undo = async () => {
-    const back = await postJSON('/api/entry/update', {id: x.id, date: d, ...(start == null ? {} : {start: hm(Math.floor(x.s))}),
-      minutes: x.minutes, seen: {...seenOf(x), start: hm(Math.floor(s)), minutes}});
+    const back = await postJSON('/api/entry/update', {id: x.id, date: d, ...(start == null ? {} : {start: hm24(Math.floor(x.s))}),
+      minutes: x.minutes, seen: {...seenOf(x), start: hm24(Math.floor(s)), minutes}});
     if (d === state.date) refreshLogged();
     if (back.overlap) return toast(`Not changed back: it would overlap ${back.overlap.map(o => `${o.start} ${o.project}`).join(', ')}.`, true);
     toast(back.error ? back.error : `Back to ${hm(x.s)}–${hm(x.e)}, ${dur(x.minutes)}.`, !!back.error);

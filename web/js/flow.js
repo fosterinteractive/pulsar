@@ -63,10 +63,18 @@ $('#log-skip').onclick = () => {
     + (more ? `, then ${more} more.` : ', the last one.');
 };
 
-/* ---------- the start: 24-hour HH:MM, as everywhere else in Pulsar ---------- */
-/* 09:30, and also 9:30, 930 or 9.30; '' when it is not a time of day */
+/* ---------- the start: HH:MM, 24-hour, as the server reads it ---------- */
+/* 09:30, and also 9:30, 930 or 9.30, and 12-hour times as a Mac set to them shows: 2:30 pm, 2:30PM, 2pm, 12:05 a.m.;
+   '' when it is not a time of day */
 function startHHMM(v) {
-  const m = String(v ?? '').trim().match(/^(\d{1,2})[:.h]?(\d{2})$/);
+  const t = String(v ?? '').trim().toLowerCase();
+  const p = t.match(/^(\d{1,2})(?:[:.h]?(\d{2}))?\s*([ap])\.?\s*m?\.?$/);
+  if (p) {
+    const h = +p[1], mm = p[2] ?? '00';
+    if (h < 1 || h > 12 || +mm > 59) return '';
+    return `${String(h % 12 + (p[3] === 'p' ? 12 : 0)).padStart(2, '0')}:${mm}`;
+  }
+  const m = t.match(/^(\d{1,2})[:.h]?(\d{2})$/);
   return m && +m[1] < 24 && +m[2] < 60 ? `${m[1].padStart(2, '0')}:${m[2]}` : '';
 }
 logForm.elements.start.addEventListener('blur', ev => {
@@ -109,7 +117,7 @@ function syncTimes(from, left) {
         : 'End is before Start. An entry cannot run past midnight: end it at 24:00 and log the rest on the next day.';
     }
   } else if (Number.isInteger(m) && m >= 1) {
-    if (m <= most) { const b = m === most ? 1440 : clockAfter(date, a, m); f.end.value = b >= 1440 ? '24:00' : hm(b); say = ''; }
+    if (m <= most) { const b = m === most ? 1440 : clockAfter(date, a, m); f.end.value = b >= 1440 ? '24:00' : hm24(b); say = ''; }
     else if (!left) { f.end.value = '24:00'; say = `An entry cannot run past midnight: from ${s}, ${dur(most)} at most.`; }
     else { setMinutes(most); f.end.value = '24:00'; timesCut = true;
       say = `An entry cannot run past midnight, so it now ends at 24:00: ${dur(most)}. Log the rest on the next day.`; }

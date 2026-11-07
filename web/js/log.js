@@ -199,7 +199,7 @@ function resetForce() {
 /* the time asked for, less what is logged in it (server.pieces_around): the main button logs those pieces, one entry
    each with the same task, service and note; Log anyway stays, second */
 let logSplit = null;  // {pieces: [{start, minutes}], tooShort}
-const pieceText = p => `${p.start}–${hm(+p.start.slice(0, 2) * 60 + +p.start.slice(3) + p.minutes)} (${dur(p.minutes)})`;
+const pieceText = p => `${hmText(p.start)}–${hm(+p.start.slice(0, 2) * 60 + +p.start.slice(3) + p.minutes)} (${dur(p.minutes)})`;
 const andList = xs => xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`;
 /* the entries in the way: each one, or from three on their span and projects */
 function overlapText(os) {
@@ -252,7 +252,7 @@ async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = 
     if (free > start && minutes - (free - start) >= 1) { minutes -= free - start; start = free; }
     minutes = roundMinutes(date, start, minutes);
   }
-  f.date.value = date; f.start.value = hm(start); f.minutes.value = minutes; f.note.value = note || '';
+  f.date.value = date; f.start.value = hm24(start); f.minutes.value = minutes; f.note.value = note || '';
   if (edit) edit.orig = {start: f.start.value, minutes, note: f.note.value};
   logDrafted = drafted?.note && drafted.note === note ? drafted : null;
   logFilled = !edit && !logDrafted && !!f.note.value.trim();
@@ -392,7 +392,7 @@ logForm.addEventListener('submit', async ev => {
     return setLogMsg('Minutes are a whole number from 1 to 1440.', true);
   }
   f.minutes.removeAttribute('aria-invalid');
-  if (!startHHMM(f.start.value)) { f.start.setAttribute('aria-invalid', 'true'); f.start.focus(); return setLogMsg('Write the start as HH:MM, 24-hour: 09:30 or 14:05.', true); }
+  if (!startHHMM(f.start.value)) { f.start.setAttribute('aria-invalid', 'true'); f.start.focus(); return setLogMsg('Write the start as a time: 09:30, 14:05 or 2:05 pm.', true); }
   f.start.value = startHHMM(f.start.value);
   const btn = $('#log-save'), btns = [btn, $('#log-next'), $('#log-anyway')], had = document.activeElement;
   btns.forEach(b => { b.disabled = true; }); setLogMsg(logEdit ? 'Checking the day, then saving…' : 'Checking the day, then logging…');

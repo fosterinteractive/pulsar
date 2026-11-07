@@ -1347,6 +1347,11 @@ question) and cannot tell when inside it the work happened.
   accent colour (`--mac-accent`). In a browser none of this shows. Everywhere: a Delete asks with Cancel first and a
   red Delete; the logo pulses only while the day is being read (`html.loading`); ↻ reloads without the warp;
   `prefers-contrast: more` strengthens secondary text and lines; segmented controls say which is on (`aria-pressed`).
+  The Mac's own formats, from `PULSAR_APP.prefs`: 12-hour times on screen (`hm` in `core.js`; the axis reads "10 PM"
+  and "10:30"), while every request and every time field keeps 24-hour HH:MM (`hm24`), and the fields also take
+  "2:30 pm" (`startHHMM`); dates in English in the order of the Mac's region (`DATE_LOCALE`: en-US writes "Friday,
+  November 6"; British English for a region whose language is not English); the date picker's weeks from the Mac's
+  first weekday (`datepick.js`). Times the server writes into messages (an overlap's start) stay 24-hour.
 - **First run**: when Productive is not connected (or does not know who you are), no tracker answers, or today has
   no activity yet, a short list at the top of the board says what is missing and gives the one action that fixes
   it (Connect Productive, Get or Open ActivityWatch).

@@ -239,9 +239,9 @@
       <div class="row3 times">
         <label class="field"><span>Date</span><input name="date" type="date" required></label>
         <label class="field"><span>Start</span><input name="start" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
-          placeholder="HH:MM" maxlength="5" required title="24-hour time, HH:MM"></label>
+          placeholder="HH:MM" maxlength="9" required title="A time: 14:30, or 2:30 pm"></label>
         <label class="field"><span>End</span><input name="end" type="text" inputmode="numeric" autocomplete="off" spellcheck="false"
-          placeholder="HH:MM" maxlength="5" required title="24-hour time, HH:MM; 24:00 is midnight" aria-describedby="log-times"></label>
+          placeholder="HH:MM" maxlength="9" required title="A time: 15:30, or 3:30 pm; 24:00 is midnight" aria-describedby="log-times"></label>
         <label class="field"><span>Minutes</span><input name="minutes" type="number" min="1" max="1440" required></label>
       </div>
       <p class="hint warnish" id="log-times" aria-live="polite" hidden></p>
