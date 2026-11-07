@@ -879,6 +879,29 @@ class DayplanAPITest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 server.api_dayplan({"date": DATE, "source": "x"})
 
+    def test_kept_picks_steer_the_plan_only_while_the_claude_code_switch_is_on(self):
+        """Ask Claude's answers stay on disk for 60 days; with the switch off they must not pick tasks (review 4, A6)."""
+        from pulsar import askclaude
+        picks = {"540|acme": {"tasks": [{"taskId": "7"}], "why": "w", "note": ""}}
+        for on in (False, True):
+            seen = {}
+            s = {"timezone": "UTC", "person_id": "1", "rules": [], "person_name": "", "ask_claude": on}
+            with mock.patch.object(server, "current_settings", lambda: s), \
+                    mock.patch.object(server.config, "tz", lambda s: timezone.utc), \
+                    mock.patch.object(server, "api_activity", lambda q: {"items": [], "away": []}), \
+                    mock.patch.object(server, "productive_rows", lambda d0, d1, s: ([], None, "token", False)), \
+                    mock.patch.object(server, "history_rows", lambda d, s, days=28: ([], None)), \
+                    mock.patch.object(server, "api_repeats", lambda q: {"repeats": []}), \
+                    mock.patch.object(server, "api_suggest", lambda q: {"recent": [], "assigned": []}), \
+                    mock.patch.object(dayplan.config, "tz", lambda s: timezone.utc), \
+                    mock.patch.object(askclaude, "latest", lambda d: {"picks": picks}), \
+                    mock.patch.object(dayplan, "plan", lambda day, ctx, opts, **kw: seen.update(day) or {"entries": []}), \
+                    mock.patch("pulsar.likely.enabled", lambda s: False), \
+                    mock.patch("pulsar.calendar.day", lambda d, s, fresh=False: {"events": [], "connected": False}), \
+                    mock.patch("pulsar.calendar.history", lambda f, n, s: []):
+                dayplan.gather(DATE)
+            self.assertEqual(seen["picks"], picks if on else {}, on)
+
     def test_no_proposal_when_the_days_entries_cannot_be_read(self):
         s = {"timezone": "UTC", "person_id": "1", "rules": [], "person_name": ""}
         with mock.patch.object(server, "current_settings", lambda: s), \

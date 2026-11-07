@@ -207,8 +207,12 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   $0.75 (Sonnet) or $2 (Opus). When Claude answers with no picks, Pulsar asks once more, so one Ask Claude click may
   cost up to twice that; the cost shown is the last run's. **Log the day** runs Ask Claude by itself when the switch
   is on and some entries are unsure. A day with Sonnet has cost about $0.10 to $0.25. A note may cost at most $0.10 with Haiku
-  ($0.30 with Sonnet, $0.80 with Opus) and usually costs under half a cent. Answers are kept only while Pulsar runs: asking again after Pulsar restarted, or
+  ($0.30 with Sonnet, $0.80 with Opus) and usually costs under half a cent. Asking again after Pulsar restarted, or
   after the day's blocks changed, asks Claude again and costs again.
+
+  **What is kept.** Ask Claude's last answer for each day (the tasks it picked, its reasons and its drafted notes,
+  which come from your sessions' text) is kept on this Mac for 60 days, in `~/.cache/pulsar/claude-picks/`, so the
+  day shows it again after a restart. With the switch off, neither the page nor Log the day uses it.
 
   Switching it off takes back everything it added, and nothing else.
 - **The daily meeting, ready to log.** An entry you log at the same time on most days (a daily scrum) is noticed from

@@ -8,8 +8,9 @@ tools that change anything are refused, and no other tool is allowed. It is star
 none of the person's settings (--strict-mcp-config, --setting-sources ""): no other MCP server, no tool their settings
 allow, no hook that would receive the prompt, no CLAUDE.md. Auto memory is not a setting, so it is switched off in the
 environment (CLAUDE_CODE_DISABLE_AUTO_MEMORY): without it, Claude Code 2.1.301 sent the MEMORY.md of the folder it
-runs in (checked against a stand-in for Anthropic's API). Nothing is written anywhere; the session is not kept (so it
-never shows up in the Likely column itself).
+runs in (checked against a stand-in for Anthropic's API). Claude's session is not kept (so it never shows up in the
+Likely column itself); Pulsar keeps each day's last answer (task ids, reasons, drafted notes) on this Mac for KEEP_DAYS
+days (keep, below), used only while the Claude Code switch is on.
 
 On one person's days the picks read right (an estimate to the estimations task, a database upgrade to the client's
 "Database Upgrade" task, a personal project to none), for about $0.13 and 15 seconds a day.

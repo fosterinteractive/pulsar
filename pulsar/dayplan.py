@@ -952,7 +952,8 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
     days = {d: learning._stored(d) for d in learning._days_before(date)}
     ctx = learn(date, [] if hproblem else history, {d: r for d, r in days.items() if r}, t0_of,
                 person=str(s.get("person_name") or ""))
-    answer = askclaude.latest(date)
+    # Ask Claude's kept answer (askclaude.keep: on disk, 60 days) steers the plan only while the Claude Code switch is on
+    answer = askclaude.latest(date) if s.get("ask_claude") else None
     day = {"items": act.get("items") or [], "away": act.get("away") or [], "rows": likely_rows, "logged": logged,
            "meetings": meetings, "repeats": got["repeats"].get("repeats") or [], "calls": calls,
            "rules": s.get("rules") or [], "assigned": got["assigned"], "picks": (answer or {}).get("picks") or {},

@@ -981,8 +981,12 @@ not a verdict.
   default; 5.7); each name is Claude Code's alias for the latest model of that kind. About 15 to 60 seconds and $0.10 to
   $0.25 of the person's usage per day with Sonnet. `--max-budget-usd` caps each run (not each day) at $0.25 for
   Haiku, $0.75 for Sonnet and $2 for Opus; an empty answer runs Claude once more, so one ask may cost twice the cap,
-  and the cost shown is the second run's. Log the day asks by itself when the switch is on (5.4). Answers are kept in memory only (the last 30): asking again after a
-  restart, or once the day's rows changed (a new row, more commits), runs Claude again.
+  and the cost shown is the second run's. Log the day asks by itself when the switch is on (5.4). Answers are kept in
+  memory (the last 30), and each day's last answer also on disk (`askclaude.keep`: `~/.cache/pulsar/claude-picks/`,
+  owner-only, 60 days: task ids, reasons and the drafted notes, which are made from session text), so the day shows
+  its picks again after a restart and Log the day can use them; with the switch off, neither the page nor Log the
+  day reads them. Asking again after a restart, or once the day's rows changed (a new row, more commits), runs Claude
+  again.
   **What goes to Anthropic** is exactly the prompt: for each row of ten minutes or more its time (by the clock),
   repository, up to 3 session titles, up to 15 steps (typed 400, reply 900 characters), up to 10 commit subjects and
   up to 5 of the person's earlier notes; and up to 150 tasks logged to in the last 30 days (id, title, project,
