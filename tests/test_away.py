@@ -138,5 +138,17 @@ class ShortPauseIsWorkTest(unittest.TestCase):
                                                    trackers.classifier([]))["aw"]), 2)
 
 
+
+class OpenAwayTest(unittest.TestCase):
+    """server.away with `until` (today, now): a pause still going on shows once it is "Away after" long."""
+
+    def test_a_pause_until_now_shows(self):
+        from pulsar import server
+        items = [{"s": 600, "e": 660}]
+        got = server.away(items, 15, until=690)
+        self.assertEqual(got, [{"s": 660, "e": 690, "off": False, "open": True}])
+        self.assertEqual(server.away(items, 15, until=670), [])  # not long enough yet
+        self.assertEqual(server.away(items, 15), [])             # another day: only between activities
+
 if __name__ == "__main__":
     unittest.main()

@@ -751,13 +751,14 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
                 statusItem?.button?.imagePosition = .imageLeading
             }
         }
-        let hm = { (m: Int) in String(format: "%d:%02d", m / 60, m % 60) }
+        let hours = { (m: Int) in String(format: "%.1f", Double(m) / 60) }   // decimal hours, as timesheets count them
         let words = { (m: Int) in m >= 60 ? "\(m / 60) h" + (m % 60 > 0 ? " \(m % 60) min" : "") : "\(m) min" }
         statusItem?.button?.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-        statusItem?.button?.title = " \(hm(t.active)) · \(hm(t.logged))"
-        statusItem?.button?.toolTip = "Today: \(words(t.active)) active, \(words(t.logged)) logged"
+        statusItem?.button?.title = " \(hours(t.active))h  ✓ \(hours(t.logged))h"   // the clock: active; the tick: logged
+        statusItem?.button?.toolTip = "Today: \(hours(t.active)) h active (the clock), \(hours(t.logged)) h logged (the tick)"
         let menu = NSMenu()
-        for line in ["Active today: \(words(t.active))", "Logged: \(words(t.logged))", "Not logged: \(words(t.notLogged))"] {
+        for line in ["Active today: \(hours(t.active)) h (\(words(t.active)))", "Logged: \(hours(t.logged)) h (\(words(t.logged)))",
+                     "Not logged: \(hours(t.notLogged)) h (\(words(t.notLogged)))"] {
             let it = NSMenuItem(title: line, action: nil, keyEquivalent: "")
             it.isEnabled = false
             menu.addItem(it)

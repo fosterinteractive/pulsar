@@ -393,7 +393,9 @@ def api_activity(q: dict) -> dict:
     tz = config.tz(s)
     # away time from elapsed minutes; then, on a day the clocks change, everything by the clock (each piece its real length)
     items = clock_spans(found[source], t0, t1, tz)
-    gaps = clock_spans(away(found[source], config.away_after(s)), t0, t1, tz, 2)
+    now = time.time()
+    until = (min(now, t1) - t0) / 60 if t0 <= now < t1 else None  # today: a pause that is still going on shows too
+    gaps = clock_spans(away(found[source], config.away_after(s), until), t0, t1, tz, 2)
     for name, problem in list(trackers.PROBLEMS.items()):
         logbook.record(f"tracker {name}", problem, kind="warning")
     return {"source": source, "minutes": minutes, "items": items, "problems": dict(trackers.PROBLEMS), "away": gaps}
@@ -402,16 +404,20 @@ def api_activity(q: dict) -> dict:
 OFF_MIN = 180   # from this long it is time off (a night, an afternoon off), not a break: shown, never added up
 
 
-def away(items: list, least: float | None = None) -> list:
+def away(items: list, least: float | None = None, until: float | None = None) -> list:
     """The stretches between the day's first and last activity when nothing was on screen for at least `least`
     minutes, Settings' "Away after" (config.away_after) when not given: ActivityWatch's AFK time, MemTime's offline
-    time, a computer asleep. [{s, e, off}] in minutes; off is a stretch of OFF_MIN or more."""
+    time, a computer asleep. [{s, e, off}] in minutes; off is a stretch of OFF_MIN or more. `until` (today: the
+    minute it is now): away since the last activity counts too once it is that long, marked open, so a pause shows
+    while it lasts and not only once the next activity closes it."""
     least = config.away_after() if least is None else least
     out, end = [], None
     for it in sorted(items, key=lambda x: x["s"]):
         if end is not None and it["s"] - end >= least:
             out.append({"s": round(end, 2), "e": round(it["s"], 2), "off": it["s"] - end >= OFF_MIN})
         end = it["e"] if end is None else max(end, it["e"])
+    if until is not None and end is not None and until - end >= least:
+        out.append({"s": round(end, 2), "e": round(until, 2), "off": until - end >= OFF_MIN, "open": True})
     return out
 
 

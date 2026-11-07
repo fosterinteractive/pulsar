@@ -8,6 +8,8 @@ What each Pulsar release changed, newest first.
 
 ## Unreleased
 - The menu bar shows today's active and logged time ("6:12 · 4:48"), with a menu to open Pulsar, log the day or add an entry; on by default, in Settings > This Mac. It needs no permission, unlike the Dock badge, which macOS hides for an app not signed by Apple.
+- The menu bar counts in decimal hours with marks: the clock for active time, ✓ for logged ("6.2h  ✓ 4.8h").
+- A pause still going on shows as away once it is Away after long, not only after the next activity.
 
 ## 1.6.2 (2026-11-07)
 - The warp plays on ↻ (and ⌘R) again, as before 1.6.0.
