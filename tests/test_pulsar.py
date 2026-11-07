@@ -2528,7 +2528,12 @@ class GuardTest(unittest.TestCase):
         return {"X-Pulsar-Session": json_load(body)["token"]}
 
     def test_without_a_session_no_data_and_no_changes(self):
-        self.assertEqual(self.ask("/api/config")[0], 401)
+        status, _, body = self.ask("/api/config")
+        self.assertEqual(status, 401)
+        # the answer a program gets never tells it how to sign itself in (review 4, A1)
+        self.assertNotIn(b"signin-url", body.replace(b"_", b"-"))
+        self.assertNotIn(b"pulsar.py", body)
+        self.assertNotIn(b"signin-url", self.ask("/")[2])
         self.assertEqual(self.ask("/icon/com.google.Chrome")[0], 401)
         self.assertEqual(self.ask("/api/quit", "POST", {"X-Pulsar": "1", "Content-Type": "application/json"}, b"{}")[0], 401)
         self.assertEqual(self.ask("/api/version")[0], 200)
