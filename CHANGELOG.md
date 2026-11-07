@@ -6,7 +6,7 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
-## Unreleased
+## 1.6.2 (2026-11-07)
 - The warp plays on ↻ (and ⌘R) again, as before 1.6.0.
 - The Dock badge asks macOS once for permission to badge the icon: recent macOS shows it only then (Reinstall Pulsar to get it).
 

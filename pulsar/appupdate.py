@@ -49,7 +49,7 @@ DEFAULT_APP = "/Applications/Pulsar.app"
 # The oldest app (window and launcher) this code wants. release.sh writes it into latest.json as app.min; raise it in
 # a release whose window or launcher changed in a way people should have, and the page offers "Reinstall Pulsar" to
 # every window older than it.
-MIN_APP = "1.6.0"
+MIN_APP = "1.6.2"
 STATE = "app-reinstall.json"   # in updater.ROOT: the swap in progress, or the last one
 PREVIOUS = ".Pulsar-previous"  # beside the app: the old app, kept until the new one has started
 WORK = ".pulsar-reinstall-"    # beside the app: a download being checked
