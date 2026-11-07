@@ -33,7 +33,7 @@ function fillSettings(c) {
   f.ask_claude.disabled = !c.likely.available || !c.likely.claudeFound;
   paintUses(c.claude?.uses || [], f.ask_claude.disabled);
   f.claude_ask_productive.checked = !!c.likely.askProductive;
-  f.claude_ask_productive.disabled = f.ask_claude.disabled;
+  paintAskProductive();
   paintLink(c.likely);
   $('#remove-token').hidden = !p.tokenSaved;
   paintUpdate(c.update);
@@ -147,6 +147,15 @@ function openSettings(tab) {
   }
   dlg.showModal();
 }
+
+/* "Ask before any Claude Code session changes Productive" adds its rules only with the switch on (claudelink.py):
+   off, the box cannot be ticked, and one ticked earlier says it waits for the switch */
+function paintAskProductive() {
+  const f = form.elements, off = f.ask_claude.disabled || !f.ask_claude.checked;
+  f.claude_ask_productive.disabled = off;
+  $('#claude-ask-off').hidden = !(off && f.claude_ask_productive.checked);
+}
+form.elements.ask_claude.addEventListener('change', paintAskProductive);
 
 /* the one Claude Code switch: where Pulsar stands in Claude Code (claudelink.py) */
 function paintLink(l) {
