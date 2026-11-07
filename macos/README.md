@@ -108,13 +108,19 @@ Pulsar.app, and the app's launcher checks it with its own copy of that file befo
    sign this release with the new key: the version people have does not list it yet.)
 4. From the next release on, `macos/release.sh …` signs with the Touch ID key: a fingerprint for each signature
    (the update and the app's code), in a dialog that names what is signed and the start of its SHA-256. The terminal
-   prints the full SHA-256 first: compare it before you touch. That first release also puts the Touch ID key's public
+   prints the full SHA-256 first: compare it before you touch. **But sign `latest.json` with the old key for a while
+   longer** (`PULSAR_UPDATE_KEY=~/.config/pulsar-release/update-signing-key.pem macos/release.sh …`): a copy older
+   than step 3's release knows only the old key, and every copy reads `latest.json` from the newest release only, so
+   an update signed with the new key alone leaves those copies where they are ("The latest release is not signed with
+   the release key"). 1.5.2 did that; 1.5.3 is the bridge. That first release also puts the Touch ID key's public
    half in README.md's install line (the `printf` lines), since Pulsar.zip is then signed with it: `release.sh`
    refuses a Pulsar.zip the line's key does not verify.
 5. Once a release signed with the Touch ID key is out, drop the old main key from `PUBLIC_KEYS` in a release and
    delete the `.pem` file (and any copy of it).
 
-Where this stands: steps 1 and 2 done on 2026-11-07, step 3 is 1.5.1; 4 and 5 are the next releases. Keep the reserve key: a new Mac, or a wiped one, cannot use the
+Where this stands (2026-11-07): steps 1 to 3 done (1.5.1). Step 4: 1.5.2 signed everything with the Touch ID key,
+so copies older than 1.5.1 ignored it; 1.5.3 signs `latest.json` with the old key again, the rest with Touch ID.
+Step 5 waits until the copies people have are on 1.5.1 or later. Keep the reserve key: a new Mac, or a wiped one, cannot use the
    Touch ID key, and the reserve is then the only way to move on.
 
 Any enrolled finger signs, so enrolling another (which needs the Mac's password) does not lose the key. What it does

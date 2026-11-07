@@ -166,7 +166,12 @@ if [ -z "$KEY" ]; then
   [ -f "$KEY" ] || KEY="$HOME/.config/pulsar-release/update-signing-key.pem"
 fi
 [ -f "$KEY" ] || die "the release signing key is missing: $KEY (see macos/README.md, 'The release keys')"
-"$ROOT/macos/sign.sh" "$KEY" "$OUT/latest.json" "$OUT/latest.json.sig" "Pulsar $VERSION, the update"
+# A bridge while the key moves: copies older than the release that listed a new key know only the old one, and they
+# read latest.json from the newest release only. So for a while latest.json is signed with the old key
+# (PULSAR_UPDATE_KEY), the app's code and Pulsar.zip with the new one (macos/README.md, "Moving to a Touch ID key").
+UPDATE_KEY="${PULSAR_UPDATE_KEY:-$KEY}"
+[ -f "$UPDATE_KEY" ] || die "the key for latest.json is missing: $UPDATE_KEY"
+"$ROOT/macos/sign.sh" "$UPDATE_KEY" "$OUT/latest.json" "$OUT/latest.json.sig" "Pulsar $VERSION, the update"
 # The signature must pass the very check installed copies run, against PUBLIC_KEYS as Python reads them: a key that
 # is not listed, or listed in a form openssl cannot load, is caught here and not on everyone's Mac.
 python3 -E -s - "$ROOT" "$OUT/latest.json" "$OUT/latest.json.sig" <<'PY' || die "installed copies would refuse this release: its key is not one of PUBLIC_KEYS in pulsar/release_sig.py (or one of them cannot be read)"

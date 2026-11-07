@@ -6,6 +6,9 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## 1.5.3 (2026-11-07)
+- A bridge release: copies older than 1.5.1, which ignored 1.5.2 ("not signed with the release key"), update to this one and from then on trust the Touch ID key too. No other change.
+
 ## 1.5.2 (2026-11-07)
 - Log the day: the confirm step shows every entry again, ticking a row keeps the list where it was, the Likely column stays beside it, and a row can create its task.
 - Signed with the Touch ID release key; the install line checks Pulsar.zip with it.
