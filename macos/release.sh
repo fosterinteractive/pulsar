@@ -4,14 +4,16 @@
 #   macos/release.sh 1.1.0 --notes "Adds the week view."             build only, then print the next steps
 #   macos/release.sh 1.1.0 --notes "Adds the week view." --publish   build, commit the version, push, release
 #
-# Refuses a git tree with changes, a version that is not newer than pulsar/__init__.py, a version with no entry
-# in CHANGELOG.md, and failing tests.
+# Refuses anything but main exactly as it is on GitHub (HEAD must be origin/main, the tree clean, checked again right
+# before the first signature), a version that is not newer than pulsar/__init__.py, a version with no entry in
+# CHANGELOG.md, and failing tests.
 # Then it sets __version__ and builds, in dist/:
 #   release/pulsar-<version>.zip   the code, one top folder pulsar-<version>/ (what the in-app updater downloads)
 #   release/latest.json            {version, url, sha256, notes, published, expires, versions}, signed (.sig)
 #   Pulsar.zip                     the whole app, for new installs, its code signed too (build_app.sh)
-# With --publish it shows what it will do, asks, commits the version change, pushes the branch and runs
-# gh release create v<version> with the four files on fosterinteractive/pulsar.
+# With --publish it shows what it will do, asks, commits the version change, pushes it to main and runs
+# gh release create v<version> with the four files (the code zip, latest.json, its .sig, Pulsar.zip) on
+# fosterinteractive/pulsar.
 
 set -euo pipefail
 
@@ -21,13 +23,25 @@ cd "$ROOT"
 
 die() { echo "release.sh: $*" >&2; exit 1; }
 
+# Only main as it is on GitHub is signed, so what protects main there (reviews, no force push) also decides what the
+# release key signs: never another branch, a commit not pushed, or a change in the tree. $1: the one line of
+# `git status --porcelain` allowed (the version this script sets), or nothing.
+on_main() {
+  git fetch -q origin main || die "could not fetch origin/main to compare with; nothing was signed"
+  [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] ||
+    die "HEAD ($(git rev-parse --short HEAD)) is not origin/main ($(git rev-parse --short origin/main)): release from main as it is on GitHub; nothing was signed"
+  local changed
+  changed="$(git status --porcelain --untracked-files=all | grep -v -x -F -e "${1:-}" || true)"
+  [ -z "$changed" ] || { echo "$changed" >&2; die "the git tree has changes: commit or stash them first; nothing was signed"; }
+}
+
 VERSION="" NOTES="" PUBLISH=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --publish) PUBLISH=1 ;;
     --notes) [ $# -ge 2 ] || die "--notes needs a text"; NOTES="$2"; shift ;;
     --notes=*) NOTES="${1#--notes=}" ;;
-    -h|--help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) [ -z "$VERSION" ] || die "one version only"; VERSION="$1" ;;
   esac
@@ -38,7 +52,7 @@ done
 
 # --- checks --------------------------------------------------------------------------------------------
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || die "not a git repository"
-[ -z "$(git status --porcelain)" ] || { git status --short >&2; die "the git tree has changes: commit or stash them first"; }
+on_main
 
 CURRENT="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' pulsar/__init__.py)"
 [ -n "$CURRENT" ] || die "no __version__ in pulsar/__init__.py"
@@ -138,6 +152,9 @@ with open(path, "w", encoding="utf-8") as fh:
     fh.write("\n")
 PY
 
+# Nothing may have moved since the checks: main on GitHub, and the tree with only the version changed.
+on_main " M pulsar/__init__.py"
+
 # Sign latest.json with the release key. Installed copies verify this signature against PUBLIC_KEYS in
 # pulsar/release_sig.py and ignore anything else, so a release can only come from whoever holds this key.
 KEY="${PULSAR_SIGNING_KEY:-$HOME/.config/pulsar-release/update-signing-key.pem}"
@@ -167,13 +184,12 @@ echo "  sha256 $SHA"
 
 GH=(gh release create "v$VERSION" "$ZIP" "$OUT/latest.json" "$OUT/latest.json.sig" dist/Pulsar.zip --repo "$REPO"
     --title "$TITLE" --notes "$NOTES")
-BRANCH="$(git rev-parse --abbrev-ref HEAD)"
 
 if [ "$PUBLISH" != 1 ]; then
   echo
   echo "Nothing is published. pulsar/__init__.py now says $VERSION (not committed)."
   echo "To publish this build by hand:"
-  echo "  git commit -m \"Pulsar $VERSION\" pulsar/__init__.py && git push origin $BRANCH"
+  echo "  git commit -m \"Pulsar $VERSION\" pulsar/__init__.py && git push origin HEAD:main"
   echo "  gh release create v$VERSION $ZIP $OUT/latest.json $OUT/latest.json.sig dist/Pulsar.zip --repo $REPO \\"
   echo "    --title \"$TITLE\" --notes \"${NOTES//\"/\\\"}\" --target <the commit you just pushed>"
   echo "Or undo the version change (git checkout pulsar/__init__.py) and run this again with --publish."
@@ -183,16 +199,16 @@ fi
 # --- publish -------------------------------------------------------------------------------------------
 echo
 echo "This will:"
-echo "  1. commit pulsar/__init__.py as \"Pulsar $VERSION\" on $BRANCH"
-echo "  2. push $BRANCH to origin"
+echo "  1. commit pulsar/__init__.py as \"Pulsar $VERSION\" on top of origin/main"
+echo "  2. push it to main on origin"
 echo "  3. create the public release v$VERSION on $REPO at that commit, with:"
-echo "       pulsar-$VERSION.zip, latest.json, Pulsar.zip"
+echo "       pulsar-$VERSION.zip, latest.json, latest.json.sig, Pulsar.zip"
 echo "     Every installed Pulsar then updates itself to $VERSION."
 [ -t 0 ] || die "publishing asks for confirmation: run it in a terminal"
 read -r -p "Publish Pulsar $VERSION? [y/N] " answer
 [ "$answer" = "y" ] || [ "$answer" = "Y" ] || die "not published; the build is in dist/ and the version change is not committed"
 
 git commit -m "Pulsar $VERSION" -- pulsar/__init__.py
-git push origin "$BRANCH"
+git push origin HEAD:main
 "${GH[@]}" --target "$(git rev-parse HEAD)"
 echo "Published: https://github.com/$REPO/releases/tag/v$VERSION"

@@ -26,11 +26,14 @@ macos/release.sh 1.1.0 --notes "Adds the week view. Fixes the totals on days wit
 Run it from a clean `main` with the changes you want to ship committed, and their entry in `CHANGELOG.md`
 (`## 1.1.0 (2026-11-20)` and a `- ` line, a few words per change). The Google sign-in client for Google Calendar
 is not in git: keep the JSON Google Cloud gave for the "Pulsar" Desktop client at `~/.config/pulsar/google_client.json`
-(or point `PULSAR_GOOGLE_CLIENT` at it); the release and the app carry it in place of the repo's placeholder. It refuses a git tree with changes, a version
+(or point `PULSAR_GOOGLE_CLIENT` at it); the release and the app carry it in place of the repo's placeholder. It
+signs only `main` exactly as it is on GitHub: it refuses when HEAD is not `origin/main` (another branch, a commit not
+pushed) or the tree has changes, at the start and again right before the first signature, so what protects `main`
+on GitHub also decides what the release key signs. It refuses as well a version
 that is not newer than `__version__` in `pulsar/__init__.py`, a version with no `CHANGELOG.md` entry, and failing
 tests. Then it sets the version, builds into `dist/`, shows what it will do and asks before it:
 
-1. commits the version change as "Pulsar 1.1.0" and pushes the branch;
+1. commits the version change as "Pulsar 1.1.0" on top of `origin/main` and pushes it to `main`;
 2. creates the public release `v1.1.0` on `fosterinteractive/pulsar` at that commit, with four files:
    - `pulsar-1.1.0.zip`: the code git tracks, in one folder `pulsar-1.1.0/` (what installed copies download);
    - `latest.json`: version, download address, SHA-256 of the zip, the notes, the date and an expiry date 60 days

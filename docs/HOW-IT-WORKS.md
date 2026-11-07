@@ -1324,8 +1324,10 @@ sequenceDiagram
 
 ### Releasing (`macos/release.sh`)
 
-1. It refuses a git tree with changes, a version that is not newer, a version with no `CHANGELOG.md` entry, and
-   failing tests.
+1. It signs only `main` as it is on GitHub: HEAD must be `origin/main` (fetched) and the tree clean, at the start
+   and again right before the first signature (where only the version it set may differ), so what protects `main` on
+   GitHub also decides what the release key signs. It refuses a version that is not newer, a version with no
+   `CHANGELOG.md` entry, and failing tests.
 2. It sets `__version__`, zips the tracked files (`pulsar.py`, `README.md`, `CHANGELOG.md`, `pulsar/`, `web/`), with
    the real Google client in place of the placeholder.
 3. It writes `latest.json` with every released version (from the git tags) and `expires` 60 days ahead, signs it,
