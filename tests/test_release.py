@@ -56,6 +56,58 @@ def write_code(folder, version, extra=None):
 
 
 @unittest.skipUnless(os.path.exists(OPENSSL), "needs openssl")
+class SigningTest(unittest.TestCase):
+    """macos/sign.sh signs as installed copies check, and release.sh's question "would the version people have
+    installed accept this signature?" (release_sig signed-for) reads the keys of an earlier version's file."""
+
+    def setUp(self):
+        self.dir = tempfile.mkdtemp(dir=_SCRATCH)
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.data = os.path.join(self.dir, "latest.json")
+        with open(self.data, "w", encoding="utf-8") as fh:
+            fh.write('{"version": "9.9.9"}\n')
+
+    def keys_file(self, *pems):
+        path = os.path.join(self.dir, "release_sig_then.py")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("PUBLIC_KEYS = (\n" + "".join(f'    """{p}""",\n' for p in pems) + ")\n")
+        return path
+
+    def signed_for(self, keys, sig):
+        return subprocess.run([sys.executable, "-I", "-B", os.path.join(REPO, "pulsar", "release_sig.py"), "signed-for",
+                               keys, self.data, sig], capture_output=True).returncode
+
+    def test_a_key_file_signs_through_sign_sh(self):
+        key, pub = make_key(self.dir, "main")
+        sig = os.path.join(self.dir, "latest.json.sig")
+        subprocess.run([os.path.join(REPO, "macos", "sign.sh"), key, self.data, sig], check=True, capture_output=True)
+        with open(self.data, "rb") as fh, open(sig, "rb") as sh:
+            self.assertTrue(release_sig.verify(fh.read(), sh.read(), pub))
+
+    def test_only_a_key_the_earlier_version_lists_passes(self):
+        old, old_pub = make_key(self.dir, "old")
+        new, new_pub = make_key(self.dir, "new")
+        sig = os.path.join(self.dir, "sig")
+        with open(self.data, "rb") as fh:
+            data = fh.read()
+        with open(sig, "wb") as fh:
+            fh.write(sign(new, data))
+        self.assertEqual(self.signed_for(self.keys_file(old_pub), sig), 1)  # signed too early with the new key
+        self.assertEqual(self.signed_for(self.keys_file(old_pub, new_pub), sig), 0)  # once a release listed it
+        with open(sig, "wb") as fh:
+            fh.write(sign(old, data))
+        self.assertEqual(self.signed_for(self.keys_file(old_pub), sig), 0)  # the move: still the old key
+        self.assertEqual(self.signed_for(self.keys_file(), sig), 1)  # a file with no keys accepts nothing
+
+    def test_keys_in_reads_this_version_and_the_old_place(self):
+        with open(release_sig.__file__, encoding="utf-8") as fh:
+            self.assertEqual(release_sig.keys_in(fh.read()), list(release_sig.PUBLIC_KEYS))
+        with open(updater.__file__, encoding="utf-8") as fh:  # before 1.5 the keys were written in updater.py
+            text = fh.read()
+        self.assertEqual(len(release_sig.keys_in(text)), text.count("-----BEGIN PUBLIC KEY-----"))
+
+
+@unittest.skipUnless(os.path.exists(OPENSSL), "needs openssl")
 class BundleSignatureTest(unittest.TestCase):
     """release_sig.check_bundle: the code is exactly what a release signed, for that version, with a listed key."""
 

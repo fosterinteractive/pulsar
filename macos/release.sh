@@ -140,9 +140,14 @@ PY
 
 # Sign latest.json with the release key. Installed copies verify this signature against PUBLIC_KEYS in
 # pulsar/release_sig.py and ignore anything else, so a release can only come from whoever holds this key.
-KEY="${PULSAR_SIGNING_KEY:-$HOME/.config/pulsar-release/update-signing-key.pem}"
-[ -f "$KEY" ] || die "the release signing key is missing: $KEY (see macos/README.md, 'The release key')"
-/usr/bin/openssl dgst -sha256 -sign "$KEY" -out "$OUT/latest.json.sig" "$OUT/latest.json"
+# The Touch ID key (in this Mac's Secure Enclave, macos/sign.sh) when there is one, else the key file.
+KEY="${PULSAR_SIGNING_KEY:-}"
+if [ -z "$KEY" ]; then
+  KEY="$HOME/.config/pulsar-release/update-signing-key.se"
+  [ -f "$KEY" ] || KEY="$HOME/.config/pulsar-release/update-signing-key.pem"
+fi
+[ -f "$KEY" ] || die "the release signing key is missing: $KEY (see macos/README.md, 'The release keys')"
+"$ROOT/macos/sign.sh" "$KEY" "$OUT/latest.json" "$OUT/latest.json.sig" "Pulsar $VERSION, the update"
 # The signature must pass the very check installed copies run, against PUBLIC_KEYS as Python reads them: a key that
 # is not listed, or listed in a form openssl cannot load, is caught here and not on everyone's Mac.
 python3 -E -s - "$ROOT" "$OUT/latest.json" "$OUT/latest.json.sig" <<'PY' || die "installed copies would refuse this release: its key is not one of PUBLIC_KEYS in pulsar/release_sig.py (or one of them cannot be read)"
@@ -153,6 +158,20 @@ data, sig = open(sys.argv[2], "rb").read(), open(sys.argv[3], "rb").read()
 signed = any(updater.verify(data, sig, key) for key in updater.PUBLIC_KEYS)
 sys.exit(0 if signed and not updater.manifest_problem(json.loads(data)) else 1)
 PY
+
+# What people have installed decides whether they get this release: the newest released version must list the key
+# that signed it. A new key reaches them only through a release signed with a key they already trust (macos/README.md,
+# "Moving to a Touch ID key"), so a release signed too early with the new key is stopped here, not on everyone's Mac.
+PREV="$(git tag --list 'v[0-9]*' --sort=-v:refname | head -1)"
+if [ -n "$PREV" ]; then
+  KEYS_THEN="$(mktemp)"
+  { git show "$PREV:pulsar/release_sig.py" 2>/dev/null; git show "$PREV:pulsar/updater.py" 2>/dev/null; } >"$KEYS_THEN" || true
+  /usr/bin/python3 -I -B "$ROOT/pulsar/release_sig.py" signed-for "$KEYS_THEN" "$OUT/latest.json" "$OUT/latest.json.sig" ||
+    { rm -f "$KEYS_THEN"; die "Pulsar ${PREV#v}, which people have installed, does not know the key that signed this release ($KEY): sign it with a key ${PREV#v} lists (PULSAR_SIGNING_KEY=...). See macos/README.md, 'Moving to a Touch ID key'."; }
+  rm -f "$KEYS_THEN"
+else
+  echo "warning: no earlier release tag here (git fetch --tags), so it was not checked that installed copies know this key" >&2
+fi
 
 # The app, with the code it carries described and signed with the same key: its launcher installs that code only
 # with this signature (build_app.sh checks it the way the launcher will).

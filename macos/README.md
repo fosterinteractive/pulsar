@@ -64,8 +64,12 @@ copy writes a warning to its error log once a day.
 `PUBLIC_KEYS` in `pulsar/release_sig.py`: the main key, then a reserve key. The same keys sign the code inside
 Pulsar.app, and the app's launcher checks it with its own copy of that file before it installs anything.
 
-- **Main key**: `~/.config/pulsar-release/update-signing-key.pem` on the Mac of whoever publishes (owner-only, never in
-  the repo; `PULSAR_SIGNING_KEY` points elsewhere). `release.sh` signs with it and refuses a key that is not listed.
+- **Main key**: best a Touch ID key, `~/.config/pulsar-release/update-signing-key.se` (below): its private half lives in
+  the Mac's Secure Enclave and signs only with a fingerprint, so no program can copy it or sign with it unseen.
+  Otherwise a key file, `~/.config/pulsar-release/update-signing-key.pem`, on the Mac of whoever publishes
+  (owner-only, never in the repo). `release.sh` uses the `.se` key when there is one, else the `.pem`
+  (`PULSAR_SIGNING_KEY` points elsewhere), signs through `macos/sign.sh`, and refuses a key that is not listed, or
+  that the newest released version does not list (people would not get the release).
   Keep a copy in the team's 1Password vault, so another maintainer can publish and a lost Mac loses nothing.
   Encrypted (`openssl ec -aes256 -in key.pem -out key.enc.pem`), `release.sh` asks for its passphrase (twice: for
   `latest.json` and for the app), so publishing then needs a person at a terminal.
@@ -82,6 +86,26 @@ Pulsar.app, and the app's launcher checks it with its own copy of that file befo
   Put the file and its passphrase in 1Password, delete the file from the Desktop, and publish a release that lists
   the public half. A key can only be added by a release signed with a key already listed, so the reserve has to be
   in place before people install.
+
+**Moving to a Touch ID key** (a Mac with Touch ID or a keyboard with it, and Apple's Command Line Tools):
+
+1. `macos/sign.sh keygen`: makes the key in this Mac's Secure Enclave, asks for nothing yet, and prints its public
+   half. The file `~/.config/pulsar-release/update-signing-key.se` holds only a handle that this Mac's chip alone can
+   use: copied anywhere, it signs nothing.
+2. Add that public half to `PUBLIC_KEYS` in `pulsar/release_sig.py`, after the current main key.
+3. Release that version with the old key: `PULSAR_SIGNING_KEY=~/.config/pulsar-release/update-signing-key.pem
+   macos/release.sh …`. Installed copies accept it and from then on trust the new key too. (`release.sh` refuses to
+   sign this release with the new key: the version people have does not list it yet.)
+4. From the next release on, `macos/release.sh …` signs with the Touch ID key: a fingerprint for each signature
+   (the update and the app's code), in a dialog that names what is signed and the start of its SHA-256. The terminal
+   prints the full SHA-256 first: compare it before you touch.
+5. Once a release signed with the Touch ID key is out, drop the old main key from `PUBLIC_KEYS` in a release and
+   delete the `.pem` file (and its copy in 1Password). Keep the reserve key: a new Mac, or a wiped one, cannot use the
+   Touch ID key, and the reserve is then the only way to move on.
+
+Any enrolled finger signs, so enrolling another (which needs the Mac's password) does not lose the key. What it does
+not stop: a program already running as you while you release could change a file just before you sign it. The
+SHA-256 in the dialog and the terminal is there to catch that.
 
 Anyone with write access to the repository can publish a release, but without a listed key installed copies ignore
 it, and releases are immutable once published (repository setting), so nobody can swap a file of a published
