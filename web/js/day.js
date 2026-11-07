@@ -20,6 +20,8 @@ function load({fresh = false, keepScroll = false} = {}) {
       return x;
     }),
     loadMeetings(d, fresh),  // meetings.js
+    // the day done, time not work (daymarks.py): said on this Mac, never sent to Productive
+    getJSON(`/api/daymarks?date=${d}`).then(x => { if (d === state.date) { state.marks = x.error ? {date: d} : {...x, date: d}; drawSoon(); } return x; }),
     // Ask Claude's picks for this day, kept from an earlier ask (this run or on disk): shown again, never asked again
     CONFIG?.likely?.askClaude && state.claude?.date !== d ? getJSON(`/api/likely/picks?date=${d}`).then(x => {
       if (d === state.date && x.picks && Object.keys(x.picks).length && state.claude?.date !== d) {
@@ -417,6 +419,13 @@ function render() {
       }
       for (const e of ldActive() && LD.plan?.ignoreLogged ? [] : logged.entries) if (e.s != null) for (let m = Math.floor(e.s); m < Math.floor(e.s) + e.minutes && m < end; m++) covered[m] = 1;
       for (const [a, b] of ldActive() ? ldCoverSpans() : []) for (let m = Math.floor(a); m < b && m < end; m++) covered[m] = 1;  // ticked proposals
+      for (const [a, b] of notWorkSpans()) {  // marked "not work": counted nowhere, drawn quiet, a click counts it again
+        for (let m = a; m < b && m < end; m++) covered[m] = 1;
+        html += `<div class="nwrail" data-nw-a="${a}" data-nw-b="${b}" style="top:${a * ppm}px;height:${(b - a) * ppm}px"
+          title="Not work (you said so): ${hm(a)}–${hm(b)}. Click to count it as work again." tabindex="0" role="button"
+          aria-label="Not work, ${hm(a)}–${hm(b)}: count it as work again"></div>`;
+      }
+      const doneDay = !!dayDone();
       let runStart = -1;
       const shortest = Math.max(3, CONFIG?.roundTo || 5);
       for (let m = 0; m <= end; m++) {
@@ -424,7 +433,7 @@ function render() {
         if (gap && runStart < 0) runStart = m;
         if (!gap && runStart >= 0) {
           if (m - runStart >= shortest) for (let x = runStart; x < m; x++) gapMin += Math.min(1, active[x]);
-          if (m - runStart >= shortest) html += `<div class="gaprail" data-a="${runStart}" data-b="${m}" style="top:${runStart * ppm}px;height:${(m - runStart) * ppm}px"
+          if (m - runStart >= shortest) html += `<div class="gaprail${doneDay ? ' done' : ''}" data-a="${runStart}" data-b="${m}" style="top:${runStart * ppm}px;height:${(m - runStart) * ppm}px"
             title="Active, not logged: ${hm(runStart)}–${hm(m)}. Click to log it." tabindex="0" role="button"
             aria-label="Active, not logged ${hm(runStart)}–${hm(m)}, ${dur(m - runStart)}: log this time"></div>`;
           runStart = -1;
@@ -458,7 +467,8 @@ function scrollToNow(smooth = true) {
 function renderAside(gapMin) {
   const act = state.act, logged = state.logged, likely = state.likely;
   // the day's next step: Log the day is the main button while active time is not logged
-  $('#log-day').classList.toggle('primary', !!(logged && !logged.error && act && !act.error && gapMin >= 1 && !ldActive()));
+  const done = dayDone();
+  $('#log-day').classList.toggle('primary', !!(logged && !logged.error && act && !act.error && gapMin >= 1 && !ldActive() && !done));
   $('#log-day').classList.toggle('bordered', !$('#log-day').classList.contains('primary'));
   $('#log-day').setAttribute('aria-pressed', String(ldActive()));
   const work = act && !act.error ? act.items.filter(x => x.cat !== 'personal').reduce((s, x) => s + x.e - x.s, 0) : null;
@@ -474,9 +484,12 @@ function renderAside(gapMin) {
     ${sum && sum > (bill ? bill.yes + bill.no : 0) && bill ? `<div class="kv"><span>Billing unknown</span><span class="num">${dur(sum - bill.yes - bill.no)}</span></div>` : ''}
     <div class="kv"><span>Active, work</span><span class="num">${v(work)}</span></div>
     ${personal ? `<div class="kv"><span>Personal</span><span class="num">${dur(personal)}</span></div>` : ''}
-    ${logged && act && !logged.error && !act.error ? (gapMin >= 1 && !ldActive()
+    ${logged && act && !logged.error && !act.error ? (gapMin >= 1 && !ldActive() && !done
       ? `<button type="button" class="kv gap go" id="wt-logday" title="Open Log the day to log it"><span>Active, not logged</span><span class="num">${dur(gapMin)} →</span></button>`
-      : `<div class="kv gap"><span>Active, not logged</span><span class="num">${dur(gapMin)}</span></div>`) : ''}
+      : `<div class="kv gap${done ? ' done' : ''}"><span>Active, not logged</span><span class="num">${dur(gapMin)}</span></div>`) : ''}
+    ${logged && !logged.error ? `<div class="daydone">${done
+      ? `<span>✓ Day done${done === 'target' ? ': target reached' : ''}</span><button type="button" class="linkbtn" data-day-mark="notdone" title="Show the time not logged as still to do">Not done</button>`
+      : gapMin >= 1 ? `<button type="button" class="linkbtn" data-day-mark="done" title="The rest of today's active time stays unlogged, and this day leaves Earlier days">Mark the day done</button>` : ''}</div>` : ''}
     ${act?.away?.some(x => !x.off) ? `<div class="kv"><span>Away, breaks</span><span class="num">${dur(act.away.filter(x => !x.off).reduce((s, x) => s + x.e - x.s, 0))}</span></div>` : ''}
     <div class="bar"><i style="width:${Math.min(100, (sum || 0) / TARGET * 100)}%"></i></div>
     <div class="kv"><span>Daily target</span><span class="num">${dur(TARGET)}</span></div>`);
@@ -649,6 +662,7 @@ function activateByKey(el) {
 document.addEventListener('keydown', ev => {
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(ev.target.tagName) || ev.target.closest('dialog')) return;
   if (state.view === 'report') { if (ev.key === 'Escape') tipEl.classList.remove('on'); return; }
+  if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.matches?.('.nwrail')) { ev.preventDefault(); ev.target.click(); return; }
   if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.matches?.('.card[data-k], .gaprail, .awayband')) {
     ev.preventDefault(); activateByKey(ev.target); return;
   }
@@ -753,6 +767,33 @@ setInterval(async () => {
   if (c.changed || c.warn) toast(c.warn ? c.text : `Logs updated automatically: ${c.text}`, c.warn);  // quiet when nothing changed
 }, 60 * 60 * 1000);
 
+
+/* ---------- the day done, and time that was not work (pulsar/daymarks.py: this Mac only) ---------- */
+function notWorkSpans() { return state.marks?.date === state.date ? state.marks.notWork || [] : []; }
+/* 'said' (marked done), 'target' (logged time reached the daily target and nobody said "not done"), or '' */
+function dayDone() {
+  const m = state.marks?.date === state.date ? state.marks : {};
+  if (m.done === true) return 'said';
+  if (m.done === false || !state.logged || state.logged.error) return '';
+  return state.logged.entries.reduce((s, x) => s + x.minutes, 0) >= TARGET ? 'target' : '';
+}
+async function markDay(change, said = '', undo = null) {
+  const d = state.date, r = await postJSON('/api/daymarks', {date: d, ...change});
+  if (r.error) { toast(r.error, true); return false; }
+  if (d === state.date) { state.marks = {...r, date: d}; render(); if (ldActive()) renderReview(); }
+  if (said) toast(said, false, undo);
+  return true;
+}
+document.addEventListener('click', ev => {
+  const nw = ev.target.closest('.nwrail');
+  if (nw) { const a = +nw.dataset.nwA, b = +nw.dataset.nwB; markDay({remove: [a, b]}, `${hm(a)}–${hm(b)} counts as work again.`); return; }
+  const dm = ev.target.closest('[data-day-mark]');
+  if (dm) markDay({done: dm.dataset.dayMark === 'done'}, dm.dataset.dayMark === 'done' ? 'Day done: its rails are grey and it leaves Earlier days.' : '');
+});
+/* "Not work" from the log dialog or a Log the day row: [a, b) counts nowhere, with Undo */
+function markNotWork(a, b) {
+  return markDay({add: [a, b]}, `${hm(a)}–${hm(b)} marked as not work.`, {label: 'Undo', run: () => markDay({remove: [a, b]})});
+}
 
 /* ---------- changing a logged entry: Edit (the log dialog), Delete (asked first), drag an edge (asked first) ---------- */
 /* the entry as the page shows it: the server changes nothing if Productive has it otherwise now. The start is the

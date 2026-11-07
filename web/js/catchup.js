@@ -17,10 +17,16 @@ async function cuLoad() {
     if ((new Date(d + 'T12:00:00Z').getUTCDay() + 6) % 7 < 5) want.unshift(d);
   Object.assign(CU, {loading: true, error: '', days: null});
   renderReview();
-  const r = await getJSON(`/api/report?from=${want[0]}&to=${want[want.length - 1]}`);
+  const [r, marks] = await Promise.all([getJSON(`/api/report?from=${want[0]}&to=${want[want.length - 1]}`),
+                                        getJSON(`/api/daymarks?from=${want[0]}&to=${want[want.length - 1]}`)]);
   CU.loading = false;
   if (r.error) { CU.error = r.error; renderReview(); return; }
-  CU.days = (r.days || []).filter(d => want.includes(d.date));
+  // a day done (said, or its logged time reached the target and nobody said "not done") is not offered; time marked
+  // "not work" is not counted (daymarks.py)
+  const m = marks.days || {};
+  CU.days = (r.days || []).filter(d => want.includes(d.date))
+    .filter(d => !(m[d.date]?.done === true || (m[d.date]?.done !== false && d.logged >= TARGET)))
+    .map(d => ({...d, notLogged: Math.max(0, d.notLogged - (m[d.date]?.notWork || []).reduce((s, [a, b]) => s + b - a, 0))}));
   CU.ticked = new Set(CU.days.slice(-CU.shown).filter(d => d.notLogged >= CU_TICK).map(d => d.date));
   // no activity read for the range (ActivityWatch down, say): said, or every day would read "nothing left"
   CU.warning = [r.warning, r.trackerWarning].filter(Boolean).join(' ');

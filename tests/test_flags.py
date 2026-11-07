@@ -275,7 +275,8 @@ class CatchUpTest(unittest.TestCase):
         for write in ("postJSON", "/api/log", "/api/entry", "writeRun", "fetch(", "method:"):
             self.assertNotIn(write, code)
         import re
-        self.assertEqual(set(re.findall(r"getJSON\(`(/api/[a-z/]+)", code)), {"/api/report"})
+        # reads only: the report, and the days marked done or "not work" (daymarks.py)
+        self.assertEqual(set(re.findall(r"getJSON\(`(/api/[a-z/]+)", code)), {"/api/report", "/api/daymarks"})
         self.assertIn("openLogDay()", code)  # a day opens as Log the day, with its own confirm step and journal
 
     def test_the_page_loads_it_after_log_the_day_and_the_range_fits_the_report(self):

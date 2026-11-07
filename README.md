@@ -266,6 +266,10 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   Claude's draft. A meeting's title is a note only when you or someone of your own company (your Google account's
   domain) organized it and it reads like a meeting's name (not an instruction, a sum or an address); a series renamed
   since you last logged it starts unticked.
+- **Day done, and time that was not work.** A day whose logged time reaches your daily target is done (or click
+  **Mark the day done** under Work time): its yellow rails turn grey and it leaves Earlier days; **Not done** undoes
+  it. **Not work** in the log dialog or on a Log the day row says a stretch was not work: it is no longer marked or
+  proposed (click its grey hatched rail to undo). Both stay on this Mac and are never sent to Productive.
 - **Catching up.** **Earlier days…** in Log the day lists your last workdays with the active time no entry covers.
   Tick the days, and each one opens in turn as Log the day; each is written only when you confirm it.
 - **Ticket flags.** The log dialog and Log the day say when a task is closed, when no budget takes time on that

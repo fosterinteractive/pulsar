@@ -833,7 +833,8 @@ time logged when the tracker saw nothing (8%).
 
 ### 5.4b Catching up on earlier days (`web/js/catchup.js`)
 
-**Earlier days…** in Log the day's title row lists the last 7 workdays before today (Monday to Friday; **Show 7
+**Earlier days…** in Log the day's title row lists the last 7 workdays before today that are not done (6: marked
+done, or their logged time reached the target and nobody said not done), less the time marked "not work" (Monday to Friday; **Show 7
 earlier days** gives 14), each with the active time no entry covers, and its logged and active time, from
 `/api/report` (the Report's own numbers). Time logged with no start time is on no timeline, so it counts against the
 active time not covered (as Log the day caps a day): a day logged in full from Productive's timesheet reads "nothing
@@ -1326,6 +1327,14 @@ question) and cannot tell when inside it the work happened.
   (the time each row shows), one ↻ for everything; the error log is in Settings → Updates, with a small **!** in
   the header only while there are errors of the last 24 hours. The Logged column's title shortens before its
   buttons ever cover it.
+- **Day done, and time that was not work** (`pulsar/daymarks.py`, `~/.cache/pulsar/day-marks.json`, on this Mac
+  only, never sent to Productive, 120 days). A day is done when its logged time reaches the daily target, unless the
+  person says **Not done**, or when they say **Mark the day done** (Work time). A done day's yellow rails are grey,
+  "Active, not logged" is quiet, Log the day is not the main button, and Earlier days leaves it out. **Not work**, in
+  the log dialog opened on a stretch or on a Log the day row, marks that time as not work: it counts nowhere (no rail,
+  not in "Active, not logged", not proposed by Log the day, less in Earlier days) and shows as a quiet hatched rail; a
+  click on it, or Undo in the note at the bottom, counts it as work again. `GET /api/daymarks?date=` (or `from=&to=`),
+  `POST /api/daymarks` `{date, done | undone | add: [a, b] | remove: [a, b]}`, the page's session only.
 - **First run**: when Productive is not connected (or does not know who you are), no tracker answers, or today has
   no activity yet, a short list at the top of the board says what is missing and gives the one action that fixes
   it (Connect Productive, Get or Open ActivityWatch).
@@ -1380,6 +1389,7 @@ estimate, and a table of every day. A day's bar and its row in the tables open t
 | `~/.cache/pulsar/likely-full/` | Past days' Likely columns as the page shows them (rows with session titles and first messages), so a day opened again, or after a restart, shows at once; 31 days; ↻ works a day out again. Never a day worked out while no tracker answered. |
 | `~/.cache/pulsar/claude-picks/` | Ask Claude's last answer per day (`<date>.json`: task ids, reasons, drafted notes), shown again when the day is opened, never asked again by itself; the notes Claude drafted for a stretch of work (`<date>.notes.json`, under the stretch, its repository and what its session and commits held, so the same work is never drafted twice); the day's last review (`<date>.review.json`, under the plan it reviewed, `server.review_key`, given back while the plan is the same). 60 days. |
 | (the page, while it is open) | Log the day's work per day: ticks, tasks, services, times, notes, the rows opened and deleted, the review's suggestions with their state (`ldkeep.js`). |
+| `~/.cache/pulsar/day-marks.json` | Days marked done (or not done) and time marked "not work", in minutes of the day (6); 120 days. |
 | `~/.cache/pulsar/logday-journal.json` | Log the day: each row a run sent, before it was sent, and what came of it (31 days). |
 | `~/.cache/pulsar/logs/` | The error log, one JSON line per event, 31 days; tokens, keys, OAuth codes, signed addresses, fields named as keys or secrets, bare hex secrets, UUIDs and long opaque strings removed. |
 | `~/Library/Application Support/Pulsar/` | The installed code: `versions/`, `current`, `previous`, `bad-versions`, and `seen-release` (the newest signed `latest.json` believed: its version and expiry). Only code a release signed gets here (section 2). |

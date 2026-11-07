@@ -25,6 +25,7 @@ function prepareNext(date, edit) {
   logForm.elements.start.removeAttribute('aria-invalid');  // a start the last dialog refused is not this one's
   $('#log-next').hidden = !!edit || date !== state.date;
   $('#log-skip').hidden = !(logStretchNow && date === state.date && openStretches(logStretchNow.a, logStretchNow.b).length);
+  $('#log-notwork').hidden = !(logStretchNow && date === state.date);
   $('#log-next-hint').textContent = '';
   syncTimes('start', false);
 }
@@ -44,6 +45,11 @@ function afterLog(date, start, minutes, said, andNext) {
   return true;
 }
 
+/* Not work: the stretch the dialog opened on was not work (day.js markNotWork) */
+$('#log-notwork').onclick = async () => {
+  const s = logStretchNow; if (!s) return;
+  if (await markNotWork(s.a, s.b)) logDlg.close();
+};
 /* Skip: this stretch stays unlogged for now, and the next one opens, as after Log and next */
 $('#log-skip').onclick = () => {
   const s = logStretchNow; if (!s) return;

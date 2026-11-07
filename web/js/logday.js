@@ -66,6 +66,7 @@ async function openLogDay({fresh = false} = {}) {
                                                status: e.sent === 'logged' ? 'logged' : e.sent ? 'unknown' : null,
                                                reason: e.sent ? 'A run of this day already sent it.' : ''}));
   if (kept) { const got = ldReapply(LD.rows, kept, r.ignoreLogged ? [] : state.logged?.entries); LD.rows = got.rows; LD.open = got.open; }
+  LD.rows = LD.rows.filter(x => x.status || !ldNotWork(x));  // time marked "not work" (day.js) is not proposed
   sgFromPlan(r);  // ldreview.js: FI's rules on this plan
   if (kept?.sg) sgRestore(kept.sg); else sgKept(d);  // the review's suggestions as they were, or the one kept for the day
   renderReview(); render();
@@ -184,6 +185,8 @@ function ldTotals() {
 const ldNeedsLook = r => r.confidence === 'low' || !r.taskId || !r.serviceId || r.claudeNone
   || r.flags.includes('claudefound') || (r.flags.includes('claudenote') && r.noteFrom === 'claude' && !r.noteEdited);
 const ldCheck = r => ldPending(r) && ldNeedsLook(r) && !(r.opened && r.checked);
+/* a row or a stretch inside time marked "not work" (day.js notWorkSpans) */
+const ldNotWork = x => notWorkSpans().some(([a, b]) => a <= x.s && (x.e ?? x.s + x.minutes) <= b);
 /* "Tick all with a task": every row that has a task and a service and is not ticked yet, except a task Claude found by
    searching Productive (not one you logged to lately) that nobody opened: what Claude read could have steered it
    there, so it waits for the person, as it always has */
@@ -238,7 +241,7 @@ function renderReview() {
   const items = [], all = LD.view === 'all', step = CONFIG?.roundTo || 5;
   const inProductive = p.ignoreLogged ? [] : state.logged?.entries || [], loggedRows = LD.rows.filter(r => r.status === 'logged');
   if (all) for (const x of inProductive) items.push({at: x.s ?? -1, html: loggedLine(x)});
-  for (const u of (p.uncovered || []).filter(u => u.minutes >= step)) items.push({at: u.s, html: `<li class="gr"><span class="e-time num">${hm(u.s)}</span><span class="gt"><b>${dur(u.minutes)}</b> active, not covered</span><span></span></li>`});
+  for (const u of (p.uncovered || []).filter(u => u.minutes >= step && !ldNotWork(u))) items.push({at: u.s, html: `<li class="gr"><span class="e-time num">${hm(u.s)}</span><span class="gt"><b>${dur(u.minutes)}</b> active, not covered</span><span></span></li>`});
   for (const r of LD.rows) if (all || r.status !== 'logged') items.push({at: r.s, html: rowHTML(r, ov.get(r.id))});
   items.sort((a, b) => a.at - b.at);
   const folded = inProductive.length + loggedRows.length;
@@ -357,6 +360,7 @@ function editorHTML(r) {
     <label class="field"><span>Note</span><textarea rows="2" data-ld-note placeholder="What was done: the outcome, in a sentence">${esc(r.note || '')}</textarea></label>
     <p class="hint ld-note-hint">${noteHint(r)}</p>
     <div class="acts"><button type="button" class="btn bordered" data-ld-del="${r.id}">Delete from the proposal</button>
+      <button type="button" class="btn bordered" data-ld-notwork="${r.id}" title="This time was not work: not proposed again, not marked as to log (on this Mac only)">Not work</button>
       <span class="hint ld-keys"><kbd>↩</kbd> on the row ${r.taskId && r.serviceId ? 'ticks it and opens the next' : 'picks its task'}</span></div></div>`;
 }
 function wireEditor(r) {
@@ -500,6 +504,14 @@ $('#review').addEventListener('click', ev => {
   }
   if (t.dataset.ldAlt != null) { const r = ldRow(LD.open); return ldSetTask(r, r.alts[+t.dataset.ldAlt]); }
   if (t.dataset.ldDel) { const k = ldRow(t.dataset.ldDel)?.key; if (k) LD.deleted.add(k); LD.rows = LD.rows.filter(r => r.id !== t.dataset.ldDel); LD.open = null; renderReview(); render(); return; }
+  if (t.dataset.ldNotwork) {  // the row's time was not work: it leaves the proposal, and comes back with Undo
+    const r = ldRow(t.dataset.ldNotwork); if (!r) return;
+    LD.rows = LD.rows.filter(x => x !== r); LD.open = null; renderReview(); render();
+    markDay({add: [r.s, r.e ?? r.s + r.minutes]}, `${hm(r.s)}–${hm(r.e ?? r.s + r.minutes)} marked as not work.`, {label: 'Undo', run: async () => {
+      if (await markDay({remove: [r.s, r.e ?? r.s + r.minutes]}) && ldActive() && !LD.rows.includes(r)) { LD.rows.push(r); LD.rows.sort((a, b) => a.s - b.s); renderReview(); render(); }
+    }});
+    return;
+  }
   if (t.id === 'ld-undo') { LD.undoAsk = true; renderReview(); return; }
   if (t.id === 'ld-undo-no') { LD.undoAsk = false; renderReview(); return; }
   if (t.id === 'ld-undo-yes') return undoRun();

@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, askclaude, calendar, claudelink, claudeuses, config, dayplan, dayreview, flags, learn, likely, logbook, mcptools, newtask, productive, ranges, report, sessions, trackers, updater, names
+from . import __version__, askclaude, calendar, claudelink, claudeuses, config, daymarks, dayplan, dayreview, flags, learn, likely, logbook, mcptools, newtask, productive, ranges, report, sessions, trackers, updater, names
 from .mcp import whoami_proof
 
 UPDATER = updater.Updater()
@@ -1813,6 +1813,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(api_estimates(q))
             if url.path == "/api/tasks/search":
                 return self.send_json(api_search(q))
+            if url.path == "/api/daymarks" and "from" in q:  # Earlier days: the marks of a range of days
+                if not (DATE.match(q.get("from") or "") and DATE.match(q.get("to") or "")):
+                    raise ValueError("from=YYYY-MM-DD&to=YYYY-MM-DD")
+                return self.send_json({"days": daymarks.between(q["from"], q["to"])})
             if url.path == "/api/calendar/status":  # polled by Settings while the person signs in to Google
                 return self.send_json(calendar.status(config.load()))
             routes = {"/api/activity": api_activity, "/api/entries": api_entries, "/api/proposal": api_proposal,
@@ -1820,7 +1824,8 @@ class Handler(BaseHTTPRequestHandler):
                       "/api/calendar": api_calendar, "/api/meeting-tasks": api_meeting_tasks,
                       "/api/dayplan": api_dayplan, "/api/dayplan/journal": api_dayplan_journal, "/api/range": api_range,
                       "/api/likely/picks": api_likely_picks, "/api/task/projects": api_task_projects,
-                      "/api/task/places": api_task_places, "/api/task/fields": api_task_fields}
+                      "/api/task/places": api_task_places, "/api/task/fields": api_task_fields,
+                      "/api/daymarks": lambda q: daymarks.get(q["date"])}
             if url.path not in routes:
                 return self.send(404, b"not found", "text/plain")
             if not DATE.match(q.get("date", "")):
@@ -1906,6 +1911,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(api_task_draft(body))
             if urlparse(self.path).path == "/api/task/create":
                 return self.send_json(api_task_create(body))
+            if urlparse(self.path).path == "/api/daymarks":  # the day done, time not work: this Mac only
+                return self.send_json(daymarks.change(str(body.get("date") or ""), done=body.get("done"),
+                                                      add=body.get("add"), remove=body.get("remove"),
+                                                      undone=body.get("undone") is True))
             if urlparse(self.path).path == "/api/dayplan/review":
                 return self.send_json(api_dayplan_review(body))
             if urlparse(self.path).path == "/api/calendar/connect":

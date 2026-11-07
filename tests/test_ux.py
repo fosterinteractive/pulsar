@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from isolation import SCRATCH as _SCRATCH  # noqa: E402,F401  first: nothing real is reachable (isolation.py)
 
-from pulsar import askclaude, config, server  # noqa: E402
+from pulsar import askclaude, config, daymarks, server  # noqa: E402
 
 WEB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
 
@@ -148,6 +148,44 @@ class KeptAnswersTest(unittest.TestCase):
             self.assertTrue(server.api_dayplan_review({"date": "2026-11-05", "kept_only": True}).get("none"))
             server.api_dayplan_review({"date": "2026-11-05"})
             self.assertEqual(len(runs), 3)
+
+
+class DayMarksTest(unittest.TestCase):
+    """The day done and time marked "not work": on this Mac only, per day, merged spans, KEEP_DAYS days."""
+
+    def setUp(self):
+        p = mock.patch.object(daymarks, "PATH", os.path.join(tempfile.mkdtemp(), "day-marks.json"))
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_spans_merge_and_cut(self):
+        self.assertEqual(daymarks.merge([[60, 90], [85, 100], [100, 110], [200, 190], "x", [True, 3], [-5, 10]]),
+                         [[0, 10], [60, 110]])
+        self.assertEqual(daymarks.cut([[60, 110]], 70, 80), [[60, 70], [80, 110]])
+        self.assertEqual(daymarks.cut([[60, 110]], 0, 2000), [])
+
+    def test_a_day_is_marked_done_and_time_not_work_and_both_can_be_taken_back(self):
+        self.assertEqual(daymarks.get("2026-11-05"), {})
+        self.assertEqual(daymarks.change("2026-11-05", done=True), {"done": True})
+        self.assertEqual(daymarks.change("2026-11-05", add=[757, 764]), {"done": True, "notWork": [[757, 764]]})
+        daymarks.change("2026-11-05", add=[764, 770])
+        self.assertEqual(daymarks.get("2026-11-05")["notWork"], [[757, 770]])
+        daymarks.change("2026-11-05", remove=[757, 764])
+        self.assertEqual(daymarks.get("2026-11-05")["notWork"], [[764, 770]])
+        self.assertEqual(daymarks.change("2026-11-05", done=False)["done"], False)  # past the target, "not done" after all
+        self.assertNotIn("done", daymarks.change("2026-11-05", undone=True))
+        daymarks.change("2026-11-04", done=True)
+        self.assertEqual(sorted(daymarks.between("2026-11-01", "2026-11-04")), ["2026-11-04"])
+        self.assertEqual(stat.S_IMODE(os.stat(daymarks.PATH).st_mode), 0o600)
+        for bad in ({"date": "x"}, {"date": "2026-11-05", "done": "yes"}, {"date": "2026-11-05", "add": [5, 5]}):
+            with self.assertRaises(ValueError):
+                daymarks.change(bad["date"], done=bad.get("done"), add=bad.get("add"))
+
+    def test_old_days_go(self):
+        with open(daymarks.PATH, "w") as fh:
+            json.dump({"2020-01-01": {"done": True}}, fh)
+        daymarks.change("2026-11-05", done=True)
+        self.assertEqual(daymarks.between("2000-01-01", "2100-01-01"), {"2026-11-05": {"done": True}})
 
 
 @unittest.skipUnless(shutil.which("node"), "node is not installed")
