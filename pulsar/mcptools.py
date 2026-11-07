@@ -487,6 +487,16 @@ def covered_minutes(entries: list) -> list:
     return covered
 
 
+def untimed_minutes(entries: list) -> dict:
+    """{taskId: minutes} logged with no start time: on no timeline, so no overlap check sees them. They may be the very
+    work a stretch holds, as Log the day assumes (dayplan: such a task's rows give way first and start unticked)."""
+    out: dict = {}
+    for e in entries:
+        if e.get("s") is None and ID.match(str(e.get("taskId") or "")):
+            out[str(e["taskId"])] = out.get(str(e["taskId"]), 0) + mins(e.get("minutes"))
+    return out
+
+
 def runs(flags: list, least: int = 3) -> list:
     """[(start, end)] of the true stretches of a minute list, `least` minutes or longer."""
     out, start = [], None
@@ -748,7 +758,8 @@ def _session_task(row: dict, a: int, b: int, plan: list, places: Places):
     learned for the row (logged before in this session or repository); else the entry over it, whatever its work."""
     with_task = [e for e in plan if e.get("taskId") and overlap(a, b, e["s"], e["e"]) > 0]
     same = [e for e in with_task if (e.get("repo") or "") == (row.get("project") or "")]
-    keys = ("taskId", "task", "project", "serviceId", "service", "billable", "confidence", "why", "noteDraft", "noteFrom")
+    keys = ("taskId", "task", "project", "serviceId", "service", "billable", "confidence", "pulsarWouldTick", "why",
+            "noteDraft", "noteFrom")
     if same:
         p = plan_entry(max(same, key=lambda e: overlap(a, b, e["s"], e["e"])), places)
         return {k: p.get(k) for k in keys if p.get(k) not in (None, "")}
@@ -780,11 +791,13 @@ def pulsar_session(args: dict) -> dict:
     mine = [r for r in lk.get("entries") or [] if sid in (r.get("sessions") or [])]
     places = Places(lk.get("entries") or [])
     plan = _plan(date, lk.get("entries") or [])[0] if mine else {"entries": []}
-    covered = covered_minutes(entries)
-    rows, to_log, shared = [], [], []
+    covered, untimed = covered_minutes(entries), untimed_minutes(entries)
+    rows, to_log, shared, maybe = [], [], [], []
     for r in sorted(mine, key=lambda r: float(r["s"])):
         a, b = int(float(r["s"])), int(round(float(r["e"])))
         suggestion = _session_task(r, a, b, plan.get("entries") or [], places)
+        if suggestion and untimed.get(str(suggestion.get("taskId"))):
+            suggestion.update({"loggedWithoutStartMinutes": untimed[str(suggestion["taskId"])], "pulsarWouldTick": False})
         others = [x for x in r.get("sessions") or [] if x != sid]
         rows.append({"start": hm(a), "end": hm(b), "minutes": mins(r["minutes"]), "project": places.repo(r.get("project")),
                      "kind": str(r.get("kind") or "") if str(r.get("kind") or "") in ("focused", "parallel") else "",
@@ -795,16 +808,22 @@ def pulsar_session(args: dict) -> dict:
             piece = {"start": hm(a + s), "minutes": e - s, "project": places.repo(r.get("project")),
                      **({"taskId": suggestion["taskId"], "task": suggestion.get("task"),
                          "serviceId": suggestion.get("serviceId")} if suggestion else {})}
-            # a stretch another session also had: which one the minutes were for is not known, so it waits for a yes
-            (shared if others else to_log).append(piece)
+            # a stretch another session also had: which one the minutes were for is not known, so it waits for a yes;
+            # so does one whose task has time logged with no start that day: it may be this work, logged already
+            (maybe if suggestion and suggestion.get("loggedWithoutStartMinutes") else shared if others else to_log).append(piece)
+    for t in {p["taskId"]: p for p in maybe}.values():
+        warnings.append(f"{untimed[t['taskId']]} min of task {t['taskId']} ({t.get('task') or ''}) are logged that day with "
+                        "no start time, so no overlap check sees them: they may be this session's work. Ask the person "
+                        "before logging maybeLoggedWithoutStart.")
     return {"date": date, "session": sid, "sessionFrom": var, "title": _session_title(full),
             "rows": rows, "minutes": sum(r["minutes"] for r in rows),
-            "notLoggedYet": to_log, "sharedNotLogged": shared,
+            "notLoggedYet": to_log, "sharedNotLogged": shared, "maybeLoggedWithoutStart": maybe,
             "note": ("The minutes Pulsar gave this Claude session that day (from the activity tracker and the session's "
                      "messages). notLoggedYet is ready for pulsar_preview, then the person's yes in pulsar_log. The "
                      "suggested task is a guess from past logging: you know what this session did, so when it does not "
                      "fit, find the right task with pulsar_tasks. sharedNotLogged are stretches another session also "
-                     "had: ask before logging them here."
+                     "had: ask before logging them here. maybeLoggedWithoutStart are stretches whose task already has "
+                     "time logged that day with no start time: ask whether that time was this work before logging them."
                      if rows else f"Pulsar has no minutes for this session on {date}. Likely is worked out from the "
                      "activity tracker; a session from another day needs that date."),
             **({"testMode": "planned as if nothing were logged"} if ignore_logged() else {}),
@@ -1049,7 +1068,7 @@ def _preview(e: dict, extra: dict | None = None) -> dict:
     out = {"n": e["n"], "start": e["start"], "end": hm(e["e"]), "minutes": e["minutes"], "taskId": e["taskId"],
            "task": e.get("task") or "", "project": e.get("project") or "", "serviceId": e.get("serviceId"),
            "service": e.get("service") or "", "budget": e.get("budget") or "", "billable": e.get("billable"),
-           "note": e["note"]}
+           "note": e["note"], **({"loggedWithoutStartMinutes": e["untimed"]} if e.get("untimed") else {})}
     return {**out, **(extra or {})}
 
 
@@ -1067,9 +1086,12 @@ def summary_line(date: str, e: dict) -> str:
     billing = {True: "billable", False: "not billable"}.get(e.get("billable"), "billing not known")
     note = f'Note: "{e["note"]}"' if e["note"] else "No note."
     budget = summary_name(e.get("budget"))
+    untimed = (f" This task already has {e['untimed']} min logged that day with no start time: check it is not this "
+               "work." if e.get("untimed") else "")
     return (f"{DAYS[d.weekday()]} {d.day} {MONTHS[d.month - 1]} {d.year} {e['start']}-{hm(e['e'])} ({e['minutes']} min): "
             f"{summary_name(e.get('task')) or 'task ' + e['taskId']}" + (f" ({project})" if project else "")
-            + f", {summary_name(e.get('service'))}" + (f" in {budget}" if budget else "") + f", {billing}. {note}")
+            + f", {summary_name(e.get('service'))}" + (f" in {budget}" if budget else "") + f", {billing}. {note}"
+            + untimed)
 
 
 def pulsar_preview(args: dict) -> dict:
@@ -1078,6 +1100,11 @@ def pulsar_preview(args: dict) -> dict:
     pulsar_log must be given back."""
     date, entries = _clean(args)
     problems = _resolve_services(date, entries)
+    # time logged with no start on an entry's task: no overlap check sees it, so the summary the person approves says so
+    untimed = untimed_minutes(_entries(fetch({"e": ("/api/entries", {"date": date})})["e"], []))
+    for e in entries:
+        if untimed.get(e["taskId"]):
+            e["untimed"] = untimed[e["taskId"]]
     for e in entries:
         text, why = _note_problem(e["note"])
         if why:

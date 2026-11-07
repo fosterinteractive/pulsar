@@ -250,6 +250,26 @@ class McpTest(unittest.TestCase):
             data, err = self.call("pulsar_session", {"date": DATE})
         self.assertTrue(err)
 
+    def test_time_logged_with_no_start_is_never_offered_again_as_ready(self):
+        """2 h of the session's task logged by duration only: no overlap check sees them, so the session's stretch on
+        that task waits for a yes, and the summary the person approves names them."""
+        self.day.entries.append({**entry(0, 120), "id": "e-untimed", "s": None, "e": None, "start": None})
+        data, _ = self.call("pulsar_session", {"date": DATE})
+        self.assertEqual(data["notLoggedYet"], [])
+        self.assertEqual([(x["start"], x["taskId"]) for x in data["maybeLoggedWithoutStart"]], [("09:00", "11")])
+        self.assertEqual((data["rows"][0]["suggested"]["loggedWithoutStartMinutes"],
+                          data["rows"][0]["suggested"]["pulsarWouldTick"]), (120, False))
+        self.assertTrue(any("120 min of task 11" in w for w in data["warnings"]), data["warnings"])
+        with self._create():
+            dry, _ = self.call("pulsar_preview", self.ARGS)
+        self.assertTrue(dry["code"])  # not refused: more time on that task may be right
+        self.assertEqual([e.get("loggedWithoutStartMinutes") for e in dry["entries"]], [120, 120])
+        self.assertIn("This task already has 120 min logged that day with no start time", dry["summary"].splitlines()[0])
+        self.day.entries.pop()
+        data, _ = self.call("pulsar_session", {"date": DATE})
+        self.assertEqual([x["start"] for x in data["notLoggedYet"]], ["09:00"])
+        self.assertTrue(data["rows"][0]["suggested"]["pulsarWouldTick"])
+
     # ---- writing -------------------------------------------------------------------------------------------
 
     def _create(self):
