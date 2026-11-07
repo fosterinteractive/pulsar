@@ -314,7 +314,7 @@ async function callJSON(path, opts) {
   if (signedOut) return {...SIGNED_OUT};
   let r;
   try { r = await fetch(path, {...(opts || {}), headers: withSession((opts || {}).headers)}); }
-  catch (e) { return {error: 'Server not responding: ' + e.message}; }
+  catch (e) { return {error: 'Pulsar is not responding: ' + e.message}; }
   let data = null;
   try { data = await r.json(); } catch (e) { /* not JSON: said below */ }
   if (r.status === 401 && data?.signIn) { showSignIn(); return {...SIGNED_OUT}; }
@@ -343,7 +343,7 @@ function toast(text, warn = false, action = null) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), action ? 10000 : warn ? 7000 : 3500);
 }
 function loggedChange(before, after) {
-  if (after.error) return {text: `Logs not updated: ${after.error}`, warn: true, changed: false};
+  if (after.error) return {text: `Logged time not updated: ${after.error}`, warn: true, changed: false};
   if (after.warning) return {text: after.warning, warn: true, changed: false};
   const n = x => x?.entries?.length || 0, m = x => (x?.entries || []).reduce((s, e) => s + e.minutes, 0);
   const dn = n(after) - n(before), dm = m(after) - m(before);
@@ -365,9 +365,9 @@ function syncURL() {
 function applyTheme(t) {
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   else { t = 'system'; delete document.documentElement.dataset.theme; }
-  const btn = $('#theme-btn'), label = {system: 'Theme: follows the system', light: 'Theme: light', dark: 'Theme: dark'}[t];
+  const btn = $('#theme-btn'), label = {system: 'Theme: system', light: 'Theme: light', dark: 'Theme: dark'}[t];
   btn.textContent = {system: '◐', light: '☀︎', dark: '☾'}[t];
-  btn.title = label + '. Click to switch.'; btn.setAttribute('aria-label', label);
+  btn.title = label; btn.setAttribute('aria-label', label);
   btn.dataset.v = t;
   try { t === 'system' ? localStorage.removeItem('pulsar-theme') : localStorage.setItem('pulsar-theme', t); } catch (e) {}
 }

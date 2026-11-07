@@ -37,11 +37,10 @@ function afterLog(date, start, minutes, said, andNext) {
   loggedHere.push({date, a, b, at: Date.now()});
   if (!andNext || date !== state.date) return false;
   const left = openStretches(), s = left.find(x => x.a >= b) || left[0];
-  if (!s) { toast(`${said} No active time is left without an entry.`); return true; }
+  if (!s) { toast(`${said} Nothing left to log on this day.`); return true; }
   logStretch(s.a, s.b);  // day.js: the stretch's tasks and note, as from its rail
   const more = left.length - 1;
-  $('#log-next-hint').textContent = `${said} Next active stretch with no entry: ${hm(s.a)}–${hm(s.b)}`
-    + (more ? `, then ${more} more.` : ', the last one.');
+  $('#log-next-hint').textContent = `${said} Next not logged: ${hm(s.a)}–${hm(s.b)}` + (more ? ` (${more} more).` : ' (the last).');
   return true;
 }
 
@@ -56,11 +55,11 @@ $('#log-skip').onclick = () => {
   skippedHere.push({date: state.date, a: s.a, b: s.b, at: Date.now()});
   const left = openStretches(), next = left.find(x => x.a >= s.b) || left[0];
   logDlg.close();
-  if (!next) { toast('No other active time without an entry.'); return; }
+  if (!next) { toast('Nothing else to log on this day.'); return; }
   logStretch(next.a, next.b);  // day.js
   const more = left.length - 1;
-  $('#log-next-hint').textContent = `Skipped ${hm(s.a)}–${hm(s.b)}. Next active stretch with no entry: ${hm(next.a)}–${hm(next.b)}`
-    + (more ? `, then ${more} more.` : ', the last one.');
+  $('#log-next-hint').textContent = `Skipped ${hm(s.a)}–${hm(s.b)}. Next not logged: ${hm(next.a)}–${hm(next.b)}`
+    + (more ? ` (${more} more).` : ' (the last).');
 };
 
 /* ---------- the start: HH:MM, 24-hour, as the server reads it ---------- */
@@ -114,7 +113,7 @@ function syncTimes(from, left) {
     else if (left) {
       bad = true;
       say = !e ? 'Write the end as HH:MM, 24-hour: 17:30, or 24:00 for midnight.' : b === a ? 'End is the same as Start.'
-        : 'End is before Start. An entry cannot run past midnight: end it at 24:00 and log the rest on the next day.';
+        : 'End is before Start. To go past midnight, end at 24:00 and log the rest the next day.';
     }
   } else if (Number.isInteger(m) && m >= 1) {
     if (m <= most) { const b = m === most ? 1440 : clockAfter(date, a, m); f.end.value = b >= 1440 ? '24:00' : hm24(b); say = ''; }
@@ -162,7 +161,7 @@ function renderChecklist() {
   if (!CONFIG || !el) return;
   const link = (label, url) => `<a class="btn bordered sm" href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
   if (!CONFIG.productive.active)
-    items.push(['Productive is not connected', 'Pulsar logs your time there and shows what you logged.',
+    items.push(['Productive is not connected', '',
                 '<button type="button" class="btn primary sm" data-ck="t-conn">Connect Productive</button>']);
   else if (logged?.needsSetup)
     items.push(['Productive does not know who you are yet', logged.error || 'It needs your organization and person.',
@@ -213,12 +212,12 @@ function renderWeek() {
   const L = hours1(sum('logged')), A = hours1(sum('active'));
   setHTML(btn, `<span class="wl-long">${esc(btn.dataset.label)}: ${L} logged of ${A} active</span>`
     + `<span class="wl-short">${esc(btn.dataset.label === 'This week' ? 'Week' : btn.dataset.label)}: ${L} of ${A}</span>`);
-  btn.title = `${btn.dataset.label}, Monday to Friday: ${L} logged of ${A} active. Click for each day.`;
+  btn.title = 'Monday to Friday. Click for each day.';
 }
 $('#weekline').addEventListener('click', ev => {
   ev.stopPropagation();  // the page's click handler would close the popover it opens
   const r = ev.currentTarget.getBoundingClientRect();
-  openPop(`<h3>${esc(ev.currentTarget.dataset.label)}</h3><div class="sub">Logged of active work time. A day opens it.</div>`
+  openPop(`<h3>${esc(ev.currentTarget.dataset.label)}</h3><div class="sub">Logged of active, Monday to Friday.</div>`
     + weekDays().map(d => `<button type="button" class="wk-day${d.date === state.date ? ' on' : ''}" data-go="${esc(d.date)}"${d.date === state.date ? ' aria-current="date"' : ''}>
         <span>${esc(dayLabel(d.date, {weekday: 'long', day: 'numeric', month: 'short'}))}</span><span class="num">${hours1(d.logged)} of ${hours1(d.active)}</span></button>`).join(''),
     {clientX: r.left - 14, clientY: r.bottom + 26});

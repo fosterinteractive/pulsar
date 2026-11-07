@@ -247,9 +247,9 @@
       <p class="hint warnish" id="log-nostart" hidden></p>
       <p class="hint" id="log-next-hint" aria-live="polite"></p>
       <div class="field"><span>Task <a class="tasklink" id="log-task-open" target="_blank" rel="noopener noreferrer" hidden>Open in Productive</a></span>
-        <input name="q" type="search" placeholder="Search every task in Productive" autocomplete="off" aria-label="Search tasks">
+        <input name="q" type="search" placeholder="Search tasks" autocomplete="off" aria-label="Search tasks">
         <div class="picker" id="log-tasks" role="listbox" aria-label="Tasks"></div>
-        <button type="button" class="newtask-link" id="log-newtask">No task fits this work? Create one in Productive</button>
+        <button type="button" class="newtask-link" id="log-newtask">Create a task…</button>
       </div>
       <p class="hint warnish tflags" id="log-flags" aria-live="polite" hidden></p>
       <label class="field"><span>Service</span><select name="service"></select></label>
@@ -260,9 +260,9 @@
     </div>
     <p class="msg" id="log-msg" role="status"></p>
     <div class="df"><button type="button" class="btn bordered" data-close>Cancel</button>
-      <button type="button" class="btn bordered" id="log-notwork" hidden title="This time was not work: it stays unlogged and is no longer marked as to log (on this Mac only)">Not work</button>
+      <button type="button" class="btn bordered" id="log-notwork" hidden title="Not work: it stays unlogged and stops showing as to log (this Mac only)">Not work</button>
       <button type="button" class="btn bordered" id="log-skip" hidden title="Leave this stretch unlogged for now and open the next one">Skip</button><button type="submit" class="btn primary" id="log-save" aria-keyshortcuts="Meta+Enter">Log in Productive</button>
-      <button type="submit" class="btn bordered" id="log-next" title="Log this, then open the next active stretch with no entry (⌘⇧↩)" aria-keyshortcuts="Meta+Shift+Enter">Log and next</button>
+      <button type="submit" class="btn bordered" id="log-next" title="Log, then open the next time not logged (⌘⇧↩)" aria-keyshortcuts="Meta+Shift+Enter">Log and next</button>
       <button type="submit" class="btn bordered" id="log-anyway" title="Log the whole time, over the entries already logged in it" hidden>Log anyway</button></div>
   </form>
 </dialog>
@@ -298,7 +298,7 @@
       <label class="field"><span>When a window, page or site contains</span><input name="match" autocomplete="off" placeholder="github.com/your-team/your-repo" autofocus></label>
       <p class="hint" id="rule-preview"></p>
       <div class="field"><span>it belongs to the task</span>
-        <input name="q" type="search" placeholder="Search every task in Productive" autocomplete="off" aria-label="Search tasks">
+        <input name="q" type="search" placeholder="Search tasks" autocomplete="off" aria-label="Search tasks">
         <div class="picker" id="rule-tasks" role="listbox" aria-label="Tasks"></div>
       </div>
     </div>
@@ -307,7 +307,7 @@
   </form>
 </dialog>
 <dialog id="logsdlg" aria-labelledby="logs-title">
-  <div class="dh"><h2 id="logs-title">Logs</h2>
+  <div class="dh"><h2 id="logs-title">Error log</h2>
     <span class="seg" id="logs-range"><button type="button" data-v="1">Last 24 hours</button><button type="button" data-v="7">7 days</button><button type="button" data-v="30">30 days</button></span>
     <button type="button" class="btn icon" data-close aria-label="Close">✕</button></div>
   <div class="scrollarea"><div id="logs-list"></div></div>
@@ -327,7 +327,7 @@
   <div class="dh"><h2 id="keys-title">Keyboard shortcuts</h2><button type="button" class="btn icon" data-close aria-label="Close">✕</button></div>
   <div class="scrollarea"><dl>
     <dt><kbd>L</kbd></dt><dd>Log the day (again to close it)</dd>
-    <dt><kbd>N</kbd></dt><dd>+ Log: the next active time with no entry</dd>
+    <dt><kbd>N</kbd></dt><dd>+ Log: the next time not logged</dd>
     <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous or next day</dd>
     <dt><kbd>T</kbd></dt><dd>Today</dd>
     <dt><kbd>↩</kbd></dt><dd>On a block or a yellow rail: open it. On the open row of Log the day: tick it and open the next</dd>
@@ -346,7 +346,7 @@
 <dialog id="lddlg" class="dlg" aria-labelledby="ld-title"></dialog>
 <div class="pkp" id="ld-pk" hidden role="dialog" aria-labelledby="ld-pk-title">
   <div class="pkh"><b id="ld-pk-title">Task</b><span class="sub" id="ld-pk-sub"></span><button type="button" class="btn icon" id="ld-pk-x" aria-label="Close">✕</button></div>
-  <input type="search" id="ld-pk-q" placeholder="Search every task in Productive" autocomplete="off" aria-label="Search tasks">
+  <input type="search" id="ld-pk-q" placeholder="Search tasks" autocomplete="off" aria-label="Search tasks">
   <div class="picker" id="ld-pk-list" role="listbox" aria-label="Tasks"></div>
 </div>
 <div class="pop" id="pop" role="dialog" aria-label="Details" tabindex="-1"></div>

@@ -67,7 +67,7 @@ async function refreshLogged() {
 /* a task against its estimate: the words, and whether it is over */
 function estimateLine(t) {
   if (!t || t.worked == null) return null;
-  if (!t.estimate) return {text: `${dur(t.worked)} logged by everyone, no estimate`, over: false, pct: null};
+  if (!t.estimate) return {text: `${dur(t.worked)}, no estimate`, over: false, pct: null};
   const over = t.worked > t.estimate;
   return {over, pct: Math.min(100, t.worked / t.estimate * 100),
           text: over ? `${dur(t.worked)} of ${dur(t.estimate)}, over by ${dur(t.worked - t.estimate)}`
@@ -155,8 +155,8 @@ function stretchWork(a, b, hint = []) {
 function leadFor(a, b, hint = []) {
   const {work, meet} = stretchWork(a, b, hint), t = work ? rowTasks(work.rows) : null;
   if (t && (t.ids.length || t.learned.length || t.claude.length))
-    return {label: `For this work (${work.project}${work.half ? '' : `, ${dur(Math.round(work.minutes))} of ${dur(Math.round(b - a))}`})`,
-            ids: t.ids, idsWhy: 'linked in the Claude session', tasks: [...t.claude, ...t.learned]};
+    return {label: `From the ${work.project} sessions`,
+            ids: t.ids, idsWhy: 'linked in this session', tasks: [...t.claude, ...t.learned]};
   if (meet)
     return {label: `For “${meet.title || 'the meeting'}”`, url: `/api/meeting-tasks?date=${state.date}&uid=${encodeURIComponent(meet.uid || '')}&title=${encodeURIComponent(meet.title || '')}`};
   return null;
@@ -331,9 +331,8 @@ function render() {
     const src = act.source === 'aw' ? 'ActivityWatch' : 'MemTime';
     const total = act.items.reduce((s, x) => s + x.e - x.s, 0);
     const other = (act.source === 'aw' ? act.minutes?.memtime : act.minutes?.aw) || 0;
-    const hint = other === 0 ? ` · ${act.source === 'aw' ? 'MemTime' : 'ActivityWatch'} is empty for this day` : '';
     const problem = (act.problems || {})[act.source] || (!total ? Object.values(act.problems || {})[0] : '');
-    setText($('#h-act'), problem ? problem : !total && !other ? 'No activity recorded' : `${src} · ${dur(total)}${hint}`);
+    setText($('#h-act'), problem ? problem : !total && !other ? 'No activity recorded' : `${src} · ${dur(total)}`);
     $('#h-act').classList.toggle('warn', !!problem);
     // away from the computer: a hatched rail on the column's left edge, above the cards (a 30-minute card can hide a
     // 20-minute break), and its length in words where no card covers it. A click logs it (a call away from the desk).
@@ -400,7 +399,7 @@ function render() {
       const h = (x.e - x.s) * ppm, lines = Math.max(0, Math.floor((h - 36) / 15));
       const rz = x.s == null ? '' : '<i class="rz rz-t" data-rz="t" title="Drag to change the start"></i><i class="rz rz-b" data-rz="b" title="Drag to change the end"></i>';
       return `<div class="card logged" data-k="logged" data-i="${i}" style="--c:${color(x.project)};${place(x, ppm, 18)}"
-        tabindex="0" role="button" aria-label="${esc(`Logged ${hm(x.s)}–${hm(x.e)}${x.fromClaudeCode ? ' from Claude Code' : ''}: ${x.project}${x.task ? ', ' + x.task : ''}, ${dur(x.minutes)}`)}"${x.fromClaudeCode ? ' title="Logged from Claude Code (Pulsar in Claude Code)"' : ''}>
+        tabindex="0" role="button" aria-label="${esc(`Logged ${hm(x.s)}–${hm(x.e)}${x.fromClaudeCode ? ' from Claude Code' : ''}: ${x.project}${x.task ? ', ' + x.task : ''}, ${dur(x.minutes)}`)}"${x.fromClaudeCode ? ' title="Logged from Claude Code"' : ''}>
         <div class="row"><span class="t">${esc(x.task || x.project)}</span>${x.billable ? `<span class="bill" title="Billable${x.billing ? ': ' + esc(x.billing) : ''}">$</span>` : ''}<span class="m num">${dur(x.minutes)}</span></div>
         ${h > 34 && x.task ? `<div class="d">${esc(x.project)}</div>` : ''}
         ${lines ? `<div class="n" style="-webkit-line-clamp:${lines}">${esc(x.note)}</div>` : ''}${rz}</div>`;
@@ -409,7 +408,7 @@ function render() {
       return `<div class="card repeat" data-k="repeat" data-i="${i}" style="--c:${color(x.project)};${place(x, ppm, 18)}" title="${esc(why)}"
         tabindex="0" role="button" aria-label="${esc(`Not logged yet, usually logged at this time: ${x.title}, ${hm(x.s)}–${hm(x.e)}, ${dur(x.minutes)}. Log it`)}">
         <div class="row"><span class="t">${esc(x.title)}</span><span class="m num">${dur(x.minutes)}</span></div>
-        ${h > 34 ? `<div class="d">Usual · ${esc(x.seen)} seen · click to log</div>` : ''}</div>`;
+        ${h > 34 ? `<div class="d">Usual · not logged yet</div>` : ''}</div>`;
     }).join('');
     // active minutes (not personal) with no entry on them: the amber rails mark stretches of mostly-active minutes as
     // long as one rounding step at least (Settings' "Round entries to"; a shorter one is rounding, not work to log),
@@ -544,13 +543,9 @@ function renderAside(gapMin) {
   else {
     const byProject = new Map();
     for (const e of likely.entries) byProject.set(e.project, (byProject.get(e.project) || 0) + e.minutes);
-    const unplaced = (likely.unplaced || []).reduce((s, u) => s + u.minutes, 0);
     setHTML($('#likelybox'), `<h2>Likely, from Claude sessions</h2>` +
       [...byProject].sort((a, b) => b[1] - a[1]).map(([p, m]) => `<div class="kv"><span>${esc(p)}</span><span class="num">${dur(m)}</span></div>`).join('') +
-      (unplaced ? `<div class="note">Not in the column: ${dur(unplaced)} of sessions that ran at the same time as other work.</div>` : '') +
-      (likely.logging ? `<div class="note">Time logging: ${dur(likely.logging)}, never logged.</div>` : '') +
-      (likely.learning ? `<div class="note">Learning your tasks from past days: ${likely.learning.done} of ${likely.learning.of}.</div>` : '') +
-      `<div class="note">Tracker: ${esc(likely.tracker || 'none')}.</div>`);
+      (likely.learning ? `<div class="note">Learning your tasks: ${likely.learning.done} of ${likely.learning.of}.</div>` : ''));
   }
 }
 
@@ -584,7 +579,7 @@ document.addEventListener('click', ev => {
              lead: meet ? {label: 'For this meeting', url: `/api/meeting-tasks?date=${state.date}&uid=${
                              encodeURIComponent(meet.uid || '')}&title=${encodeURIComponent(meet.title || '')}`}
                  : linked.ids.length || linked.learned.length || linked.claude.length
-                   ? {label: 'For this work', ids: linked.ids, idsWhy: 'linked in the Claude session',
+                   ? {label: 'For this work', ids: linked.ids, idsWhy: 'linked in this session',
                       tasks: [...linked.claude, ...linked.learned]} : null});
     // with Claude Code on, a note from the block's session and commits, unless Claude's pick already brought one
     if (!meet && logDlg.open && CONFIG?.likely?.askClaude && (!linked.draft || linked.draft.from === 'commits'))
@@ -631,7 +626,7 @@ document.addEventListener('click', ev => {
     openPop(`<div class="ph"><div><h3>${hm(b.start * Z)}–${hm(b.end * Z)}</h3><div class="sub">${dur(b.total)} from Claude sessions</div></div>
       <button class="btn bordered sm" data-log-a="${b.start * Z}" data-log-b="${b.end * Z}" data-likely="${i}">Log this time</button></div>` +
       b.entries.map(x => `<div class="li"><div class="t"><div><b>${esc(x.project)}</b> · ${esc(x.titles.join(', ') || '(untitled)')}</div>
-        <small>${hm(x.s)}–${hm(x.e)}${x.kind === 'parallel' ? ' · at the same time as other work, so shown after it' : ''} · ${esc(x.messages)} messages${x.first_message ? ' · ' + esc(x.first_message) : ''}</small></div>
+        <small>${hm(x.s)}–${hm(x.e)}${x.kind === 'parallel' ? ' · in parallel with other work' : ''} · ${esc(x.messages)} messages${x.first_message ? ' · ' + esc(x.first_message) : ''}</small></div>
         <span class="num">${dur(x.minutes)}</span></div>`).join(''), ev);
   } else {
     const x = loggedCache[i];
@@ -641,7 +636,7 @@ document.addEventListener('click', ev => {
       <dl><dt>Task</dt><dd>${esc(x.task)}</dd><dt>Budget</dt><dd>${esc(x.budget)}</dd><dt>Service</dt><dd>${esc(x.service)}</dd><dt>Billable</dt><dd>${x.billable == null ? 'Unknown' : x.billable ? 'Yes' : 'No'}${x.billing ? ' · ' + esc(x.billing) : ''}</dd></dl>
       <div class="btnrow"><button class="btn bordered sm" data-edit>Edit</button><button class="btn bordered sm" data-del>Delete</button>${
         productiveTaskURL(x.taskId) ? `<a class="btn bordered sm" href="${esc(productiveTaskURL(x.taskId))}" target="_blank" rel="noopener noreferrer">Open in Productive</a>` : ''}</div>
-      ${x.approved ? '<p class="sub">Approved. Where your budget has an approver, Productive may refuse a change and say why.</p>' : ''}`, ev);
+      ${x.approved ? '<p class="sub">Approved: Productive may refuse a change.</p>' : ''}`, ev);
   }
 });
 function closePop(refocus = false) {
@@ -697,7 +692,7 @@ $('#refresh').onclick = async () => {
   btn.classList.remove('busy');
   if (d !== state.date) return;
   const c = loggedChange(before, logged);
-  toast(c.warn ? c.text : `Everything updated. Logs: ${c.text}`, c.warn);
+  toast(c.warn ? c.text : `Updated. Logged: ${c.text}`, c.warn);
 };
 /* Ask Claude: a task for each Likely block of the day, shown on the cards and first when logging one */
 $('#ask-claude').onclick = async () => {
@@ -766,7 +761,7 @@ setInterval(async () => {
   if (state.view !== 'day' || state.date !== todayLocal() || document.visibilityState !== 'visible') return;
   const before = state.logged, [, logged] = await load({keepScroll: true});
   const c = loggedChange(before, logged);
-  if (c.changed || c.warn) toast(c.warn ? c.text : `Logs updated automatically: ${c.text}`, c.warn);  // quiet when nothing changed
+  if (c.changed || c.warn) toast(c.warn ? c.text : `Logged time updated: ${c.text}`, c.warn);  // quiet when nothing changed
 }, 60 * 60 * 1000);
 
 
@@ -790,7 +785,7 @@ document.addEventListener('click', ev => {
   const nw = ev.target.closest('.nwrail');
   if (nw) { const a = +nw.dataset.nwA, b = +nw.dataset.nwB; markDay({remove: [a, b]}, `${hm(a)}–${hm(b)} counts as work again.`); return; }
   const dm = ev.target.closest('[data-day-mark]');
-  if (dm) markDay({done: dm.dataset.dayMark === 'done'}, dm.dataset.dayMark === 'done' ? 'Day done: its rails are grey and it leaves Earlier days.' : '');
+  if (dm) markDay({done: dm.dataset.dayMark === 'done'}, dm.dataset.dayMark === 'done' ? 'Day done. It leaves Earlier days.' : '');
 });
 /* "Not work" from the log dialog or a Log the day row: [a, b) counts nowhere, with Undo */
 function markNotWork(a, b) {

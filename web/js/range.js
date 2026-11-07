@@ -43,9 +43,8 @@ function rangeLead(date) {
   const others = res.groups.filter(g => g !== d && g.taskId && g.title && g.minutes >= 10 && g.taskId !== d.taskId)
     .map(g => ({taskId: g.taskId, title: g.title, project: g.project, why: `also in this time: ${dur(g.minutes)}, ${g.label}`}));
   const of = `${dur(d.minutes)} of ${dur(res.work)}`;
-  return {label: d.share >= 0.995 ? `For this time (${d.label})`
-            : `For this time (${d.share >= 0.5 ? 'mostly ' : ''}${d.label}, ${of})`,
-          tasks: [{taskId: d.taskId, title: d.title, project: d.project, why: `${d.confidenceWords}: ${d.why}`},
+  return {label: d.share >= 0.995 ? `For this time: ${d.label}` : `For this time: ${d.label}, ${of}`,
+          tasks: [{taskId: d.taskId, title: d.title, project: d.project, why: d.confidence === 'low' ? `${d.why} · unsure` : d.why},
                   ...others, ...(d.alts || []).map(a => ({...a, why: a.why || 'another option'}))]};
 }
 
@@ -78,7 +77,7 @@ function rangeDraw() {
   if (!show) { el.innerHTML = ''; return; }
   const kinds = res.groups.filter(g => g.split > 0).sort((p, q) => q.split - p.split);
   const can = res.split.filter(rgLoggable), send = res.split.filter(rgSends);
-  const line = `This range mixes ${kinds.length} kinds of work: ${kinds.map(g => `${esc(g.label)} ${dur(g.split)}`).join(', ')}.`;
+  const line = `Mixed work: ${kinds.map(g => `${esc(g.label)} ${dur(g.split)}`).join(', ')}.`;
   if (!rangeNow.open) {
     el.innerHTML = `<p class="rg-line">${line}${can.length >= 2 ? ` <button type="button" class="rg-link" data-rg-open>Split into ${res.split.length} entries?</button>` : ''}</p>`;
     return;
@@ -94,8 +93,7 @@ function rangeDraw() {
       <label class="rg-inc"><input type="checkbox" data-rg-inc="${i}"${rgSends(x) ? ' checked' : ''}> Log this one${
         rgClaude(x) ? `<span class="rg-why"> · ${esc(x.claudeFound ? 'Claude found this task by searching Productive: check it.'
           : 'Claude drafted the note: read it first.')}</span>` : ''}</label>` : ''}</li>`).join('')}</ol>
-    <p class="rg-small">Each is checked like any entry: one that overlaps another stops the rest, nothing is forced.
-      Notes filled in for you may reach clients; check them.</p>
+    <p class="rg-small">Clients may see notes.</p>
     <div class="rg-act"><button type="button" class="btn bordered sm" data-rg-log${rangeNow.busy || !send.length ? ' disabled' : ''}>Log ${
       send.length === 1 ? 'this entry' : `these ${send.length} entries`}</button>
       <button type="button" class="btn sm" data-rg-close>Keep one entry</button></div>`;

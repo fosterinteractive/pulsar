@@ -366,7 +366,7 @@ ERRORS = [
     ("not sent twice", "This entry was logged already. It is not sent twice."),
     ("logged a moment ago", "This entry was logged a moment ago. Check the Logged column before logging it again."),
     ("journal cannot be read", "Log the day's journal cannot be read, so Pulsar writes nothing from Claude Code. See "
-                               "Logs in Pulsar."),
+                               "Pulsar's error log (Settings > Updates)."),
     ("needs its run and row", "Pulsar could not file this run in its journal."),
     ("read-only", "Pulsar runs read-only: nothing was written."),
     ("preview does not write", "Pulsar Preview does not write to Productive unless its Settings allow it: nothing was "
@@ -402,7 +402,7 @@ def error_out(text) -> str:
     known = next((c for c in productive.REFUSALS if c in raw), None)
     if known:
         return f"Productive refused the entry: {productive.REFUSALS[known]} ({known})."
-    phrase = next((p for words, p in ERRORS if words in low), "Pulsar could not do this; Logs in Pulsar has the details.")
+    phrase = next((p for words, p in ERRORS if words in low), "Pulsar could not do this; its error log (Settings > Updates) has the details.")
     extra = [m.group(1) for m in [_CODE_FIELD.search(raw)] if m]
     extra += [f"HTTP {s}" for s in re.findall(r"\bHTTP (\d{3})\b", raw)[:1]]
     return f"{phrase} ({', '.join(extra)})" if extra else phrase

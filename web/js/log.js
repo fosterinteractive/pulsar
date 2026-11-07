@@ -176,17 +176,16 @@ async function draftFromSession({date, s, e, project, from = ''}) {
 function showDraft() {
   const d = logDrafted, sel = logPicker.selected;
   if (logEdit) {  // nothing is drafted for an entry already logged
-    $('#log-note-hint').textContent = logEdit.noteRich ? 'In Productive this note has formatting (paragraphs, a list or '
-      + 'links). It stays as it is unless you change the note here; a changed note is saved as plain text.' : '';
+    $('#log-note-hint').textContent = logEdit.noteRich ? 'This note has formatting in Productive. Editing it here saves it as plain text.' : '';
     return;
   }
-  $('#log-note-hint').innerHTML = !d ? (logFilled ? esc('Filled in for you: clients may see notes on invoices; check it.')
+  $('#log-note-hint').innerHTML = !d ? (logFilled ? esc('Filled in for you. Clients may see notes.')
                                         : logDrafting ? esc(`Claude is drafting a note from ${logDraftFrom || 'this session'}…`) : '')
-    : d.from === 'commits' ? esc('From your commits' + (logDrafting ? `; Claude is drafting one from ${logDraftFrom || 'the session'}…` : ': check it before logging; clients may see notes.'))
-    : d.from === 'session' ? CLAUDE_MARK.split('<span')[0] + esc(`Drafted by Claude from ${d.source || 'this session'} and your commits: check it before logging; clients may see notes.`)
+    : d.from === 'commits' ? esc('From your commits' + (logDrafting ? `; Claude is drafting one from ${logDraftFrom || 'the session'}…` : '. Clients may see notes.'))
+    : d.from === 'session' ? CLAUDE_MARK.split('<span')[0] + esc(`Drafted by Claude from ${d.source || 'this session'}. Clients may see notes.`)
     : CLAUDE_MARK.split('<span')[0] + esc(
-    !sel || sel.taskId === d.taskId ? 'Drafted by Claude: check it before logging; clients may see notes.'
-      : `Drafted by Claude for “${d.title}”: check it before logging; clients may see notes.`);
+    !sel || sel.taskId === d.taskId ? 'Drafted by Claude. Clients may see notes.'
+      : `Drafted by Claude for “${d.title}”. Clients may see notes.`);
   $('#log-note-hint').classList.toggle('drafting', !!logDrafting);  // ask.css: Claude's mark twinkles while it drafts
 }
 logForm.elements.note.addEventListener('input', () => { if (logDrafted || logFilled || logDrafting) { logDrafted = null; logFilled = false; logDrafting = 0; showDraft(); } });
@@ -239,7 +238,7 @@ let logEdit = null;
 async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = [], note = '', lead = null, edit = null, drafted = null, range = false, exact = false, stretch = null} = {}) {
   logEdit = edit; logOpened++; logDrafting = 0;
   logStretchNow = stretch && !edit && date === state.date ? stretch : null;  // flow.js: Skip goes on from it
-  $('#log-title').textContent = edit ? 'Change a logged entry' : 'Log time in Productive';
+  $('#log-title').textContent = edit ? 'Edit entry' : 'Log time in Productive';
   logForm.elements.date.disabled = !!edit;  // an entry changes within its own day
   if (!CONFIG?.productive.active) { toast('Connect Productive in Settings first.', true); openSettings('t-conn'); return; }
   const f = logForm.elements;
@@ -308,9 +307,8 @@ function noStartHint(date) {
   const el = $('#log-nostart');
   const rows = date === state.date ? (state.logged?.entries || []).filter(x => x.s == null) : [];
   el.hidden = !rows.length;
-  if (rows.length) el.textContent = `This day also has ${rows.length} ${rows.length === 1 ? 'entry' : 'entries'} with no start time `
-    + `(${dur(rows.reduce((s, x) => s + x.minutes, 0))}: ${[...new Set(rows.map(x => x.project))].join(', ')}). `
-    + 'They are not on the timeline, so check this time is not among them.';
+  if (rows.length) el.textContent = `Also logged with no start time: ${dur(rows.reduce((s, x) => s + x.minutes, 0))} `
+    + `(${[...new Set(rows.map(x => x.project))].join(', ')}). Check this time is not in it.`;
 }
 
 /* each request has a number: an answer that arrives after a newer request (the dialog reopened, the date changed)
@@ -330,7 +328,7 @@ async function fillSuggestions(date, hint, lead = null) {
   logPicker.set(dedupe([
     ...(ranged ? [{...ranged, tasks: ranged.tasks.map(known)}] : []),
     {label: lead?.label || '', tasks: led},
-    {label: 'From your rules, in this time', tasks: ruled, showMin: true},
+    {label: 'Your rules', tasks: ruled, showMin: true},
     {label: 'You logged to these lately', tasks: (s.recent || []).slice(0, 10), note: s.historyError || ''},
     {label: 'Assigned to you', tasks: (s.assigned || []).slice(0, 10), note: s.assignedError || ''},
   ]), (ranged && known(ranged.tasks[0])) || led[0] || ruled[0] || null);
@@ -374,8 +372,8 @@ async function loadServices(task) {
   f.service.disabled = false;
   // a blocked task can still take time (the blocker may be what you worked on), but say so before anything is written
   const said = [task.blocked ? `This task is ${(task.status || 'blocked').toLowerCase()} in Productive. You can still log to it.` : '',
-                ownGone ? (r.error ? r.error + ' ' : '') + "This entry's service takes no new time on this date. It stays as it is "
-                  + 'unless you pick another; Productive may refuse a change to the entry.' : ''].filter(Boolean);
+                ownGone ? (r.error ? r.error + ' ' : '') + "Its service takes no new time on this date. It stays unless you pick "
+                  + 'another; Productive may refuse a change.' : ''].filter(Boolean);
   setLogMsg(said.join(' '), said.length > 0);
 }
 

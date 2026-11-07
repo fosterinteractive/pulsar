@@ -1978,7 +1978,7 @@ class Handler(BaseHTTPRequestHandler):
             logbook.record("calendar", f"Connecting Google Calendar failed: {type(exc).__name__}: {exc}",
                            detail=traceback.format_exc())
             result = {"ok": False, "known": True, "message": f"Pulsar could not finish connecting ({type(exc).__name__}). "
-                                                             "See Logs in Pulsar, then try again."}
+                                                             "See the error log in Settings > Updates, then try again."}
         if not result["known"]:
             logbook.record("calendar", "An answer from Google arrived for a sign-in Pulsar was not waiting for; it was "
                                        "ignored.", kind="warning")

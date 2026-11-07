@@ -194,7 +194,7 @@ taskForm.addEventListener('submit', async ev => {
                                                 statusId: f.status.value, estimate});
   // no clear answer (a timeout, a server error, or Pulsar itself did not answer): the task may exist, so the button
   // stays off until the dialog opens again (Pulsar refuses the same title for ten minutes too); search for it first
-  if (r.error && (r.unclear || /^Server not responding/.test(r.error)))
+  if (r.error && (r.unclear || /^Pulsar is not responding/.test(r.error)))
     return setTaskMsg(/search for it/i.test(r.error) ? r.error
       : `${r.error} The task may exist: search for it in the task list before creating it again.`, true);
   btn.disabled = false;
