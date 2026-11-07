@@ -319,11 +319,11 @@ def _status(statuses: list, kind: str) -> dict:
     if not first:
         return {"id": "", "why": "The project's statuses could not be read: Productive puts it in its first one."}
     if kind == "parent":
-        return {"id": first["id"], "why": "Where new subtasks start, nearly always."}
+        return {"id": first["id"], "why": "Where new subtasks start."}
     todo = next((s for s in statuses if s["category"] == "1" and TODO.match(s["name"])), None)
     if todo:
-        return {"id": todo["id"], "why": "Where new tasks in a task list or the project usually start."}
-    return {"id": first["id"], "why": "The workflow's first status, where a new task starts."}
+        return {"id": todo["id"], "why": "Where new tasks usually start."}
+    return {"id": first["id"], "why": "The workflow's first status."}
 
 
 def _estimate(kind: str, parent: dict, sizes) -> dict:
@@ -335,7 +335,7 @@ def _estimate(kind: str, parent: dict, sizes) -> dict:
     own = productive.minutes_of(own) if own not in (None, "") else 0
     if kind == "parent" and own > 0:
         return {"minutes": None, "parent": round(own),
-                "why": f"Left empty: “{parent.get('title') or 'its parent'}” carries {dur(own)}, and a subtask may have none."}
+                "why": f"Left empty, as “{parent.get('title') or 'its parent'}” carries {dur(own)}."}
     sub = kind == "parent"
     same = [m for m, is_sub, title in (sizes or []) if bool(is_sub) == sub and m > 0 and (sub or not CONTAINER.search(title))]
     name = f"“{parent['title']}”" if parent.get("title") else "Its parent"
@@ -343,16 +343,15 @@ def _estimate(kind: str, parent: dict, sizes) -> dict:
     if sizes is None:
         return {"minutes": None, "parent": 0, "why": lead + "The project's estimates could not be read: add one if you know it."}
     if len(same) < SIZES_MIN:
-        return {"minutes": None, "parent": 0, "why": lead + "Too few recent tasks like it in this project have one to go by: "
-                                                           "add one if you know it."}
+        return {"minutes": None, "parent": 0, "why": lead + "Too few tasks like it in this project to go by."}
     median = _median(same)
     if median > ISSUE_MAX:  # a new task here is one issue: "60 h", the size of a project's phases, would mislead a PM
         return {"minutes": None, "parent": 0,
-                "why": lead + f"Left empty: recent {'subtasks' if sub else 'tasks'} in this project are much bigger "
-                              f"({dur(min(same))} to {dur(max(same))}) than one issue: add one if you know it."}
+                "why": lead + f"Left empty, as this project's {'subtasks' if sub else 'tasks'} are much bigger "
+                              f"({dur(min(same))} to {dur(max(same))}) than one issue."}
     return {"minutes": max(5, int(round(median / 5)) * 5), "parent": 0,
-            "why": lead + f"The median of the {len(same)} recent {'subtasks' if sub else 'tasks'} in this project that have "
-                          f"one ({dur(min(same))} to {dur(max(same))})."}
+            "why": lead + f"The median of the {len(same)} recent {'subtasks' if sub else 'tasks'} that have one "
+                          f"({dur(min(same))} to {dur(max(same))})."}
 
 
 def _service(kind: str, parent: dict, services, date: str):
@@ -370,12 +369,12 @@ def _service(kind: str, parent: dict, services, date: str):
             hits = [x for x in services if rx.search(x.get("name") or "") and not NOT_CONTINGENCY.search(x.get("name") or "")]
             if hits:  # two budgets open at once: the one named for the month
                 pick = next((x for x in hits if period and period in (x.get("budget") or "").replace("/", "-")), hits[0])
-                return pick, "The budget's contingency line on that date, where time on an issue under a period's task goes."
+                return pick, "The budget's contingency line."
     if len(services) == 1:
         return services[0], "The only service that takes time on that date."
     if not services:
         return None, "No service of this project takes time on that date: ask its PM."
-    return None, "Pick it when logging: nothing here says which."
+    return None, "Nothing here says which."
 
 
 def propose(statuses, kind: str, parent, services, sizes, date: str) -> dict:
