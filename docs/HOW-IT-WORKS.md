@@ -1271,7 +1271,7 @@ estimate, and a table of every day. A day's bar and its row in the tables open t
 | `~/.cache/pulsar/claude-picks/` | Ask Claude's last answer per day (task ids, reasons, drafted notes), shown again when the day is opened, never asked again by itself; 60 days. |
 | `~/.cache/pulsar/logday-journal.json` | Log the day: each row a run sent, before it was sent, and what came of it (31 days). |
 | `~/.cache/pulsar/logs/` | The error log, one JSON line per event, 31 days; tokens, keys, OAuth codes, signed addresses, fields named as keys or secrets, bare hex secrets, UUIDs and long opaque strings removed. |
-| `~/Library/Application Support/Pulsar/` | The installed code: `versions/`, `current`, `previous`, `bad-versions`. Only code a release signed gets here (section 2). |
+| `~/Library/Application Support/Pulsar/` | The installed code: `versions/`, `current`, `previous`, `bad-versions`, and `seen-release` (the newest signed `latest.json` believed: its version and expiry). Only code a release signed gets here (section 2). |
 | `~/Library/Logs/Pulsar.log` | What the launcher and the server printed. |
 
 Every file Pulsar writes is readable by its owner only. Settings and caches are written atomically (a temporary file, then a rename), so a reader never sees half a file; the error log is appended to.
@@ -1301,6 +1301,12 @@ sequenceDiagram
   expired on …"; a warning in the error log once a day). Without it, an old signed `latest.json` served again in
   place of a newer one would hide every later release for good. The cost: with no release for 60 days, installed
   copies stop offering updates until the next one, so release at least every 60 days.
+- **Never an older one.** Within those 60 days an installed copy also refuses a signed `latest.json` older than the
+  newest it has already believed (its version, then its `expires`; kept in `seen-release` in the install folder) or
+  than its own version (it came from a release at least that new), and Settings says so ("The update server sent an
+  older release description…"; a warning in the error log once a day). So an old manifest served again cannot hide
+  a newer release, nor offer a downgrade, which is never installed anyway. A copy run from source keeps the record in
+  memory only.
 - **Never automatic.** A check only looks; installing needs the **Update** button. A stolen release key alone cannot
   reach everyone's Mac the same hour.
 - **Downloads** come only from `github.com/fosterinteractive/pulsar/releases/download/` (the repository must stay
