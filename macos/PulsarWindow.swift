@@ -7,64 +7,241 @@
 //
 //   - Only Pulsar's own address (http://127.0.0.1:<port>) opens in the window. A link elsewhere that the person
 //     clicks opens in their browser; anything else is refused. Only Pulsar's own page may message the window.
-//   - Every load of the page goes through the launcher: at start, View > Reload, a new sign-in, and the page's own
-//     reload into a new version. The launcher checks that the server on the port holds this user's key before it
-//     gives the address, so the window never loads whatever else may have taken the port while Pulsar restarted.
-//   - Downloads (CSV, the error log) ask where to save; "Print or save as PDF" opens the print dialog.
-//   - Closing the window quits the app, and quitting stops the server this app started (launcher.sh --stop). A
-//     server started some other way, such as python3 pulsar.py in a git checkout, keeps running.
+//   - Every load of the page goes through the launcher: at start, View > Reload Pulsar, a new sign-in, and the page's
+//     own reload into a new version. The launcher checks that the server on the port holds this user's key before it
+//     gives the address, so the window never loads whatever else may have taken the port while Pulsar restarted. The
+//     day, view and range shown are carried over. Right-click never offers WebKit's own Reload, which would not.
+//   - The launcher's dialogs are sheets on this window, and what it is doing shows under a spinner while it starts.
+//   - The menus act on the page through web/js/native.js (pulsarNative), which tells the window what the page shows:
+//     the view and day (for the menus and the window's title), its theme (the title bar follows it), open dialogs and
+//     unsaved work. Cmd+W closes the page's open dialog or popover before the window; Cmd+Q asks when the page has work
+//     that would be lost.
+//   - Closing the window keeps Pulsar running (in the Dock, with today's time not logged as the Dock's badge, and the
+//     end-of-day reminder); a click on the Dock icon brings it back. Quitting stops the server this app started
+//     (launcher.sh --stop). A server started some other way, such as python3 pulsar.py in a git checkout, keeps running.
+//   - Downloads (CSV, the error log) ask where to save; Print opens the print dialog.
 //   - A Mac whose Safari is older than 16.2 cannot draw the page: Pulsar then opens in the browser instead.
 //
-// Built with -D PULSAR_TEST, it also takes a picture, a download and a PDF by itself (see the end of this file).
+// Built with -D PULSAR_TEST, it also takes a picture, a download and a PDF by itself (see the end of PulsarWindow).
 
 import Cocoa
+import ServiceManagement
+import UserNotifications
 @preconcurrency import WebKit
 
-final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate,
-    WKScriptMessageHandler, WKDownloadDelegate {
+/// The page's web view: the browser's own items out of its right-click menus, and a pinch that changes the day's row
+/// height instead of magnifying the whole window.
+final class PulsarWebView: WKWebView {
+    var onPinch: ((Int) -> Void)?
+    private var pinched: CGFloat = 0
+
+    /// WebKit's items that belong to a browser: Reload would load whatever answers on the port, without the launcher's
+    /// check (Pulsar reloads only through View > Reload Pulsar); a new window or a download of a link opens nothing
+    /// here; searching the web, sharing or a link to highlighted text of a local address lead nowhere.
+    static let browserItems: Set<String> = [
+        "WKMenuItemIdentifierReload", "WKMenuItemIdentifierGoBack", "WKMenuItemIdentifierGoForward",
+        "WKMenuItemIdentifierOpenLink", "WKMenuItemIdentifierOpenLinkInNewWindow", "WKMenuItemIdentifierDownloadLinkedFile",
+        "WKMenuItemIdentifierOpenImageInNewWindow", "WKMenuItemIdentifierDownloadImage", "WKMenuItemIdentifierCopyImage",
+        "WKMenuItemIdentifierOpenMediaInNewWindow", "WKMenuItemIdentifierDownloadMedia", "WKMenuItemIdentifierSearchWeb",
+        "WKMenuItemIdentifierShareMenu", "WKMenuItemIdentifierCopyLinkWithHighlight", "WKMenuItemIdentifierInspectElement",
+        "WKMenuItemIdentifierOpenFrameInNewWindow",
+    ]
+    /// Writing Tools rewrite text: useful in a note being typed, not over the day's cards.
+    static let editingOnly: Set<String> = ["WKMenuItemIdentifierWritingTools", "WKMenuItemIdentifierSummarize"]
+
+    override func willOpenMenu(_ menu: NSMenu, with event: NSEvent) {
+        let editable = menu.items.contains { $0.identifier?.rawValue == "WKMenuItemIdentifierPaste" }
+        for item in menu.items {
+            let id = item.identifier?.rawValue ?? ""
+            if Self.browserItems.contains(id) || (!editable && Self.editingOnly.contains(id)) {
+                menu.removeItem(item)
+            }
+        }
+        // no separator first, last or twice in a row
+        var lastWasSeparator = true
+        for item in menu.items {
+            if item.isSeparatorItem && lastWasSeparator { menu.removeItem(item) } else { lastWasSeparator = item.isSeparatorItem }
+        }
+        while let last = menu.items.last, last.isSeparatorItem { menu.removeItem(last) }
+        super.willOpenMenu(menu, with: event)
+    }
+
+    override func magnify(with event: NSEvent) {
+        if event.phase == .began { pinched = 0 }
+        pinched += event.magnification
+        if pinched >= 0.3 { pinched = 0; onPinch?(-1) }          // fingers apart: finer rows
+        else if pinched <= -0.3 { pinched = 0; onPinch?(1) }     // together: coarser rows
+        if event.phase == .ended || event.phase == .cancelled { pinched = 0 }
+    }
+}
+
+final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuItemValidation, WKNavigationDelegate,
+    WKUIDelegate, WKScriptMessageHandler, WKDownloadDelegate, UNUserNotificationCenterDelegate {
     private var window: NSWindow!
-    private var web: WKWebView!
+    private var web: PulsarWebView!
+    private var spinner: NSProgressIndicator!
     private var origin: URL?           // http://127.0.0.1:<port>/ once the launcher has said where Pulsar runs
     private var starting = false
     private var keepServer = false     // true when the page was handed to the browser: it still needs the server
     private var stopped = false
+    private var quitAsked = false      // the page asked to quit (Reinstall Pulsar): no question about unsaved work
+    private var closeConfirmed = false // the page had nothing open: Cmd+W closes the window itself
+    private var message = ""           // the text of the window's own message page, while it shows
+    private var page: [String: Any] = [:]  // what the page last said it shows (native.js): view, day, dialogs, …
     private let launcher = Bundle.main.url(forResource: "launcher", withExtension: "sh")
+    private let defaults = UserDefaults.standard
+    private var running: Process?      // the launcher, while it runs
+    private var reminder: Timer?
     private var warp: NativeWarp?
+    private static let place = ["view", "date", "zoom", "source", "range", "from", "to"]  // the page's own address keys
 
     // MARK: start
+
+    func applicationWillFinishLaunching(_ note: Notification) {
+        defaults.register(defaults: ["badge": true, "reminder": true, "reminderTime": "17:30", "pageZoom": 1.0])
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        let logDay = UNNotificationAction(identifier: "logday", title: "Log the Day", options: [.foreground])
+        center.setNotificationCategories([UNNotificationCategory(identifier: "pulsar.logday", actions: [logDay],
+                                                                 intentIdentifiers: [], options: [])])
+    }
 
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.setActivationPolicy(.regular)
         buildMenu()
         buildWindow()
+        observeSystem()
+        let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in self?.checkReminder() }
+        RunLoop.main.add(timer, forMode: .common)
+        reminder = timer
         start()
-        NSApp.activate(ignoringOtherApps: true)
+        if !launchedAtLogin() { NSApp.activate(ignoringOtherApps: true) }  // at login: no taking the keyboard away
     }
 
-    /// Runs the launcher in the background and loads the address it prints. The launcher shows its own dialogs
-    /// when something is wrong (no developer tools, the port taken, a version that does not start). `quiet` keeps the
-    /// page in view meanwhile (a reload, or the warp holding over it while Pulsar restarts into a new version).
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
+
+    /// Opened by macOS at login (Open at Login): the window comes up without taking the focus from what is in front.
+    private func launchedAtLogin() -> Bool {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent else { return false }
+        return event.eventID == kAEOpenApplication
+            && event.paramDescriptor(forKeyword: keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
+    }
+
+    /// Runs the launcher and loads the address it prints. The launcher's dialogs are sheets on this window; `quiet`
+    /// keeps the page in view meanwhile (a reload, or the warp holding over it while Pulsar restarts into a new
+    /// version). The day and view the page shows now are carried into the new address.
     private func start(quiet: Bool = false) {
         guard !starting else { return }
         starting = true
+        let carry = isPulsar(web.url) ? (URLComponents(url: web.url!, resolvingAgainstBaseURL: false)?.queryItems ?? [])
+            .filter { Self.place.contains($0.name) } : []
         if !quiet { showMessage("Starting Pulsar…", button: nil) }
-        DispatchQueue.global(qos: .userInitiated).async {
-            let url = self.runLauncher(["--window"])
-            DispatchQueue.main.async {
-                self.starting = false
-                guard let url = url, let base = URL(string: "/", relativeTo: url)?.absoluteURL else {
-                    NSApp.terminate(nil)   // the launcher has already said why, or the person chose "Not now"
-                    return
-                }
-                self.origin = base
-                self.loadWhenSupported(url)
+        runLauncher(["--window"]) { url in
+            self.starting = false
+            guard let url = url, let base = URL(string: "/", relativeTo: url)?.absoluteURL else {
+                NSApp.terminate(nil)   // the launcher has already said why, or the person chose "Not now"
+                return
             }
+            self.origin = base
+            var parts = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            let code = parts?.queryItems ?? []
+            parts?.queryItems = code + carry
+            self.loadWhenSupported(parts?.url ?? url)
         }
     }
 
-    /// Runs launcher.sh with the given arguments and returns the address it printed, if any.
+    /// Runs launcher.sh, shows its dialogs as sheets and its progress under the spinner, and hands over the address it
+    /// printed, if any. It gives up after five minutes without a word from the launcher (which says something every
+    /// few seconds while Apple's developer tools install).
+    private func runLauncher(_ args: [String], done: @escaping (URL?) -> Void) {
+        guard let launcher = launcher else { done(nil); return }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/bash")
+        task.arguments = [launcher.path] + args
+        task.environment = ProcessInfo.processInfo.environment.merging(["PULSAR_WINDOW_DIALOGS": "1"]) { $1 }
+        let out = Pipe(), input = Pipe()
+        task.standardOutput = out
+        task.standardError = FileHandle.nullDevice
+        task.standardInput = input
+        var found: URL?
+        var pending = Data()
+        var silence: DispatchWorkItem?
+        let quietFor: TimeInterval = 300
+        let watch = {
+            silence?.cancel()
+            let item = DispatchWorkItem { task.terminate() }
+            silence = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + quietFor, execute: item)
+        }
+        let line = { (text: String) in   // on the main queue
+            watch()
+            let parts = text.split(separator: " ", maxSplits: 2).map(String.init)
+            switch parts.first ?? "" {
+            case "PULSAR_URL":
+                if parts.count > 1, let url = URL(string: parts[1]), url.scheme == "http", url.host == "127.0.0.1" { found = url }
+            case "PULSAR_STATUS":
+                if parts.count > 1, let said = Self.unbase64(parts[1]) { self.showMessage(said, button: nil) }
+            case "PULSAR_DIALOG":
+                let said = parts.count > 1 ? Self.unbase64(parts[1]) ?? "" : ""
+                let buttons = (parts.count > 2 ? Self.unbase64(parts[2]) ?? "" : "").split(separator: "\n").map(String.init)
+                silence?.cancel()   // the person takes their time
+                self.ask(said, buttons: buttons.isEmpty ? ["OK"] : buttons) { answer in
+                    watch()
+                    try? input.fileHandleForWriting.write(contentsOf: Data((answer + "\n").utf8))
+                }
+            default: break
+            }
+        }
+        out.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {   // the launcher is done (the server it started holds none of this pipe)
+                handle.readabilityHandler = nil
+                task.waitUntilExit()
+                DispatchQueue.main.async {
+                    silence?.cancel()
+                    self.running = nil
+                    done(found)
+                }
+                return
+            }
+            pending.append(data)
+            while let nl = pending.firstIndex(of: 10) {
+                let text = String(decoding: pending[pending.startIndex..<nl], as: UTF8.self)
+                pending.removeSubrange(pending.startIndex...nl)
+                DispatchQueue.main.async { line(text) }
+            }
+        }
+        do { try task.run() } catch { out.fileHandleForReading.readabilityHandler = nil; done(nil); return }
+        running = task
+        watch()
+    }
+
+    private static func unbase64(_ s: String) -> String? {
+        Data(base64Encoded: s).map { String(decoding: $0, as: UTF8.self) }
+    }
+
+    /// One of the launcher's dialogs as a sheet: its first paragraph in bold, the rest under it; the last button is the
+    /// default, as in the launcher's own dialogs.
+    private func ask(_ text: String, buttons: [String], answer: @escaping (String) -> Void) {
+        showWindow()
+        spinner.stopAnimation(nil)
+        let paragraphs = text.components(separatedBy: "\n\n")
+        let alert = NSAlert()
+        alert.messageText = paragraphs.first ?? text
+        alert.informativeText = paragraphs.dropFirst().joined(separator: "\n\n")
+        for title in buttons.reversed() { alert.addButton(withTitle: title) }  // the first one added is the default
+        alert.beginSheetModal(for: window) { response in
+            let index = response.rawValue - NSApplication.ModalResponse.alertFirstButtonReturn.rawValue
+            let picked = index >= 0 && index < buttons.count ? Array(buttons.reversed())[index] : ""
+            if self.starting && !self.isPulsar(self.web.url) { self.spinner.startAnimation(nil) }
+            answer(picked)
+        }
+    }
+
+    /// Runs launcher.sh with the given arguments and returns the address it printed, if any (for --stop, while
+    /// quitting, where nothing can be shown).
     @discardableResult
-    private func runLauncher(_ args: [String], timeout: TimeInterval = 300) -> URL? {
+    private func runLauncherAndWait(_ args: [String], timeout: TimeInterval) -> URL? {
         guard let launcher = launcher else { return nil }
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -111,18 +288,19 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
         }
     }
 
-    // MARK: window and menus
+    // MARK: window
 
     private func buildWindow() {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()   // keeps the session token and the page's choices between launches
         config.userContentController.add(self, name: "pulsar")
-        config.userContentController.addUserScript(WKUserScript(source: "window.PULSAR_NATIVE_WARP = 1;",
-                                                                injectionTime: .atDocumentStart, forMainFrameOnly: true))
-        web = WKWebView(frame: .zero, configuration: config)
+        web = PulsarWebView(frame: .zero, configuration: config)
+        injectShell()
         web.navigationDelegate = self
         web.uiDelegate = self
-        web.allowsMagnification = true
+        web.allowsMagnification = false   // a pinch changes the rows instead (PulsarWebView)
+        web.onPinch = { [weak self] step in self?.runPage("rowsStep", step) }
+        web.pageZoom = CGFloat(defaults.double(forKey: "pageZoom")).clamped(0.5, 2)
         web.underPageBackgroundColor = .windowBackgroundColor
 
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
@@ -131,6 +309,11 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
                           styleMask: [.titled, .closable, .miniaturizable, .resizable],
                           backing: .buffered, defer: false)
         window.title = "Pulsar"
+        // one band with the page's own header: the title bar takes the page's colour and shows no title of its own (the
+        // title still names the day for the Window menu, Mission Control and VoiceOver)
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        if #available(macOS 11.0, *) { window.titlebarSeparatorStyle = .none }
         window.minSize = NSSize(width: 640, height: 480)
         window.tabbingMode = .disallowed
         window.isReleasedWhenClosed = false
@@ -141,19 +324,133 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
         root.addSubview(web)
         window.contentView = root
         web.frame = root.bounds
+        spinner = NSProgressIndicator()
+        spinner.style = .spinning
+        spinner.controlSize = .regular
+        spinner.isDisplayedWhenStopped = false
+        spinner.sizeToFit()
+        spinner.frame.origin = NSPoint(x: (root.bounds.width - spinner.frame.width) / 2, y: root.bounds.height / 2 + 22)
+        spinner.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
+        root.addSubview(spinner)
         warp = NativeWarp(web: web, host: root)
+        applyTheme(defaults.string(forKey: "theme") ?? "system", background: defaults.string(forKey: "background"))
         window.center()
         window.setFrameAutosaveName("Pulsar")   // the next launch opens where this one was left
         window.makeKeyAndOrderFront(nil)
     }
 
+    private func showWindow() {
+        if !window.isVisible || window.isMiniaturized { window.makeKeyAndOrderFront(nil) }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// What the page learns of the app at the start of every load: its version (for "Reinstall Pulsar"), and the
+    /// Mac's own choices the page follows (12 or 24 hours, the first day of the week, the language and region, the
+    /// accent colour), and the app's own (the badge, the reminder, Open at Login).
+    private func injectShell() {
+        let shell: [String: Any] = [
+            "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
+            "path": Bundle.main.bundlePath, "pid": Int(ProcessInfo.processInfo.processIdentifier),
+            "prefs": systemPrefs(), "native": nativePrefs(),
+        ]
+        let controller = web.configuration.userContentController
+        controller.removeAllUserScripts()
+        controller.addUserScript(WKUserScript(source: "window.PULSAR_NATIVE_WARP = 1; window.PULSAR_APP = \(Self.json(shell));",
+                                              injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    }
+
+    private func systemPrefs() -> [String: Any] {
+        let hours = DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: Locale.current) ?? "H"
+        let region = Locale.current.identifier.split(separator: "@").first.map(String.init) ?? "en_US"
+        var accent = ""
+        if let c = NSColor.controlAccentColor.usingColorSpace(.sRGB) {
+            accent = String(format: "#%02x%02x%02x", Int((c.redComponent * 255).rounded()),
+                            Int((c.greenComponent * 255).rounded()), Int((c.blueComponent * 255).rounded()))
+        }
+        return ["hour12": hours.contains("a"), "firstWeekday": Calendar.current.firstWeekday,
+                "locale": region.replacingOccurrences(of: "_", with: "-"), "languages": Locale.preferredLanguages,
+                "accent": accent]
+    }
+
+    private func nativePrefs() -> [String: Any] {
+        ["badge": defaults.bool(forKey: "badge"), "reminder": defaults.bool(forKey: "reminder"),
+         "reminderTime": defaults.string(forKey: "reminderTime") ?? "17:30", "login": loginStatus()]
+    }
+
+    /// The page's theme on the window too: the title bar's colour and light or dark, so the two never disagree.
+    private func applyTheme(_ theme: String, background: String?) {
+        switch theme {
+        case "dark": window.appearance = NSAppearance(named: .darkAqua)
+        case "light": window.appearance = NSAppearance(named: .aqua)
+        default: window.appearance = nil
+        }
+        if let colour = background.flatMap(Self.cssColour) {
+            window.backgroundColor = colour
+            web.underPageBackgroundColor = colour
+        }
+        defaults.set(theme, forKey: "theme")
+        if let background = background { defaults.set(background, forKey: "background") }
+    }
+
+    /// "rgb(245, 245, 243)" or "rgba(…)" as getComputedStyle gives it.
+    static func cssColour(_ css: String) -> NSColor? {
+        let numbers = css.split(whereSeparator: { !"0123456789.".contains($0) }).compactMap { Double($0) }
+        guard css.hasPrefix("rgb"), numbers.count >= 3 else { return nil }
+        return NSColor(srgbRed: numbers[0] / 255, green: numbers[1] / 255, blue: numbers[2] / 255,
+                       alpha: numbers.count > 3 ? numbers[3] : 1)
+    }
+
+    /// The day after a sleep, a new day at midnight, and the Mac's own choices changing.
+    private func observeSystem() {
+        let ws = NSWorkspace.shared.notificationCenter
+        ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.callPage("wake()")
+        }
+        let nc = NotificationCenter.default
+        nc.addObserver(forName: .NSCalendarDayChanged, object: nil, queue: .main) { [weak self] _ in
+            self?.callPage("wake()")
+        }
+        for name in [NSColor.systemColorsDidChangeNotification, NSLocale.currentLocaleDidChangeNotification] {
+            nc.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.prefsChanged() }
+        }
+    }
+
+    private func prefsChanged() {
+        injectShell()   // for the next load
+        callPage("prefs(\(Self.json(systemPrefs())), \(Self.json(nativePrefs())))")
+    }
+
+    /// A message page of the window's own: "Starting Pulsar…" (with the spinner), what the launcher is doing, or what
+    /// went wrong with a button to try again.
+    private func showMessage(_ text: String, button: String?) {
+        if button == nil { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
+        if text == message && !isPulsar(web.url) { return }   // the same words: no reload, no flicker
+        message = text
+        let esc = { (s: String) in s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;") }
+        let action = button.map { "<button onclick=\"webkit.messageHandlers.pulsar.postMessage({action:'start'})\">\(esc($0))</button>" } ?? ""
+        web.loadHTMLString("""
+            <!doctype html><meta charset="utf-8"><style>
+            :root { color-scheme: light dark; } html, body { height: 100%; margin: 0; }
+            body { display: flex; flex-direction: column; gap: 14px; align-items: center; justify-content: center;
+                   font: 13px -apple-system, system-ui, sans-serif; color: CanvasText; background: Canvas;
+                   -webkit-user-select: none; cursor: default; }
+            p { margin: 0; opacity: .75; max-width: 34em; text-align: center; line-height: 1.45; }
+            button { font: inherit; padding: 4px 14px; }
+            </style><p>\(esc(text))</p>\(action)
+            """, baseURL: nil)
+    }
+
+    // MARK: menus
+
     private func buildMenu() {
         let main = NSMenu()
-        func menu(_ title: String, _ items: [NSMenuItem]) {
+        func menu(_ title: String, _ items: [NSMenuItem]) -> NSMenu {
             let holder = NSMenuItem()
-            holder.submenu = NSMenu(title: title)
-            items.forEach { holder.submenu!.addItem($0) }
+            let sub = NSMenu(title: title)
+            items.forEach { sub.addItem($0) }
+            holder.submenu = sub
             main.addItem(holder)
+            return sub
         }
         func item(_ title: String, _ action: Selector?, _ key: String = "", _ mods: NSEvent.ModifierFlags = .command,
                   target: AnyObject? = nil) -> NSMenuItem {
@@ -162,10 +459,31 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
             it.target = target
             return it
         }
-        menu("Pulsar", [
+        /// A command the page carries out (native.js, pulsarNative.run).
+        func page(_ title: String, _ run: String, _ arg: Any? = nil, _ key: String = "",
+                  _ mods: NSEvent.ModifierFlags = .command) -> NSMenuItem {
+            let it = item(title, #selector(pageCommand(_:)), key, mods, target: self)
+            it.representedObject = ["run": run, "arg": arg ?? NSNull()]
+            return it
+        }
+        func submenu(_ title: String, _ items: [NSMenuItem]) -> NSMenuItem {
+            let it = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            it.submenu = NSMenu(title: title)
+            items.forEach { it.submenu!.addItem($0) }
+            return it
+        }
+        let left = String(Character(UnicodeScalar(NSLeftArrowFunctionKey)!))
+        let right = String(Character(UnicodeScalar(NSRightArrowFunctionKey)!))
+        let services = NSMenu(title: "Services")
+        let servicesItem = NSMenuItem(title: "Services", action: nil, keyEquivalent: "")
+        servicesItem.submenu = services
+        _ = menu("Pulsar", [
             item("About Pulsar", #selector(showAbout), target: self),
+            page("Check for Updates…", "checkUpdates"),
             .separator(),
-            item("Settings…", #selector(openSettings), ",", target: self),
+            page("Settings…", "settings", nil, ","),
+            .separator(),
+            servicesItem,
             .separator(),
             item("Hide Pulsar", #selector(NSApplication.hide(_:)), "h"),
             item("Hide Others", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
@@ -173,31 +491,117 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
             .separator(),
             item("Quit Pulsar", #selector(NSApplication.terminate(_:)), "q"),
         ])
-        menu("Edit", [   // without these, Cmd+C and Cmd+V do nothing in the page's fields
+        NSApp.servicesMenu = services
+        _ = menu("File", [
+            page("New Entry…", "newEntry", nil, "n"),
+            page("Log the Day…", "logDay", nil, "l"),
+            .separator(),
+            item("Close", #selector(NSWindow.performClose(_:)), "w"),
+            .separator(),
+            submenu("Export", [page("Days, CSV", "exportDays"), page("Time Entries, CSV", "exportEntries")]),
+            page("Print…", "print", nil, "p"),
+        ])
+        _ = menu("Edit", [   // without these, Cmd+C and Cmd+V do nothing in the page's fields
             item("Undo", Selector(("undo:")), "z"),
             item("Redo", Selector(("redo:")), "z", [.command, .shift]),
             .separator(),
             item("Cut", #selector(NSText.cut(_:)), "x"),
             item("Copy", #selector(NSText.copy(_:)), "c"),
             item("Paste", #selector(NSText.paste(_:)), "v"),
+            item("Delete", #selector(NSText.delete(_:))),
             item("Select All", #selector(NSText.selectAll(_:)), "a"),
         ])
-        menu("View", [
-            item("Reload", #selector(reload), "r", target: self),
+        let plus = item("Zoom In", #selector(zoomIn), "+", target: self)   // Cmd+= on a US keyboard is Cmd++ elsewhere
+        plus.isHidden = true
+        plus.allowsKeyEquivalentWhenHidden = true
+        _ = menu("View", [
+            page("Day", "day", nil, "1"),
+            page("Report", "report", nil, "2"),
+            .separator(),
+            submenu("Rows", [page("1 Minute", "rows", 1), page("5 Minutes", "rows", 5), page("15 Minutes", "rows", 15),
+                             page("30 Minutes", "rows", 30), page("1 Hour", "rows", 60)]),
+            .separator(),
+            page("Refresh", "refresh", nil, "r"),
+            item("Reload Pulsar", #selector(reload), "r", [.command, .option], target: self),
             .separator(),
             item("Actual Size", #selector(zoomReset), "0", target: self),
             item("Zoom In", #selector(zoomIn), "=", target: self),
+            plus,
             item("Zoom Out", #selector(zoomOut), "-", target: self),
+            .separator(),
+            submenu("Appearance", [page("Same as System", "theme", "system"), page("Light", "theme", "light"),
+                                   page("Dark", "theme", "dark")]),
+            .separator(),
+            item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
         ])
-        let windowMenu: [NSMenuItem] = [
+        _ = menu("Go", [
+            page("Today", "today", nil, "t"),
+            page("Previous Day", "prev", nil, left),
+            page("Next Day", "next", nil, right),
+        ])
+        let windowMenu = menu("Window", [
             item("Minimize", #selector(NSWindow.performMiniaturize(_:)), "m"),
             item("Zoom", #selector(NSWindow.performZoom(_:))),
             .separator(),
-            item("Close", #selector(NSWindow.performClose(_:)), "w"),
-        ]
-        menu("Window", windowMenu)
+            item("Pulsar", #selector(bringBack), target: self),
+            .separator(),
+            item("Bring All to Front", #selector(NSApplication.arrangeInFront(_:))),
+        ])
+        let help = menu("Help", [
+            item("Pulsar Help", #selector(openHelp(_:)), target: self),
+            item("How Pulsar Works", #selector(openHelp(_:)), target: self),
+            .separator(),
+            page("Show Error Log", "logs"),
+        ])
+        help.items[0].representedObject = "https://github.com/fosterinteractive/pulsar#readme"
+        help.items[1].representedObject = "https://github.com/fosterinteractive/pulsar/blob/main/docs/HOW-IT-WORKS.md"
         NSApp.mainMenu = main
-        NSApp.windowsMenu = main.items.last?.submenu
+        NSApp.windowsMenu = windowMenu
+        NSApp.helpMenu = help
+    }
+
+    /// The Dock icon's menu: what can be done without the window in front.
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        for (title, run) in [("New Entry…", "newEntry"), ("Log the Day…", "logDay")] {
+            let it = NSMenuItem(title: title, action: #selector(pageCommand(_:)), keyEquivalent: "")
+            it.target = self
+            it.representedObject = ["run": run, "arg": NSNull()]
+            menu.addItem(it)
+        }
+        return menu
+    }
+
+    @objc private func pageCommand(_ sender: NSMenuItem) {
+        guard let spec = sender.representedObject as? [String: Any], let run = spec["run"] as? String else { return }
+        if !["theme", "rows"].contains(run) { showWindow() }
+        runPage(run, spec["arg"] is NSNull ? nil : spec["arg"])
+    }
+
+    /// Greys out what does not apply to what the page shows: the day's commands in the report and the other way
+    /// round, everything while a dialog of the page is open, and all of it before the page has loaded.
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        if item.action == #selector(NSWindow.toggleFullScreen(_:)) {
+            item.title = window.styleMask.contains(.fullScreen) ? "Exit Full Screen" : "Enter Full Screen"
+            return true
+        }
+        guard item.action == #selector(pageCommand(_:)), let spec = item.representedObject as? [String: Any],
+              let run = spec["run"] as? String else { return true }
+        let view = page["view"] as? String ?? "day"
+        switch run {
+        case "day", "report": item.state = view == run ? .on : .off
+        case "rows": item.state = (page["zoom"] as? NSNumber)?.intValue == (spec["arg"] as? Int) ? .on : .off
+        case "theme": item.state = (page["theme"] as? String ?? "system") == (spec["arg"] as? String) ? .on : .off
+        default: break
+        }
+        let ready = isPulsar(web.url) && page["ready"] as? Bool == true && page["signedIn"] as? Bool != false
+        if !ready { return false }
+        if page["modal"] as? Bool == true { return false }   // a dialog of the page is open: it comes first
+        switch run {
+        case "today", "prev", "next", "rows": return view == "day"
+        case "print", "exportDays", "exportEntries": return view == "report" && page["report"] as? Bool == true
+        default: return true
+        }
     }
 
     /// The About panel with the version that is really running (the code updates itself, the app does not), its
@@ -224,49 +628,199 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
         }.resume()
     }
 
-    @objc private func openSettings() {
-        if isPulsar(web.url) { web.evaluateJavaScript("typeof openSettings === 'function' && openSettings()") }
+    @objc private func openHelp(_ sender: NSMenuItem) {
+        if let s = sender.representedObject as? String, let url = URL(string: s) { NSWorkspace.shared.open(url) }
     }
+
+    @objc private func bringBack() { showWindow() }
     /// Through the launcher, never web.reload(): a plain reload loads whatever answers on the port.
     @objc private func reload() { start(quiet: isPulsar(web.url)) }
-    @objc private func zoomReset() { web.pageZoom = 1 }
-    @objc private func zoomIn() { web.pageZoom = min(2, web.pageZoom + 0.1) }
-    @objc private func zoomOut() { web.pageZoom = max(0.5, web.pageZoom - 0.1) }
-
-    /// A simple page of the window's own: "Starting Pulsar…", or what went wrong with a button to try again.
-    private func showMessage(_ text: String, button: String?) {
-        let esc = { (s: String) in s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;") }
-        let action = button.map { "<button onclick=\"webkit.messageHandlers.pulsar.postMessage({action:'start'})\">\(esc($0))</button>" } ?? ""
-        web.loadHTMLString("""
-            <!doctype html><meta charset="utf-8"><style>
-            :root { color-scheme: light dark; } html, body { height: 100%; margin: 0; }
-            body { display: flex; flex-direction: column; gap: 14px; align-items: center; justify-content: center;
-                   font: 14px -apple-system, system-ui, sans-serif; color: CanvasText; background: Canvas; }
-            p { margin: 0; opacity: .75; } button { font: inherit; padding: 5px 14px; }
-            </style><p>\(esc(text))</p>\(action)
-            """, baseURL: nil)
+    @objc private func zoomReset() { setZoom(1) }
+    @objc private func zoomIn() { setZoom(min(2, web.pageZoom + 0.1)) }
+    @objc private func zoomOut() { setZoom(max(0.5, web.pageZoom - 0.1)) }
+    private func setZoom(_ zoom: CGFloat) {
+        web.pageZoom = zoom
+        defaults.set(Double(zoom), forKey: "pageZoom")   // the next launch keeps it
     }
 
-    // MARK: quitting
+    /// pulsarNative.run(name, arg) in the page (web/js/native.js).
+    private func runPage(_ run: String, _ arg: Any? = nil) {
+        callPage("run(\(Self.json(run)), \(arg.map(Self.json) ?? "null"))")
+    }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { true }
+    private func callPage(_ call: String, done: ((Any?) -> Void)? = nil) {
+        guard isPulsar(web.url) else { done?(nil); return }
+        web.evaluateJavaScript("window.pulsarNative ? pulsarNative.\(call) : null") { result, _ in done?(result) }
+    }
 
-    /// Stops the server this app started, unless the page went to the browser. At most a few seconds.
+    static func json(_ value: Any) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: value, options: [.fragmentsAllowed]) else { return "null" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    // MARK: closing and quitting
+
+    /// Cmd+W, or the close button: an open dialog or popover of the page closes first, as a sheet would; only with
+    /// nothing open does the window close. Pulsar keeps running then (the Dock icon brings it back).
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if closeConfirmed { closeConfirmed = false; return true }
+        guard isPulsar(web.url) else { return true }
+        callPage("closeTop()") { closed in
+            if (closed as? Bool) != true {
+                self.closeConfirmed = true
+                self.window.performClose(nil)
+            }
+        }
+        return false
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ app: NSApplication) -> Bool { false }
+
+    func applicationShouldHandleReopen(_ app: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        if !hasVisibleWindows || !window.isVisible { showWindow() }
+        return true
+    }
+
+    /// Asks first when the page has work that quitting would lose (a dialog being filled in, Log the day's changes),
+    /// then stops the server this app started, unless the page went to the browser. At most a few seconds.
     func applicationShouldTerminate(_ app: NSApplication) -> NSApplication.TerminateReply {
+        if !quitAsked, isPulsar(web.url), let lost = page["unsaved"] as? String, !lost.isEmpty {
+            showWindow()
+            let alert = NSAlert()
+            alert.messageText = "Quit Pulsar?"
+            alert.informativeText = "\(lost) If you quit now, it is lost."
+            alert.addButton(withTitle: "Cancel")
+            let quit = alert.addButton(withTitle: "Quit")
+            if #available(macOS 11.0, *) { quit.hasDestructiveAction = true }
+            alert.beginSheetModal(for: window) { response in
+                if response == .alertSecondButtonReturn {
+                    self.quitAsked = true
+                    self.stopServerThenQuit()
+                } else {
+                    NSApp.reply(toApplicationShouldTerminate: false)
+                }
+            }
+            return .terminateLater
+        }
         guard origin != nil, !keepServer, !stopped else { return .terminateNow }
+        stopServerThenQuit()
+        return .terminateLater
+    }
+
+    private func stopServerThenQuit() {
+        guard origin != nil, !keepServer, !stopped else { NSApp.reply(toApplicationShouldTerminate: true); return }
         stopped = true
+        running?.terminate()
         window.orderOut(nil)
         DispatchQueue.global().async {
-            self.runLauncher(["--stop"], timeout: 6)
+            self.runLauncherAndWait(["--stop"], timeout: 6)
             // Not DispatchQueue.main: while AppKit waits for this answer it runs the modal-panel run loop mode, and
             // when quitting was asked from a block on the main queue, that queue cannot run another block until then.
             self.performSelector(onMainThread: #selector(self.replyTerminate), with: nil, waitUntilDone: false,
                                  modes: [RunLoop.Mode.default.rawValue, RunLoop.Mode.modalPanel.rawValue])
         }
-        return .terminateLater
     }
 
     @objc private func replyTerminate() { NSApp.reply(toApplicationShouldTerminate: true) }
+
+    // MARK: the Dock badge, the reminder, Open at Login
+
+    /// Today's active time with no entry, on the Dock icon: "45m", "3h". Nothing under a quarter of an hour.
+    private func badge(_ minutes: Int) {
+        guard defaults.bool(forKey: "badge"), minutes >= 15 else { NSApp.dockTile.badgeLabel = nil; return }
+        NSApp.dockTile.badgeLabel = minutes >= 60 ? "\(Int((Double(minutes) / 60).rounded()))h" : "\(minutes)m"
+    }
+
+    /// Once a working day, at the reminder's time (17:30 unless the page set another), when half an hour or more of
+    /// today's active time has no entry: a notification with "Log the Day". If macOS does not let this app notify
+    /// (it is not signed by a developer, and some Macs refuse that), the Dock icon bounces once and the window says it.
+    private func checkReminder() {
+        guard defaults.bool(forKey: "reminder"), isPulsar(web.url) else { return }
+        let now = Date(), cal = Calendar.current
+        guard !cal.isDateInWeekend(now) else { return }
+        let hm = (defaults.string(forKey: "reminderTime") ?? "17:30").split(separator: ":").compactMap { Int($0) }
+        guard hm.count == 2, let at = cal.date(bySettingHour: hm[0], minute: hm[1], second: 0, of: now),
+              now >= at, now < at.addingTimeInterval(3 * 3600) else { return }
+        let day = ISO8601DateFormatter.string(from: now, timeZone: .current, formatOptions: [.withFullDate])
+        guard defaults.string(forKey: "reminded") != day else { return }
+        defaults.set(day, forKey: "reminded")
+        web.callAsyncJavaScript("return window.pulsarNative ? await pulsarNative.todayUnlogged() : null", arguments: [:],
+                                in: nil, in: .page) { result in
+            guard case .success(let value) = result, let minutes = (value as? NSNumber)?.intValue, minutes >= 30 else { return }
+            self.remind(minutes, day: day)
+        }
+    }
+
+    private func remind(_ minutes: Int, day: String) {
+        let said = minutes >= 60 ? "\(minutes / 60) h\(minutes % 60 > 0 ? " \(minutes % 60) min" : "")" : "\(minutes) min"
+        let center = UNUserNotificationCenter.current()
+        center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+            DispatchQueue.main.async {
+                guard granted, error == nil else { self.remindHere(said); return }
+                let content = UNMutableNotificationContent()
+                content.title = "Time not logged today"
+                content.body = "\(said) of today's work has no entry in Productive."
+                content.categoryIdentifier = "pulsar.logday"
+                content.sound = .default
+                center.add(UNNotificationRequest(identifier: "pulsar.reminder.\(day)", content: content, trigger: nil)) { error in
+                    if error != nil { DispatchQueue.main.async { self.remindHere(said) } }
+                }
+            }
+        }
+    }
+
+    /// The reminder without notifications: one bounce of the Dock icon, and a sheet on the window.
+    private func remindHere(_ said: String) {
+        NSApp.requestUserAttention(.informationalRequest)
+        guard window.attachedSheet == nil else { return }
+        let alert = NSAlert()
+        alert.messageText = "Time not logged today"
+        alert.informativeText = "\(said) of today's work has no entry in Productive."
+        alert.addButton(withTitle: "Log the Day")
+        alert.addButton(withTitle: "Later")
+        if !window.isVisible { window.orderFront(nil) }
+        alert.beginSheetModal(for: window) { response in
+            if response == .alertFirstButtonReturn { self.showWindow(); self.runPage("logDayToday") }
+        }
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
+                                withCompletionHandler done: @escaping () -> Void) {
+        DispatchQueue.main.async {
+            self.showWindow()
+            if response.actionIdentifier != UNNotificationDismissActionIdentifier { self.runPage("logDayToday") }
+        }
+        done()
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler done: @escaping (UNNotificationPresentationOptions) -> Void) {
+        if #available(macOS 11.0, *) { done([.banner, .sound]) } else { done([.alert, .sound]) }
+    }
+
+    /// Open at Login (macOS 13 and later, SMAppService): "on", "off", "approve" (System Settings must allow it) or
+    /// "unsupported" (macOS 12: System Settings > General > Login Items, by hand).
+    private func loginStatus() -> String {
+        if #available(macOS 13.0, *) {
+            switch SMAppService.mainApp.status {
+            case .enabled: return "on"
+            case .requiresApproval: return "approve"
+            default: return "off"
+            }
+        }
+        return "unsupported"
+    }
+
+    private func setLogin(_ on: Bool) -> String {
+        if #available(macOS 13.0, *) {
+            do {
+                if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            } catch {
+                return error.localizedDescription
+            }
+        }
+        return ""
+    }
 
     // MARK: what the window may open
 
@@ -319,10 +873,18 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         let code = (error as NSError).code
         if code == NSURLErrorCancelled || code == 102 { return }   // 102: a navigation that became a download
+        page = [:]
         showMessage("Pulsar is not running.", button: "Start Pulsar")
     }
 
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { start() }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if isPulsar(web.url) { spinner.stopAnimation(nil); message = "" }
+        #if PULSAR_TEST
+        testHook()
+        #endif
+    }
+
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { page = [:]; start() }
 
     // MARK: messages from the page
 
@@ -338,10 +900,72 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
         case "warp":   // {to: 0..1, instant, dark}: the page's warp, drawn here on the graphics card
             warp?.to(CGFloat((body["to"] as? NSNumber)?.doubleValue ?? 0), instant: body["instant"] as? Bool ?? false,
                      dark: body["dark"] as? Bool ?? true)
-        case "signin", "start": start()   // a new one-time code, from the launcher, as at launch
+        case "signin", "start": start(quiet: isPulsar(web.url))   // a new one-time code, from the launcher
         case "reload": start(quiet: true)   // the page saw a new version: in again through the launcher (main.js)
+        case "state":   // what the page shows (native.js): for the menus, the title and the title bar
+            page = body
+            if let title = body["title"] as? String, !title.isEmpty { window.title = String(title.prefix(120)) }
+            applyTheme(body["theme"] as? String ?? "system", background: body["bg"] as? String)
+        case "badge": badge((body["minutes"] as? NSNumber)?.intValue ?? 0)
+        case "menu": popUpMenu(body)
+        case "quit":   // "Reinstall Pulsar": the new app opens once this one has quit (pulsar/appupdate.py)
+            quitAsked = true
+            NSApp.terminate(nil)
+        case "prefs":  // the page's Settings: {set: {badge, reminder, reminderTime, login}}
+            setPrefs(body["set"] as? [String: Any] ?? [:])
+        case "openLoginItems":
+            if #available(macOS 13.0, *) { SMAppService.openSystemSettingsLoginItems() }
+        case "ask":    // {id, what: "prefs"}: answered with pulsarNative.answer(id, value)
+            guard let id = (body["id"] as? NSNumber)?.intValue else { return }
+            callPage("answer(\(id), \(Self.json(["system": systemPrefs(), "native": nativePrefs()])))")
         default: break
         }
+    }
+
+    private func setPrefs(_ set: [String: Any]) {
+        var problem = ""
+        if let on = set["badge"] as? Bool {
+            defaults.set(on, forKey: "badge")
+            if !on { NSApp.dockTile.badgeLabel = nil }
+        }
+        if let on = set["reminder"] as? Bool { defaults.set(on, forKey: "reminder") }
+        if let time = set["reminderTime"] as? String, time.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil {
+            defaults.set(time, forKey: "reminderTime")
+            defaults.removeObject(forKey: "reminded")   // a later time today may still remind
+        }
+        if let on = set["login"] as? Bool { problem = setLogin(on) }
+        injectShell()
+        callPage("prefs(\(Self.json(systemPrefs())), \(Self.json(nativePrefs())), \(Self.json(problem)))")
+    }
+
+    /// The page's own right-click menu (native.js) as a real menu at the pointer. An item may carry a web address
+    /// (Open in Productive): that opens in the browser, https only.
+    private func popUpMenu(_ body: [String: Any]) {
+        guard let items = body["items"] as? [[String: Any]], !items.isEmpty else { return }
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+        for spec in items.prefix(24) {
+            if spec["separator"] as? Bool == true { menu.addItem(.separator()); continue }
+            guard let title = spec["title"] as? String, let id = spec["id"] as? String else { continue }
+            let item = NSMenuItem(title: String(title.prefix(80)), action: #selector(pickContext(_:)), keyEquivalent: "")
+            item.target = self
+            item.isEnabled = spec["enabled"] as? Bool ?? true
+            item.representedObject = ["id": id, "url": spec["url"] as? String ?? ""]
+            menu.addItem(item)
+        }
+        let zoom = web.pageZoom
+        let x = CGFloat((body["x"] as? NSNumber)?.doubleValue ?? 0) * zoom
+        let y = CGFloat((body["y"] as? NSNumber)?.doubleValue ?? 0) * zoom
+        menu.popUp(positioning: nil, at: NSPoint(x: x, y: web.isFlipped ? y : web.bounds.height - y), in: web)
+    }
+
+    @objc private func pickContext(_ item: NSMenuItem) {
+        guard let spec = item.representedObject as? [String: String] else { return }
+        if let s = spec["url"], !s.isEmpty {
+            if let url = URL(string: s), url.scheme == "https" { NSWorkspace.shared.open(url) }
+            return
+        }
+        if let id = spec["id"] { callPage("menuPick(\(Self.json(id)))") }
     }
 
     private func printPage() {
@@ -421,7 +1045,7 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
     /// (report.pdf), then quit (which stops the server).
     private var tested = false
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+    private func testHook() {
         guard let dir = ProcessInfo.processInfo.environment["PULSAR_TEST_DIR"], isPulsar(web.url), !tested else { return }
         tested = true
         let at = URL(fileURLWithPath: dir)
@@ -431,10 +1055,13 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
                 JSON.stringify({signedIn: !!localStorage.getItem('pulsar-session'), address: location.href,
                   signInShown: document.querySelector('#signin').open, title: document.title,
                   supports: CSS.supports('color', 'color-mix(in srgb, red, blue)'),
-                  app: !!(window.webkit && webkit.messageHandlers && webkit.messageHandlers.pulsar)})
+                  app: !!(window.webkit && webkit.messageHandlers && webkit.messageHandlers.pulsar),
+                  shell: window.PULSAR_APP || null, native: !!window.pulsarNative})
                 """
             self.web.evaluateJavaScript(probe) { result, _ in
+                let state = String(decoding: (try? JSONSerialization.data(withJSONObject: self.page)) ?? Data(), as: UTF8.self)
                 try? ((result as? String) ?? "{}").write(to: at.appendingPathComponent("page.json"), atomically: true, encoding: .utf8)
+                try? state.write(to: at.appendingPathComponent("state.json"), atomically: true, encoding: .utf8)
                 self.web.takeSnapshot(with: nil) { image, _ in
                     if let tiff = image?.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
                         try? png.write(to: at.appendingPathComponent("window.png"))
@@ -475,9 +1102,10 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
                     self.web.evaluateJavaScript("warpRelease()")
                     after(0.12) { shoot("warp-out.png")
                         after(1.2) { shoot("warp-after.png")
-                            let layers = self.window.contentView?.subviews.count ?? -1
+                            let layers = self.window.contentView?.subviews.filter { !($0 is NSProgressIndicator) }.count ?? -1
                             let json = "{\"native\": \(native as? Bool ?? false), \"viewsAfter\": \(layers)}"
                             try? json.write(to: at.appendingPathComponent("warp.json"), atomically: true, encoding: .utf8)
+                            self.quitAsked = true
                             NSApp.terminate(nil)
                         }
                     }
@@ -487,9 +1115,13 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, WKN
     }
 
     @objc private func printed(_ op: NSPrintOperation, success: Bool, contextInfo: UnsafeMutableRawPointer?) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { NSApp.terminate(nil) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.quitAsked = true; NSApp.terminate(nil) }
     }
     #endif
+}
+
+extension CGFloat {
+    func clamped(_ low: CGFloat, _ high: CGFloat) -> CGFloat { Swift.min(high, Swift.max(low, self)) }
 }
 
 /// The warp in the window. A picture of the page is bent by Core Image's hole distortion (light pushed round a point,
@@ -669,6 +1301,7 @@ final class NativeWarp {
         layer.setValue(to, forKeyPath: path)  // the end state stays when the animation is done
     }
 }
+
 
 let app = NSApplication.shared
 let pulsar = PulsarWindow()
