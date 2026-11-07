@@ -78,6 +78,15 @@ class FlagsTest(unittest.TestCase):
         self.kinds(task())
         self.assertEqual(self.reads, ["9", "9"])
 
+    def test_a_new_tasks_estimate_reads_again_an_answer_kept_without_the_estimates(self):
+        self.kinds(task())  # kept as an older Pulsar kept it: no "sizes"
+        self.assertEqual(flags.project_share("9", {}, self.names), self.share)
+        self.assertEqual(self.reads, ["9"])
+        self.share = {"n": 8, "with": ["1"], "sizes": [[60, 1, "Menu"]]}
+        self.assertEqual(flags.project_share("9", {}, self.names, sizes=True)["sizes"], [[60, 1, "Menu"]])
+        self.assertEqual(flags.project_share("9", {}, self.names, sizes=True)["sizes"], [[60, 1, "Menu"]])
+        self.assertEqual(self.reads, ["9", "9"])  # once, then kept
+
     def test_a_failed_read_keeps_the_old_answer_and_waits_an_hour(self):
         self.kinds(task())
         self.names.at["estimates:projects:9"] -= 86400 + 1
@@ -109,12 +118,16 @@ class ReadsTest(unittest.TestCase):
 
         def mcp(tool, args, token):
             sent.append((tool, args))
-            rows = '[["tasks", "1", "2 h"], ["tasks", "2", null], ["tasks", "3", "0 min"], ["tasks", "4", "30 min"]]'
-            return '```json\n{"items": {"columns": ["type", "id", "initial_estimate"], "rows": %s}}\n```' % rows
+            rows = ('[["tasks", "1", "2 h", "ACME - Core Site Updates", null], ["tasks", "2", null, "Menu", null], '
+                    '["tasks", "3", "0 min", "Footer", "tasks:1"], ["tasks", "4", "30 min", "Hero image", "tasks:1"]]')
+            return ('```json\n{"items": {"columns": ["type", "id", "initial_estimate", "title", "parent_task"], '
+                    '"rows": %s}}\n```' % rows)
         with mock.patch.object(productive, "connection", lambda s: {"kind": "claude-code", "token": "t"}), \
                 mock.patch.object(productive, "mcp_text", mcp):
             got = productive.project_estimates("9", {})
-        self.assertEqual(got, {"n": 4, "with": ["1", "4"]})
+        # the estimates themselves too, with whether each is a subtask (a new task's estimate, newtask.propose)
+        self.assertEqual(got, {"n": 4, "with": ["1", "4"], "sizes": [[120, 0, "ACME - Core Site Updates"], [30, 1, "Hero image"]]})
+        self.assertEqual(sent[0][1]["include_fields"], ["initial_estimate", "title", "parent_task"])
         [(tool, args)] = sent
         self.assertEqual(tool, "query_resources")
         self.assertNotIn(tool, productive.WRITE_TOOLS)
@@ -128,11 +141,13 @@ class ReadsTest(unittest.TestCase):
 
         def get(path, query, token, org):
             asked.append((path, query))
-            return 200, {"data": [{"id": "1", "attributes": {"initial_estimate": 120}},
+            return 200, {"data": [{"id": "1", "attributes": {"initial_estimate": 120, "title": "Fix"},
+                                   "relationships": {"parent_task": {"data": {"type": "tasks", "id": "5"}}}},
                                   {"id": "2", "attributes": {"initial_estimate": None}}]}
         with mock.patch.object(productive, "connection", lambda s: {"kind": "token", "token": "t"}), \
                 mock.patch.object(productive, "rest_get", get):
-            self.assertEqual(productive.project_estimates("9", {"org_id": "1"}), {"n": 2, "with": ["1"]})
+            self.assertEqual(productive.project_estimates("9", {"org_id": "1"}),
+                             {"n": 2, "with": ["1"], "sizes": [[120, 1, "Fix"]]})
         self.assertEqual(asked, [("/tasks", {"filter[project_id]": "9", "page[size]": 100})])
         with mock.patch.object(productive, "connection", lambda s: {"kind": "token", "token": "t"}), \
                 mock.patch.object(productive, "rest_get", lambda *a: (503, None)):

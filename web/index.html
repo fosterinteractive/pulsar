@@ -264,6 +264,14 @@
       <label class="field"><span>Description</span><textarea name="description" rows="4"
         placeholder="What the task is and what was done, for the PM" aria-describedby="task-draft-hint"></textarea></label>
       <p class="hint" id="task-draft-hint" aria-live="polite"></p>
+      <div class="row2">
+        <label class="field"><span>Status</span><select name="status" aria-describedby="task-fields-hint"></select></label>
+        <label class="field"><span>Estimate</span><input name="estimate" autocomplete="off" spellcheck="false"
+          placeholder="e.g. 90 or 1h 30m" aria-describedby="task-fields-hint"></label>
+      </div>
+      <p class="hint" id="task-fields-hint" aria-live="polite"></p>
+      <label class="field"><span>Service for this time</span><select name="service" aria-describedby="task-service-hint"></select></label>
+      <p class="hint" id="task-service-hint" aria-live="polite"></p>
       <p class="hint task-where" id="task-where" aria-live="polite"></p>
     </div>
     <p class="msg" id="task-msg" role="status"></p>

@@ -12,8 +12,9 @@ No flag for a budget nearly used up: budgets cannot be read without "View budget
 (budgets_view_restricted), and a service's budget fields (budget_total, budget_used, budgeted_time, worked_time) come
 back empty for a role without it, such as Staff (checked against Productive, November 2026).
 
-How many of a project's recent tasks have an estimate is kept in names.json like the names (`estimates:projects:<id>`)
-and read again after a day; a failed read keeps the old answer and asks again an hour later.
+How many of a project's recent tasks have an estimate, and those estimates (for a new task's, newtask.propose), is kept
+in names.json like the names (`estimates:projects:<id>`) and read again after a day; a failed read keeps the old answer
+and asks again an hour later.
 """
 
 from __future__ import annotations
@@ -40,9 +41,11 @@ def _day(date: str) -> str:
     return f"{d.day} {MONTHS[d.month - 1]}"
 
 
-def project_share(project_id, settings: dict, names: Optional[productive.Names] = None) -> Optional[dict]:
-    """{"n", "with"} for the project (productive.project_estimates), from names.json while a day old or less; None
-    when it is not known and cannot be read now. Never raises."""
+def project_share(project_id, settings: dict, names: Optional[productive.Names] = None,
+                  sizes: bool = False) -> Optional[dict]:
+    """{"n", "with", "sizes"} for the project (productive.project_estimates), from names.json while a day old or less;
+    None when it is not known and cannot be read now. Never raises. sizes=True (a new task's estimate, newtask.propose)
+    reads again an answer kept before Pulsar kept the estimates themselves."""
     pid = str(project_id or "")
     if not pid.isdigit():
         return None
@@ -50,7 +53,7 @@ def project_share(project_id, settings: dict, names: Optional[productive.Names] 
     key = f"estimates:projects:{pid}"
     kept = names.get(key)
     kept = kept if isinstance(kept, dict) and isinstance(kept.get("n"), int) and isinstance(kept.get("with"), list) else None
-    if kept and names.fresh(key):
+    if kept and names.fresh(key) and (not sizes or isinstance(kept.get("sizes"), list)):
         return kept
     if not kept and time.time() - _failed.get(pid, 0) < RETRY:
         return None

@@ -279,3 +279,102 @@ def guess_project(projects: list, hint: str = "", repo: str = "") -> str:
     if not found:
         return ""
     return max(found, key=lambda p: p.get("lately") or 0)["id"] if len(found) > 1 else found[0]["id"]
+
+
+# ---- the status, estimate and service offered for a new task (HOW-IT-WORKS 5.1, "Create a task") ----------------
+TODO = re.compile(r"^\s*to\s*-?\s*do\s*$", re.I)
+# the budget's contingency line, most specific first; never the overage or rollover lines next to it
+CONTINGENCY = (re.compile(r"contingenc", re.I), re.compile(r"service requests?|support requests?", re.I))
+NOT_CONTINGENCY = re.compile(r"overage|rollover", re.I)
+SIZES_MIN = 2  # tasks of the same kind with an estimate, at least, before their median is offered
+
+
+def dur(minutes) -> str:
+    """90 -> "1 h 30 min", as the page writes a duration."""
+    m = int(round(float(minutes or 0)))
+    if m < 60:
+        return f"{m} min"
+    return f"{m // 60} h" + (f" {m % 60} min" if m % 60 else "")
+
+
+def _median(xs: list) -> float:
+    xs = sorted(xs)
+    n = len(xs)
+    return xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2
+
+
+def _status(statuses: list, kind: str) -> dict:
+    """A subtask starts in the workflow's first status (Backlog), a task in a list or the project in its "To Do":
+    where tasks made by developers started (HOW-IT-WORKS 5.1)."""
+    first = next((s for s in statuses if s["category"] == "1"), None) or (statuses[0] if statuses else None)
+    if not first:
+        return {"id": "", "why": "The project's statuses could not be read: Productive puts it in its first one."}
+    if kind == "parent":
+        return {"id": first["id"], "why": "Where new subtasks start, nearly always."}
+    todo = next((s for s in statuses if s["category"] == "1" and TODO.match(s["name"])), None)
+    if todo:
+        return {"id": todo["id"], "why": "Where new tasks in a task list or the project usually start."}
+    return {"id": first["id"], "why": "The workflow's first status, where a new task starts."}
+
+
+def _estimate(kind: str, parent: dict, sizes) -> dict:
+    """{minutes, why, parent}: none when the parent carries one (`parent`, its minutes; a subtask may then have none);
+    else the median of the project's recent tasks of the same kind that have one (subtasks for a subtask, top-level
+    tasks other than containers otherwise), to the nearest 5 minutes; else none, said so."""
+    parent = parent or {}
+    own = parent.get("estimate")
+    own = productive.minutes_of(own) if own not in (None, "") else 0
+    if kind == "parent" and own > 0:
+        return {"minutes": None, "parent": round(own),
+                "why": f"Left empty: “{parent.get('title') or 'its parent'}” carries {dur(own)}, and a subtask may have none."}
+    sub = kind == "parent"
+    same = [m for m, is_sub, title in (sizes or []) if bool(is_sub) == sub and m > 0 and (sub or not CONTAINER.search(title))]
+    name = f"“{parent['title']}”" if parent.get("title") else "Its parent"
+    lead = "" if not sub else f"{name} could not be read. " if parent.get("unread") else f"{name} has none. "
+    if sizes is None:
+        return {"minutes": None, "parent": 0, "why": lead + "The project's estimates could not be read: add one if you know it."}
+    if len(same) < SIZES_MIN:
+        return {"minutes": None, "parent": 0, "why": lead + "Too few recent tasks like it in this project have one to go by: "
+                                                           "add one if you know it."}
+    return {"minutes": max(5, int(round(_median(same) / 5)) * 5), "parent": 0,
+            "why": lead + f"The median of the {len(same)} recent {'subtasks' if sub else 'tasks'} in this project that have "
+                          f"one ({dur(min(same))} to {dur(max(same))})."}
+
+
+def _service(kind: str, parent: dict, services, date: str):
+    """The service this time goes to once the task exists (the log dialog picks it), or None: the parent's own when it
+    takes time on that date; under a period's task, the budget's contingency line; else the only service."""
+    if services is None:
+        return None, "The project's services could not be read: pick one when logging."
+    parent = parent or {}
+    by_id = {x["id"]: x for x in services}
+    if kind == "parent" and parent.get("serviceId") in by_id:
+        return by_id[parent["serviceId"]], "The parent task's service."
+    if kind == "parent" and PERIOD_TASK.search(parent.get("title") or ""):
+        period = (date or "")[:7]
+        for rx in CONTINGENCY:
+            hits = [x for x in services if rx.search(x.get("name") or "") and not NOT_CONTINGENCY.search(x.get("name") or "")]
+            if hits:  # two budgets open at once: the one named for the month
+                pick = next((x for x in hits if period and period in (x.get("budget") or "").replace("/", "-")), hits[0])
+                return pick, "The budget's contingency line on that date, where time on an issue under a period's task goes."
+    if len(services) == 1:
+        return services[0], "The only service that takes time on that date."
+    if not services:
+        return None, "No service of this project takes time on that date: ask its PM."
+    return None, "Pick it when logging: nothing here says which."
+
+
+def propose(statuses, kind: str, parent, services, sizes, date: str) -> dict:
+    """What the new-task form offers, each with a sentence saying why: {"statuses": the open ones (not started, then
+    started), "status": {id, why}, "estimate": {minutes or None, why, parent}, "services": those that take time on
+    the date, "service": {id, name, budget, why}}. statuses, services and sizes are None when they could not be read (productive.workflow_statuses,
+    project_services, project_estimates' "sizes"); kind is "parent" (a subtask of `parent`, productive.task_details),
+    "list" or "none"; a parent that could not be read is {"title", "unread": True}. The service is never sent with
+    the task: the log dialog picks it for this time."""
+    open_ = [s for s in (statuses or []) if s["category"] in ("1", "2")]
+    picked, why = _service(kind, parent, services, date)
+    service = {"id": picked["id"], "name": (picked.get("name") or "").strip(), "budget": picked.get("budget") or ""} \
+        if picked else {"id": "", "name": "", "budget": ""}
+    return {"statuses": [{"id": s["id"], "name": s["name"], "category": s["category"]} for s in open_],
+            "status": _status(open_, kind), "estimate": _estimate(kind, parent, sizes),
+            "services": services or [], "service": {**service, "why": why}}

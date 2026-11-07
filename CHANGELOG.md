@@ -9,6 +9,7 @@ What each Pulsar release changed, newest first.
 ## Unreleased
 - Log the day with Claude (experimental): FI's rules and Claude's review of the whole day, as suggestions to accept or reject.
 - Settings > Claude lists everything Pulsar asks Claude and what each sends, with a model to pick for each.
+- Log dialog, Create a task: the status, estimate and service for this time are proposed, each with why; the service is never sent with the task.
 - Dragging in the Logged column moves in 1-minute steps, not 5, so short entries can be changed.
 - Log dialog: Create a task when none fits the work, with a drafted title and description; it is then picked.
 - Pulsar in Claude Code: the tools are answered inside Pulsar; the key alone opens nothing else and writes only previewed entries, marked "from Claude Code".

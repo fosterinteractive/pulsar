@@ -996,6 +996,49 @@ def api_task_places(q: dict) -> dict:
     return newtask.places(found, q["date"], str(s.get("person_id") or ""))
 
 
+_statuses = config.Newest(30)       # project -> (until, its workflow's statuses)
+_task_services = config.Newest(30)  # (project, date) -> (until, the services that take time then)
+
+
+def api_task_fields(q: dict) -> dict:
+    """The status, estimate and service to offer for a new task, each with why (newtask.propose), and the project's
+    statuses and services to pick from. `place` is parent:<id>, list:<id> or none; `title`, the parent's title as the
+    form shows it, is used only when the parent cannot be read. Read only: the statuses and services are kept 10
+    minutes, the parent 5 (task_details), the project's estimates a day (flags.project_share). A read that fails leaves
+    its proposal empty, with the reason, never an error."""
+    project, place, date = q.get("project") or "", str(q.get("place") or ""), q["date"]
+    kind, _, pid = place.partition(":")
+    if not is_id(project) or kind not in ("parent", "list", "none") or (kind != "none" and not is_id(pid)) or \
+            (kind == "none" and pid):
+        raise ValueError("project=<id>&place=parent:<id>|list:<id>|none&date=YYYY-MM-DD")
+    s = current_settings()
+
+    def kept(cache, key, read):
+        if key not in cache or time.time() > cache[key][0]:
+            cache[key] = (time.time() + 600, read())
+        return cache[key][1]
+
+    def parent():
+        got = productive.task_details([pid], s).get(pid)
+        return got or {"title": str(q.get("title") or "")[:200], "unread": True}
+
+    reads = {"statuses": lambda: kept(_statuses, project, lambda: productive.workflow_statuses(project, s)),
+             "services": lambda: kept(_task_services, (project, date), lambda: productive.project_services(project, date, s)),
+             "sizes": lambda: (flags.project_share(project, s, sizes=True) or {}).get("sizes"),
+             "parent": parent if kind == "parent" else (lambda: None)}
+
+    def one(name):
+        try:
+            return name, reads[name]()
+        except Exception as exc:  # a proposal left empty, said so; the form still opens
+            logbook.record("new task", f"Could not read the {name} to propose: {exc}", kind="warning", once_per=600)
+            return name, {"title": str(q.get("title") or "")[:200], "unread": True} if name == "parent" else None
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(3) as pool:  # one of Claude Code's four connection slots stays free
+        got = dict(pool.map(one, reads))
+    return newtask.propose(got["statuses"], kind, got["parent"], got["services"], got["sizes"], date)
+
+
 def _work_rows(date: str, a: float, b: float, s: dict, tz) -> tuple:
     """(the Likely rows of the project with most minutes in [a, b) that overlap it, that project): whole rows, as the
     session note takes them. a and b are the page's minutes (by the clock on the day the clocks change)."""
@@ -1052,16 +1095,25 @@ _just_created: dict = {}  # (project, title) -> when it was created
 
 def api_task_create(body: dict) -> dict:
     """One new task in Productive, assigned to you, only from a click in the page (the key alone is refused,
-    key_refusal): {"task": {taskId, title, project, projectId}}. The same title in the same project within a minute is
-    refused: a second click would create a second task."""
+    key_refusal): {"task": {taskId, title, project, projectId}}. With `statusId` (one of the project's open statuses)
+    and `estimate` (whole minutes), never a service (productive.create_task). The same title in the same project
+    within a minute is refused: a second click would create a second task."""
     s = current_settings()
-    project, parent, task_list = (str(body.get(k) or "") for k in ("projectId", "parentId", "taskListId"))
+    project, parent, task_list, status = (str(body.get(k) or "") for k in ("projectId", "parentId", "taskListId", "statusId"))
     title = re.sub(r"\s+", " ", str(body.get("title") or "")).strip()
     description = str(body.get("description") or "").strip()
+    estimate = body.get("estimate")
     if not is_id(project):
         raise ValueError("Pick a project.")
     if (parent and not is_id(parent)) or (task_list and not is_id(task_list)) or (parent and task_list):
         raise ValueError("Pick where in the project the task goes.")
+    known = _statuses.get(project)
+    if status and (not is_id(status) or (known and status not in {x["id"] for x in known[1] if x["category"] in ("1", "2")})):
+        raise ValueError("Pick one of the project's statuses.")
+    if estimate in (None, ""):
+        estimate = None
+    elif isinstance(estimate, bool) or not isinstance(estimate, int) or not 1 <= estimate <= productive.ESTIMATE_MAX:
+        raise ValueError(f"The estimate must be whole minutes, from 1 to {productive.ESTIMATE_MAX // 60} hours.")
     if not title:
         raise ValueError("Write the task's title.")
     if len(title) > newtask.TITLE_LIMIT:
@@ -1078,7 +1130,8 @@ def api_task_create(body: dict) -> dict:
             raise ValueError("This task was created a moment ago. Search for it in the task list before creating it "
                              "again.")
         created = productive.create_task({"project_id": project, "parent_id": parent, "task_list_id": task_list,
-                                          "title": title, "description": description}, s)
+                                          "title": title, "description": description, "status_id": status,
+                                          "estimate": estimate}, s)
         _just_created[key] = time.time()
     _recent.clear()  # the dialog's lists read Productive again
     name = next((p["name"] for _, ps in list(_projects.values()) for p in ps if p["id"] == project), "")
@@ -1687,7 +1740,7 @@ class Handler(BaseHTTPRequestHandler):
                       "/api/calendar": api_calendar, "/api/meeting-tasks": api_meeting_tasks,
                       "/api/dayplan": api_dayplan, "/api/dayplan/journal": api_dayplan_journal, "/api/range": api_range,
                       "/api/likely/picks": api_likely_picks, "/api/task/projects": api_task_projects,
-                      "/api/task/places": api_task_places}
+                      "/api/task/places": api_task_places, "/api/task/fields": api_task_fields}
             if url.path not in routes:
                 return self.send(404, b"not found", "text/plain")
             if not DATE.match(q.get("date", "")):

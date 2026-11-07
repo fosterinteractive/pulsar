@@ -107,6 +107,34 @@ class CreateTaskBodyTest(unittest.TestCase):
         self.assertNotIn("parent_task", body["relationships"])
         self.assertEqual(body["attributes"]["description"], "<p>&lt;b&gt; &amp; co</p>")  # escaped, never markup
 
+    def test_status_and_estimate_both_ways_and_never_a_service(self):
+        wire = Wire()
+        with connected("claude-code"), mock.patch.object(productive, "https", wire):
+            productive.create_task(dict(TASK, status_id="301", estimate=90), SETTINGS)
+        [(tool, args)] = wire.tools()
+        self.assertEqual((args["items"][0]["workflow_status"], args["items"][0]["initial_estimate"]), ("301", "90 min"))
+        wire = Wire()
+        with connected("token"), mock.patch.object(productive, "https", wire):
+            productive.create_task(dict(TASK, status_id="301", estimate=90), SETTINGS)
+        body = wire.writes()[0]["body"]["data"]
+        self.assertEqual(body["attributes"]["initial_estimate"], 90)  # minutes, as REST keeps it
+        self.assertEqual(body["relationships"]["workflow_status"], {"data": {"type": "workflow_statuses", "id": "301"}})
+        for kind in ("claude-code", "token"):  # none given: neither is sent, Productive puts it in the first status
+            wire = Wire()
+            with connected(kind), mock.patch.object(productive, "https", wire):
+                productive.create_task(dict(TASK, status_id="", estimate=None, service_id="77"), SETTINGS)
+            sent = json.dumps(wire.writes()[0]["body"])
+            for word in ("workflow_status", "initial_estimate", "service", "77"):
+                self.assertNotIn(word, sent, (kind, word))
+        for bad in ({"status_id": "1x"}, {"status_id": "١٢"}, {"estimate": 0}, {"estimate": productive.ESTIMATE_MAX + 1},
+                    {"estimate": "90"}, {"estimate": 1.5}, {"estimate": True}):
+            wire = Wire()
+            with connected("claude-code"), mock.patch.object(productive, "https", wire):
+                with self.assertRaises(productive.ProductiveError) as caught:
+                    productive.create_task(dict(TASK, **bad), SETTINGS)
+            self.assertNotIsInstance(caught.exception, productive.ProductiveUnclear)
+            self.assertEqual(wire.calls, [], bad)
+
     def test_both_success_sentences_are_read(self):
         for text in ("task created (ID: 21297146).", "Created 1 task (ID: 21297146)."):
             with connected("claude-code"), mock.patch.object(productive, "https", Wire(text)):
@@ -197,6 +225,43 @@ class ReadsTest(unittest.TestCase):
         with connected("claude-code"), self.assertRaises(productive.ProductiveError):
             productive.project_places("3 0", SETTINGS)
 
+    def test_statuses_through_the_mcp_in_the_workflows_order(self):
+        project = '```json\n{"item": {"id": "30", "type": "projects", "fields": {"workflow": {"type": "workflows", "id": "63"}}}}\n```'
+        statuses = ('```json\n{"items": {"columns": ["type", "id", "name", "position", "workflow_status_category"], "rows": ['
+                    '["workflow_statuses", "3", "Closed", 1, "Closed"], ["workflow_statuses", "2", "To Do", 2, "Not started"],'
+                    '["workflow_statuses", "4", "In Progress", 4, "Started"], ["workflow_statuses", "1", "Backlog", 1, "Not started"]]}}\n```')
+        with connected("claude-code"), self.mcp(project, statuses):
+            got = productive.workflow_statuses("30", SETTINGS)
+        self.assertEqual([(x["name"], x["category"]) for x in got],
+                         [("Backlog", "1"), ("To Do", "1"), ("In Progress", "2"), ("Closed", "3")])
+        self.assertEqual([t for t, _ in self.asked], ["load_resource", "query_resources"])
+        self.assertFalse({t for t, _ in self.asked} & productive.WRITE_TOOLS)
+        self.assertEqual(self.asked[1][1]["filters"]["conditions"], [{"field": "workflow", "operator": "eq", "value": "63"}])
+        with connected("claude-code"), self.mcp('```json\n{"item": {"id": "30", "fields": {}}}\n```'):
+            with self.assertRaises(productive.ProductiveError):
+                productive.workflow_statuses("30", SETTINGS)
+
+    def test_statuses_and_services_through_the_token(self):
+        asked = []
+
+        def get(path, query, token, org):
+            asked.append((path, query))
+            if path == "/projects/30":
+                return 200, {"data": {"id": "30", "relationships": {"workflow": {"data": {"type": "workflows", "id": "63"}}}}}
+            if path == "/workflow_statuses":
+                return 200, {"data": [{"id": "2", "attributes": {"name": "To Do", "category_id": 1, "position": 2}},
+                                      {"id": "1", "attributes": {"name": "Backlog", "category_id": 1, "position": 1}}]}
+            return 200, {"data": [{"id": "8", "attributes": {"name": "Service Request / Contingency", "billing_type": 2},
+                                   "relationships": {"deal": {"data": {"type": "deals", "id": "5"}}}}],
+                         "included": [{"type": "deals", "id": "5", "attributes": {"name": "ACME · 2026-11"}}]}
+        with connected("token"), mock.patch.object(productive, "rest_get", get):
+            self.assertEqual([x["name"] for x in productive.workflow_statuses("30", SETTINGS)], ["Backlog", "To Do"])
+            services = productive.project_services("30", "2026-11-07", SETTINGS, productive.Names(os.path.join(tempfile.mkdtemp(), "n.json")))
+        self.assertEqual([p for p, _ in asked], ["/projects/30", "/workflow_statuses", "/services"])
+        self.assertEqual(asked[1][1]["filter[workflow_id]"], "63")
+        self.assertEqual((asked[2][1]["filter[project_id]"], asked[2][1]["filter[bookable_date]"]), ("30", "2026-11-07"))
+        self.assertEqual((services[0]["id"], services[0]["budget"]), ("8", "ACME · 2026-11"))
+
     def test_active_projects_through_the_mcp(self):
         page = ('```json\n{"items": {"columns": ["type", "id", "name"], "rows": [["projects", "2", "beta"], '
                 '["projects", "1", "Acme-OS Ongoing Support"], ["projects", "x", "bad"]]}}\n```')
@@ -232,6 +297,70 @@ class PlacesTest(unittest.TestCase):
         self.assertEqual(newtask.places({"tasks": [], "lists": []}, "2026-11-07", "1")["pick"], "none")
         archived = [dict(mine[0], list="99")]  # your newest task's list is no longer active
         self.assertEqual(newtask.places({"tasks": archived, "lists": lists}, "2026-11-07", "1")["pick"], "")
+
+
+class ProposeTest(unittest.TestCase):
+    """The status, estimate and service the form offers for a new task (newtask.propose), each with why."""
+
+    STATUSES = [{"id": "1", "name": "Backlog", "category": "1", "position": 1},
+                {"id": "2", "name": "To Do", "category": "1", "position": 2},
+                {"id": "4", "name": "In Progress", "category": "2", "position": 4},
+                {"id": "9", "name": "Closed", "category": "3", "position": 1}]
+    SERVICES = [{"id": "70", "name": "Maintenance Updates", "budget": "ACME · 2026-11 · Maintenance"},
+                {"id": "71", "name": "Service Request Overage", "budget": "ACME · 2026-11 · Contingency"},
+                {"id": "72", "name": "Service Request / Contingency ", "budget": "ACME · 2026-10 · Contingency"},
+                {"id": "73", "name": "Service Request / Contingency", "budget": "ACME · 2026-11 · Contingency"}]
+    PERIOD = {"taskId": "40", "title": "ACME - Contingency Hours Nov 2026", "estimate": None, "serviceId": ""}
+    SIZES = [[60, 1, "Hero image"], [180, 1, "Search"], [70, 1, "Menu"], [540, 0, "ACME - Core Site Updates - Nov 2026"],
+             [240, 0, "Phase 2: deployment"], [120, 0, "Site search"]]
+
+    def test_a_subtask_under_the_period_task(self):
+        got = newtask.propose(self.STATUSES, "parent", self.PERIOD, self.SERVICES, self.SIZES, "2026-11-07")
+        self.assertEqual([x["name"] for x in got["statuses"]], ["Backlog", "To Do", "In Progress"])  # never closed
+        self.assertEqual(got["status"]["id"], "1")
+        # the parent has no estimate: the median of the project's recent subtasks that have one
+        self.assertEqual(got["estimate"]["minutes"], 70)
+        self.assertIn("“ACME - Contingency Hours Nov 2026” has none", got["estimate"]["why"])
+        self.assertIn("median of the 3 recent subtasks", got["estimate"]["why"])
+        # the contingency line of the month's budget, never the overage line
+        self.assertEqual(got["service"]["id"], "73")
+        self.assertIn("contingency line", got["service"]["why"])
+        self.assertEqual(newtask.propose(self.STATUSES, "parent", self.PERIOD, self.SERVICES[:2], self.SIZES,
+                                         "2026-11-07")["service"]["id"], "")  # only the overage: nothing proposed
+
+    def test_the_parents_own_service_and_estimate(self):
+        parent = dict(self.PERIOD, estimate=240, serviceId="72")
+        got = newtask.propose(self.STATUSES, "parent", parent, self.SERVICES, self.SIZES, "2026-11-07")
+        self.assertEqual((got["service"]["id"], got["service"]["why"]), ("72", "The parent task's service."))
+        self.assertEqual((got["estimate"]["minutes"], got["estimate"]["parent"]), (None, 240))  # may stay empty
+        self.assertIn("carries 4 h", got["estimate"]["why"])
+        gone = dict(parent, serviceId="99")  # its service takes no time on that date: the contingency line
+        self.assertEqual(newtask.propose(self.STATUSES, "parent", gone, self.SERVICES, [], "2026-11-07")["service"]["id"], "73")
+        other = dict(parent, title="ACME - Drupal 11 Upgrade", serviceId="")  # not a period's task: no guess
+        self.assertEqual(newtask.propose(self.STATUSES, "parent", other, self.SERVICES, [], "2026-11-07")["service"]["id"], "")
+
+    def test_a_task_in_a_list_or_the_project(self):
+        for kind in ("list", "none"):
+            got = newtask.propose(self.STATUSES, kind, None, self.SERVICES[:1], self.SIZES, "2026-11-07")
+            self.assertEqual(got["status"]["id"], "2")  # To Do
+            self.assertEqual(got["estimate"]["minutes"], 180)  # 240 and 120: the core-updates container is left out
+            self.assertIn("median of the 2 recent tasks", got["estimate"]["why"])
+            self.assertEqual(got["service"]["id"], "70")  # the only service
+        no_todo = [x for x in self.STATUSES if x["name"] != "To Do"]
+        self.assertEqual(newtask.propose(no_todo, "list", None, [], [], "2026-11-07")["status"]["id"], "1")
+
+    def test_too_little_to_go_by_or_nothing_read(self):
+        got = newtask.propose(self.STATUSES, "parent", self.PERIOD, self.SERVICES, self.SIZES[:1], "2026-11-07")
+        self.assertIsNone(got["estimate"]["minutes"])  # one subtask with an estimate is not enough
+        self.assertIn("Too few", got["estimate"]["why"])
+        got = newtask.propose(None, "parent", {"title": "ACME - Contingency Hours Nov 2026", "unread": True}, None, None,
+                              "2026-11-07")
+        self.assertEqual((got["statuses"], got["status"]["id"], got["service"]["id"], got["estimate"]["minutes"]),
+                         ([], "", "", None))
+        self.assertIn("could not be read", got["status"]["why"])
+        self.assertIn("could not be read", got["estimate"]["why"])
+        self.assertIn("could not be read", got["service"]["why"])
+        self.assertEqual(newtask.dur(90), "1 h 30 min")
 
 
 class GuessProjectTest(unittest.TestCase):
@@ -336,12 +465,78 @@ class ServerTest(unittest.TestCase):
     def setUp(self):
         for p in (mock.patch.dict(os.environ, WRITES_ALLOWED), mock.patch.object(config, "CACHE_DIR", tempfile.mkdtemp()),
                   mock.patch.object(server, "current_settings", lambda: dict(SETTINGS)),
-                  mock.patch.dict(server._just_created, clear=True), mock.patch.dict(server._projects, clear=True)):
+                  mock.patch.dict(server._just_created, clear=True), mock.patch.dict(server._projects, clear=True),
+                  mock.patch.dict(server._statuses, clear=True), mock.patch.dict(server._task_services, clear=True)):
             p.start()
             self.addCleanup(p.stop)
 
     BODY = {"projectId": "30", "parentId": "40", "taskListId": "", "title": "  Charts:  horizontal bar option ",
             "description": "Figure 4."}
+
+    def fields(self, **change):
+        """api_task_fields with every read faked (counted), `change` replacing one."""
+        self.read = []
+
+        def note(name, value):
+            def fn(*a, **k):
+                self.read.append(name)
+                if isinstance(value, Exception):
+                    raise value
+                return value
+            return fn
+        reads = {"workflow_statuses": ProposeTest.STATUSES, "project_services": ProposeTest.SERVICES,
+                 "task_details": {"40": ProposeTest.PERIOD}, **change}
+        patches = [mock.patch.object(server.productive, k, note(k, v)) for k, v in reads.items()]
+        patches.append(mock.patch.object(server.flags, "project_share", note("sizes", change.get("sizes", {"sizes": ProposeTest.SIZES}))))
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_fields_proposed_for_a_place(self):
+        self.fields()
+        got = server.api_task_fields({"project": "30", "date": "2026-11-07", "place": "parent:40"})
+        self.assertEqual((got["status"]["id"], got["estimate"]["minutes"], got["service"]["id"]), ("1", 70, "73"))
+        self.assertEqual(sorted(self.read), ["project_services", "sizes", "task_details", "workflow_statuses"])
+        got = server.api_task_fields({"project": "30", "date": "2026-11-07", "place": "list:5"})
+        self.assertEqual(got["status"]["id"], "2")
+        self.assertEqual(self.read.count("workflow_statuses"), 1)  # kept 10 minutes
+        self.assertEqual(self.read.count("project_services"), 1)
+        self.assertEqual(self.read.count("task_details"), 1)  # no parent for a task in a list
+        for bad in ({"project": "x", "place": "none"}, {"project": "30", "place": "parent:x"}, {"project": "30", "place": "list"},
+                    {"project": "30", "place": "none:5"}, {"project": "30", "place": "elsewhere:5"}):
+            with self.assertRaises(ValueError):
+                server.api_task_fields({"date": "2026-11-07", **bad})
+
+    def test_a_failed_read_leaves_its_proposal_empty(self):
+        self.fields(workflow_statuses=productive.ProductiveError("HTTP 503"), task_details={})
+        with mock.patch.object(server.logbook, "record"):
+            got = server.api_task_fields({"project": "30", "date": "2026-11-07", "place": "parent:40",
+                                          "title": "ACME - Contingency Hours Nov 2026"})
+        self.assertEqual((got["statuses"], got["status"]["id"]), ([], ""))
+        self.assertIn("could not be read", got["estimate"]["why"])  # the parent: read, but not returned
+        self.assertEqual(got["service"]["id"], "73")  # its title, as the form shows it, still says it is a period's task
+
+    def test_create_sends_the_status_and_estimate_checked(self):
+        server._statuses["30"] = (time.time() + 600, ProposeTest.STATUSES)
+        wire = Wire()
+        with connected("claude-code"), mock.patch.object(productive, "https", wire):
+            server.api_task_create(dict(self.BODY, statusId="2", estimate=90, serviceId="73"))
+        item = wire.tools()[0][1]["items"][0]
+        self.assertEqual((item["workflow_status"], item["initial_estimate"]), ("2", "90 min"))
+        self.assertNotIn("service", item)  # never sent: a PM sets a task's service
+        for change in ({"statusId": "9"}, {"statusId": "77"}, {"statusId": "x"}, {"estimate": 0}, {"estimate": "90"},
+                       {"estimate": True}, {"estimate": productive.ESTIMATE_MAX + 1}, {"estimate": 2.5}):
+            wire = Wire()
+            with connected("claude-code"), mock.patch.object(productive, "https", wire):
+                with self.assertRaises(ValueError):
+                    server.api_task_create(dict(self.BODY, title="Another", **change))
+            self.assertEqual(wire.calls, [], change)  # a closed or unknown status, a bad estimate: nothing sent
+        server._statuses.clear()  # statuses not known here: any id may go, Productive checks it
+        wire = Wire()
+        with connected("claude-code"), mock.patch.object(productive, "https", wire):
+            server.api_task_create(dict(self.BODY, title="Third", statusId="77", estimate=""))
+        self.assertEqual(wire.tools()[0][1]["items"][0]["workflow_status"], "77")
+        self.assertNotIn("initial_estimate", wire.tools()[0][1]["items"][0])
 
     def test_create_sends_what_the_page_confirmed(self):
         wire = Wire()

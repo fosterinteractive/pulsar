@@ -333,12 +333,14 @@ async function loadServices(task) {
     if (!r.flags?.some(x => x.kind === 'nobudget')) setLogMsg("No service of this task's project takes time on this date. Ask the project's PM.", true);
     return;
   }
-  // the service you used last on this task; else one of the same name in a newer budget; else the task's own
+  // the service you used last on this task; else one of the same name in a newer budget; else, for a task just
+  // created (newtask.js), the one its form picked; else the task's own
   const recent = (await suggestions(date)).recent?.find(t => t.taskId === task.taskId);
   if (logPicker.selected?.taskId !== task.taskId || f.date.value !== date) return;
   const pick = (own ? list.find(x => x.id === own.id) : null)
     || list.find(x => x.id === recent?.serviceId)
     || list.find(x => recent?.service && x.name.trim() === recent.service.trim())
+    || list.find(x => task.serviceHint && x.id === task.serviceHint)
     || list.find(x => x.id === r.task?.serviceId) || (list.length === 1 ? list[0] : null);
   f.service.innerHTML = (pick ? '' : '<option value="">Pick a service</option>') + list.map(x =>
     `<option value="${esc(x.id)}"${pick?.id === x.id ? ' selected' : ''}>${esc(x.name.trim())}${x.budget ? ' · ' + esc(x.budget) : ''}${

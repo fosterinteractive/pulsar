@@ -1,11 +1,16 @@
 /* "Create a task" in the log dialog, for work no task fits (pulsar/newtask.py). A small form: the project, where in it
-   the task goes (under the period's contingency task, in a task list, or directly in the project), and a title and
-   description drafted from the work done in the dialog's time. Nothing reaches Productive without a click on "Create
-   in Productive"; the new task is then picked in the log dialog, so the time can be logged to it. */
+   the task goes (under the period's contingency task, in a task list, or directly in the project), a title and
+   description drafted from the work done in the dialog's time, and the status, estimate and service Pulsar proposes
+   for that place (/api/task/fields). Nothing reaches Productive without a click on "Create in Productive"; the new task
+   is then picked in the log dialog, with that service, so the time can be logged to it. The service is not sent with
+   the task: a PM sets a task's service. */
 const taskDlg = $('#taskdlg'), taskForm = $('#task-form');
+const ESTIMATE_MAX = 500 * 60;       // minutes (productive.ESTIMATE_MAX)
 let taskOpened = 0;                  // which opening an answer belongs to: a late one never fills a newer form
-let taskTyped = {title: false, description: false};  // typed in by the person: a draft never replaces it
+const TYPED = {title: false, description: false, status: false, estimate: false, service: false};
+let taskTyped = {...TYPED};          // typed in or picked by the person: a draft or a proposal never replaces it
 let taskPlaces = null;               // the picked project's places (/api/task/places)
+let taskFields = null;               // the proposals for the picked place (/api/task/fields)
 let taskDrafting = false;            // Claude is drafting
 
 const setTaskMsg = (text, warn = false) => { const m = $('#task-msg'); m.textContent = text; m.className = 'msg' + (warn ? ' warn' : ''); };
@@ -29,19 +34,71 @@ function fillDraft(d, hint) {
   showWhere();
 }
 
-/* the confirmation line: what will be created, and where */
+/* an estimate as typed: "90" (minutes, as the log dialog's Minutes), "45m", "1h 30m", "1h30", "1.5 h"; null when
+   empty, NaN when it is not a duration */
+function parseEstimate(v) {
+  const t = String(v ?? '').trim().toLowerCase();
+  if (!t) return null;
+  const m = t.match(/^(?:(\d+(?:[.,]\d+)?)\s*h(?:ours?|rs?)?)?\s*(?:(\d+)\s*(?:m|mins?|minutes?)?)?$/);
+  if (!m || (m[1] == null && m[2] == null)) return NaN;
+  return Math.round(parseFloat((m[1] || '0').replace(',', '.')) * 60 + +(m[2] || 0));
+}
+
+const parentTitle = place => taskPlaces?.parents.find(p => 'parent:' + p.taskId === place)?.title || '';
+
+/* the confirmation line: everything that will be set, where, and the service this time then goes to */
 function showWhere() {
   const f = taskForm.elements, project = f.project.selectedOptions[0], place = f.place.value, title = f.title.value.trim();
   const where = !place ? '' : place === 'none' ? 'directly in the project, in no task list'
-    : place.startsWith('parent:') ? `as a subtask of “${taskPlaces?.parents.find(p => 'parent:' + p.taskId === place)?.title || ''}”`
+    : place.startsWith('parent:') ? `as a subtask of “${parentTitle(place)}”`
     : `in the task list “${taskPlaces?.lists.find(x => 'list:' + x.id === place)?.name || ''}”`;
-  $('#task-where').textContent = project?.value && title && where
-    ? `Creates “${title}” in ${project.dataset.name}, ${where}, assigned to you. A PM sets its service and estimate.` : '';
+  if (!(project?.value && title && where)) { $('#task-where').textContent = ''; return; }
+  const status = f.status.value ? `in “${f.status.selectedOptions[0]?.textContent || ''}”` : 'in its workflow’s first status';
+  const est = parseEstimate(f.estimate.value), carried = taskFields?.estimate?.parent;
+  const estimate = Number.isNaN(est) ? `with the estimate “${f.estimate.value.trim()}”, which is not a duration`
+    : est != null ? `with an estimate of ${dur(est)}`
+    : carried && place.startsWith('parent:') ? `with no estimate of its own (its parent carries ${dur(carried)})` : 'with no estimate';
+  const service = f.service.value ? `this time then goes to “${f.service.selectedOptions[0]?.textContent || ''}”`
+    : 'pick this time’s service when logging';
+  $('#task-where').textContent = `Creates “${title}” in ${project.dataset.name}, ${where}, assigned to you, ${status}, `
+    + `${estimate}. Its service is left to a PM; ${service}.`;
+}
+
+/* the proposals for the place picked (newtask.propose): a status, an estimate and the service for this time, each
+   with why. What the person picked or typed stays; a status or service picked by hand stays while it is offered. */
+function fillFields(r) {
+  const f = taskForm.elements;
+  taskFields = r && !r.error ? r : null;
+  const statuses = taskFields?.statuses || [], services = taskFields?.services || [];
+  const kept = (name, list) => taskTyped[name] && list.some(x => x.id === f[name].value) ? f[name].value : '';
+  const st = kept('status', statuses) || taskFields?.status?.id || '';
+  f.status.innerHTML = (st ? '' : `<option value="">${r ? 'Its workflow’s first' : 'Pick where it goes first'}</option>`)
+    + statuses.map(x => `<option value="${esc(x.id)}"${x.id === st ? ' selected' : ''}>${esc(x.name)}</option>`).join('');
+  if (!taskTyped.estimate) f.estimate.value = taskFields?.estimate?.minutes ? dur(taskFields.estimate.minutes) : '';
+  const sv = kept('service', services) || taskFields?.service?.id || '';
+  f.service.innerHTML = `<option value="">${services.length ? 'None: pick it when logging' : r ? 'None takes time on this date' : 'Pick where it goes first'}</option>`
+    + services.map(x => `<option value="${esc(x.id)}"${x.id === sv ? ' selected' : ''}>${esc(x.name.trim())}${x.budget ? ' · ' + esc(x.budget) : ''}</option>`).join('');
+  $('#task-fields-hint').textContent = !r ? '' : r.error ? `Nothing proposed: ${r.error}`
+    : `Status: ${taskFields.status.why} Estimate: ${taskFields.estimate.why}`;
+  $('#task-service-hint').textContent = taskFields ? `${taskFields.service.why} A task’s own service is left to a PM: the `
+    + 'one picked here is only for this time, in the log dialog.' : '';
+  showWhere();
+}
+
+async function loadFields() {
+  const f = taskForm.elements, project = f.project.value, place = f.place.value, mine = taskOpened, date = logForm.elements.date.value;
+  if (!project || !place) return fillFields(null);
+  $('#task-fields-hint').textContent = 'Finding the status, estimate and service…';
+  const r = await getJSON(`/api/task/fields?project=${project}&date=${date}&place=${encodeURIComponent(place)}`
+    + `&title=${encodeURIComponent(parentTitle(place))}`);
+  if (mine !== taskOpened || f.project.value !== project || f.place.value !== place) return;  // a newer choice is loading
+  fillFields(r);
 }
 
 async function openNewTask() {
   const mine = ++taskOpened, f = taskForm.elements, {date, s, e} = taskRange();
-  f.title.value = ''; f.description.value = ''; taskTyped = {title: false, description: false}; taskPlaces = null;
+  f.title.value = ''; f.description.value = ''; f.estimate.value = ''; taskTyped = {...TYPED}; taskPlaces = null;
+  fillFields(null);
   f.project.innerHTML = '<option value="">Loading your projects…</option>'; f.project.disabled = true;
   f.place.innerHTML = '<option value="">Pick a project first</option>'; f.place.disabled = true;
   $('#task-draft-hint').textContent = 'Drafting from the work in this time…'; $('#task-where').textContent = '';
@@ -87,7 +144,7 @@ function fillProjects(r) {
 
 async function loadPlaces() {
   const f = taskForm.elements, project = f.project.value, mine = taskOpened, date = logForm.elements.date.value;
-  taskPlaces = null; f.place.disabled = true; f.place.innerHTML = '<option value="">Loading…</option>'; showWhere();
+  taskPlaces = null; f.place.disabled = true; f.place.innerHTML = '<option value="">Loading…</option>'; fillFields(null);
   if (!project) { f.place.innerHTML = '<option value="">Pick a project first</option>'; return; }
   const r = await getJSON(`/api/task/places?project=${project}&date=${date}`);
   if (mine !== taskOpened || f.project.value !== project) return;  // a newer choice is loading
@@ -99,12 +156,15 @@ async function loadPlaces() {
   f.place.disabled = false;
   if (r.error) setTaskMsg(r.error, true);
   showWhere();
+  loadFields();
 }
 
 taskForm.elements.project.addEventListener('change', loadPlaces);
-taskForm.elements.place.addEventListener('change', showWhere);
-for (const name of ['title', 'description'])
-  taskForm.elements[name].addEventListener('input', () => { taskTyped[name] = true; if (name === 'title') showWhere(); });
+taskForm.elements.place.addEventListener('change', () => { showWhere(); loadFields(); });
+for (const name of ['title', 'description', 'estimate'])
+  taskForm.elements[name].addEventListener('input', () => { taskTyped[name] = true; if (name !== 'description') showWhere(); });
+for (const name of ['status', 'service'])
+  taskForm.elements[name].addEventListener('change', () => { taskTyped[name] = true; showWhere(); });
 
 taskForm.addEventListener('submit', async ev => {
   ev.preventDefault();
@@ -113,15 +173,21 @@ taskForm.addEventListener('submit', async ev => {
   if (!place) return setTaskMsg('Pick where in the project the task goes.', true);
   if (!title) { f.title.focus(); return setTaskMsg('Write the task’s title.', true); }
   if (title.length > 140) { f.title.focus(); return setTaskMsg(`Productive takes titles of up to 140 characters; this one has ${title.length}.`, true); }
-  const btn = $('#task-save'), [kind, id] = place.split(':');
+  const estimate = parseEstimate(f.estimate.value);
+  if (Number.isNaN(estimate) || (estimate != null && !(estimate >= 1 && estimate <= ESTIMATE_MAX))) {
+    f.estimate.focus();
+    return setTaskMsg(`Write the estimate as minutes or hours, e.g. 90 or 1h 30m (up to ${ESTIMATE_MAX / 60} h), or leave it empty.`, true);
+  }
+  const btn = $('#task-save'), [kind, id] = place.split(':'), serviceHint = f.service.value;
   btn.disabled = true; setTaskMsg('Creating the task in Productive…');
   const r = await postJSON('/api/task/create', {projectId: f.project.value, parentId: kind === 'parent' ? id : '',
-                                                taskListId: kind === 'list' ? id : '', title, description: f.description.value.trim()});
+                                                taskListId: kind === 'list' ? id : '', title, description: f.description.value.trim(),
+                                                statusId: f.status.value, estimate});
   btn.disabled = false;
   if (r.error) return setTaskMsg(r.error, true);
   taskDlg.close();
   suggestCache = null;  // log.js: the lists read Productive again
-  logPicker.pick({...r.task, why: 'just created'});  // log.js: shown first and picked, its services load
+  logPicker.pick({...r.task, why: 'just created', serviceHint});  // log.js: shown first and picked, with that service
   toast(`Created “${r.task.title}”${r.task.project ? ` in ${r.task.project}` : ''}. It is picked: check the service, then log.`);
 });
 taskDlg.querySelectorAll('[data-close]').forEach(b => b.onclick = () => taskDlg.close());
