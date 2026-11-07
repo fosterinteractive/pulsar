@@ -37,6 +37,12 @@ MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEmCWdtNVrg3SiHdiOL1WDTXva/S7e
 XbA0dD0U0N++R+VVLutC7Y66FFlNYSLKjKo+JAuRLrGtGKTXsjgo00mzLQ==
 -----END PUBLIC KEY-----
 """,
+    # the Touch ID key (macos/sign.sh, in the release Mac's Secure Enclave): signs from 1.5.2 on
+    """-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAECcw9Ny0xyPDVAsyM2aac+nwH5IZ5
+EEdlXCwE6MMw3HpRi03aBa7effm9G1JudLuMLdFWxsAfKF43N/piDHieQA==
+-----END PUBLIC KEY-----
+""",
 )
 
 BUNDLE_KIND = "pulsar-app-code"  # so latest.json, signed with the same key, can never pass for an app's manifest
