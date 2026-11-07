@@ -172,6 +172,23 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual((e["taskId"], e["source"], e["alts"][0]["taskId"]), ("55", "claude", "44"))
         self.assertTrue(e["alts"][0]["why"].startswith("Pulsar's guess"))
 
+    def test_the_log_dialogs_split_keeps_claudes_marks(self):
+        """A stretch split into entries (ranges.py): an entry with Claude's searched task carries the mark, so the page
+        waits for a tick, as Log the day does (web/js/range.js rgSends)."""
+        from pulsar import ranges
+        ctx = {**self.ctx, "repo": {"other": {"44": 30.0}}}
+        searched = {"tasks": [{"taskId": "55", "title": "From Claude", "project": "Q"}], "why": "the messages"}
+        keep: dict = {}
+        dayplan.plan(day(items=[work(540, 660)], rows=[row(540, 600), row(600, 660, project="other", titles=["New"])],
+                         picks={"600|other": searched}), ctx, keep=keep)
+        res = ranges.analyse(keep, 540, 660, {"grid": 5, "min_entry": 10})
+        self.assertEqual([(x["taskId"], x["claudeFound"]) for x in res["split"]], [("11", False), ("55", True)])
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "js", "range.js"),
+                  encoding="utf-8") as fh:
+            code = fh.read()
+        self.assertIn("todo = res.split.filter(rgSends)", code)  # what is sent: only the ticked
+        self.assertIn("x.claudeFound || (x.noteFrom === 'claude'", code)
+
     def test_claudes_pick_of_a_task_found_by_search_or_with_its_note_starts_unticked(self):
         """A prompt injection in the work could steer Claude to any task it can find in Productive, and into the
         note: such a row never goes through on one click. A pick among the tasks of the last 30 days, with no note
