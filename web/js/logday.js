@@ -163,8 +163,16 @@ function ldTotals() {
           billable: live.filter(r => r.billable).reduce((s, r) => s + r.minutes, 0), logged,
           notCovered: t.notCovered || 0, over: t.over || 0, cap: t.cap || 0};
 }
-const ldCheck = r => ldPending(r) && (r.confidence === 'low' || !r.taskId || !r.serviceId || r.claudeNone
-  || r.flags.includes('claudefound') || (r.flags.includes('claudenote') && r.noteFrom === 'claude' && !r.noteEdited));
+/* a row that needs a look: unsure, no task or service, or something Claude did. It counts as checked once the person
+   opened it and it is ticked; one with no task or service cannot be ticked, so it stays until it has them */
+const ldNeedsLook = r => r.confidence === 'low' || !r.taskId || !r.serviceId || r.claudeNone
+  || r.flags.includes('claudefound') || (r.flags.includes('claudenote') && r.noteFrom === 'claude' && !r.noteEdited);
+const ldCheck = r => ldPending(r) && ldNeedsLook(r) && !(r.opened && r.checked);
+/* the next row to check after the open one (in time order), back to the first after the last */
+function ldNextCheck(list) {
+  const at = ldRow(LD.open)?.s ?? -1;
+  return list.find(r => r.s > at && r.id !== LD.open) || list.find(r => r.id !== LD.open) || list[0];
+}
 
 /* ---------- the review panel ---------- */
 function dayTitle(d) {
@@ -191,7 +199,8 @@ function renderReview() {
   const target = TARGET, withThese = T.logged + T.minutes;
   const pct = x => Math.min(100, x / Math.max(target, withThese) * 100);
   const chips = [
-    toCheck.length ? `<button type="button" class="iss" data-ld-goto="${toCheck[0].id}"><span class="g" aria-hidden="true">!</span>${toCheck.length} to check</button>` : '',
+    toCheck.length ? `<button type="button" class="iss" data-ld-goto="${ldNextCheck(toCheck).id}" title="Open the next row to check"><span class="g" aria-hidden="true">!</span>${toCheck.length} to check</button>`
+      : LD.rows.some(ldPending) ? '<span class="iss ok all" role="status"><span class="g" aria-hidden="true">✓</span>All checked</span>' : '',
     ov.size ? `<button type="button" class="iss" data-ld-goto="${[...ov.keys()][0]}"><span class="g" aria-hidden="true">!</span>${Math.ceil(ov.size / 2)} ${ov.size > 2 ? 'overlaps' : 'overlap'}, ${dur(Math.round(ovMin))}</button>` : '',
     nFlags ? `<button type="button" class="iss" data-ld-goto="${flagged[0].id}" title="Things to fix in Productive: a closed task, no budget on this date, no estimate"><span class="g" aria-hidden="true">!</span>${nFlags} ticket ${nFlags === 1 ? 'flag' : 'flags'}</button>` : '',
     T.notCovered ? `<span class="iss ok" title="Active time no entry covers, logged or proposed">${dur(T.notCovered)} not covered</span>` : '',

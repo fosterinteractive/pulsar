@@ -762,6 +762,12 @@ note…"; picking another task clears the first, editing the note the second's m
 left alone. An answer that arrives while the confirm step is open waits until it closes (Back to the review); once a
 run has started it is only mentioned. Haiku did as well as Sonnet here, at a small part of the cost.
 
+**Reviewing.** A row needs a look when it is unsure ("check"), has no task or service, or carries something Claude did
+(a task it found by searching, a note it drafted, no task found). The "N to check" chip counts those not yet looked
+at: a row counts as checked once the person has opened it and it is ticked (one with no task or service cannot be
+ticked, so it stays until it has them). The chip opens the next such row after the open one, in time order, and reads
+"All checked" when none is left (`ldNeedsLook`, `ldCheck` in `logday.js`).
+
 **Writing.** The confirm step shows the totals, overlaps, unopened rows marked "check", and active time left
 unlogged; **Dry run** sends every row with `"dry": true` and shows exactly what would be sent. The confirm step keeps
 the exact request of each row it lists, and **Log** sends those, not the rows as they may be a moment later; while a
