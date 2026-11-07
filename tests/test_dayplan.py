@@ -172,6 +172,16 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual((e["taskId"], e["source"], e["alts"][0]["taskId"]), ("55", "claude", "44"))
         self.assertTrue(e["alts"][0]["why"].startswith("Pulsar's guess"))
 
+    def test_the_results_never_call_an_unclear_row_not_written(self):
+        """A row sent with no clear answer may be in Productive: the results say so, and a journal that could not be
+        read leaves the rows and Undo as they were and says it (web/js/logday.js)."""
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "js", "logday.js"),
+                  encoding="utf-8") as fh:
+            code = fh.read()
+        self.assertIn("may or may not be in Productive", code)
+        self.assertNotIn("were'} not written and", code)
+        self.assertRegex(code, r"LD\.journalError = j\.error \|\| '';\s+if \(j\.error\) return;")
+
     def test_the_log_dialogs_split_keeps_claudes_marks(self):
         """A stretch split into entries (ranges.py): an entry with Claude's searched task carries the mark, so the page
         waits for a tick, as Log the day does (web/js/range.js rgSends)."""

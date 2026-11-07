@@ -506,6 +506,9 @@ async function writeRun() {
 }
 async function syncJournal() {
   const j = await getJSON(`/api/dayplan/journal?date=${LD.date}`);
+  // a journal that could not be read says nothing about the rows: they and Undo stay as they were, and it is said
+  LD.journalError = j.error || '';
+  if (j.error) return;
   const run = (j.runs || []).find(x => x.run === LD.run);
   for (const x of run?.rows || []) {
     const r = ldRow(x.row); if (!r) continue;
@@ -521,10 +524,14 @@ function ldResultsBox() {
   if (!LD.lastRun || LD.writing) return '';
   const mine = LD.rows.filter(r => r.thisRun && r.status === 'logged').length;
   const failed = LD.rows.filter(r => ['refused', 'unknown'].includes(r.status));
+  const refused = failed.filter(r => r.status === 'refused').length, unknown = failed.length - refused;
   const left = LD.rows.filter(r => r.checked && ldPending(r) && !failed.includes(r)).length;
   const n = LD.undo?.length || 0;
-  const head = `<b>${mine} of ${LD.lastRun.total} logged.</b>` + (failed.length ? ` ${failed.length} ${failed.length === 1 ? 'was' : 'were'} not written and ${failed.length === 1 ? 'is' : 'are'} still here, with the reason.` : '')
-    + (left ? ` ${left} not sent yet.` : '');
+  // "unknown": sent, and no clear answer came: it may be in Productive, so it is never called "not written"
+  const head = `<b>${mine} of ${LD.lastRun.total} logged.</b>` + (refused ? ` ${refused} ${refused === 1 ? 'was' : 'were'} refused and ${refused === 1 ? 'is' : 'are'} still here, with the reason.` : '')
+    + (unknown ? ` ${unknown} may or may not be in Productive: check the Logged column; Pulsar will not send ${unknown === 1 ? 'it' : 'them'} again.` : '')
+    + (left ? ` ${left} not sent yet.` : '')
+    + (LD.journalError ? ` Pulsar could not read its journal of this run (${LD.journalError}), so these rows and Undo may be out of date: open Log the day again.` : '');
   return `<div class="rv-res${failed.length ? ' warn' : ''}" tabindex="-1" role="status"><p>${head}</p>
     <p>${n ? 'Undo deletes only what this run wrote, and only as it wrote it.' : ''}</p>
     ${LD.undoAsk ? `<p>Delete the ${n} ${n === 1 ? 'entry' : 'entries'} this run logged? ${n === 1 ? 'It goes' : 'They go'} to Productive's Recycle Bin.</p>
