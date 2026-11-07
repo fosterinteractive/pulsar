@@ -43,6 +43,12 @@ MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAECcw9Ny0xyPDVAsyM2aac+nwH5IZ5
 EEdlXCwE6MMw3HpRi03aBa7effm9G1JudLuMLdFWxsAfKF43N/piDHieQA==
 -----END PUBLIC KEY-----
 """,
+    # the reserve key: kept offline, encrypted, used only if the Touch ID key is lost (macos/README.md)
+    """-----BEGIN PUBLIC KEY-----
+MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEuMVcK5Nww+UON5moo+Z7QBIxcaWs
+gRZncOPwdI2xO50j1NKxwLYLzJPyjCyEmRh9Iml05e7Ijg0bjr9MrzEsog==
+-----END PUBLIC KEY-----
+""",
 )
 
 BUNDLE_KIND = "pulsar-app-code"  # so latest.json, signed with the same key, can never pass for an app's manifest
