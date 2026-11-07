@@ -4,7 +4,7 @@
 #
 #   launcher.sh --window   start Pulsar and print "PULSAR_URL <address with a one-time sign-in code>" for the
 #                          window to load, instead of opening the browser
-#   launcher.sh --stop     stop the server, if this app started it (the window was closed)
+#   launcher.sh --stop     stop the server, if this app started it (the app is quitting)
 #   launcher.sh            start Pulsar and open it in the default browser
 #
 # Pulsar runs from an installed copy, not from the app:
@@ -27,6 +27,8 @@
 #   PULSAR_NO_BROWSER=1       do not open the browser (for tests)
 #   PULSAR_TEST_DIALOGS=file  write each dialog's text to that file and take its default button, instead of
 #                             showing it (for tests)
+#   PULSAR_WINDOW_DIALOGS=1   set by the window of 1.6.0 on, with --window: dialogs and progress go to the window, which
+#                             shows them as its own sheets (see dialog() and status() below)
 #
 # Server output goes to ~/Library/Logs/Pulsar.log. Settings and caches are the server's business
 # (~/.config/pulsar, ~/.cache/pulsar; Pulsar Preview's are pulsar-preview); this script only writes the sign-in code.
@@ -45,6 +47,22 @@ PORT_TAKEN=98   # pulsar.py's exit status when something else holds the port: sa
 LOG="$HOME/Library/Logs/Pulsar.log"
 PY=/usr/bin/python3
 MODE="${1:-}"
+APP_BUNDLE="$(cd "$CONTENTS/.." && pwd -P)"   # this Pulsar.app: the server is told, for "Reinstall Pulsar" (appupdate.py)
+XCODE_SELECT=/usr/bin/xcode-select
+POLL=5   # seconds between looks while Apple's developer tools install
+if [ -n "${PULSAR_TEST_DIALOGS:-}" ]; then  # tests only: a stand-in for xcode-select, and a shorter wait
+  XCODE_SELECT="${PULSAR_TEST_XCODE_SELECT:-$XCODE_SELECT}"
+  POLL="${PULSAR_TEST_POLL:-$POLL}"
+fi
+# The window of 1.6.0 on shows this script's dialogs as its own sheets, and what it is doing under its spinner: a line
+# "PULSAR_DIALOG <text> <buttons>" or "PULSAR_STATUS <text>" (each base64) goes to it on fd 3, the script's own output
+# kept apart from what $(dialog ...) captures, and a dialog's answer comes back on stdin. An older window, or the
+# script run any other way, gets osascript's dialogs.
+WINDOW_DIALOGS=""
+if [ "$MODE" = "--window" ] && [ "${PULSAR_WINDOW_DIALOGS:-}" = "1" ]; then
+  WINDOW_DIALOGS=1
+  exec 3>&1
+fi
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pulsar"   # the server's session key and sign-in code live here
 # Pulsar Preview (build_app.sh with PULSAR_PREVIEW_DIR): runs the code of a git checkout as it is, on its own port and
 # log, never installs or updates anything, and does not write to Productive unless allowed in its Settings.
@@ -75,8 +93,17 @@ log() {
 # What a command says when it fails goes to the log too, which the failure dialog points to.
 /bin/mkdir -p "$(dirname "$LOG")" && exec 2>>"$LOG"
 
+b64() { printf '%s' "$1" | /usr/bin/base64 | /usr/bin/tr -d '\n'; }
+
 # Shows a dialog; the last button is the default. Prints the button clicked (nothing if cancelled).
 dialog() {
+  if [ -n "$WINDOW_DIALOGS" ]; then  # a sheet on the window, which answers with the button's title
+    local answer=""
+    printf 'PULSAR_DIALOG %s %s\n' "$(b64 "$1")" "$(b64 "$(printf '%s\n' "${@:2}")")" >&3
+    IFS= read -r answer || answer=""
+    printf '%s\n' "$answer"
+    return 0
+  fi
   if [ -n "${PULSAR_TEST_DIALOGS:-}" ]; then
     printf '%s\n---\n' "$1" >>"$PULSAR_TEST_DIALOGS"
     printf '%s\n' "${@: -1}"
@@ -94,6 +121,12 @@ dialog() {
     -e '  return button returned of result' \
     -e 'end run' \
     "$ICON" "$@" 2>/dev/null || true
+}
+
+# What the launcher is doing, under the window's spinner (the window of 1.6.0 on; nothing otherwise).
+status() {
+  [ -n "$WINDOW_DIALOGS" ] && printf 'PULSAR_STATUS %s\n' "$(b64 "$1")" >&3
+  return 0
 }
 
 fail_dialog() {
@@ -223,11 +256,11 @@ start_server() {
     log "Pulsar $(version_of "$real") starting on port $PORT from $real"
     cd "$real" || return 1
     # Its own session, so it outlives this script and the app's process group. -B: no __pycache__ written.
-    /usr/bin/nohup "$PY" -c 'import os, sys
+    PULSAR_APP_BUNDLE="$APP_BUNDLE" /usr/bin/nohup "$PY" -c 'import os, sys
 if os.getpid() != os.getpgrp():
     os.setsid()
 os.execv("/usr/bin/python3", ["/usr/bin/python3", "-E", "-s", "-B"] + sys.argv[1:])' \
-      "$real/pulsar.py" --no-open --port "$PORT" >>"$LOG" 2>&1 </dev/null &
+      "$real/pulsar.py" --no-open --port "$PORT" >>"$LOG" 2>&1 </dev/null 3>&- &   # 3>&-: none of the window's pipe
     server=$! rc=""
     for _ in $(seq 1 60); do
       sleep 0.25
@@ -273,12 +306,12 @@ install_bundled() {
   { /bin/rm -rf "$dest" && /bin/mv "$tmp" "$dest"; } || fail_dialog "Pulsar could not install version $B."
 }
 
-# The window was closed: stop the server if this app started it and it holds this user's key. A server started any
+# The app is quitting: stop the server if this app started it and it holds this user's key. A server started any
 # other way (python3 pulsar.py in a git checkout) keeps running.
 if [ "$MODE" = "--stop" ]; then
   pid="$(listener_pid)"
   if [ -n "$pid" ] && started_by_app "$pid" && is_ours; then
-    log "Stopping Pulsar: its window was closed"
+    log "Stopping Pulsar: the app is quitting"
     quit_server
   fi
   exit 0
@@ -286,12 +319,33 @@ fi
 
 # 1. Python 3.9+. On a fresh Mac /usr/bin/python3 is only a stub until Apple's Command Line Tools are
 #    installed; check for the tools first so the stub's own prompt does not appear.
-if ! /usr/bin/xcode-select -p >/dev/null 2>&1; then
-  choice="$(dialog "Pulsar needs Apple's free developer tools (about 5 minutes, one time). Install now?
+if ! "$XCODE_SELECT" -p >/dev/null 2>&1; then
+  if [ "$MODE" != "--window" ]; then
+    choice="$(dialog "Pulsar needs Apple's free developer tools (about 5 minutes, one time). Install now?
 
 macOS asks for an administrator password. When the installation has finished, open Pulsar again." "Not now" "Install")"
-  [ "$choice" = "Install" ] && /usr/bin/xcode-select --install >/dev/null 2>&1
-  exit 0
+    [ "$choice" = "Install" ] && "$XCODE_SELECT" --install >/dev/null 2>&1
+    exit 0
+  fi
+  # The window waits with the person, and Pulsar goes on by itself once the tools are there.
+  choice="$(dialog "Pulsar needs Apple's free developer tools (about 5 minutes, one time). Install now?
+
+macOS asks for an administrator password. Pulsar goes on by itself once they are installed." "Not now" "Install")"
+  [ "$choice" = "Install" ] || exit 0
+  log "Installing Apple's developer tools"
+  "$XCODE_SELECT" --install >/dev/null 2>&1
+  waited=0
+  until "$XCODE_SELECT" -p >/dev/null 2>&1; do
+    status "Installing Apple's developer tools. Pulsar goes on by itself when they are installed."
+    if [ "$waited" -ge 3600 ]; then
+      dialog "Apple's developer tools are not installed yet. When their installation has finished, open Pulsar again." "OK" >/dev/null
+      exit 0
+    fi
+    sleep "$POLL"
+    waited=$((waited + POLL))
+  done
+  log "Apple's developer tools are installed; going on"
+  status "Starting Pulsar…"
 fi
 if ! "$PY" -c 'import sys; sys.exit(sys.version_info < (3, 9))' >/dev/null 2>&1; then
   dialog "Pulsar needs Python 3.9 or newer, which comes with Apple's developer tools.
@@ -300,7 +354,7 @@ Update them in System Settings > General > Software Update, then open Pulsar aga
   exit 1
 fi
 
-# Pulsar Preview: the checkout as it is. Already running: open it. Otherwise start it (closing the window stops it,
+# Pulsar Preview: the checkout as it is. Already running: open it. Otherwise start it (quitting the app stops it,
 # so opening it again always runs the code as it is now).
 if [ -n "$PREVIEW_DIR" ]; then
   [ -f "$PREVIEW_DIR/pulsar.py" ] || fail_dialog "Pulsar Preview found no code at $PREVIEW_DIR."
