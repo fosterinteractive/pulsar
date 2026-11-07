@@ -11,9 +11,11 @@
 #   release/pulsar-<version>.zip   the code, one top folder pulsar-<version>/ (what the in-app updater downloads)
 #   release/latest.json            {version, url, sha256, notes, published, expires, versions}, signed (.sig)
 #   Pulsar.zip                     the whole app, for new installs, its code signed too (build_app.sh)
+#   Pulsar.zip.sig                 the release key's signature of Pulsar.zip itself, which README.md's install line
+#                                  checks with /usr/bin/openssl before it unpacks anything
 # With --publish it shows what it will do, asks, commits the version change, pushes it to main and runs
-# gh release create v<version> with the four files (the code zip, latest.json, its .sig, Pulsar.zip) on
-# fosterinteractive/pulsar.
+# gh release create v<version> with the five files (the code zip, latest.json and its .sig, Pulsar.zip and its .sig)
+# on fosterinteractive/pulsar.
 
 set -euo pipefail
 
@@ -41,7 +43,7 @@ while [ $# -gt 0 ]; do
     --publish) PUBLISH=1 ;;
     --notes) [ $# -ge 2 ] || die "--notes needs a text"; NOTES="$2"; shift ;;
     --notes=*) NOTES="${1#--notes=}" ;;
-    -h|--help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "unknown option $1" ;;
     *) [ -z "$VERSION" ] || die "one version only"; VERSION="$1" ;;
   esac
@@ -112,7 +114,7 @@ PY
 OUT="dist/release"
 ZIP="$OUT/pulsar-$VERSION.zip"
 mkdir -p "$OUT"
-rm -f "$ZIP" "$OUT/latest.json" "$OUT/latest.json.sig"
+rm -f "$ZIP" "$OUT/latest.json" "$OUT/latest.json.sig" dist/Pulsar.zip.sig
 
 # Only files git tracks: an ignored .log or .env sitting in pulsar/ or web/ can never ship.
 git ls-files -z pulsar.py README.md CHANGELOG.md pulsar web > "$OUT/files.list"
@@ -175,22 +177,38 @@ PY
 # with this signature (build_app.sh checks it the way the launcher will).
 PULSAR_BUNDLE_SIGNING_KEY="$KEY" "$ROOT/macos/build_app.sh" >/dev/null
 
+# Pulsar.zip itself, signed as one file, so a new install can check it before anything in it runs: README.md's
+# install line verifies this signature with the Mac's own /usr/bin/openssl and the public key written in the line.
+/usr/bin/openssl dgst -sha256 -sign "$KEY" -out dist/Pulsar.zip.sig dist/Pulsar.zip
+# ...and it must pass that very check: the key in the line must be one of PUBLIC_KEYS and must verify this signature,
+# so a README out of step with the keys is caught here and not by a new colleague.
+python3 -E -s - "$ROOT" dist/Pulsar.zip dist/Pulsar.zip.sig <<'PY' || die "README.md's install line would refuse this Pulsar.zip: its public key is not the one that signed it, or not one of PUBLIC_KEYS"
+import sys
+sys.path.insert(0, sys.argv[1])
+from pulsar import release_sig
+data, sig = open(sys.argv[2], "rb").read(), open(sys.argv[3], "rb").read()
+key = release_sig.install_line_key(open(sys.argv[1] + "/README.md", encoding="utf-8").read())
+sys.exit(0 if key in release_sig.PUBLIC_KEYS and release_sig.verify(data, sig, key) else 1)
+PY
+
 echo
 echo "Built Pulsar $VERSION:"
 echo "  $ROOT/$ZIP"
 echo "  $ROOT/$OUT/latest.json (+ latest.json.sig, signed)"
 echo "  $ROOT/dist/Pulsar.zip (its code signed: Pulsar.app/Contents/Resources/app.manifest.json.sig)"
+echo "  $ROOT/dist/Pulsar.zip.sig (Pulsar.zip signed, for the install line)"
 echo "  sha256 $SHA"
 
-GH=(gh release create "v$VERSION" "$ZIP" "$OUT/latest.json" "$OUT/latest.json.sig" dist/Pulsar.zip --repo "$REPO"
-    --title "$TITLE" --notes "$NOTES")
+GH=(gh release create "v$VERSION" "$ZIP" "$OUT/latest.json" "$OUT/latest.json.sig" dist/Pulsar.zip dist/Pulsar.zip.sig
+    --repo "$REPO" --title "$TITLE" --notes "$NOTES")
 
 if [ "$PUBLISH" != 1 ]; then
   echo
   echo "Nothing is published. pulsar/__init__.py now says $VERSION (not committed)."
   echo "To publish this build by hand:"
   echo "  git commit -m \"Pulsar $VERSION\" pulsar/__init__.py && git push origin HEAD:main"
-  echo "  gh release create v$VERSION $ZIP $OUT/latest.json $OUT/latest.json.sig dist/Pulsar.zip --repo $REPO \\"
+  echo "  gh release create v$VERSION $ZIP $OUT/latest.json $OUT/latest.json.sig dist/Pulsar.zip dist/Pulsar.zip.sig \\"
+  echo "    --repo $REPO \\"
   echo "    --title \"$TITLE\" --notes \"${NOTES//\"/\\\"}\" --target <the commit you just pushed>"
   echo "Or undo the version change (git checkout pulsar/__init__.py) and run this again with --publish."
   exit 0
@@ -202,7 +220,7 @@ echo "This will:"
 echo "  1. commit pulsar/__init__.py as \"Pulsar $VERSION\" on top of origin/main"
 echo "  2. push it to main on origin"
 echo "  3. create the public release v$VERSION on $REPO at that commit, with:"
-echo "       pulsar-$VERSION.zip, latest.json, latest.json.sig, Pulsar.zip"
+echo "       pulsar-$VERSION.zip, latest.json, latest.json.sig, Pulsar.zip, Pulsar.zip.sig"
 echo "     Every installed Pulsar then updates itself to $VERSION."
 [ -t 0 ] || die "publishing asks for confirmation: run it in a terminal"
 read -r -p "Publish Pulsar $VERSION? [y/N] " answer

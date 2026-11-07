@@ -27,20 +27,24 @@ Pulsar runs on macOS 12 Monterey or newer, Apple Silicon or Intel.
    without typing or moving the mouse; reading and calls then look like time away. To count 30 minutes instead, open
    `~/Library/Application Support/activitywatch/aw-watcher-afk/aw-watcher-afk.toml` (in Finder: **Go → Go to
    Folder…**), set `timeout = 1800` under `[aw-watcher-afk]`, and quit and reopen ActivityWatch.
-2. Open **Terminal**, paste this line and press Return. It downloads Pulsar into Applications and opens it:
+2. Open **Terminal**, paste this line and press Return. It downloads Pulsar, checks its signature, puts it into
+   Applications and opens it:
 
    ```bash
-   d=$(/usr/bin/mktemp -d) && /usr/bin/curl -fsSL https://github.com/fosterinteractive/pulsar/releases/latest/download/Pulsar.zip -o "$d/Pulsar.zip" && /usr/bin/ditto -x -k "$d/Pulsar.zip" /Applications && /usr/bin/open /Applications/Pulsar.app; /bin/rm -rf "$d"
+   d=$(/usr/bin/mktemp -d) && /usr/bin/curl -fsSL https://github.com/fosterinteractive/pulsar/releases/latest/download/Pulsar.zip -o "$d/Pulsar.zip" && /usr/bin/curl -fsSL https://github.com/fosterinteractive/pulsar/releases/latest/download/Pulsar.zip.sig -o "$d/Pulsar.zip.sig" && printf '%s\n' '-----BEGIN PUBLIC KEY-----' 'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEmCWdtNVrg3SiHdiOL1WDTXva/S7e' 'XbA0dD0U0N++R+VVLutC7Y66FFlNYSLKjKo+JAuRLrGtGKTXsjgo00mzLQ==' '-----END PUBLIC KEY-----' > "$d/key.pem" && /usr/bin/openssl dgst -sha256 -verify "$d/key.pem" -signature "$d/Pulsar.zip.sig" "$d/Pulsar.zip" && /usr/bin/ditto -x -k "$d/Pulsar.zip" /Applications && /usr/bin/open /Applications/Pulsar.app; /bin/rm -rf "$d"
    ```
 
-   It downloads into a private temporary folder, which it removes, so no other account on the Mac can swap the file
-   between the download and the unpacking, and it calls `curl` and `ditto` by their full paths, so an older copy
-   earlier in your PATH (MAMP has one) is not used. Pulsar is not signed by Apple. A file a browser downloads is
-   marked as from the internet, and macOS then refuses to open an unsigned app until you confirm it; a file `curl`
-   downloads is not marked, so Pulsar opens at once. What protects this first install is Pulsar's own check: the app
-   installs the code it carries only when Pulsar's release key signed it, and says so if not. That check is part of
-   the app itself, so take Pulsar.zip only from Pulsar's GitHub release page, as above. Its own updates download the
-   same way and are signed too. A company-managed Mac may still block it: then IT has to allow it.
+   It prints `Verified OK` when Pulsar.zip carries the signature of Pulsar's release key, whose public half is written
+   in the line itself; anything else (a file swapped on GitHub, a download cut short) prints `Verification Failure`
+   and nothing is installed. That check needs nothing but macOS's own `openssl`, and it holds even against someone
+   who can publish a release on GitHub without the key; it trusts the line, so copy it from this page on GitHub or
+   from the onboarding document, not from a message. It downloads into a private temporary folder, which it removes,
+   so no other account on the Mac can swap the file between the download and the unpacking, and it calls every
+   program by its full path, so an older copy earlier in your PATH (MAMP has one) is not used. Pulsar is not signed by
+   Apple. A file a browser downloads is marked as from the internet, and macOS then refuses to open an unsigned app
+   until you confirm it; a file `curl` downloads is not marked, so Pulsar opens at once. Once installed, the app also
+   installs the code it carries only when the release key signed it, and its own updates are signed too. A
+   company-managed Mac may still block it: then IT has to allow it.
 3. If Pulsar says it needs Apple's developer tools, click **Install**. macOS asks for an administrator password
    the first time. Wait until the installation has finished (about 5 minutes, only once), then open Pulsar
    again.
@@ -50,7 +54,8 @@ Pulsar runs on macOS 12 Monterey or newer, Apple Silicon or Intel.
    log it). Click **Save**.
 
 **Without Terminal:** download **Pulsar.zip** from the link you were sent, open it and drag **Pulsar** into
-Applications. The first time, macOS says it cannot verify Pulsar: click **Done**, open **System Settings → Privacy
+Applications (nothing checks Pulsar.zip itself this way; the app still installs only the code the release key
+signed). The first time, macOS says it cannot verify Pulsar: click **Done**, open **System Settings → Privacy
 & Security**, scroll down to the line about Pulsar, click **Open Anyway** and confirm (on macOS 14 and older,
 right-click Pulsar, **Open**, then **Open** again). Only once.
 
