@@ -29,8 +29,9 @@ def work(s, e, app="Cursor", title="x", host=""):
 
 
 def row(s, e, project="repo", titles=("Fix the importer",), commits=()):
+    # single: each made-up session works in one repository all day, so its votes from elsewhere count there
     return {"s": s, "e": e, "minutes": e - s, "project": project, "kind": "focused", "titles": list(titles),
-            "first_message": "", "tasks": [], "commits": list(commits)}
+            "first_message": "", "tasks": [], "commits": list(commits), "single": True}
 
 
 def day(**kw):

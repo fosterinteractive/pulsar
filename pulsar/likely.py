@@ -1,17 +1,18 @@
-"""The "Likely" column: which Claude Code session, which project, minute by minute.
+"""The "Likely" column: which Claude Code session, which project, minute by minute, and what the agents did in the
+background meanwhile.
 
 For anyone with Claude Code sessions on this computer (~/.claude/projects): sessions.py works it out from the sessions
-and the activity tracker. Where the fi-time-from-activity skill is installed, its activity_blocks.py is used instead
-(it carries its owner's own logging rules). Without Claude Code sessions the column never shows.
+and the activity tracker, at the real time of the work. Where the fi-time-from-activity skill is installed, its
+project names are used (its own rules for repositories, and its name for time spent logging time); its own proposal is
+not: it lays a sitting's minutes out one project after another and moves the agents' parallel time into free time,
+so its rows are not where the work was. Without Claude Code sessions the column never shows.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
-import subprocess
-import sys
-import tempfile
 import threading
 import time
 from datetime import datetime, timedelta
@@ -28,7 +29,7 @@ def available() -> bool:
 
 
 def own_script() -> bool:
-    """The fi-time-from-activity skill is installed: its script makes the column."""
+    """The fi-time-from-activity skill is installed: its project names are used (skill_names)."""
     return os.path.exists(SCRIPT)
 
 
@@ -36,23 +37,8 @@ def enabled(settings: dict) -> bool:
     return settings.get("likely") != "off" and available()
 
 
-def hm_min(s: str) -> int:
-    h, m = s.split(":")
-    return int(h) * 60 + int(m)
-
-
-def elapsed(date: str, tz, clock_min: int) -> int:
-    """Minutes on the clock since midnight -> minutes elapsed since midnight. The two differ only after the clocks
-    change; the script writes the clock, the rest of Pulsar keeps elapsed minutes and the page turns them back."""
-    if tz is None:
-        return clock_min
-    day = datetime.strptime(date, "%Y-%m-%d")
-    t0 = day.replace(tzinfo=tz).timestamp()
-    return round(((day + timedelta(minutes=clock_min)).replace(tzinfo=tz).timestamp() - t0) / 60)
-
-
 _locks: dict = {}
-TODAY_FOR = 180  # seconds a proposal for today is reused: the script reads every session of the day (~3 s)
+TODAY_FOR = 180  # seconds a proposal for today is reused: working it out reads every session of the day (~3 s)
 
 
 def proposal(date: str, tz_name: str, today: str, fresh: bool, settings: dict | None = None, keep: bool = True,
@@ -81,7 +67,7 @@ def proposal(date: str, tz_name: str, today: str, fresh: bool, settings: dict | 
         recent = cached and time.time() - cached[0] < TODAY_FOR
         if not (cached and not fresh and (cached[2] == OVER or (recent and (date >= today or (keep and cached[2] == BLIND))))):
             settings = settings or config.load()
-            result = _run(date, tz_name, config.tz(settings)) if own_script() else _built_in(date, settings)
+            result = _run(date, tz_name, config.tz(settings), settings) if own_script() else _built_in(date, settings)
             if result.get("error"):
                 return result
             if not keep:  # learning's past days: the task links only, nothing kept
@@ -120,13 +106,15 @@ def _add_hints(key: tuple, result: dict, date: str, settings: dict, done: thread
     proposal already handed out is never changed by them."""
     try:
         rows = [dict(e) for e in result.get("entries") or []]
-        _with_tasks({**result, "entries": rows}, date, settings, True)
+        bg = [dict(e) for e in result.get("background") or []]
+        _with_tasks({**result, "entries": rows, "background": bg}, date, settings, True)
         with _publish:
             now = _cache.get(key)
             if now and now[1] is result:  # not replaced by a newer run meanwhile
-                _cache[key] = (now[0], {**result, "entries": rows}, now[2])
+                hinted = {**result, "entries": rows, **({"background": bg} if "background" in result else {})}
+                _cache[key] = (now[0], hinted, now[2])
                 if now[2] == OVER:  # a day that was over, seen by a tracker: it will not change, so it is kept on disk
-                    _save_day(date, key[1], {**result, "entries": rows})
+                    _save_day(date, key[1], hinted)
     finally:
         done.set()
 
@@ -137,7 +125,7 @@ _publish = threading.Lock()
 # being worked out again (the script reads every session of the day: seconds). Rows with their session titles and
 # first messages, so only KEEP_DAYS days are kept; ↻ works a day out again.
 DAYS_DIR = os.path.join(config.CACHE_DIR, "likely-full")
-DAYS_FORMAT = 1
+DAYS_FORMAT = 2  # 2: rows at the real time of the work, and the background (1: the script's own layout)
 KEEP_DAYS = 31
 
 
@@ -176,7 +164,9 @@ def _with_tasks(result: dict, date: str, settings: dict, commits: bool = True) -
     from . import commits as git_commits, logbook, sessions
     t0 = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=config.tz(settings)).timestamp()
     try:
-        sessions.attach_tasks(result.get("entries") or [], t0, sessions.task_links(t0))
+        rows = (result.get("entries") or []) + (result.get("background") or [])
+        # rows from sessions.py carry their own links (repoLinks); only older ones need every session read again
+        sessions.attach_tasks(rows, t0, sessions.task_links(t0) if any("repoLinks" not in r for r in rows) else [])
     except Exception as exc:
         logbook.record("likely", f"Task links in Claude sessions: {type(exc).__name__}: {exc}", kind="warning")
     if commits:
@@ -186,8 +176,9 @@ def _with_tasks(result: dict, date: str, settings: dict, commits: bool = True) -
             logbook.record("likely", f"Commits for the notes: {type(exc).__name__}: {exc}", kind="warning")
 
 
-def _built_in(date: str, settings: dict) -> dict:
-    """sessions.py on the day's activity from the tracker that saw more of it."""
+def _built_in(date: str, settings: dict, names: tuple = (None, None)) -> dict:
+    """sessions.py on the day's activity from the tracker that saw more of it. names: (namer, logging name), see
+    skill_names."""
     from . import sessions, trackers
     if not available():
         return {"error": "No Claude Code sessions on this computer.", "entries": []}
@@ -197,41 +188,50 @@ def _built_in(date: str, settings: dict) -> dict:
     found = trackers.both(t0, t1, settings.get("activitywatch_url") or config.DEFAULTS["activitywatch_url"],
                           trackers.classifier(settings.get("personal_patterns") or []))
     source = trackers.pick(found, "auto")
-    names = {"aw": "ActivityWatch", "memtime": "MemTime"}
-    return sessions.propose(t0, t1, found.get(source) or [], names.get(source, source) if found.get(source) else "no tracker")
+    labels = {"aw": "ActivityWatch", "memtime": "MemTime"}
+    namer, logging_name = names
+    return sessions.propose(t0, t1, found.get(source) or [], labels.get(source, source) if found.get(source) else "no tracker",
+                            namer=namer, logging_name=logging_name)
 
 
-def _run(date: str, tz_name: str, tz=None) -> dict:
-    if not own_script():
-        return {"error": "The fi-time-from-activity skill is not installed.", "entries": []}
-    os.makedirs(config.CACHE_DIR, exist_ok=True)
-    fd, out = tempfile.mkstemp(prefix=f"proposal-{date}-", suffix=".json", dir=config.CACHE_DIR)
-    os.close(fd)
+def _run(date: str, tz_name: str, tz=None, settings: dict | None = None) -> dict:
+    """With the fi-time-from-activity skill installed: Pulsar's own reading of the day, with the skill's names."""
+    return _built_in(date, settings or config.load(), skill_names())
+
+
+_names_kept: dict = {}  # the script's modification time -> (namer, logging name)
+
+
+def skill_names() -> tuple:
+    """(namer, logging name) from the fi-time-from-activity script's own rules (its projects_in and LOGGING), read once
+    per version of the file; (None, None) when it is not installed or cannot be read, and then Pulsar's own names
+    (the git repository) are used. A path the script names nothing keeps Pulsar's own name."""
+    from . import logbook, sessions
     try:
-        run = subprocess.run([sys.executable, SCRIPT, date, "--tz", tz_name or "UTC", "--json", out],
-                             capture_output=True, text=True, timeout=300)
-        if run.returncode != 0:
-            return {"error": (run.stderr or run.stdout).strip()[-400:] or "activity_blocks.py failed", "entries": []}
-        try:
-            with open(out, encoding="utf-8") as fh:
-                data = json.load(fh)
-        except (OSError, ValueError):
-            return {"error": "activity_blocks.py wrote no proposal", "entries": []}
-    finally:
-        try:
-            os.remove(out)  # it holds session titles and first prompts: kept in memory, not on disk
-        except OSError:
-            pass
-    rows = []
-    for e in data.get("entries", []):
-        if e.get("minutes", 0) < 1:
-            continue
-        s, en = hm_min(e["start"]), hm_min(e["end"])
-        en = en if en >= s else en + 1440
-        rows.append({"s": elapsed(date, tz, s), "e": elapsed(date, tz, en), "minutes": e["minutes"], "project": e["project"],
-                     "kind": e["kind"], "titles": e.get("titles", []), "messages": e.get("messages", 0),
-                     "first_message": e.get("first_message", ""),
-                     # the sessions' ids (the first 8 characters of the file name): pulsar --mcp finds "this session" by them
-                     "sessions": [str(x)[:8] for x in e.get("sessions") or []]})
-    return {"tracker": data.get("tracker"), "working": data.get("working"), "proposed": data.get("proposed"),
-            "unplaced": data.get("unplaced", []), "logging": data.get("logging", 0), "entries": rows}
+        mtime = os.path.getmtime(SCRIPT)
+    except OSError:
+        return None, None
+    if mtime in _names_kept:
+        return _names_kept[mtime]
+    got = (None, None)
+    try:
+        spec = importlib.util.spec_from_file_location("pulsar_skill_names", SCRIPT)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        projects_in = mod.projects_in
+        logging_name = getattr(mod, "LOGGING", None)
+        cache = config.Newest(20000)
+
+        def namer(path: str):
+            if path not in cache:
+                counts: dict = {}
+                projects_in([path], counts)
+                cache[path] = (max(counts, key=counts.get) if counts else None) or sessions.project_of_path(path)
+            return cache[path]
+        got = (namer, logging_name if isinstance(logging_name, str) else None)
+    except Exception as exc:  # the script changed shape: Pulsar's own names, and Logs says why
+        logbook.record("likely", f"The fi-time-from-activity script's names could not be read, so Pulsar's own are "
+                                 f"used: {type(exc).__name__}: {exc}", kind="warning", once_per=3600)
+    _names_kept.clear()
+    _names_kept[mtime] = got
+    return got

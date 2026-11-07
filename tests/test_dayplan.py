@@ -207,11 +207,13 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual(sum(e["minutes"] for e in p["entries"] if e["checked"]), 45)
         # an agent-only row with no activity under it proposes nothing
         self.assertFalse(any(e["s"] >= 650 for e in p["entries"]))
+        # the skill script's agent-only rows sit at times it moved them to: ignored. Work under one is work outside
+        # Claude, unsure, unticked; the agent's own time comes from the background at its real time (test_attribution)
         items.append(work(650, 700, app="Safari"))
         p = dayplan.plan(day(items=items, away=[{"s": 570, "e": 585}],
                              rows=[row(540, 600), row(650, 700, kind="parallel", titles=["Hero video"])]), self.ctx)
-        agent = [e for e in p["entries"] if e["s"] >= 650]
-        self.assertTrue(agent and all(not e["checked"] and "agent" in e["flags"] for e in agent), agent)
+        later = [e for e in p["entries"] if e["s"] >= 650]
+        self.assertTrue(later and all(e["kind"] == "outside" and not e["checked"] for e in later), later)
 
     def test_claude_replaces_an_unsure_answer_never_a_sure_one(self):
         pick = {"tasks": [{"taskId": "55", "title": "From Claude", "project": "Q"}], "why": "the messages say so",
@@ -347,7 +349,7 @@ class PlannerTest(unittest.TestCase):
 
     def test_a_session_vote_of_40_to_60_percent_is_low_and_unticked(self):
         key = dayplan.title_key("Fix the importer")
-        ctx = {**self.ctx, "sess": {key: {"11": 55.0, "22": 45.0}}}
+        ctx = {**self.ctx, "sess": {key: {"11": 55.0, "22": 45.0}}, "sr": {(key, "repo"): {"11": 55.0, "22": 45.0}}}
         [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600)]), ctx)["entries"]
         self.assertEqual((e["taskId"], e["confidence"], e["checked"]), ("11", "low", False))
 
@@ -359,9 +361,14 @@ class PlannerTest(unittest.TestCase):
         ctx = {**self.ctx, "sess": {key: {"M": 120.0}}, "repo": {"initech": {"P": 300.0}}, "names": names}
         [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, project="initech")]), ctx)["entries"]
         self.assertEqual((e["taskId"], e["source"]), ("P", "repo"))
-        # a repository with too little history says nothing: the session's task stays
+        # a repository with too little history: the session's votes from elsewhere never go into it (2026-11-06: a
+        # session's client task went to hours of work in a repository of the agency's own) ...
         ctx = {**ctx, "repo": {"initech": {"P": 30.0}}}
         [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, project="initech")]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("P", "repo"))
+        # ... unless the session has been in that repository all along (its history is that repository's)
+        r = {**row(540, 600, project="initech"), "single": True}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), ctx)["entries"]
         self.assertEqual((e["taskId"], e["source"]), ("M", "session"))
 
     def test_common_words_never_match_a_task_name(self):

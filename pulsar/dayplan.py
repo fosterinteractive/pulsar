@@ -38,7 +38,8 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from . import commits as git_commits, config
+from . import attribution, commits as git_commits, config
+from .attribution import CLIENT, INTERNAL, repo_key
 
 GRID = 5             # entry boundaries on this grid, in minutes (Settings: "Round entries to", opts_for)
 MIN_ENTRY = 10       # shorter pieces join a neighbour (never shorter than the grid)
@@ -68,8 +69,10 @@ GENERIC = {"the", "and", "for", "with", "drupal", "site", "website", "issues", "
 
 CONF_WORDS = {"high": "likely right", "medium": "probably right", "low": "check"}
 NEW_PICK_MIN = 0.5   # the words a task you never logged to must share with the work to be picked (or a key named)
-FIT_SHARE = 0.25     # a project with less of a repository's logged time than this is another client's there
-FIT_MIN = 60         # minutes of a repository's (fading) votes before its projects say anything
+FIT_SHARE = attribution.FIT_SHARE  # a project with less of a repository's logged time than this is another client's
+FIT_MIN = attribution.FIT_MIN      # minutes of a repository's (fading) votes before its projects say anything
+CONTEST_MIN = 10     # a client's agent takes internal work's minutes (shared) only for this long at a stretch
+CLASS_ORDER = {INTERNAL: 0, "mixed": 1, "unknown": 1, CLIENT: 2}  # what the cap cuts first
 
 
 def opts_for(settings: dict) -> dict:
@@ -90,13 +93,18 @@ def words(text: str, skip: frozenset = frozenset()) -> set:
 def fits(ctx: dict, repo: str, task) -> bool | None:
     """Whether a task's project is one this repository is logged to (FIT_SHARE of its votes): None when the
     repository has too little history or the task's project is not known."""
-    v = (ctx.get("repo") or {}).get(repo or "") or {}
-    total = sum(v.values())
-    project = ((ctx.get("names") or {}).get(str(task)) or {}).get("project") if task else None
-    if total < FIT_MIN or not project:
-        return None
-    mine = sum(w for t, w in v.items() if ((ctx.get("names") or {}).get(t) or {}).get("project") == project)
-    return mine / total >= FIT_SHARE
+    names = ctx.get("names") or {}
+    return attribution.fits((ctx.get("repo") or {}).get(repo_key(repo)) or {},
+                            lambda t: (names.get(str(t)) or {}).get("project"), task)
+
+
+def same_client(ctx: dict, repo: str, task) -> bool:
+    """A task of the client this repository works for: its project is logged to the repository, or shares a word of
+    four letters or more with the repository's name."""
+    if fits(ctx, repo, task) is True:
+        return True
+    project = ((ctx.get("names") or {}).get(str(task)) or {}).get("project") or ""
+    return bool(attribution.name_words(repo_key(repo)) & attribution.name_words(project))
 
 
 def title_key(title: str) -> str:
@@ -124,9 +132,11 @@ def main_task(entries: list, a: float, b: float) -> tuple:
 
 def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_LIFE, learn_days: int = LEARN_DAYS,
           person: str = "") -> dict:
-    """What the days before `date` say: votes session key -> task and repository -> task (each earlier Likely row votes,
-    with its minutes, for the task logged over most of it; older days count less), the service last used per task,
-    names, the tasks logged lately, and repositories worked in but never logged (a side project).
+    """What the days before `date` say: votes session key -> task, (session key, repository) -> task and repository ->
+    task (each earlier Likely row votes, with its minutes, for the task logged over most of it, credited to the
+    background row under it when that one's repository is the one logged to the task's project: attribution.credits;
+    older days count less), the service last used per task, names, the tasks logged lately, repositories worked in but
+    never logged (a side project), and each repository's billing class (attribution.repo_classes).
 
     history: your entries before `date` ({date, start, minutes, taskId, serviceId, service, task, project});
     days: {date: [{"k": [title keys], "p": repository, "s", "e"}]}, as learn.py keeps them."""
@@ -138,30 +148,39 @@ def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_L
         by_day[r["date"]].append(r)
     sess: dict = defaultdict(lambda: defaultdict(float))
     repo: dict = defaultdict(lambda: defaultdict(float))
+    sr: dict = defaultdict(lambda: defaultdict(float))
     seen: dict = defaultdict(float)
     logged: dict = defaultdict(float)
     # an entry with no start time cannot be matched to the work, so a day that has one says nothing about whether a
     # repository is logged (2026-09: the person's main repositories were set aside as "never logged")
     untimed = {d for d, rs in by_day.items() if any(r.get("start") is None for r in rs)}
-    for d, rows in days.items():
-        if not lo <= d < date or not rows:
+    window = {d: rows for d, rows in days.items() if lo <= d < date and rows}
+    for d, rows in window.items():
+        if d in untimed:
             continue
         t0 = t0_of(d)
-        age = (day0 - datetime.strptime(d, "%Y-%m-%d")).days
-        w = 0.5 ** (age / half_life) if half_life else 1.0
         for row in rows:
             m = row["e"] - row["s"]
-            if m < 5:
+            if m < 5 or row.get("bg"):
                 continue
-            task, cov = main_task(by_day.get(d, []), t0 + row["s"] * 60, t0 + row["e"] * 60)
-            if d not in untimed:
-                seen[row.get("p") or ""] += m
-                logged[row.get("p") or ""] += min(cov, m)
-            if not task:
-                continue
-            for k in row.get("k") or []:
-                sess[k][task] += m * w
-            repo[row.get("p") or ""][task] += m * w
+            _, cov = main_task(by_day.get(d, []), t0 + row["s"] * 60, t0 + row["e"] * 60)
+            seen[repo_key(row.get("p"))] += m
+            logged[repo_key(row.get("p"))] += min(cov, m)
+    project_of = {str(r["taskId"]): r.get("project") or "" for r in before}
+
+    def task_of(d, a, b):
+        t0 = t0_of(d)
+        return main_task(by_day.get(d, []), t0 + a * 60, t0 + b * 60)[0]
+
+    # each logged stretch teaches the unit whose repository is logged to its project (attribution.credits)
+    credited = attribution.credits(window, task_of, project_of.get)
+    for d, keys, at, task, m in credited:
+        age = (day0 - datetime.strptime(d, "%Y-%m-%d")).days
+        w = 0.5 ** (age / half_life) if half_life else 1.0
+        for k in keys:
+            sess[k][task] += m * w
+            sr[(k, at)][task] += m * w
+        repo[at][task] += m * w
     service, names, last, project_service = {}, {}, {}, {}
     for r in sorted(before, key=lambda r: (r["date"], r.get("start") or 0)):
         t = str(r["taskId"])
@@ -173,11 +192,41 @@ def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_L
     lo30 = (day0 - timedelta(days=RECENT_DAYS)).strftime("%Y-%m-%d")
     recent = [t for t, d in sorted(last.items(), key=lambda kv: kv[1], reverse=True) if d >= lo30]
     never = {p for p in seen if p and seen[p] >= 60 and logged[p] / seen[p] < 0.1}
-    return {"sess": sess, "repo": repo, "service": service, "project_service": project_service, "names": names, "recent": recent, "never_logged": never,
-            "skip": set(WORD.findall((person or "").lower()))}
+    task_class, project_class = attribution.task_classes(before)
+    return {"sess": sess, "repo": repo, "sr": sr, "service": service, "project_service": project_service,
+            "names": names, "recent": recent, "never_logged": never,
+            "skip": set(WORD.findall((person or "").lower())),
+            "task_class": task_class, "project_class": project_class,
+            "classes": attribution.repo_classes(credited, task_class)}
 
 
 # ---- a task for one Likely row -------------------------------------------------------------------------------------
+
+def _runs(minutes: list, gap: int = 2) -> list:
+    """[(first, last)] of sorted minutes, joined across gaps of up to `gap` minutes."""
+    out: list = []
+    for x in minutes:
+        if out and x - out[-1][1] <= gap:
+            out[-1][1] = x
+        else:
+            out.append([x, x])
+    return [tuple(r) for r in out]
+
+
+def ticket_task(row: dict, ctx: dict, assigned: list):
+    """The task whose ticket key the row's session titles or first message name, among the tasks logged lately and
+    the ones assigned to you; None without one."""
+    found = set(TICKET.findall(" ".join(list(row.get("titles") or []) + [row.get("first_message") or ""])))
+    if not found:
+        return None
+    names = ctx.get("names") or {}
+    by_id = {str(a["taskId"]): a for a in assigned or []}
+    for tid in list(ctx.get("recent") or []) + list(by_id):
+        title = (names.get(tid) or {}).get("task") or (by_id.get(tid) or {}).get("title") or ""
+        if found & set(TICKET.findall(title)):
+            return tid
+    return None
+
 
 def _ranked(votes: dict) -> list:
     tot = sum(votes.values()) or 1
@@ -217,14 +266,13 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
                         out.append((tid, "ticket", "high", f"{sorted(hit)[0]} is named in the session"))
                         break
         elif src == "session":
-            v: dict = defaultdict(float)
-            for k in keys:
-                for t, m in (ctx["sess"].get(k) or {}).items():
-                    v[t] += m
-            tot = sum(v.values()) or 1
-            # a session's task never carries over to another client's repository (a session that did one client's
-            # database upgrade the day before gave that task to other clients' work); the share counts every vote
-            v = {t: m for t, m in v.items() if fits(ctx, row.get("project"), t) is not False}
+            # the session's votes in this repository; its other votes only where they may carry over
+            # (attribution.session_votes: a session's history applies per repository); the share counts every vote
+            # it has here, or every vote of the session
+            v, here = attribution.session_votes(keys, row.get("project"), ctx["sess"], ctx.get("sr") or {},
+                                                (ctx.get("repo") or {}).get(repo_key(row.get("project"))) or {},
+                                                lambda t: (names.get(str(t)) or {}).get("project"), bool(row.get("single")))
+            tot = (sum(v.values()) if here else sum(m for k in keys for m in (ctx["sess"].get(k) or {}).values())) or 1
             if v:
                 t, m, _ = _ranked(v)[0]
                 share = m / tot
@@ -232,7 +280,7 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
                 conf = "high" if share >= 0.6 and m >= 30 else "low"
                 out.append((t, "session", conf, f"you logged it while in this Claude session ({round(share * 100)}%)"))
         elif src == "repo":
-            v = ctx["repo"].get(row.get("project") or "") or {}
+            v = ctx["repo"].get(repo_key(row.get("project"))) or {}
             if v:
                 t, m, share = _ranked(v)[0]
                 conf = "medium" if share >= 0.5 and m >= 60 else "low"
@@ -245,7 +293,7 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
         elif src == "scoped":
             # the repository's projects (from its votes), then the task in them whose name shares most words with
             # the session's titles and first message
-            v = ctx["repo"].get(row.get("project") or "") or {}
+            v = ctx["repo"].get(repo_key(row.get("project"))) or {}
             projects = {name(t)[1] for t in v} - {""}
             if projects:
                 w = words(" ".join(list(row.get("titles") or []) + [row.get("first_message") or ""]), skip)
@@ -271,27 +319,46 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
     return out
 
 
+def admissible(row: dict, ctx: dict, task, source: str) -> bool:
+    """Whether a task may be the pick for a row of this class (row["class"], attribution.segment_class): on internal
+    work a client's task only from what the work itself names (a rule, a task link, a ticket key); on a client's
+    repository never another client's task from the session's history. No pick is better than a wrong billable one."""
+    if not task:
+        return False
+    cls, tc = row.get("class"), attribution.class_of_task(task, ctx)
+    if cls == INTERNAL and tc == CLIENT and source not in ("rule", "link", "ticket"):
+        return False
+    if cls == CLIENT and source in ("session", "sameday") and tc == CLIENT and not same_client(ctx, row.get("project"), task):
+        return False
+    return True
+
+
 def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, assigned: list | None = None,
            pick: dict | None = None) -> dict:
     """{task, source, conf, why, alts} for one Likely row. Claude's pick (Ask Claude) replaces an answer that is not
-    sure (medium or low): on the hardest days it helped most there."""
-    found = candidates(row, ctx, rule_hit, sameday or {}, assigned or [])
-    if found:
+    sure (medium or low): on the hardest days it helped most there. A task the row's class does not admit (admissible)
+    is never the pick; it stays among the alternatives."""
+    every = candidates(row, ctx, rule_hit, sameday or {}, assigned or [])
+    found = [f for f in every if admissible(row, ctx, f[0], f[1])]
+    found += [(t, s_, "low", w) for t, s_, c, w in every if not admissible(row, ctx, t, s_)]
+    if found and admissible(row, ctx, found[0][0], found[0][1]):
         task, src, conf, why = found[0]
     else:
         task, src, conf, why = None, "none", "low", "no match: pick the task"
+        found = [(None, "none", "low", why)] + found
     # a task you never logged to that the work names (learn.new_tasks): the first alternative, and the pick over an
     # answer that is unsure and not one you gave (a rule, a link, a ticket key): never above a sure vote
     fresh = [x for x in row.get("learned") or [] if x.get("new")]
     new_alt = [(str(fresh[0]["taskId"]), "new", "low", fresh[0].get("why") or "")] if fresh else []
     weak = conf == "low" and src not in ("rule", "link", "ticket")
-    if fresh and weak and (fresh[0].get("key") or fresh[0].get("score", 0) >= NEW_PICK_MIN):
+    if fresh and weak and (fresh[0].get("key") or fresh[0].get("score", 0) >= NEW_PICK_MIN) \
+            and admissible(row, ctx, str(fresh[0]["taskId"]), "ticket" if fresh[0].get("key") else "new"):
         if task:
             new_alt = [(task, src, conf, why)]
         task, src, conf, why = str(fresh[0]["taskId"]), "new", "low", fresh[0].get("why") or ""
     alts = []
     claude_none = bool(pick) and not pick.get("tasks") and conf != "high"  # Claude found no task: keep ours, say so
-    if pick and pick.get("tasks") and conf != "high":
+    if pick and pick.get("tasks") and conf != "high" and admissible(row, ctx, str(pick["tasks"][0]["taskId"]), "claude"):
         first = pick["tasks"][0]
         alts = [(task, src, conf, why)] if task else []
         alts = [(t, s, c, f"Pulsar's guess: {w}") for t, s, c, w in alts]
@@ -523,8 +590,11 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
         if got:
             attended.append([free[0], free[-1] + 1, i])
 
-    # 3. Likely rows: focused work first, at its own time; agent-only rows after, on free active minutes only
-    rows = [r for r in day.get("rows") or [] if (r.get("minutes") or r["e"] - r["s"]) >= 1]
+    # 3. Likely rows at their own time: a client's work in front first; then a client's agent that ran attended while
+    # internal work was in front (shared: the client goes first); then the rest in front. What else the agents did
+    # meanwhile is noted, never placed (the skill script's agent-only rows, moved to free time, are not used at all)
+    rows = [r for r in day.get("rows") or [] if (r.get("minutes") or r["e"] - r["s"]) >= 1 and r.get("kind") != "parallel"]
+    back = sorted((r for r in day.get("background") or [] if r["e"] - r["s"] >= 1), key=lambda r: r["s"])
     picks = day.get("picks") or {}
     assigned = day.get("assigned") or []
     for a in assigned:
@@ -535,18 +605,24 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     # the tasks logged to in the last 30 days: Claude's pick of any other task (one it found by searching Productive)
     # starts unticked, as does any row whose note Claude drafted, so neither goes through on one click
     recent = {str(t) for t in ctx.get("recent") or ()}
-    for i in sorted(range(len(rows)), key=lambda i: (rows[i].get("kind") == "parallel", rows[i]["s"])):
-        r = rows[i]
-        agent = r.get("kind") == "parallel"
-        if r.get("project") in (ctx.get("never_logged") or ()) and not r.get("tasks"):
-            claim({"kind": "skip", "project": r.get("project"), "why": f"{r.get('project')}: you never log this repository"},
-                  [x for x in range(int(r["s"]), int(r["e"])) if not away[x]])
-            continue
-        hit = rule_in(items, day.get("rules") or [], r["s"], r["e"],
-                      " ".join([r.get("project") or ""] + list(r.get("titles") or []) + [r.get("first_message") or ""]))
+    never = ctx.get("never_logged") or ()
+
+    def present(x: int, own: bool) -> bool:
+        """The person at work on this minute: a work window, not away, not personal, not logging time (except in
+        Pulsar's own repository, where the Pulsar window is the work)."""
+        return bool(work[x]) and not away[x] and (own or not logging_[x])
+
+    def prepare(r: dict, bg: bool) -> dict:
+        """The claim of one row: its class (attribution.segment_class), its task (choose) and why."""
+        text = " ".join([r.get("project") or ""] + list(r.get("titles") or []) + [r.get("first_message") or ""])
+        # a rule matches the activity in front: never the background's work
+        hit = rule_in([] if bg else items, day.get("rules") or [], r["s"], r["e"], text)
         if hit:
             known(str(hit["taskId"]), hit.get("title"), hit.get("project"))
-        pick = picks.get(f"{r.get('pick_s', r['s'])}|{r.get('project') or ''}")
+        hint = (str(hit["taskId"]) if hit else None) or (str(r["tasks"][0]) if r.get("tasks") else None) \
+            or ticket_task(r, ctx, assigned)
+        r = {**r, "class": attribution.segment_class(r.get("project"), ctx, hint)}
+        pick = None if bg else picks.get(f"{r.get('pick_s', r['s'])}|{r.get('project') or ''}")
         for t in (pick or {}).get("tasks") or []:
             known(str(t["taskId"]), t.get("title"), t.get("project"))
         for t in r.get("learned") or []:
@@ -556,19 +632,74 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
         claude_note = bool(note and ch["task"] and str(pick["tasks"][0]["taskId"]) == ch["task"])
         # else the row's own commits (commits.py): they say what was done whatever the task
         note, note_from = (note, "claude") if claude_note else (git_commits.note(r.get("commits") or []), "commits")
-        c = {"kind": "agent" if agent else "focused", "task": ch["task"], "source": ch["source"],
-             "conf": _min_conf(ch["conf"], "medium") if agent else ch["conf"], "why": ch["why"],
-             "project": r.get("project"), "titles": r.get("titles") or [], "alts": [x["taskId"] for x in ch["alts"]],
-             "altWhy": {x["taskId"]: x["why"] for x in ch["alts"]},
-             "note": note, "noteFrom": note_from if note else "",
-             "claudeNone": ch["claudeNone"], "claudeFound": ch["source"] == "claude" and str(ch["task"]) not in recent}
-        span = range(int(r["s"]), min(N, int(math.ceil(r["e"]))))
-        own = bool(OWN_REPO.match(r.get("project") or ""))
-        claim(c, [x for x in span if not away[x] and (own or not logging_[x]) and (work[x] or not agent)
-                  and not (personal[x] and not work[x])])
-        if ch["task"] and ch["source"] in ("rule", "link", "session") and ch["conf"] == "high":
+        if not bg and ch["task"] and ch["source"] in ("rule", "link", "session") and ch["conf"] == "high":
             for k in _keys(r):
                 sameday.setdefault(k, ch["task"])
+        return {"kind": "focused", "task": ch["task"], "source": ch["source"], "conf": ch["conf"], "why": ch["why"],
+                "project": r.get("project"), "titles": r.get("titles") or [], "alts": [x["taskId"] for x in ch["alts"]],
+                "altWhy": {x["taskId"]: x["why"] for x in ch["alts"]}, "class": r["class"],
+                "sessions": list(r.get("sessions") or []), "note": note, "noteFrom": note_from if note else "",
+                "claudeNone": ch["claudeNone"], "claudeFound": ch["source"] == "claude" and str(ch["task"]) not in recent}
+
+    front: list = []  # (row, claim)
+    for r in sorted(rows, key=lambda r: r["s"]):
+        if repo_key(r.get("project")) in never and not r.get("tasks"):
+            claim({"kind": "skip", "project": r.get("project"), "why": f"{r.get('project')}: you never log this repository"},
+                  [x for x in range(int(r["s"]), int(r["e"])) if not away[x]])
+            continue
+        front.append((r, prepare(r, False)))
+    in_front: list = [None] * N  # the claim of the row in front at each minute (rows in front never overlap)
+    for r, c in front:
+        for x in range(int(r["s"]), min(N, int(math.ceil(r["e"])))):
+            in_front[x] = c
+
+    def span_of(r: dict, c: dict) -> list:
+        own = bool(OWN_REPO.match(r.get("project") or ""))
+        span = range(int(r["s"]), min(N, int(math.ceil(r["e"]))))
+        if c["class"] == CLIENT:  # a billable minute needs the person there: a work window under it
+            return [x for x in span if present(x, own)]
+        return [x for x in span if not away[x] and (own or not logging_[x]) and not (personal[x] and not work[x])]
+
+    for r, c in front:  # 3a. a client's work in front
+        if c["class"] == CLIENT:
+            claim(c, span_of(r, c))
+    shared_spans: list = []
+    for r in back:  # 3b. a client's agent, attended, over internal work in front: the client goes first (shared)
+        if not r.get("qualifies") or (repo_key(r.get("project")) in never and not r.get("tasks")):
+            continue
+        c = prepare(r, True)
+        # only a client's task, a known one: priority never makes a task billable, and never adds a minute
+        if c["class"] != CLIENT or not c["task"] or attribution.class_of_task(c["task"], ctx) == INTERNAL:
+            continue
+        free = [x for x in range(int(r["s"]), min(N, int(math.ceil(r["e"]))))
+                if present(x, False) and owner[x] is None and in_front[x] is not None and in_front[x]["class"] == INTERNAL]
+        for a, b in _runs(free, 2):
+            if b - a + 1 < CONTEST_MIN:
+                continue  # a short one stays with the work in front
+            minutes = [x for x in free if a <= x <= b]
+            under: dict = defaultdict(int)
+            for x in minutes:
+                under[id(in_front[x])] += 1
+            lead = next(f for _, f in front if id(f) == max(under, key=under.get))
+            _, got = claim({**c, "kind": "shared", "shared": True, "with": lead}, minutes)
+            if got:
+                shared_spans.append((a, b + 1))
+    for r, c in front:  # 3c. the rest of the work in front
+        if c["class"] != CLIENT:
+            claim(c, span_of(r, c))
+    # what else the agents did while the person was at work: the minutes no claim of theirs took, by repository
+    bg_left: dict = {}
+    parallel = bytearray(N)
+    for r in back:
+        for x in range(int(r["s"]), min(N, int(math.ceil(r["e"])))):
+            if not present(x, False):
+                continue
+            parallel[x] = 1
+            who = owner[x]
+            if who not in (None, BLOCKED) and claims[who].get("kind") == "shared" \
+                    and claims[who].get("project") == r.get("project"):
+                continue
+            bg_left.setdefault(r.get("project") or "", set()).add(x)
 
     # time spent logging (Pulsar, Productive): never proposed. An editor or terminal with no session row is work
     # outside Claude, below (it was set aside, and the person logged most of it: 624 minutes in 34 days)
@@ -609,8 +740,9 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     for a, b in short:  # a short one joins the entry beside it
         left = next((owner[x] for x in range(a - 1, max(0, a - 3), -1) if owner[x] not in (None, BLOCKED)), None)
         right = next((owner[x] for x in range(b + 1, min(N, b + 3)) if owner[x] not in (None, BLOCKED)), None)
-        pick_i = left if left is not None else right
-        if pick_i is not None and claims[pick_i]["kind"] not in ("logged", "skip"):
+        pick_i = next((i for i in (left, right) if i is not None and claims[i]["kind"] not in ("logged", "skip", "shared")),
+                      None)  # never a shared stretch: that is the agent's time, not the work in front
+        if pick_i is not None:
             for x in range(a, b + 1):
                 if work[x] and owner[x] is None:
                     owner[x] = pick_i
@@ -645,14 +777,15 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
                     gone=[(int(math.ceil(w["s"])), int(w["e"])) for w in day.get("gone") or []])
 
     def logged_between(a, b) -> bool:  # an entry already logged between minutes a and b: laid out from a, a piece
-        return any(a < x[1] and x[0] < b for x in busy)  # joined across it would stop at it, the rest not placed
+        # joined across it would stop at it, the rest not placed; a shared stretch stays where it was, so the same
+        return any(a < x[1] and x[0] < b for x in busy + shared_spans)
 
     # one task in one sitting: one entry, laid out from its first piece; a meeting someone attended keeps its own
     # time, so what comes before it joins it only when it touches it
     merged: list = []
     for p in pieces:
         m = merged[-1] if merged else None
-        if m and m.get("task") and m["task"] == p.get("task") and "skip" not in (m["kind"], p["kind"]) \
+        if m and m.get("task") and m["task"] == p.get("task") and not {"skip", "shared"} & {m["kind"], p["kind"]} \
                 and p["s"] - m["last"] <= o["merge_gap"] and sitting[m["last"]] == sitting[p["s"]] \
                 and (not p.get("attended") or p["s"] - m["last"] <= (o["grid"] or 1)) \
                 and not logged_between(m["last"] + 1, p["s"]):
@@ -667,6 +800,8 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     # its own time: work before it never joins it
     def joins(p, q, q_first):
         if q is None or q["kind"] == "skip" or (q.get("attended") and not q_first and not p.get("attended")):
+            return False
+        if "shared" in (p["kind"], q["kind"]):  # a shared stretch stays as it was, at its real time
             return False
         a, b = (q["last"], p["s"]) if q_first else (p["last"], q["s"])
         if logged_between(a + 1, b):
@@ -696,16 +831,36 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
                  "why": m.get("why") or ""} for m in merged if m["kind"] == "skip"]
     entries = [m for m in merged if m["kind"] != "skip"]
 
-    # lay out: in time order, no overlap with each other or with what is logged, boundaries on the grid, except
-    # against an entry already logged: an entry starts right where it ends, or stops right where it starts, so the
-    # minutes up to the grid are taken in rather than left as a crumb of "not covered" shorter than a step
+    # the minutes the person was seen at work on each task: in front, or its agent attended (shared). A billable
+    # entry never comes out longer than that (the evidence cap, below), whatever the layout and the grid did
+    evidence: dict = defaultdict(int)
+    for p in pieces:
+        if p.get("task") and p["kind"] in ("focused", "shared", "outside"):
+            evidence[str(p["task"])] += sum(1 for x in range(p["s"], p["last"] + 1)
+                                            if owner[x] == p["claim"] and work[x] and not away[x])
+
+    # lay out: a shared stretch first, where it was (its client's agent and the work in front both ran then); then
+    # the rest in time order, no overlap with each other, with what is logged or a shared stretch, boundaries on the
+    # grid, except against an entry already logged: an entry starts right where it ends, or stops right where it
+    # starts, so the minutes up to the grid are taken in rather than left as a crumb of "not covered" shorter than a step
     g = o["grid"] or 1
     out, end, unplaced = [], 0, []
-    for m in sorted(entries, key=lambda m: m["s"]):
+    fixed = [(a, b, "logged") for a, b in busy]
+    for m in sorted((m for m in entries if m["kind"] == "shared"), key=lambda m: m["s"]):
+        s, e = int(round(m["s"] / g) * g), min(N, int(round((m["last"] + 1) / g) * g))
+        for a, b, _ in sorted(fixed):
+            if a < e and s < b:  # never over an entry already logged
+                s, e = (s, int(a)) if s < a else (int(math.ceil(b)), e)
+        if e - s < g:
+            continue  # under a grid step: rounding
+        out.append(_entry(m, s, e, names))
+        fixed.append((s, e, "shared"))
+    fixed.sort()
+    for m in sorted((m for m in entries if m["kind"] != "shared"), key=lambda m: m["s"]):
         s = max(int(round(m["s"] / g) * g), end)
         e = int(round((s + m["minutes"]) / g) * g)
-        cut = 0  # minutes an entry already logged left no room for
-        for a, b in busy:  # an entry already logged: start right after it, or stop right before it
+        cut, why = 0, "no room before an entry already logged"  # minutes an entry already logged left no room for
+        for a, b, kind in fixed:  # an entry already logged: start right after it, or stop right before it
             if a <= s < b:
                 length = e - s
                 s = int(math.ceil(b))
@@ -714,12 +869,14 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
                 stop = max(s, int(a))
                 cut += e - stop
                 e = stop
+                if kind == "shared":
+                    why = "no room beside a shared entry"
         if s > m["last"]:  # moved past entries already logged beyond its own work: listed, never placed elsewhere
             unplaced.append({"minutes": m["minutes"], "task": m.get("task"), "project": m.get("project") or "",
-                             "why": "no room before an entry already logged"})
+                             "why": why})
             continue
         e = min(e, N)
-        room = {"task": m.get("task"), "project": m.get("project") or "", "why": "no room before an entry already logged"}
+        room = {"task": m.get("task"), "project": m.get("project") or "", "why": why}
         if e - s < (5 if m.get("attended") else g):
             if cut:  # squeezed between entries already logged: all of it listed, none placed
                 unplaced.append({"minutes": m["minutes"], **room})
@@ -728,6 +885,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
             unplaced.append({"minutes": cut, **room})
         end = e
         out.append(_entry(m, s, e, names))
+    out.sort(key=lambda e: e["s"])
 
     # the cap: proposed plus logged never more than active time plus attended meetings; the rest is shown, not placed
     att = bytearray(N)
@@ -751,20 +909,34 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
         unplaced.append({"minutes": cut, "task": e["taskId"], "project": e["project"], "why": why})
         return cut
 
+    # what goes first: internal work, then mixed or unknown, a client's last; within each the least sure, the latest
+    first_cut = lambda e: (CLASS_ORDER.get(e.get("class"), 1), RANK[e["confidence"]], -e["s"])  # noqa: E731
     if over > 0:
         left = dict(untimed)  # first the task of an entry with no start, up to its minutes: it may be that work
-        for e in sorted(out, key=lambda e: (RANK[e["confidence"]], -e["s"])):
+        for e in sorted(out, key=first_cut):
             if over > 0 and left.get(str(e["taskId"]), 0) > 0:
                 cut = cut_from(e, min(over, left[str(e["taskId"])]),
                                "more than your active time and meetings; its task has time logged with no start")
                 left[str(e["taskId"])] -= cut
                 over -= cut
-        for e in sorted(out, key=lambda e: (RANK[e["confidence"]], -e["s"])):
+        for e in sorted(out, key=first_cut):
             if over <= 0:
                 break
             if e["minutes"]:
                 over -= cut_from(e, over, "more than your active time and meetings")
         out = [e for e in out if e["minutes"] >= g]
+    # the evidence cap: a client's task never gets more minutes than the person was seen at work on it
+    billable = lambda e: e.get("taskId") and e["kind"] not in ("meeting", "unattended") and (  # noqa: E731
+        e.get("class") == CLIENT or attribution.class_of_task(e["taskId"], ctx) == CLIENT)
+    total: dict = defaultdict(int)
+    for e in out:
+        if billable(e):
+            total[str(e["taskId"])] += e["minutes"]
+    for e in sorted(out, key=lambda e: -e["s"]):
+        t = str(e.get("taskId") or "")
+        if billable(e) and e["minutes"] and total[t] > evidence.get(t, 0):
+            total[t] -= cut_from(e, total[t] - evidence.get(t, 0), "more than the time this work was seen")
+    out = [e for e in out if e["minutes"] >= g]
     for e in out:
         if untimed.get(str(e["taskId"])):
             e["flags"].append("untimed")
@@ -784,12 +956,17 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
             if x - start >= max(3, g):
                 uncovered.append({"s": start, "e": x, "minutes": x - start})
             start = None
-    return {"entries": out, "unplaced": unplaced, "skipped": skipped, "uncovered": uncovered,
+    # the agents' other work while the person was at work: noted by repository, never placed
+    noted = [{"s": min(xs), "e": max(xs) + 1, "minutes": len(xs), "project": p, "why": "ran in parallel"}
+             for p, xs in sorted(bg_left.items(), key=lambda kv: -len(kv[1])) if len(xs) >= 5]
+    return {"entries": out, "unplaced": unplaced, "skipped": skipped + noted, "uncovered": uncovered,
             "totals": {"proposed": sum(e["minutes"] for e in out),
                        "checked": sum(e["minutes"] for e in out if e["checked"]),
                        "logged": logged_total, "active": active, "meetings": sum(att), "cap": cap,
                        "notCovered": sum(u["minutes"] for u in uncovered),
-                       "over": sum(u["minutes"] for u in unplaced if u["why"].startswith("more than"))}}
+                       "over": sum(u["minutes"] for u in unplaced if u["why"].startswith("more than your")),
+                       "parallel": sum(parallel), "shared": sum(e["minutes"] for e in out if e.get("shared")),
+                       "leftOut": sum(n["minutes"] for n in noted)}}
 
 
 def _entry(m: dict, s: int, e: int, names: dict) -> dict:
@@ -811,6 +988,8 @@ def _entry(m: dict, s: int, e: int, names: dict) -> dict:
         flags.append("agent")
     if kinds.get("unattended", 0) >= 0.5 * m["minutes"]:
         flags.append("unattended")
+    if kind == "shared":  # a client's agent went first over internal work: ticked, with a note to check it
+        flags.append("shared")
     for q in m["parts"]:  # a meeting whose title was refused as a note, or a series renamed since it was last logged
         if q.get("flag") and q["flag"] not in flags:
             flags.append(q["flag"])
@@ -834,14 +1013,57 @@ def _entry(m: dict, s: int, e: int, names: dict) -> dict:
                 n = names.get(str(t), ("", ""))
                 alts.append({"taskId": str(t), "title": n[0], "project": n[1],
                              "why": (q.get("altWhy") or {}).get(t) or ""})
-    return {"s": s, "e": e, "minutes": minutes, "taskId": task, "title": title, "project": project,
-            "repo": lead.get("project") or "", "meeting": lead.get("meeting") or "",
-            "serviceId": lead.get("service"), "service": "", "note": note or "", "noteFrom": note_from or "",
-            "confidence": conf, "confidenceWords": CONF_WORDS[conf], "why": lead.get("why") or "",
-            "source": lead.get("source") or "", "kind": kind, "checked": not flags, "flags": flags,
-            "alts": alts[:3], "parts": len(m["parts"]),
-            # Ask Claude looked at the work that carries this entry and found no task: the guess stays, flagged
-            "claudeNone": bool(lead.get("claudeNone"))}
+    by_class: dict = defaultdict(int)
+    for q in m["parts"]:
+        by_class[q.get("class") or ""] += q["minutes"]
+    out = {"s": s, "e": e, "minutes": minutes, "taskId": task, "title": title, "project": project,
+           "repo": lead.get("project") or "", "meeting": lead.get("meeting") or "",
+           "serviceId": lead.get("service"), "service": "", "note": note or "", "noteFrom": note_from or "",
+           "confidence": conf, "confidenceWords": CONF_WORDS[conf], "why": lead.get("why") or "",
+           "source": lead.get("source") or "", "kind": kind, "checked": not [f for f in flags if f != "shared"],
+           "flags": flags, "alts": alts[:3], "parts": len(m["parts"]),
+           "class": max(by_class, key=by_class.get) or None,
+           "sessions": sorted({x for q in m["parts"] for x in q.get("sessions") or []}),
+           # Ask Claude looked at the work that carries this entry and found no task: the guess stays, flagged
+           "claudeNone": bool(lead.get("claudeNone"))}
+    if kind == "shared":
+        w = lead.get("with") or {}
+        wt = w.get("task")
+        n = names.get(str(wt), ("", "")) if wt else ("", "")
+        out["shared"] = True
+        out["choice"] = "client"
+        # the work that was in front: what Half each and Internal give the stretch (logday.js, mcptools prefer)
+        out["sharedWith"] = {"taskId": wt, "title": n[0], "project": n[1], "repo": w.get("project") or "",
+                             "why": w.get("why") or "", "source": w.get("source") or "",
+                             "confidence": w.get("conf") or "low", "sessions": list(w.get("sessions") or [])}
+    return out
+
+
+CHOICES = ("client", "half", "internal")
+
+
+def apply_choice(e: dict, choice: str, grid: int = GRID) -> list:
+    """A shared entry as the person (or Claude Code's prefer) chose it, at its real time: client (as proposed), half
+    (the first half the client's, the second the work in front's), internal (all of it the work in front's). Any
+    other entry comes back as it is. Pure: the entry is not changed."""
+    if not e.get("shared") or choice not in CHOICES or choice == "client":
+        return [{**e, **({"choice": "client"} if e.get("shared") else {})}]
+    w = e.get("sharedWith") or {}
+    inner = {"taskId": w.get("taskId"), "title": w.get("title") or "", "project": w.get("project") or "",
+             "serviceId": w.get("serviceId"), "service": w.get("service") or "", "budget": w.get("budget") or "",
+             "billable": w.get("billable"), "services": w.get("services") or [], "repo": w.get("repo") or "",
+             "why": w.get("why") or "", "source": w.get("source") or "", "confidence": w.get("confidence") or "low",
+             "alts": [], "note": "", "noteFrom": "", "class": INTERNAL}
+    inner["checked"] = bool(inner["taskId"] and inner["serviceId"])
+    if choice == "internal":
+        return [{**e, **inner, "choice": "internal"}]
+    g = max(1, int(grid or 1))
+    half = int(round(e["minutes"] / 2 / g) * g)
+    if not g <= half <= e["minutes"] - g:
+        return [{**e, "choice": "client"}]  # too short to halve on the grid
+    first = {**e, "e": e["s"] + half, "minutes": half, "choice": "half"}
+    second = {**e, **inner, "s": e["s"] + half, "minutes": e["minutes"] - half, "choice": "half", "halfOf": e.get("id")}
+    return [first, second]
 
 
 # ---- the service: the one last used on the task, if it still takes time on that date ------------------------------
@@ -927,13 +1149,16 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
         if got.get("error"):
             return {"entries": [], "error": got["error"]}
         shift = datetime.fromtimestamp(t0, tz).utcoffset() != datetime.fromtimestamp(t1 - 1, tz).utcoffset()
-        rows = []
-        for e in got.get("entries") or []:  # a copy: the cached proposal stays as it is
-            r = {**e, "pick_s": e["s"]}  # Ask Claude names a row by its minute before any clock change
-            if shift:  # the clocks change today: each row's start by the clock, its real length (as the page draws it)
-                r["s"], r["e"] = server.page_span(e, t0, tz)
-            rows.append(r)
-        return {**got, "entries": rows}
+
+        def copied(list_):
+            out = []
+            for e in list_ or []:  # a copy: the cached proposal stays as it is
+                r = {**e, "pick_s": e["s"]}  # Ask Claude names a row by its minute before any clock change
+                if shift:  # the clocks change today: each row's start by the clock, its real length (as the page draws it)
+                    r["s"], r["e"] = server.page_span(e, t0, tz)
+                out.append(r)
+            return out
+        return {**got, "entries": copied(got.get("entries")), "background": copied(got.get("background"))}
 
     def suggest():
         try:
@@ -980,15 +1205,17 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
         for m in meetings:
             m["tasks"] = server.meeting_tasks(m, got["past"], hist28, offered, skip)
     likely_rows = got["likely"].get("entries") or []
-    if likely_rows and not hproblem:  # learned tasks per row, from the days before only (alternatives in the review)
-        learning.annotate({"entries": likely_rows}, date, s, history, [], tz, got["fresh"])
+    bg_rows = got["likely"].get("background") or []
+    if (likely_rows or bg_rows) and not hproblem:  # learned tasks per row, from the days before only
+        learning.annotate({"entries": likely_rows, "background": bg_rows}, date, s, history, [], tz, got["fresh"])
     t0_of = lambda d: server.day_bounds(d, tz)[0]  # noqa: E731
     days = {d: learning._stored(d) for d in learning._days_before(date)}
     ctx = learn(date, [] if hproblem else history, {d: r for d, r in days.items() if r}, t0_of,
                 person=str(s.get("person_name") or ""))
     # Ask Claude's kept answer (askclaude.keep: on disk, 60 days) steers the plan only while the Claude Code switch is on
     answer = askclaude.latest(date) if s.get("ask_claude") else None
-    day = {"items": act.get("items") or [], "away": act.get("away") or [], "rows": likely_rows, "logged": logged,
+    day = {"items": act.get("items") or [], "away": act.get("away") or [], "rows": likely_rows, "background": bg_rows,
+           "logged": logged,
            "meetings": meetings, "repeats": got["repeats"].get("repeats") or [], "calls": calls,
            "rules": s.get("rules") or [], "assigned": got["assigned"], "picks": (answer or {}).get("picks") or {},
            "gone": server.missing_hour(t0, t1, tz)}
@@ -996,8 +1223,9 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
     result = plan(day, ctx, opts) if keep is None else plan(day, ctx, opts, keep=keep)
     result["roundTo"] = opts["grid"]
 
-    # the service of each task, checked against what takes time on that date
-    tasks = sorted({e["taskId"] for e in result["entries"] if e["taskId"]})
+    # the service of each task, checked against what takes time on that date (and of the work a shared row was over)
+    tasks = sorted({e["taskId"] for e in result["entries"] if e["taskId"]}
+                   | {str(e["sharedWith"]["taskId"]) for e in result["entries"] if (e.get("sharedWith") or {}).get("taskId")})
 
     def services(tid):
         try:
@@ -1032,6 +1260,20 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
             e["serviceId"] = None
             e["checked"] = False
             e["flags"].append("noservice")
+    for e in result["entries"]:  # what Half each and Internal give a shared row: the front work's task and service
+        w = e.get("sharedWith")
+        if not w or not w.get("taskId"):
+            continue
+        b, _ = found.get(str(w["taskId"]), (None, None))
+        task = (b or {}).get("task") or {}
+        w["title"], w["project"] = w.get("title") or task.get("title") or "", w.get("project") or task.get("project") or ""
+        last_id, last_name = ctx["service"].get(str(w["taskId"]), (None, ""))
+        svc = pick_service((b or {}).get("services") or [], last_id, last_name, task.get("serviceId"),
+                           ctx.get("project_service", {}).get(w["project"])) if b else None
+        w["services"] = [{"id": x["id"], "name": (x.get("name") or "").strip(), "budget": x.get("budget") or "",
+                          "billable": x.get("billable")} for x in (b or {}).get("services") or []]
+        w.update({"serviceId": svc["id"], "service": (svc.get("name") or "").strip(), "budget": svc.get("budget") or "",
+                  "billable": svc.get("billable")} if svc else {"serviceId": None, "service": ""})
     ticket_flags(result["entries"], found, date, s)
     # FI's rules in code (dayreview.fi_rules): suggestions only, accepted or rejected in the review
     from . import dayreview
@@ -1055,7 +1297,8 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
             e["sent"] = x["status"]
             e["checked"] = False
     if inputs is not None:
-        inputs.update(plan=result, items=day["items"], away=day["away"], rows=likely_rows, meetings=meetings,
+        inputs.update(plan=result, items=day["items"], away=day["away"], rows=likely_rows, background=bg_rows,
+                      meetings=meetings,
                       repeats=day["repeats"], pool=got["fresh"] or [], t0=t0, tz=tz,
                       target=config.target_minutes(s), recent=dayreview.recent_from_history(history, date),
                       logged=[] if ignore_logged else [

@@ -1,5 +1,8 @@
 """Tasks for the Likely rows, learned from your own logging: the task you logged while working in the same Claude
-Code session, else in the same repository, over the last LEARN_DAYS days. Older logging counts less: a day's votes
+Code session in the same repository, else in the same repository, over the last LEARN_DAYS days. A session's votes
+from another repository count only for a task this repository is logged to, or when the session has been in this
+repository all day (attribution.session_votes). A minute logged while an agent ran in the background teaches the one
+whose repository is logged to that task's project (attribution.credits). Older logging counts less: a day's votes
 halve every HALF_LIFE days. Then one task found by its words: the task whose name, project and your own notes on it
 share most words with the row's work (its session titles, what you typed then, your commits), recent tasks first; it
 takes the fifth place, after the first four votes. Local and free; no one is asked anything.
@@ -11,7 +14,7 @@ five for 59% of those 15 days' minutes instead of 52%, first unchanged (38%); ov
 
 A past day's Likely rows take a few seconds each to work out, so they are worked out once, in the background, and kept
 in ~/.cache/pulsar/likely-days/<date>.json: the times, the repository and a hash of each session title (never the
-titles or anything typed). Until they are all there, the suggestions use the days that are. The words are never
+titles or anything typed), for the rows in front and the agents' background work. Until they are all there, the suggestions use the days that are. The words are never
 kept: the notes come with the Productive history already in memory, the session text is read when a day is shown.
 """
 
@@ -25,12 +28,12 @@ import re
 import threading
 from datetime import datetime, timedelta
 
-from . import config, logbook
+from . import attribution, config, logbook
 
 LEARN_DAYS = 60
 HALF_LIFE = 7  # days: a day's votes count half as much this many days later (as in dayplan.py)
 TEXT_PLACE = 5  # the place of the task found by its words: the votes keep the places before it
-FORMAT = 2  # 2: a day is kept only once it is over (a format-1 file may hold a day cut off at the hour it was seen)
+FORMAT = 3  # 3: rows at the real time of the work, and the background (bg); 2: a day kept only once it is over
 DIR = os.path.join(config.CACHE_DIR, "likely-days")
 _warming = threading.Lock()
 _state = {"done": 0, "of": 0}
@@ -61,8 +64,12 @@ def _stored(date: str):
 
 
 def rows_of(proposal: dict) -> list:
-    return [{"k": [k for k in (key(t) for t in e.get("titles") or []) if k], "p": e.get("project") or "",
-             "s": e["s"], "e": e["e"]} for e in proposal.get("entries") or [] if e.get("e", 0) - e.get("s", 0) >= 5]
+    """The rows in front, then the background's (bg; q when it was attended work), of five minutes or more."""
+    out = [{"k": [k for k in (key(t) for t in e.get("titles") or []) if k], "p": e.get("project") or "",
+            "s": e["s"], "e": e["e"]} for e in proposal.get("entries") or [] if e.get("e", 0) - e.get("s", 0) >= 5]
+    return out + [{"k": [k for k in (key(t) for t in e.get("titles") or []) if k], "p": e.get("project") or "",
+                   "s": e["s"], "e": e["e"], "bg": 1, **({"q": 1} if e.get("qualifies") else {})}
+                  for e in proposal.get("background") or [] if e.get("e", 0) - e.get("s", 0) >= 5]
 
 
 def _days_before(date: str) -> list:
@@ -123,50 +130,71 @@ def main_task(rows: list, a: float, b: float):
 
 
 def votes(days: dict, entries: list, t0_of, date: str) -> tuple:
-    """({session key: {task: [weight, minutes]}}, {repository: {task: [weight, minutes]}}) from past days' rows and
-    your entries, for the rows of `date`. The minutes are the real ones; the weight is the minutes halved every
+    """({session key: {task: [weight, minutes]}}, {repository: {task: [weight, minutes]}}, {(session key, repository):
+    {task: [weight, minutes]}}) from past days' rows and your entries, for the rows of `date`, each logged stretch
+    credited as attribution.credits says. The minutes are the real ones; the weight is the minutes halved every
     HALF_LIFE days before `date`, and sets the order. days: {date: rows}; t0_of(date) gives the day's midnight in
     epoch seconds."""
     by_day: dict = {}
+    project: dict = {}
     for r in entries:
         by_day.setdefault(r.get("date"), []).append(r)
+        if r.get("taskId") and r.get("project"):
+            project[r["taskId"]] = r["project"]
     day0 = datetime.strptime(date, "%Y-%m-%d")
     sess: dict = {}
     repo: dict = {}
+    sr: dict = {}
 
-    def add(table: dict, at: str, task: str, w: float, m: float) -> None:
+    def add(table: dict, at, task: str, w: float, m: float) -> None:
         got = table.setdefault(at, {}).setdefault(task, [0.0, 0])
         got[0] += w
         got[1] += m
 
-    for d, rows in days.items():
+    def task_of(d, s, e):
         t0 = t0_of(d)
+        return main_task(by_day.get(d, []), t0 + s * 60, t0 + e * 60)
+
+    for d, keys, at, task, m in attribution.credits(days, task_of, project.get):
         fade = 0.5 ** (max((day0 - datetime.strptime(d, "%Y-%m-%d")).days, 0) / HALF_LIFE)
-        for row in rows:
-            task = main_task(by_day.get(d, []), t0 + row["s"] * 60, t0 + row["e"] * 60)
-            if not task:
-                continue
-            m = row["e"] - row["s"]
-            for k in row["k"]:
-                add(sess, k, task, m * fade, m)
-            add(repo, row["p"], task, m * fade, m)
-    return sess, repo
+        for k in keys:
+            add(sess, k, task, m * fade, m)
+            add(sr, (k, at), task, m * fade, m)
+        add(repo, at, task, m * fade, m)
+    return sess, repo, sr
 
 
-def suggest(row: dict, sess: dict, repo: dict, names: dict, limit: int = 5, text: dict | None = None) -> list:
-    """The tasks for one row, the session's first, then the repository's, each in the order of its weight (recent
-    logging first); each with why, in words, with the real minutes. text ({task: (score, words)}, text_match): the
-    best task by words not among the first TEXT_PLACE - 1 takes place TEXT_PLACE; more of them fill a shorter list."""
+def suggest(row: dict, sess: dict, repo: dict, names: dict, limit: int = 5, text: dict | None = None,
+            sr: dict | None = None) -> list:
+    """The tasks for one row, the session's first (its votes in this repository, else the ones that may carry over:
+    attribution.session_votes), then the repository's, each in the order of its weight (recent logging first); each
+    with why, in words, with the real minutes. text ({task: (score, words)}, text_match): the best task by words not
+    among the first TEXT_PLACE - 1 takes place TEXT_PLACE; more of them fill a shorter list."""
     out: dict = {}
-    s_votes: dict = {}
+    at = attribution.repo_key(row["p"])
+    here: dict = {}
     for k in row["k"]:
-        for t, (w, m) in sess.get(k, {}).items():
-            got = s_votes.setdefault(t, [0.0, 0])
+        for t, (w, m) in ((sr or {}).get((k, at)) or {}).items():
+            got = here.setdefault(t, [0.0, 0])
             got[0] += w
             got[1] += m
-    for t, (w, m) in sorted(s_votes.items(), key=lambda kv: -kv[1][0]):
+    if not (here and max(w for w, _ in here.values()) >= attribution.SR_MIN):
+        wide: dict = {}
+        for k in row["k"]:
+            for t, (w, m) in sess.get(k, {}).items():
+                got = wide.setdefault(t, [0.0, 0])
+                got[0] += w
+                got[1] += m
+        project_of = lambda t: (names.get(t) or {}).get("project")  # noqa: E731
+        weights = {t: w for t, (w, _) in (repo.get(at) or {}).items()}
+        here = {}
+        for t, v in wide.items():
+            f = attribution.fits(weights, project_of, t)
+            if f is True or (row.get("single") and f is None):
+                here[t] = v
+    for t, (w, m) in sorted(here.items(), key=lambda kv: -kv[1][0]):
         out.setdefault(t, f"logged while in this Claude session: {_dur(m)}")
-    for t, (w, m) in sorted(repo.get(row["p"], {}).items(), key=lambda kv: -kv[1][0]):
+    for t, (w, m) in sorted(repo.get(at, {}).items(), key=lambda kv: -kv[1][0]):
         out.setdefault(t, f"logged while in {row['p']}: {_dur(m)}")
     order = [t for t in out if t in names]
     if text:
@@ -407,15 +435,18 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
         days[date] = rows_of(proposal)  # rows already logged today teach the ones after them
         t0_of = lambda d: datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=tz).timestamp()  # noqa: E731
         entries = [r for r in entries_before + entries_today if r.get("taskId")]
-        sess, repo = votes(days, entries, t0_of, date)
+        sess, repo, sr = votes(days, entries, t0_of, date)
         names = {r["taskId"]: r for r in sorted(entries, key=lambda r: r.get("date") or "")}
         skip = frozenset(w for _, w in words(settings.get("person_name") or ""))
         index = note_index(entries, skip)
         fresh = new_task_index(new_task_pool(pool, entries, date, str(settings.get("person_id") or "")), skip) \
             if pool else None
         t0 = t0_of(date)
-        for e, row in zip([e for e in proposal.get("entries") or [] if e.get("e", 0) - e.get("s", 0) >= 5],
-                          days[date]):
+        front = [e for e in proposal.get("entries") or [] if e.get("e", 0) - e.get("s", 0) >= 5]
+        back = [e for e in proposal.get("background") or [] if e.get("e", 0) - e.get("s", 0) >= 5]
+        stored = days[date]
+        for e, row in list(zip(front, stored)) + list(zip(back, stored[len(front):])):
+            row = {**row, "single": bool(e.get("single"))}
             found: list = []
             try:
                 steps = work_steps(e, t0)
@@ -425,7 +456,7 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
             except (OSError, ValueError) as exc:  # the votes alone, as before
                 logbook.record("learn", f"Words of the work: {type(exc).__name__}: {exc}", kind="warning")
                 text = {}
-            e["learned"] = with_new(suggest(row, sess, repo, names, text=text), found)
+            e["learned"] = with_new(suggest(row, sess, repo, names, text=text, sr=sr), found)
         proposal["learning"] = dict(_state) if _state["of"] and _state["done"] < _state["of"] else None
     except Exception as exc:
         logbook.record("learn", f"Suggesting tasks: {type(exc).__name__}: {exc}", kind="warning")
