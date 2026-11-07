@@ -1398,21 +1398,24 @@ def project_places(project_id: str, settings: dict) -> dict:
     return {"tasks": [t for t in tasks if t["taskId"].isdigit()], "lists": [x for x in lists if x["id"].isdigit()]}
 
 
-# Productive's refusals of a new task, in words the person can act on
+# Productive's refusals of a new task, in words the person can act on: by its codes and status, not by any English
+# phrase ("Assignee is not allowed", "not allowed under a closed task" are other reasons)
 TASK_REFUSALS = (
     (re.compile(r"invalid level of subtasks", re.I),
      "a subtask cannot have subtasks of its own. Put it under another task, or in a task list"),
     (re.compile(r"task_list is required", re.I), "this project needs a task list for it: pick one"),
-    (re.compile(r"\b403\b|forbidden|not (?:authori[sz]ed|allowed|permitted)|permission", re.I),
+    (re.compile(r"\b403\b|\bforbidden\b", re.I),
      "your role may not add tasks to this project. Ask its PM, or pick another project"),
 )
 
 
 def task_refusal(text: str) -> str:
+    """The refusal in plain words when it is a known one, followed by Productive's own words: the page and Logs keep
+    the original, which may say more (a read-only token, a member missing from the project)."""
     raw = re.sub(r"\s+", " ", str(text or "")).strip()
     for rx, said in TASK_REFUSALS:
         if rx.search(raw):
-            return f"Productive did not create the task: {said}."
+            return f"Productive did not create the task: {said}. Productive said: {raw[:300]}"
     return f"Productive did not create the task: {raw[:300]}"
 
 

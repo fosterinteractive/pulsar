@@ -158,6 +158,18 @@ class CreateTaskBodyTest(unittest.TestCase):
                 productive.create_task(TASK, SETTINGS)
         self.assertNotIsInstance(caught.exception, productive.ProductiveUnclear)
 
+    def test_a_refusal_keeps_productives_own_words(self):
+        """The plain sentence first, then what Productive said: a role refusal by its status only, never by any English
+        phrase that merely says "not allowed"."""
+        role = "your role may not add tasks"
+        for text, plain in (("HTTP 403 This API token is read-only", True), ("Failed to create task. 403 Forbidden", True),
+                            ("Failed to create task. Assignee is not allowed: person is not a member", False),
+                            ("Failed to create task. subtasks are not allowed under a closed task", False),
+                            ("Failed to create task. You do not have permission to set this field", False)):
+            said = productive.task_refusal(text)
+            self.assertEqual(role in said, plain, said)
+            self.assertIn(text.replace("Failed to create task. ", ""), said)  # the original, on the page and in Logs
+
     def test_an_answer_that_is_not_the_success_sentence_may_have_created_it(self):
         for text, is_error in (("Something about ID: 55", False), ("", False),
                                ("Failed to create task. fetch failed", False),  # behind the MCP: it may have run
