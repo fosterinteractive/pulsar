@@ -250,9 +250,30 @@ function likelyBlocks(entries, Z, end) {
     const titles = new Map();
     for (const e of b.entries) if (e.project === b.project) for (const t of e.titles) titles.set(t, (titles.get(t) || 0) + e.minutes);
     b.title = [...titles].sort((p, q) => q[1] - p[1])[0]?.[0] || '';
-    b.parallel = b.entries.filter(e => e.project === b.project).every(e => e.kind === 'parallel');
   }
   return blocks;
+}
+
+/* the agents' background work (sessions.py): one thin dashed rail per stretch of minutes some agent ran while other
+   work was in front, with the repositories and their minutes in its title. Never a card: the minutes are the work in
+   front's. */
+function backgroundRails(rows, end) {
+  const at = Array.from({length: end}, () => null);
+  for (const r of rows || []) {
+    for (let m = Math.max(0, Math.floor(r.s)); m < Math.min(end, Math.ceil(r.e)); m++) {
+      (at[m] = at[m] || new Map()).set(r.project, (at[m].get(r.project) || 0) + 1);
+    }
+  }
+  const out = [];
+  for (let m = 0; m < end; m++) {
+    if (!at[m]) continue;
+    const last = out[out.length - 1];
+    if (last && last.e >= m - 2) { last.e = m + 1; } else out.push({s: m, e: m + 1, by: new Map()});
+    const cur = out[out.length - 1];
+    for (const [p, n] of at[m]) cur.by.set(p, (cur.by.get(p) || 0) + n);
+  }
+  return out.filter(x => x.e - x.s >= 3).map(x => ({...x, what: [...x.by].sort((a, b) => b[1] - a[1])
+    .map(([p, n]) => `${p} ${dur(n)}`).join(', ')}));
 }
 
 /* side-by-side lanes for overlapping cards (by their drawn height, not just their minutes) */
@@ -365,9 +386,11 @@ function render() {
     likelyCache = likelyBlocks(likely.entries, Z, end);
     setText($('#h-likely'), `Claude sessions · ${dur(likely.proposed || 0)}`);
     $('#ask-claude').hidden = true;  // Claude's one way in is Log the day's "Check my day with Claude" (ldreview.js)
-    setHTML(laneLikely, likelyCache.length ? likelyCache.map((b, i) => {
+    const rails = backgroundRails(likely.background, end).map(x => `<div class="bgrail" style="top:${x.s * ppm}px;height:${(x.e - x.s) * ppm}px"
+        role="img" aria-label="${esc(`In the background ${hm(x.s)}–${hm(x.e)}: ${x.what}`)}" title="${esc(`In the background ${hm(x.s)}–${hm(x.e)}: ${x.what}`)}"></div>`).join('');
+    setHTML(laneLikely, likelyCache.length ? rails + likelyCache.map((b, i) => {
       const x = {s: b.start * Z, e: b.end * Z}, h = (x.e - x.s) * ppm;
-      return `<div class="card likely${b.parallel ? ' parallel' : ''}" data-k="likely" data-i="${i}" style="${place(x, ppm, 18)}"
+      return `<div class="card likely" data-k="likely" data-i="${i}" style="${place(x, ppm, 18)}"
         tabindex="0" role="button" aria-label="${esc(`Likely ${hm(x.s)}–${hm(x.e)}: ${b.project}${b.title ? ', ' + b.title : ''}, ${dur(b.total)}`)}">
         <div class="row"><span class="t">${esc(b.project)}</span><span class="m num">${dur(b.total)}</span></div>
         ${h > 34 && claudePick(b) ? `<div class="d pick" title="${esc(`Claude: ${claudePick(b).why}`)}">${CLAUDE_MARK}${esc(claudePick(b).tasks[0].title)}</div>`
@@ -626,7 +649,10 @@ document.addEventListener('click', ev => {
     openPop(`<div class="ph"><div><h3>${hm(b.start * Z)}–${hm(b.end * Z)}</h3><div class="sub">${dur(b.total)} from Claude sessions</div></div>
       <button class="btn bordered sm" data-log-a="${b.start * Z}" data-log-b="${b.end * Z}" data-likely="${i}">Log this time</button></div>` +
       b.entries.map(x => `<div class="li"><div class="t"><div><b>${esc(x.project)}</b> · ${esc(x.titles.join(', ') || '(untitled)')}</div>
-        <small>${hm(x.s)}–${hm(x.e)}${x.kind === 'parallel' ? ' · in parallel with other work' : ''} · ${esc(x.messages)} messages${x.first_message ? ' · ' + esc(x.first_message) : ''}</small></div>
+        <small>${hm(x.s)}–${hm(x.e)} · ${esc(x.messages)} messages${x.first_message ? ' · ' + esc(x.first_message) : ''}</small></div>
+        <span class="num">${dur(x.minutes)}</span></div>`).join('')
+      + (state.likely?.background || []).filter(x => x.s < b.end * Z && x.e > b.start * Z).map(x => `<div class="li bg"><div class="t">
+        <div><b>${esc(x.project)}</b> · in the background</div><small>${hm(x.s)}–${hm(x.e)}${x.qualifies ? '' : ' · not on a request you typed, or silent over 10 min'}</small></div>
         <span class="num">${dur(x.minutes)}</span></div>`).join(''), ev);
   } else {
     const x = loggedCache[i];

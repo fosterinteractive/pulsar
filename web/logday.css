@@ -157,6 +157,13 @@ section.rv[hidden] { display: none; }
 .e-flags a:hover, .tflags a:hover { text-decoration: underline; }
 .tflags { margin-top: -4px; }
 
+/* a shared row (logday.js sharedLine): its note, and who the stretch goes to */
+.e-shared { flex: 0 0 100%; min-width: 0; margin: -6px 0 0; padding: 0 14px 9px 104px; display: flex; flex-wrap: wrap;
+  gap: 6px 10px; align-items: center; font-size: 11.5px; line-height: 1.4; color: var(--muted); }
+.ld-choice button { font-size: 11.5px; padding: 2px 8px; }
+.ld-choice button[aria-pressed="true"] { background: var(--seg-on); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.cl-r small.cl-s { color: var(--muted); }
+
 /* Log the week (js/catchup.js): the earlier days to catch up on, then which day of how many */
 .cu-d { border-bottom: 1px solid var(--line2); }
 .cu-d label { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; column-gap: 10px; row-gap: 1px; align-items: baseline;

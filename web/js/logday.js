@@ -33,7 +33,7 @@ const WI = {
 };
 function whyIcon(r) {
   if (r.source === 'claude') return CLAUDE_MARK.split('<span')[0];
-  const k = r.kind === 'agent' ? 'agent' : r.source === 'repeat' ? 'repeat' : ['meeting', 'call'].includes(r.source) ? 'meeting'
+  const k = ['agent', 'shared'].includes(r.kind) ? 'agent' : r.source === 'repeat' ? 'repeat' : ['meeting', 'call'].includes(r.source) ? 'meeting'
     : r.source === 'link' ? 'link' : r.source === 'rule' ? 'rule' : ['session', 'repo', 'sameday', 'learned'].includes(r.source) ? 'session'
     : ['words', 'scoped', 'ticket'].includes(r.source) ? 'words' : r.source === 'neighbour' ? 'outside' : 'none';
   return `<svg class="wi" viewBox="0 0 16 16" aria-hidden="true">${WI[k]}</svg>`;
@@ -64,14 +64,29 @@ async function openLogDay({fresh = false} = {}) {
   LD.loading = false; LD.plan = r;
   LD.rows = (r.entries || []).map((e, i) => ({...e, id: 'r' + i, key: ldRowKey(d, e), opened: false, edited: false,
                                                status: e.sent === 'logged' ? 'logged' : e.sent ? 'unknown' : null,
-                                               reason: e.sent ? 'A run of this day already sent it.' : ''}));
-  if (kept) { const got = ldReapply(LD.rows, kept, r.ignoreLogged ? [] : state.logged?.entries); LD.rows = got.rows; LD.open = got.open; }
+                                               reason: e.sent ? 'A run of this day already sent it.' : '',
+                                               ...(e.shared ? ldSharedFrom(e) : {})}));
+  if (kept) { const got = ldReapply(LD.rows, kept, r.ignoreLogged ? [] : state.logged?.entries); LD.rows = ldWithHalves(got.rows, CONFIG?.roundTo || 5); LD.open = got.open; }
   LD.rows = LD.rows.filter(x => x.status || !ldNotWork(x));  // time marked "not work" (day.js) is not proposed
   sgFromPlan(r);  // ldreview.js: FI's rules on this plan
   if (kept?.sg) sgRestore(kept.sg); else sgKept(d);  // the review's suggestions as they were, or the one kept for the day
   renderReview(); render();
   document.body.classList.toggle('rv-ignore', !!r.ignoreLogged);
   // Claude runs only from "Check my day with Claude" (ldreview.js sgCheck), never by itself on opening
+}
+
+/* a shared row as the plan proposed it: the client's fields, kept to switch back to, and the whole stretch */
+function ldSharedFrom(e) {
+  const keys = ['taskId', 'title', 'project', 'serviceId', 'service', 'services', 'billable', 'budget', 'why', 'source',
+                'confidence', 'confidenceWords', 'alts', 'repo', 'note', 'noteFrom'];
+  return {client: Object.fromEntries(keys.map(k => [k, e[k]])), whole: [e.s, e.e], choice: e.choice || 'client'};
+}
+function ldChoose(id, choice) {
+  const r = ldRow(id); if (!r || LD.writing || !r.shared || r.halfOf) return;
+  const rows = ldChoice(r, choice, CONFIG?.roundTo || 5).map(x => ({...x, edited: true, opened: true}));
+  LD.rows = LD.rows.filter(x => x.halfOf !== r.id);
+  LD.rows.splice(LD.rows.indexOf(r), 1, ...rows);
+  renderReview(); render();
 }
 
 /* Claude's pick replaces only rows the planner is not sure of (medium, low): on high rows it was wrong more often
@@ -177,7 +192,8 @@ function ldTotals() {
   const logged = LD.plan?.ignoreLogged ? 0 : (state.logged?.entries || []).reduce((s, x) => s + x.minutes, 0);
   return {n: live.length, minutes: live.reduce((s, r) => s + r.minutes, 0),
           billable: live.filter(r => r.billable).reduce((s, r) => s + r.minutes, 0), logged,
-          notCovered: t.notCovered || 0, over: t.over || 0, cap: t.cap || 0};
+          notCovered: t.notCovered || 0, over: t.over || 0, cap: t.cap || 0,
+          parallel: t.parallel || 0, shared: t.shared || 0, leftOut: t.leftOut || 0};
 }
 /* a row that needs a look: unsure, no task or service, or something Claude did. It counts as checked once the person
    opened it and it is ticked; one with no task or service cannot be ticked, so it stays until it has them */
@@ -228,6 +244,7 @@ function renderReview() {
     nFlags ? `<button type="button" class="iss" data-ld-goto="${flagged[0].id}" title="A closed task, no budget on this date, or no estimate"><span class="g" aria-hidden="true">!</span>${nFlags} to fix in Productive</button>` : '',
     T.notCovered ? `<span class="iss ok" title="Active time no entry covers, logged or proposed">${dur(T.notCovered)} not logged</span>` : '',
     T.over ? `<span class="iss ok" title="More than your active time and meetings: shown, never placed">${dur(T.over)} over the day</span>` : '',
+    T.parallel ? `<span class="iss ok" title="${esc(`Agents ran while you did other work: ${dur(T.shared)} went to a client first, ${dur(T.leftOut)} left out`)}">Parallel ${dur(T.parallel)}</span>` : '',
   ].join('');
   const model = {haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus'}[CONFIG?.likely?.askClaudeModel] || 'Claude';
   const askLine = LD.asking ? `<p class="rv-ask" role="status">${CLAUDE_MARK.split('<span')[0]}Asking ${model} about the unsure rows (up to a minute)…</p>`
@@ -302,6 +319,7 @@ function rowHTML(r, overlaps) {
   if (r.flags.includes('meetingtitle')) quiet.push('Meeting title not used as the note.');
   if (r.flags.includes('renamed')) quiet.push('Meeting renamed since you last logged it: check the task.');
   if (r.flags.includes('untimed')) quiet.push(`${dur(r.untimed)} of this task has no start time: is it this work?`);
+  if (r.halfOf) quiet.push('The second half of a shared stretch.');
   const open = LD.open === r.id;
   return `<li class="er${open ? ' on' : ''}" data-row="${r.id}">
     <label class="ck"><input type="checkbox" data-ld-tick="${r.id}"${r.checked ? ' checked' : ''}${r.taskId && r.serviceId && !LD.writing ? '' : ' disabled'}
@@ -315,9 +333,18 @@ function rowHTML(r, overlaps) {
       ${warn.map(w => `<span class="e-warn">! ${w}</span>`).join('')}
       ${quiet.map(w => `<span class="e-warn neutral">${esc(w)}</span>`).join('')}
     </button>
+    ${sharedLine(r)}
     ${ticketLine(r)}
     ${sgRowHTML(r)}
     ${open ? editorHTML(r) : ''}</li>`;
+}
+
+/* a shared row's note and its choice (ldkeep.js ldChoice), outside the row's button */
+function sharedLine(r) {
+  if (!r.shared || r.halfOf) return '';
+  const c = r.choice || 'client', b = (k, label) => `<button type="button" data-ld-choice="${r.id}|${k}" aria-pressed="${c === k}"${LD.writing ? ' disabled' : ''}>${label}</button>`;
+  return `<div class="e-shared"><span>${esc(LD_SHARED_TEXT[c] || LD_SHARED_TEXT.client)}</span>
+    <span class="seg ld-choice" role="group" aria-label="Who this stretch goes to">${b('client', 'Client')}${b('half', 'Half each')}${b('internal', 'Internal')}</span></div>`;
 }
 
 /* the row's ticket flags (pulsar/flags.py), read only: what to fix in Productive, and the link to the task there.
@@ -493,6 +520,7 @@ $('#review').addEventListener('click', ev => {
   if (t.dataset.ldView) { LD.view = t.dataset.ldView; try { localStorage.setItem('pulsar.ldView', LD.view); } catch {} renderReview(); return; }
   if (t.id === 'ld-tickall') { for (const r of ldTickAllRows()) { r.checked = true; r.edited = true; } renderReview(); render(); return; }
   if (t.id === 'ld-stop') { LD.stop = true; renderReview(); return; }
+  if (t.dataset.ldChoice) { const [id, c] = t.dataset.ldChoice.split('|'); return ldChoose(id, c); }
   if (t.dataset.ldGoto) return ldOpen(t.dataset.ldGoto, true);
   if (t.dataset.ldOpen) return ldOpen(t.dataset.ldOpen);
   if (t.dataset.ldTick) { const r = ldRow(t.dataset.ldTick); r.checked = t.checked; r.edited = true; renderReview(); render(); return; }
@@ -551,6 +579,7 @@ function openConfirm(dry = null) {
   const lines = live.map(r => `<li class="cl-r"><span class="num">${hm(r.s)}</span><span><b>${esc(r.title)}</b>
       <small>${esc([r.project, r.service, r.budget].filter(Boolean).join(' · '))}${r.billable ? ' <span class="bill">$</span>' : ''}</small>
       ${r.flags.includes('claudefound') ? `<small class="cl-c">${CLAUDE_MARK.split('<span')[0]}Claude found this task by searching Productive; you have not logged to it lately.</small>` : ''}
+      ${r.shared && !r.halfOf && r.choice !== 'internal' ? `<small class="cl-s">Shared: ${r.choice === 'half' ? 'half each with your internal work' : 'its agent ran while you did internal work'}.</small>` : ''}
       ${r.note ? `<small class="cl-n">${claudeNote(r) ? `${CLAUDE_MARK.split('<span')[0]}<span class="cl-by">Claude's note:</span> ` : ''}${esc(r.note)}</small>` : ''}
       ${dry?.[r.id] ? `<small class="cl-d">${esc(dry[r.id])}</small>` : ''}</span><span class="num">${dur(r.minutes)}</span></li>`).join('');
   ldDlg.innerHTML = `<div class="dh"><h2 id="ld-title">Log ${live.length} ${live.length === 1 ? 'entry' : 'entries'} in Productive?</h2>

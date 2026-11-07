@@ -241,6 +241,24 @@ class LogTheDayKeepsWorkTest(unittest.TestCase):
         self.assertEqual(got["rows"], [["r0", False, None], ["r1", False, "logged"], ["r2", True, None]])
         self.assertEqual(len(got["dropped"]), 2)  # 00:00 (logged since) and the Pulsar row (gone)
 
+    def test_a_shared_row_goes_to_the_client_half_each_or_the_internal_work_at_its_real_time(self):
+        got = self.js("""
+          const r = {id: 'r1', key: 'k', s: 620, e: 660, minutes: 40, shared: true, choice: 'client', taskId: 'C1',
+                     serviceId: 'sC', title: 'Client support', whole: [620, 660],
+                     client: {taskId: 'C1', serviceId: 'sC', title: 'Client support'},
+                     sharedWith: {taskId: 'T1', serviceId: 'sT', title: 'Build the tool', repo: 'house-tool'}};
+          const half = ldChoice(r, 'half', 5), inner = ldChoice(r, 'internal', 5);
+          const back = ldChoice(inner[0], 'client', 5), kept = ldWithHalves([half[0]], 5);
+          const short = ldChoice({...r, whole: [620, 628], e: 628, minutes: 8}, 'half', 5);
+          const show = x => [x.s, x.e, x.minutes, x.taskId, x.serviceId, x.choice, x.checked, x.halfOf || ''];
+          return {half: half.map(show), inner: inner.map(show), back: back.map(show), kept: kept.map(show), short: short.map(show)};
+        """)
+        self.assertEqual(got["half"], [[620, 640, 20, "C1", "sC", "half", True, ""], [640, 660, 20, "T1", "sT", "half", True, "r1"]])
+        self.assertEqual(got["inner"], [[620, 660, 40, "T1", "sT", "internal", True, ""]])
+        self.assertEqual(got["back"], [[620, 660, 40, "C1", "sC", "client", True, ""]])   # the client's fields come back
+        self.assertEqual(got["kept"], got["half"])                                         # a kept Half each gets its half
+        self.assertEqual(got["short"], [[620, 628, 8, "C1", "sC", "client", True, ""]])    # too short to halve on the grid
+
     def test_the_key_is_the_work_not_the_place(self):
         got = self.js("""
           return [ldRowKey('2026-11-05', {s: 60, repo: 'qa', taskId: '1'}), ldRowKey('2026-11-05', {s: 60, meeting: 'Daily', kind: 'meeting'}),
