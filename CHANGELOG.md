@@ -7,6 +7,9 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Log the day keeps your ticks, tasks, notes and deletions per day while Pulsar is open; Start over forgets them.
+- The day's review and Claude's note drafts are kept for 60 days and reused, so the same work is not asked about twice.
+- A row's note is drafted when you click in it, not when the row opens.
 - Log this time never opens on time already logged; Skip in the log dialog moves on to the next stretch.
 - Undo after deleting an entry or dragging its edge.
 - Logged cards lead with the task; the project is the colour stripe and the second line.

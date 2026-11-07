@@ -1420,7 +1420,9 @@ def api_dayplan(q: dict) -> dict:
 def api_dayplan_review(body: dict) -> dict:
     """Log the day with Claude (dayreview.py): the day's plan, FI's rules and a digest of the day go to the person's own
     Claude Code, isolated as Ask Claude is; its suggestions come back checked, for the review panel to accept or
-    reject. Nothing is written. A POST, because it runs Claude; the page's session only (key_refusal)."""
+    reject. Nothing is written. A POST, because it runs Claude; the page's session only (key_refusal). The last review
+    of a day is kept (askclaude.stash, "review") and given back while the plan is the same (review_key); "again": true
+    asks Claude anyway, "kept_only": true never asks it (the panel opening)."""
     s = current_settings()
     date = str(body.get("date") or "")
     if not DATE.match(date):
@@ -1437,20 +1439,37 @@ def api_dayplan_review(body: dict) -> dict:
     plan = dayplan.gather(date, source, ignore, inputs=inputs)
     if plan.get("error"):
         return {"error": plan["error"], "suggestions": []}
+    rows = [{"id": e["id"], "s": e["s"], "e": e["e"], "taskId": e.get("taskId")} for e in plan["entries"]]
+    model = claudeuses.model("review", s)
+    key = review_key(plan["entries"], model, source, ignore)
+    # the same plan, reviewed before (also before a restart): no new run, unless the person asks again ("again")
+    again = None if body.get("again") is True else askclaude.stashed(date, "review", key)
+    if again is not None:
+        return {**again, "rows": rows, "cost": 0, "kept": True}
+    if body.get("kept_only") is True:  # the panel opening: what is kept, never a run of Claude
+        return {"suggestions": [], "rows": rows, "none": True}
     for r in inputs["rows"]:  # what was typed and Claude's replies, as Ask Claude reads them (capped there)
         if r["e"] - r["s"] >= 10:
             r["steps"] = askclaude.steps(inputs["t0"], r.get("titles") or [], r["s"], r["e"])
     doc, cut, size = dayreview.digest(date, inputs)
-    rows = [{"id": e["id"], "s": e["s"], "e": e["e"], "taskId": e.get("taskId")} for e in plan["entries"]]
     try:
-        got = dayreview.review(date, doc, plan["entries"], model=claudeuses.model("review", s), settings=s)
+        got = dayreview.review(date, doc, plan["entries"], model=model, settings=s)
     except dayreview.ReviewError as exc:
         logbook.record("log the day", f"Review with Claude: {exc}", kind="warning")
         return {"error": str(exc), "suggestions": [], "cost": exc.cost, "rows": rows}
     if got["dropped"]:
         logbook.record("log the day", f"Review with Claude: left out {len(got['dropped'])} suggestions: "
                        f"{'; '.join(got['dropped'][:5])}", kind="warning")
+    askclaude.stash(date, "review", key, {k: v for k, v in got.items() if k != "cost"})
     return {**got, "rows": rows, "digestTokens": size, "cut": cut}
+
+
+def review_key(entries: list, model: str, source: str, ignore: bool) -> str:
+    """What a review of the day was about: the plan's rows as proposed (time, task, kind, work, meeting), the model,
+    the tracker and the test view. The same key reuses the review kept for the day; any change asks Claude again."""
+    rows = [[e.get("s"), e.get("e"), e.get("taskId"), e.get("kind"), e.get("repo"), e.get("meeting"), e.get("serviceId")]
+            for e in entries]
+    return hashlib.sha256(json.dumps([rows, model, source, bool(ignore)], sort_keys=True).encode()).hexdigest()[:32]
 
 
 def api_range(q: dict) -> dict:

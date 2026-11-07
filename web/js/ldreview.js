@@ -12,6 +12,36 @@ function sgFromPlan(plan) {
   SG.items = (plan?.suggestions || []).map((s, i) => ({...s, key: 'p' + i, state: 'open', at: sgAt(s.row)}));
   SG.asking = false; SG.note = '';
 }
+/* kept with the day's work (logday.js ldStash): the suggestions, each with its state, and the line about them */
+function sgSnapshot() { return {items: SG.items.map(s => ({...s})), note: SG.note}; }
+/* back on a fresh plan: FI's rules recomputed take the state they had (the same suggestion, ldkeep.js sgItemKey);
+   Claude's come back as they were, matched to the rows again by time and task */
+function sgRestore(k) {
+  const was = new Map((k.items || []).map(s => [sgItemKey(s), s.state]));
+  for (const s of SG.items) if (was.has(sgItemKey(s))) s.state = was.get(sgItemKey(s));
+  SG.items = SG.items.concat((k.items || []).filter(s => s.source === 'claude').map((s, i) => ({...s, key: 'k' + i})));
+  SG.note = k.note || '';
+}
+/* the panel opening with nothing kept in the page (after a restart): the review the server kept for this plan, if
+   any; never a new run of Claude */
+async function sgKept(d) {
+  if (!CONFIG?.likely?.askClaude || !CONFIG.likely.claudeFound) return;
+  const ans = await postJSON('/api/dayplan/review', {date: d, source: state.source, kept_only: true, ...(LD_IGNORE ? {ignore_logged: true} : {})}).catch(() => ({}));
+  if (!ldActive() || LD.date !== d || !ans.kept || !(ans.suggestions || []).length || SG.items.some(s => s.source === 'claude')) return;
+  sgTake(ans, true);
+  renderReview(); render();
+}
+function sgTake(ans, kept = false) {
+  const rows = ans.rows || [];
+  SG.items = SG.items.filter(x => x.source !== 'claude').concat((ans.suggestions || []).map((s, i) => {
+    const at = s.row ? (sgAt(s.row, rows) || null) : null;  // matched to the page's rows by time and task, not id
+    return {...s, key: 'c' + i, state: 'open', at};
+  }));
+  const n = (ans.suggestions || []).length;
+  SG.note = `${n ? `${n} ${n === 1 ? 'suggestion' : 'suggestions'}` : 'Nothing to change'} from Claude`
+    + (kept || ans.kept ? ', kept from the last review of this plan' : ans.cost != null ? ` · $${(+ans.cost).toFixed(3)}` : '')
+    + (ans.dropped?.length ? ` · ${ans.dropped.length} left out by Pulsar's checks` : '') + '.';
+}
 /* the row a suggestion was made for, as it was then: it applies only while the row is still as proposed */
 function sgAt(id, rows = null) {
   const r = rows ? rows.find(x => x.id === id) : ldRow(id);
@@ -26,18 +56,12 @@ async function sgAsk() {
   if (SG.asking) return;  // the button stays live while it turns (a disabled one would be dimmed), so a second click waits
   const d = LD.date;
   SG.asking = true; SG.note = ''; renderReview();
-  const ans = await postJSON('/api/dayplan/review', {date: d, source: state.source, ...(LD_IGNORE ? {ignore_logged: true} : {})});
+  const again = SG.items.some(s => s.source === 'claude');  // "Review again": a new run, not the kept one
+  const ans = await postJSON('/api/dayplan/review', {date: d, source: state.source, again, ...(LD_IGNORE ? {ignore_logged: true} : {})});
   SG.asking = false;
   if (!ldActive() || LD.date !== d) return;
   if (ans.error) { SG.note = `Review with Claude: ${ans.error}`; renderReview(); return; }
-  const rows = ans.rows || [];
-  SG.items = SG.items.filter(x => x.source !== 'claude').concat((ans.suggestions || []).map((s, i) => {
-    const at = s.row ? (sgAt(s.row, rows) || null) : null;  // matched to the page's rows by time and task, not id
-    return {...s, key: 'c' + i, state: 'open', at};
-  }));
-  const n = (ans.suggestions || []).length;
-  SG.note = `${n ? `${n} ${n === 1 ? 'suggestion' : 'suggestions'}` : 'Nothing to change'} from Claude`
-    + (ans.cost != null ? ` · $${(+ans.cost).toFixed(3)}` : '') + (ans.dropped?.length ? ` · ${ans.dropped.length} left out by Pulsar's checks` : '') + '.';
+  sgTake(ans);
   renderReview(); render();
 }
 

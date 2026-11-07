@@ -229,8 +229,9 @@ cached in `~/.cache/pulsar/`. Delete either folder to start again.
   after the day's blocks changed, asks Claude again and costs again.
 
   **What is kept.** Ask Claude's last answer for each day (the tasks it picked, its reasons and its drafted notes,
-  which come from your sessions' text) is kept on this Mac for 60 days, in `~/.cache/pulsar/claude-picks/`, so the
-  day shows it again after a restart. With the switch off, neither the page nor Log the day uses it.
+  which come from your sessions' text), the notes it drafted for Log the day's rows and the day's last review are kept
+  on this Mac for 60 days, in `~/.cache/pulsar/claude-picks/`: the day shows them again after a restart, and the same
+  question is not asked (or paid for) twice. With the switch off, neither the page nor Log the day uses them.
 
   Switching it off takes back everything it added, and nothing else.
 - **The daily meeting, ready to log.** An entry you log at the same time on most days (a daily scrum) is noticed from

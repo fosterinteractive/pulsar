@@ -4,8 +4,14 @@
    it already sent, and Undo deletes only what this run created (POST /api/entry/delete with the run). */
 
 const LD = {on: false, date: null, plan: null, rows: [], open: null, run: null, writing: false, stop: false,
-            loading: false, undoAsk: false, note: '', view: 'review'};
+            loading: false, undoAsk: false, note: '', view: 'review', deleted: new Set()};
 try { if (localStorage.getItem('pulsar.ldView') === 'all') LD.view = 'all'; } catch {}  // this viewer's last choice
+/* what the person did in Log the day, per day, while the page is open (ldkeep.js): put back on the next fresh plan */
+const LD_KEPT = new Map();
+function ldStash() {
+  if (!LD.date || !LD.plan || LD.plan.error || LD.loading) return;
+  LD_KEPT.set(LD.date, {...ldSnapshot(LD.rows, LD.open, LD.deleted), sg: sgSnapshot()});
+}
 const ldActive = () => LD.on && LD.date === state.date;
 const ldRow = id => LD.rows.find(r => r.id === id);
 /* a test server can show the whole proposal of a day already logged (only PULSAR_READ_ONLY accepts it) */
@@ -39,11 +45,16 @@ function meter(c) {
 }
 
 /* ---------- opening and closing ---------- */
-async function openLogDay() {
+/* fresh: Start over, which forgets what was done on the day; else what was done comes back (ldkeep.js) */
+async function openLogDay({fresh = false} = {}) {
   if (!CONFIG?.productive.active) { toast('Connect Productive in Settings first.', true); openSettings('t-conn'); return; }
+  if (LD.on) ldStash();  // the day open until now (a catch-up moving on, Start over) keeps its work
   const d = state.date;
+  if (fresh) LD_KEPT.delete(d);
+  const kept = LD_KEPT.get(d) || null;
   Object.assign(LD, {on: true, date: d, plan: null, rows: [], open: null, run: null, writing: false, stop: false,
-                     loading: true, undoAsk: false, note: '', lastRun: null, undo: [], confirmed: null, claudeLate: null});
+                     loading: true, undoAsk: false, note: '', lastRun: null, undo: [], confirmed: null, claudeLate: null,
+                     deleted: new Set(kept?.deleted || [])});
   closePop();
   document.body.classList.add('rv-on');
   $('#review').hidden = false;
@@ -51,10 +62,12 @@ async function openLogDay() {
   const r = await getJSON(`/api/dayplan?date=${d}&source=${state.source}${LD_IGNORE ? '&ignore_logged=1' : ''}`);
   if (!LD.on || LD.date !== d) return;
   LD.loading = false; LD.plan = r;
-  LD.rows = (r.entries || []).map((e, i) => ({...e, id: 'r' + i, opened: false, edited: false,
+  LD.rows = (r.entries || []).map((e, i) => ({...e, id: 'r' + i, key: ldRowKey(d, e), opened: false, edited: false,
                                                status: e.sent === 'logged' ? 'logged' : e.sent ? 'unknown' : null,
                                                reason: e.sent ? 'A run of this day already sent it.' : ''}));
+  if (kept) { const got = ldReapply(LD.rows, kept, r.ignoreLogged ? [] : state.logged?.entries); LD.rows = got.rows; LD.open = got.open; }
   sgFromPlan(r);  // ldreview.js: FI's rules on this plan
+  if (kept?.sg) sgRestore(kept.sg); else sgKept(d);  // the review's suggestions as they were, or the one kept for the day
   renderReview(); render();
   document.body.classList.toggle('rv-ignore', !!r.ignoreLogged);
   // Ask Claude (when it is on in Settings): the whole day goes to it, its picks fill in unsure rows as they arrive
@@ -83,7 +96,7 @@ function ldClaudePlan(d, r, ans) {
   if (ldDlg.open) { LD.claudeLate = [d, r, ans]; return; }
   LD.claudeLate = null;
   if (LD.writing) { LD.askNote = "Claude answered while writing; Start over to see its picks."; renderReview(); return; }
-  const fresh = (r.entries || []).map((e, i) => ({...e, id: 'c' + i, opened: false, edited: false, status: null, reason: ''}));
+  const fresh = (r.entries || []).map((e, i) => ({...e, id: 'c' + i, key: ldRowKey(d, e), opened: false, edited: false, status: null, reason: ''}));
   let changed = 0;
   if (!LD.rows.some(x => x.edited || x.status)) {  // nothing touched yet: the new plan as a whole
     changed = fresh.filter(n => !LD.rows.some(o => o.s === n.s && o.taskId === n.taskId)).length;
@@ -106,6 +119,7 @@ function ldClaudePlan(d, r, ans) {
 }
 function closeLogDay() {
   if (LD.writing) { LD.stop = true; return; }
+  ldStash();
   cuClosed();  // catchup.js: a catch-up ends here, unless it is moving on to its next day
   LD.on = false; LD.open = null;
   document.body.classList.remove('rv-on', 'rv-ignore');
@@ -320,6 +334,7 @@ function noteHint(r) {
   if (r.noteFrom === 'meeting' && !r.noteEdited) return "The meeting's title. Clients may see notes.";
   if (r.noteFrom === 'repeat' && !r.noteEdited) return 'Your usual note for this. Clients may see notes.';
   if (r.noteFrom === 'commits' && !r.noteEdited) return 'From your commits. Clients may see notes.';
+  if (CONFIG?.likely?.askClaude && r.repo && !(r.note || '').trim() && !r.noteTried) return `${CLAUDE_MARK.split('<span')[0]}Click in the note and Claude drafts it from this work's sessions and commits. Clients may see notes.`;
   return 'Clients may see notes: the outcome, in a sentence.';
 }
 const altName = a => a.title || 'task ' + a.taskId;
@@ -368,6 +383,7 @@ function wireEditor(r) {
     const v = Math.round(+ev.target.value); if (!(v >= 1 && v <= 1440 - r.s)) { ev.target.value = r.minutes; return; }
     r.minutes = v; r.e = r.s + v; ldChanged(r);
   };
+  li.querySelector('[data-ld-note]').onfocus = () => ldDraftNote(r);
   li.querySelector('[data-ld-note]').oninput = ev => { r.note = ev.target.value; r.noteEdited = true; r.edited = true;
     const h = li.querySelector('.ed .hint'); if (h) h.innerHTML = noteHint(r); };
   li.querySelector('[data-ld-svc]').onchange = ev => {
@@ -379,9 +395,11 @@ function wireEditor(r) {
 }
 function ldChanged(r) { r.edited = true; if (r.status === 'refused') { r.status = null; r.reason = ''; } renderReview(); render(); }
 
-/* a row opened with no note, while the Claude Code switch is on: Claude drafts one from its sessions and commits, as
-   the log dialog does (POST /api/likely/note). The note is about the work, not the task, so picking another task
-   keeps it. Asked once per row; what the person typed meanwhile is never replaced. */
+/* a row's empty note, focused while the Claude Code switch is on: Claude drafts one from its sessions and commits, as
+   the log dialog does (POST /api/likely/note). Only on focus, never by opening the row: walking through ten rows asked
+   ten times. The note is about the work, not the task, so picking another task keeps it. Asked once per row (kept
+   with the day's work, ldkeep.js; the server keeps the draft too, so the same work is never drafted twice); what the
+   person typed meanwhile is never replaced. */
 async function ldDraftNote(r) {
   if (!CONFIG?.likely?.askClaude || !r.repo || (r.note || '').trim() || r.noteDrafting || r.noteTried || LD.writing) return;
   r.noteDrafting = true; r.noteTried = true; renderReview();
@@ -392,7 +410,10 @@ async function ldDraftNote(r) {
   if (!(row.note || '').trim()) {  // nothing typed: the draft goes in, and the panel is drawn again
     if (got.note) Object.assign(row, {note: got.note, noteFrom: 'session', noteEdited: false});
     else row.noteError = got.error || got.why || '';
-    return renderReview();
+    const had = document.activeElement?.matches?.(`#review [data-row="${row.id}"] [data-ld-note]`);
+    renderReview();
+    if (had) { const n = $(`#review [data-row="${row.id}"] [data-ld-note]`); n?.focus(); n?.setSelectionRange(n.value.length, n.value.length); }
+    return;
   }
   // typed meanwhile: only the hint changes, so the field keeps its focus
   const hint = $(`#review [data-row="${row.id}"] .ld-note-hint`); if (hint) hint.innerHTML = noteHint(row);
@@ -401,7 +422,6 @@ function ldOpen(id, scroll = false) {
   const r = ldRow(id); if (!r || LD.writing) return;
   LD.open = LD.open === id && !scroll ? null : id; r.opened = true;
   renderReview(); render();
-  if (LD.open === id) ldDraftNote(r);
   if (scroll) {
     const li = $(`#review [data-row="${id}"]`);
     li?.scrollIntoView({block: 'nearest', behavior: 'smooth'});
@@ -417,8 +437,7 @@ async function ldSetTask(r, t) {
                     ticket: []});  // the new task's flags come with its services
   r.flags = r.flags.filter(f => !['notask', 'low', 'noservice', 'claudefound'].includes(f));
   if (r.noteFrom === 'claude' && !r.noteEdited) { r.note = ''; r.noteFrom = ''; r.flags = r.flags.filter(f => f !== 'claudenote'); }  // Claude wrote it for another task
-  renderReview(); render();
-  if (LD.open === r.id) ldDraftNote(r);  // its note went with the old task: one from the work itself
+  renderReview(); render();  // its note, if Claude's for the old task, went: a new draft when the note field is focused
   const [list, sug] = await Promise.all([getJSON(`/api/services?task=${r.taskId}&date=${LD.date}&flags=1`), suggestions(LD.date)]);
   if (r.taskId !== String(t.taskId)) return;
   if (list.error) { r.serviceProblem = list.error; renderReview(); return; }
@@ -465,7 +484,7 @@ $('#review').addEventListener('click', ev => {
   const t = ev.target.closest('button, input'); if (!t) return;
   if (t.id === 'ld-close') return closeLogDay();
   if (LD.writing && t.id !== 'ld-stop') { ev.preventDefault(); return; }  // a run (or Undo) is writing: rows stay as confirmed
-  if (t.id === 'ld-redo') return openLogDay();
+  if (t.id === 'ld-redo') return openLogDay({fresh: true});
   if (t.id === 'ld-go') return openConfirm();
   if (t.dataset.ldView) { LD.view = t.dataset.ldView; try { localStorage.setItem('pulsar.ldView', LD.view); } catch {} renderReview(); return; }
   if (t.id === 'ld-tickall') { for (const r of ldTickAllRows()) { r.checked = true; r.edited = true; } renderReview(); render(); return; }
@@ -480,7 +499,7 @@ $('#review').addEventListener('click', ev => {
                         onCreated: (task, serviceHint) => ldRow(r.id) && ldSetTask(ldRow(r.id), {...task, serviceHint})});
   }
   if (t.dataset.ldAlt != null) { const r = ldRow(LD.open); return ldSetTask(r, r.alts[+t.dataset.ldAlt]); }
-  if (t.dataset.ldDel) { LD.rows = LD.rows.filter(r => r.id !== t.dataset.ldDel); LD.open = null; renderReview(); render(); return; }
+  if (t.dataset.ldDel) { const k = ldRow(t.dataset.ldDel)?.key; if (k) LD.deleted.add(k); LD.rows = LD.rows.filter(r => r.id !== t.dataset.ldDel); LD.open = null; renderReview(); render(); return; }
   if (t.id === 'ld-undo') { LD.undoAsk = true; renderReview(); return; }
   if (t.id === 'ld-undo-no') { LD.undoAsk = false; renderReview(); return; }
   if (t.id === 'ld-undo-yes') return undoRun();

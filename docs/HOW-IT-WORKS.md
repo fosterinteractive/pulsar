@@ -774,6 +774,17 @@ note…"; picking another task clears the first, editing the note the second's m
 left alone. An answer that arrives while the confirm step is open waits until it closes (Back to the review); once a
 run has started it is only mentioned. Haiku did as well as Sonnet here, at a small part of the cost.
 
+**Kept while the page is open.** Closing the panel or going to another day keeps what the person did there, per
+day (`ldkeep.js`): ticks, tasks, services, times, notes, the rows opened and the rows deleted from the proposal, and
+the review's suggestions with their state. Opening the day again puts them back on a fresh plan, row by row by what
+each row was proposed for (the day, its start as proposed, its repository or meeting, its task as proposed), never by
+its place in the list. A row's work is dropped when that row is no longer proposed or its time is logged in Productive
+now; a row a run wrote stays as the journal says. **Start over** forgets it all for that day. It lives in the page
+only: a reload starts again. The review itself is kept on the server too (8): opening the panel asks for it with
+`kept_only` (never a new run), and **Review again** asks Claude anew (`again`). A row's note is drafted by Claude only
+when its empty note field gets the focus, never by opening the row; the server keeps each draft (8), so the same work
+is not drafted twice, after a restart either.
+
 **Reviewing.** The list shows, by default (**To review**), the rows still to log and the time not covered; what is
 logged, in Productive or by this run, is one line at the top ("6 h 1 min logged, 17 entries"), and **All** shows each
 entry in its place (the choice is kept in this window's storage). The timeline shows everything either way. A row needs a look when it is unsure ("check"), has no task or service, or carries something Claude did
@@ -1367,7 +1378,8 @@ estimate, and a table of every day. A day's bar and its row in the tables open t
 | `~/.cache/pulsar/names.json` | Names of projects, budgets, services, tasks; billing types; how many of a project's recent tasks have an estimate (5.3); when each was read. |
 | `~/.cache/pulsar/likely-days/` | Past days' Likely rows for learning: times, repository, title hashes. |
 | `~/.cache/pulsar/likely-full/` | Past days' Likely columns as the page shows them (rows with session titles and first messages), so a day opened again, or after a restart, shows at once; 31 days; ↻ works a day out again. Never a day worked out while no tracker answered. |
-| `~/.cache/pulsar/claude-picks/` | Ask Claude's last answer per day (task ids, reasons, drafted notes), shown again when the day is opened, never asked again by itself; 60 days. |
+| `~/.cache/pulsar/claude-picks/` | Ask Claude's last answer per day (`<date>.json`: task ids, reasons, drafted notes), shown again when the day is opened, never asked again by itself; the notes Claude drafted for a stretch of work (`<date>.notes.json`, under the stretch, its repository and what its session and commits held, so the same work is never drafted twice); the day's last review (`<date>.review.json`, under the plan it reviewed, `server.review_key`, given back while the plan is the same). 60 days. |
+| (the page, while it is open) | Log the day's work per day: ticks, tasks, services, times, notes, the rows opened and deleted, the review's suggestions with their state (`ldkeep.js`). |
 | `~/.cache/pulsar/logday-journal.json` | Log the day: each row a run sent, before it was sent, and what came of it (31 days). |
 | `~/.cache/pulsar/logs/` | The error log, one JSON line per event, 31 days; tokens, keys, OAuth codes, signed addresses, fields named as keys or secrets, bare hex secrets, UUIDs and long opaque strings removed. |
 | `~/Library/Application Support/Pulsar/` | The installed code: `versions/`, `current`, `previous`, `bad-versions`, and `seen-release` (the newest signed `latest.json` believed: its version and expiry). Only code a release signed gets here (section 2). |
