@@ -863,6 +863,24 @@ class AskAgainTest(unittest.TestCase):
             got = askclaude.ask("2026-11-06", rows, 0, entries, run=fake)
         self.assertEqual((len(calls), got["picks"]), (2, {}))
 
+    def test_the_cost_shown_is_both_runs(self):
+        """The second run asks again: what the page says it cost is what the two cost together."""
+        from pulsar import askclaude
+        answers = [({"picks": []}, 0.04), ({"picks": [{"id": 0, "tasks": ["7"], "why": "w"}]}, 0.03)]
+        calls = []
+
+        def fake(cmd, **kw):
+            got, cost = answers[len(calls)]
+            calls.append(1)
+            return mock.Mock(stdout=json.dumps({"result": "", "structured_output": got, "total_cost_usd": cost}),
+                             stderr="", returncode=0)
+        rows = [{"s": 540, "e": 600, "project": "acme", "titles": [], "minutes": 60}]
+        entries = [{"taskId": "7", "task": "Estimations", "project": "P", "minutes": 30, "date": "2026-11-02"}]
+        with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/bin/claude"), \
+                mock.patch.dict(askclaude._cache, clear=True), mock.patch.object(askclaude.claudeuses, "spent"):
+            got = askclaude.ask("2026-11-07", rows, 0, entries, run=fake)
+        self.assertAlmostEqual(got["cost"], 0.07)
+
 
 class DayplanAPITest(unittest.TestCase):
     def test_ignore_logged_is_for_read_only_test_servers_only(self):

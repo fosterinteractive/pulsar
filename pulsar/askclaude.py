@@ -395,6 +395,7 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
     if not binary:
         raise AskError("Claude Code was not found on this Mac.")
     mcp = _mcp_config()
+    spent = 0.0  # both attempts' cost, as Claude Code said it: the answer shows the whole of it
     try:
         for attempt in (1, 2):  # an empty answer ({"picks": []}) is asked once more: Haiku sometimes gives one
             try:  # Productive's read tools only: no other MCP server, nothing the person's settings allow, no hooks
@@ -409,7 +410,14 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
                 raise AskError("Claude took too long to answer. Try again later.") from None
             except OSError as exc:
                 raise AskError(f"Claude Code could not be started ({exc}).") from None
-            res = _answer(done, "answer", "ask", model)
+            try:
+                res = _answer(done, "answer", "ask", model)
+            except AskError as exc:  # the second run failed: what the first one cost is counted too
+                if spent and isinstance(exc.cost, (int, float)):
+                    exc.cost += spent
+                raise
+            cost = res.get("total_cost_usd")
+            spent += cost if isinstance(cost, (int, float)) and not isinstance(cost, bool) and cost > 0 else 0
             try:
                 if isinstance(res.get("structured_output"), dict):  # checked against SCHEMA by Claude Code
                     picks = res["structured_output"]["picks"]
@@ -421,8 +429,7 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
                     raise TypeError("picks is not a list")
             except (ValueError, KeyError, TypeError, AttributeError):
                 tail = (done.stderr or str(res.get("result") or "")).strip()[-200:]
-                raise AskError("Claude's answer could not be read." + (f" {tail}" if tail else ""),
-                               res.get("total_cost_usd")) from None
+                raise AskError("Claude's answer could not be read." + (f" {tail}" if tail else ""), spent) from None
             picks = [p for p in picks if isinstance(p, dict)]  # anything else in the list is not a pick
             if picks:
                 break
@@ -474,7 +481,7 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
         if bad:
             blocked.append(bad)
         out[f"{r['s']}|{r.get('project') or ''}"] = {"tasks": tasks, "why": str(p.get("why") or "")[:120], "note": note}
-    answer = {"picks": out, "cost": res.get("total_cost_usd"), "notesBlocked": blocked}
+    answer = {"picks": out, "cost": round(spent, 4) if spent else res.get("total_cost_usd"), "notesBlocked": blocked}
     if unnamed:  # shown with the picks; not kept, so asking again can name them
         n = sum(1 for x in unknown if x not in names)
         answer["warning"] = (f"Claude also found {n} task{'s' if n != 1 else ''} by searching Productive that Pulsar "
