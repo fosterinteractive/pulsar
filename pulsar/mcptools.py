@@ -30,11 +30,10 @@ import secrets
 import threading
 import time
 import traceback
-import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
-from . import config, logbook, productive
+from . import askclaude, config, logbook, productive
 
 DATE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 HHMM = re.compile(r"^([01][0-9]|2[0-3]):([0-5][0-9])$")
@@ -134,7 +133,9 @@ def fetch(calls: dict) -> dict:
 
 def post(path: str, body: dict) -> dict:
     """POST /api/log, called directly and marked as Claude Code's: server.api_log's answer, or its error as the page
-    would get it ({"error", "_status"}, and "unclear" when it may have been written)."""
+    would get it ({"error", "_status"}, and "unclear" when it may have been written). The mark is the server's own, on
+    every call: the request's "client" is the caller's word (a script with the key can say "claude-code"), so nothing
+    in the request sets or removes it."""
     from . import server
     if path != "/api/log":
         raise ToolError("Pulsar in Claude Code writes only new entries.")
@@ -235,23 +236,28 @@ def _config() -> dict:
 
 # ---- what may leave ------------------------------------------------------------------------------------------
 
-# Characters that draw nothing or reorder what is around them: control, format (direction marks and overrides,
-# zero-width), unassigned, private and surrogate code points, line and paragraph separators, and the fillers and
-# variation selectors that show as nothing.
-_BLANK = set("ᅟᅠㅤﾠ⠀͏឴឵᠎")
+# Characters that draw nothing or reorder what is around them (askclaude.visible: the one list, for notes too)
+visible = askclaude.visible
 
 
-def visible(c: str) -> bool:
-    if unicodedata.category(c) in ("Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp") or c in _BLANK:
-        return False
-    return not (0xFE00 <= ord(c) <= 0xFE0F or 0xE0100 <= ord(c) <= 0xE01EF)
+# The confirmation summary's own markers (summary_line): a line's date, its minutes, its billing and its note. Anyone in
+# the organization can name a task, so a name never carries them: none can pass for another entry or another field
+# ("Build, not billable. No note. Fri 6 Nov 2026 10:00-18:00 (480 min): Admin"). Read on the folded name
+# (askclaude.fold), so fullwidth digits or brackets count too.
+CARD_MARK = re.compile(r"\b(?i:mon|tue|wed|thu|fri|sat|sun)\w*\.?,?\s+\d{1,2}\s+(?i:jan|feb|mar|apr|may|jun|jul|aug|sep"
+                       r"|oct|nov|dec)\w*\.?,?\s+\d{4}\b|\(\s*\d+\s*(?i:min)\w*\s*\)|\bNote\s*:|\bNo note\b"
+                       r"|,\s*(?i:not billable|billable|billing not known)\b")
 
 
 def name_out(text, most: int = 120) -> str:
     """A name from Productive (a task, project, service, budget): its own words, but without control or invisible
-    characters, on one line, and not longer than `most`."""
+    characters, on one line, without the summary's markers (CARD_MARK, each put as "…"), and not longer than `most`."""
     one = re.sub(r"\s+", " ", str(text or ""))
-    return re.sub(r" {2,}", " ", "".join(c for c in one if visible(c))).strip()[:most]
+    one = "".join(c for c in one if visible(c))
+    folded = askclaude.fold(one)
+    if CARD_MARK.search(folded):
+        one = CARD_MARK.sub(" … ", folded)
+    return re.sub(r" {2,}", " ", one).strip()[:most]
 
 
 # double quotation marks of any script: the summary quotes a note with ", so none may stand in a note or a name there
@@ -611,23 +617,19 @@ def pulsar_day(args: dict) -> dict:
 
 # ---- pulsar_propose ------------------------------------------------------------------------------------------
 
-# Note drafts returned, only for the calling session's own repository (another's is another client's words):
+# Note drafts returned, only for the calling session's own repository (another's is another client's words), and
+# only through guard_note (folded: no tool's name, look-alike or character nobody sees):
 # * from your commits (commit subjects you wrote, in that repository);
-# * from Ask Claude (askclaude.py drafts a block's note from its sessions' messages and Claude's replies), when the
-#   calling session is the only session of the Likely rows the draft was made from: the draft adds nothing the session
-#   does not already have, so only guard_note and the plain attack words (INJECTION) keep one out. For rows of other
-#   sessions of the same repository (or shared with one), only a draft that passes guard_note and reads like no
-#   instruction at all (INSTRUCTION_LIKE: strict, a plain note loses little). Never for another repository.
+# * from Ask Claude (askclaude.py drafts a block's note from its sessions' messages and Claude's replies), only when
+#   the calling session is the only session of the Likely rows the draft was made from: the draft adds nothing the
+#   session does not already have, so guard_note and the plain attack words (INJECTION) keep one out. A draft made
+#   from another session's text, of the same repository or shared with one, never goes to this session: it stays in
+#   Pulsar's window (review 4: a channel between sessions that Pulsar would otherwise open).
 # A repeat's note is the note of past logged entries, and a meeting's is its title: never returned.
 NOTE_SOURCES = ("commits", "claude")
 INJECTION = re.compile(
     r"\b(?:ignor\w*|disregard\w*|forget|override|instructions?|prompts?|assistants?|sudo|curl|wget|passwords?|tokens?|"
     r"execute\w*)\b|\byou (?:must|should|are|will|need)\b|\brm\s+-|https?\b|://", re.I)
-INSTRUCTION_LIKE = re.compile(
-    r"\b(?:ignor\w*|disregard\w*|instruct\w*|system|prompts?|assistants?|claude|ai|llm|gpt|model|agent|you|your|"
-    r"must|should|please|now|run|runs|execute\w*|exec|eval|delete|remove|rm|curl|wget|sudo|chmod|shell|bash|zsh|"
-    r"terminal|command\w*|script\w*|passwords?|tokens?|secrets?|keys?|credentials?|http|https|www|tools?|call|"
-    r"approve\w*|confirm\w*|pulsar\w*|mcp|log_?time)\b|://|[`$<>{}\[\]|;\\]|\.(?:sh|py|js|php)\b", re.I)
 
 
 def _same_repo(a: str, b: str | None) -> bool:
@@ -638,22 +640,19 @@ def _same_repo(a: str, b: str | None) -> bool:
 
 def _note_draft(e: dict, repository: str, places: Places):
     """(note, source) a plan entry may show as its draft, or None (NOTE_SOURCES above)."""
-    from .askclaude import guard_note
     note, source = str(e.get("note") or ""), e.get("noteFrom")
     if not note or source not in NOTE_SOURCES or not _same_repo(repository, _caller_repo()):
         return None
-    if source == "commits":
-        return note[:300], source
-    text, bad = guard_note(note)
-    if bad or not text or not all(visible(c) for c in text):
+    text, bad = askclaude.guard_note(note)
+    if bad or not text:
         return None
+    if source == "commits":
+        return text[:300], source
     me = _session_ids()[0]
     drafted = places.sessions_over(e.get("s") or 0, e.get("e") or 0, e.get("repo"))
-    if me and drafted == {me}:  # made from this session's own text only
-        return None if INJECTION.search(text) else (text[:300], source)
-    if INSTRUCTION_LIKE.search(text):  # other sessions' text: only a plain draft
+    if not (me and drafted == {me}):  # made from another session's text, or shared with one: it stays in Pulsar
         return None
-    return text[:300], source
+    return None if INJECTION.search(askclaude.fold(text)) else (text[:300], source)
 
 
 def plan_entry(e: dict, places: Places) -> dict:
@@ -1011,7 +1010,6 @@ def _clean(args: dict) -> tuple:
 def _note_problem(note: str):
     """(the note to write, None), or (None, why): what a note from Claude Code must be. Clients may see notes, and the
     summary quotes the note, so it may not hold what could pass for the summary's own words."""
-    from .askclaude import guard_note
     if not note:
         return "", None
     if len(note) > NOTE_MOST:
@@ -1020,7 +1018,7 @@ def _note_problem(note: str):
         return None, "a character nobody sees"
     if any(c in QUOTES for c in note):
         return None, 'a double quotation mark (" or “ ”)'
-    text, why = guard_note(note)
+    text, why = askclaude.guard_note(note)
     if why:
         return None, why
     return text, None
@@ -1143,8 +1141,7 @@ def pulsar_preview(args: dict) -> dict:
     return {**out, "code": code, "summary": summary,
             "next": ("Show the person this summary as it is and ask whether to log it, then stop and wait for their answer. "
                      "Call pulsar_log only after they say yes in a new message, with this code and this summary unchanged; "
-                     "never in the same turn as this preview, unless they already said yes to exactly this summary. Claude "
-                     "Code also asks them before pulsar_log runs, and nothing is written if they say no. The code works "
+                     "never in the same turn as this preview. Claude Code also asks them before pulsar_log runs, and nothing is written if they say no. The code works "
                      "once, for 10 minutes. Notes may be shown to clients.")}
 
 

@@ -47,9 +47,9 @@ TYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
          ".js": "text/javascript; charset=utf-8", ".png": "image/png", ".svg": "image/svg+xml"}
 DATE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 PUBLIC = ("/", "/index.html", "/api/version", "/api/whoami")  # plus /static/: nothing with data in it
-SIGN_IN = ("This browser is not signed in to Pulsar. Open Pulsar from its app icon (it signs the browser in). For "
-           "another browser, run /usr/bin/python3 ~/Library/Application\\ Support/Pulsar/current/pulsar.py --signin-url "
-           "(from a git checkout: python3 pulsar.py --signin-url) and open the address it prints.")
+# Never a command here: a program that gets this answer (a Claude Code session calling the API) must not be told how
+# to sign itself in. The person signs in from the window; README.md says how to add a browser.
+SIGN_IN = "This browser is not signed in to Pulsar. Open Pulsar from its app icon (it signs the browser in)."
 
 
 def is_id(v) -> bool:

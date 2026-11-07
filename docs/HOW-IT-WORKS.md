@@ -136,7 +136,9 @@ yours.
     holds neither. `pulsar_log` takes that code, exactly, and that summary, word for word, and no other argument. It
     writes new entries only, as a Log the day run (journalled, never sent twice, never `force`, never the dialog's
     pieces), and the journal marks each row `via: "claude-code"`: the Logged column says "from Claude Code" on those
-    entries (`server.from_claude_code`).
+    entries (`server.from_claude_code`). The server sets that mark on every write made through these tools, whatever
+    the request says: its `client` field is the caller's own word (a script with the key can send "claude-code"),
+    and nothing in a request can remove the mark.
 
   Everything else with the key alone is refused with 403: every GET with data (`/api/entries`, `/api/activity`,
   `/api/config`, `/api/logs`, icons, …), `POST /api/log`, changing or deleting an entry, settings (the token,
@@ -205,15 +207,29 @@ yours.
   who sets `user.email` per repository, an email that another repository of the day's sessions sets too. A
   repository that names its own author as `user.email` cannot turn that author's commit subjects into your note or
   into Ask Claude's prompt.
-- **Claude Code's file tools and Pulsar's folders.** The Claude Code switch (5.7) adds deny rules to Claude Code's
-  user settings: `Read(~/.config/pulsar/**)` and `Edit(~/.config/pulsar/**)`, the same for `pulsar-preview`, and for
-  `~/.config/pulsar-release` (the release key) only on a Mac that has that folder. Claude Code applies a Read or Edit
-  deny rule to its own file tools (Read, Grep, Glob, Edit, Write) and to the file commands it recognizes in a shell
-  command (`cat`, `head`, `tail`, `sed`, `tee`, a redirection), but not to a command that reads files without naming
-  them or to a script that opens the file itself; with Claude Code's sandbox on, the same paths bind every shell
-  command (its `sandbox.filesystem.denyRead` applies only while `sandbox.enabled` is on, and no setting applies it
-  to shell commands without the sandbox). Pulsar does not turn the sandbox on; Settings links its documentation.
-  So the rules stop a session's casual or injected `cat ~/.config/pulsar/secret`, not a program set on it.
+- **Claude Code's file tools and Pulsar's folders.** The Claude Code switch (5.7) adds a Read and an Edit deny rule
+  to Claude Code's user settings for each of Pulsar's folders (`claudelink.deny_rules`): `~/.config/pulsar` and
+  `~/.config/pulsar-preview` (the key, the sign-in code, settings, tokens); `~/Library/Application Support/Pulsar*`
+  (the installed code: an edit there would take out Pulsar's own checks at the next restart);
+  `~/Library/WebKit/com.fosterinteractive.pulsar*` (the window's data, its sign-in token among it); `~/.cache/pulsar*`
+  (copies of days with their notes, Ask Claude's answers, Logs); and `~/.config/pulsar-release` (the release key)
+  only on a Mac that has that folder. Switching off takes back only the ones Pulsar added (`claude_denies_added`); a
+  copy switched on before a rule existed says in Settings that rules are missing and offers to add them again.
+  Claude Code applies a Read or Edit deny rule to its own file tools (Read, Grep, Glob, Edit, Write) and to the file
+  commands it recognizes in a shell command (`cat`, `head`, `tail`, `sed`, `tee`, a redirection), in every mode,
+  bypass included. **What they do not stop:**
+  - a script that opens the file itself (`python3 -c "open(…)"`, `node -e`, a script on disk);
+  - a command that reaches Pulsar without naming its files: `pulsar.py --mcp` or `--signin-url`, `curl` to its port;
+  - a command that reads files without naming them, and any path Claude Code does not recognize as the same folder
+    (a symbolic link into it, for one);
+  - any program that is not Claude Code (an editor extension, an npm install script);
+  - a session in bypass mode that first removes the rules from `~/.claude/settings.json` (Claude Code re-reads it
+    while running).
+
+  With Claude Code's sandbox on, the same paths bind every shell command (its `sandbox.filesystem.denyRead` applies
+  only while `sandbox.enabled` is on, and no setting applies it to shell commands without the sandbox). Pulsar does
+  not turn the sandbox on; Settings links its documentation. So the rules stop a session's casual or injected
+  `cat ~/.config/pulsar/secret` or an edit of Pulsar's code by Claude's own Edit tool, not a program set on it.
 - **Claude Code runs Pulsar starts** (Ask Claude, the session note) get a short list of Pulsar's environment
   (`askclaude.ENV_KEEP`: `HOME`, `PATH`, `USER`, `LOGNAME`, `SHELL`, `LANG`, `LC_*`, `TMPDIR`, `TZ`,
   `CLAUDE_CONFIG_DIR`, a sign-in key or token, a proxy and its certificates), never all of it: Pulsar started from a
@@ -520,13 +536,18 @@ whether one fits is the person's call. It opens a small form over the dialog:
   rows, as the session note takes them. At once, on this Mac (`local_draft`): the first commit subject made then is
   the title, and all of them a list. With the Claude Code switch on, Claude then drafts both (`claude_draft`, with the
   model chosen for "New task", Haiku by default: 5.7) from the same rows' steps (what was typed, Claude's replies,
-  `askclaude.steps`), commits and session titles, with up to 8 titles of tasks logged to lately, the same project's first, as examples of the style. It runs as the session note
+  `askclaude.steps`), commits and session titles, with up to 8 titles of the person's own tasks of the last 30 days
+  (their own time entries; the same project's first) as examples of the style: a task's name is anyone's words in
+  Productive, so no other task's title goes to Claude. It runs as the session note
   does (5.7): no tools, no MCP server, none of the person's settings, auto memory off, a JSON schema. A draft replaces
-  only a field the person has not typed in. A meeting's title is the draft when the time was a meeting and no work was
-  seen in it; Claude is not asked then. The title goes through the note's checks (`guard_title`: no path, web address,
-  token, code, tool's name or remark on the time, one sentence). The description is checked line by line, cut at a
+  only a field the person has not typed in, and **Create in Productive** is off while Claude drafts and for a second
+  after its draft fills the form, so a click never sends text that changed under it. A meeting's title is the draft
+  when the time was a meeting and no work was seen in it; Claude is not asked then. The title goes through the note's
+  checks (`guard_title`: no path, web address, token, code, tool's name, sum of money, look-alike or invisible
+  character, or remark on the time, one sentence). The description is checked line by line the same way, cut at a
   sentence to 700 characters, and a sentence about the time itself ("the review time is logged as billable") is left
-  out.
+  out. Claude's title or description that names another client's project, or the person, is left out
+  (`askclaude.foreign_name`, as for a note).
 - **Status, estimate and service**, proposed for the place picked (`GET /api/task/fields`, `newtask.propose`), each
   with a line saying why, and editable. The form opens at once; they fill in when they arrive, and a status or service
   the person picked, or an estimate they typed, stays when the place changes (while the new place offers it). The
@@ -952,8 +973,12 @@ not a verdict.
   default; 5.7); each name is Claude Code's alias for the latest model of that kind. About 15 to 60 seconds and $0.10 to
   $0.25 of the person's usage per day with Sonnet. `--max-budget-usd` caps each run (not each day) at $0.25 for
   Haiku, $0.75 for Sonnet and $2 for Opus; an empty answer runs Claude once more, so one ask may cost twice the cap,
-  and the cost shown is the second run's. Log the day asks by itself when the switch is on (5.4). Answers are kept in memory only (the last 30): asking again after a
-  restart, or once the day's rows changed (a new row, more commits), runs Claude again.
+  and the cost shown is the second run's. Log the day asks by itself when the switch is on (5.4). Answers are kept in
+  memory (the last 30), and each day's last answer also on disk (`askclaude.keep`: `~/.cache/pulsar/claude-picks/`,
+  owner-only, 60 days: task ids, reasons and the drafted notes, which are made from session text), so the day shows
+  its picks again after a restart and Log the day can use them; with the switch off, neither the page nor Log the
+  day reads them. Asking again after a restart, or once the day's rows changed (a new row, more commits), runs Claude
+  again.
   **What goes to Anthropic** is exactly the prompt: for each row of ten minutes or more its time (by the clock),
   repository, up to 3 session titles, up to 15 steps (typed 400, reply 900 characters), up to 10 commit subjects and
   up to 5 of the person's earlier notes; and up to 150 tasks logged to in the last 30 days (id, title, project,
@@ -1024,8 +1049,8 @@ word: the person approves Pulsar's words, not the model's. Other apps ignore the
 client whose name is not `claude-code` (from `initialize`, or from each request's `_meta` in the 2026-07-28 protocol).
 A code that is refused (wrong summary, wrong app, Pulsar closed, writes blocked) is not used up. The instructions, the
 preview's `next` and `pulsar_log`'s description all say the same: show the person the summary, stop, and call
-`pulsar_log` only after their yes in a new message, never in the same turn as the preview unless they already said yes
-to exactly that summary. In a simulation, Haiku asked to "Log my time" called `pulsar_log` straight after the preview
+`pulsar_log` only after their yes in a new message, never in the same turn as the preview, with no exception a text
+could claim ("they already said yes" is just what an injected instruction would say). In a simulation, Haiku asked to "Log my time" called `pulsar_log` straight after the preview
 before this was said.
 
 **Protocols.** Claude Code 2.1.301 first sends `server/discover` (2026-07-28): Pulsar answers it, and every request

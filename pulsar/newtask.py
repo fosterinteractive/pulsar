@@ -88,12 +88,10 @@ def guard_description(text) -> tuple:
         kept.append(line)
     if not kept:
         return "", "too long"
-    for line in kept:  # the note's checks themselves (askclaude.guard_note also limits length and sentences)
-        if any(unicodedata.category(c) in ("Cc", "Cf") for c in line):
-            return "", "a character nobody sees"
-        for why, rx in askclaude._NOTE_CHECKS:
-            if rx.search(line):
-                return "", why
+    for line in kept:  # the note's checks themselves, folded (askclaude.guard_note also limits length and sentences)
+        why = askclaude.text_problem(line)
+        if why:
+            return "", why
     return "\n".join(kept), None
 
 
@@ -146,11 +144,13 @@ _cache: dict = {}
 _lock = threading.Lock()
 
 
-def examples(history: list, project: str = "", limit: int = 8) -> list:
-    """Titles of tasks the person logged to lately (`history`: their entries, newest last), those of `project`
-    first: how their organization names tasks. Containers (contingency, core updates, meetings…) and any title the
-    guard would refuse are left out."""
-    newest = sorted((r for r in history if r.get("task")), key=lambda r: r.get("date") or "", reverse=True)
+def examples(history: list, project: str = "", limit: int = 8, since: str = "") -> list:
+    """Titles of the person's own recent tasks, those of `project` first: how their organization names tasks. Only
+    tasks of their own time entries (`history`) on or after `since` (the 30 days of Ask Claude's "your tasks",
+    askclaude.history_span): a task's name is anyone's words in Productive, so no other task's goes to Claude.
+    Containers (contingency, core updates, meetings…) and any title the guard would refuse are left out."""
+    newest = sorted((r for r in history if r.get("task") and str(r.get("date") or "") >= since),
+                    key=lambda r: r.get("date") or "", reverse=True)
     out: list = []
     for same in (True, False):
         for r in newest:
@@ -184,7 +184,8 @@ def claude_draft(date: str, rows: list, t0: float, history: list = (), project: 
         if sig in _cache:
             return _cache[sig]
     work = json.dumps({"sessions": [clean_title(t) for t in titles[:3]], "steps": said, "commits": made,
-                       "their_tasks": examples(history, project)}, ensure_ascii=False, indent=1)
+                       "their_tasks": examples(history, project, since=askclaude.history_span(date)[0])},
+                      ensure_ascii=False, indent=1)
     prompt = PROMPT.format(date=date, start=askclaude.clock_at(t0, a, tz), end=askclaude.clock_at(t0, b, tz),
                            repo=repo, title_max=TITLE_MAX, work=work)
     binary = productive._claude_binary()
@@ -204,6 +205,13 @@ def claude_draft(date: str, rows: list, t0: float, history: list = (), project: 
     got = res.get("structured_output") if isinstance(res.get("structured_output"), dict) else {}
     title, bad_t = guard_title(got.get("title"))
     desc, bad_d = guard_description(got.get("description"))
+    # another client's name in this client's task (a client may read it), or the person's own, as for a note
+    own, others = askclaude._own_projects(_longest(rows), history) + [project], [h.get("project") for h in history]
+    person = askclaude._person()
+    if title and askclaude.foreign_name(title, own, others, person):
+        title, bad_t = "", "a name from another project"
+    if desc and askclaude.foreign_name(desc, own, others, person):
+        desc, bad_d = "", "a name from another project"
     why = "; ".join(f"the {what} had {bad}, so it was left out" for what, bad in (("title", bad_t), ("description", bad_d))
                     if bad)
     answer = {"title": title, "description": desc, "why": why, "cost": res.get("total_cost_usd")}

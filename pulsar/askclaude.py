@@ -8,8 +8,9 @@ tools that change anything are refused, and no other tool is allowed. It is star
 none of the person's settings (--strict-mcp-config, --setting-sources ""): no other MCP server, no tool their settings
 allow, no hook that would receive the prompt, no CLAUDE.md. Auto memory is not a setting, so it is switched off in the
 environment (CLAUDE_CODE_DISABLE_AUTO_MEMORY): without it, Claude Code 2.1.301 sent the MEMORY.md of the folder it
-runs in (checked against a stand-in for Anthropic's API). Nothing is written anywhere; the session is not kept (so it
-never shows up in the Likely column itself).
+runs in (checked against a stand-in for Anthropic's API). Claude's session is not kept (so it never shows up in the
+Likely column itself); Pulsar keeps each day's last answer (task ids, reasons, drafted notes) on this Mac for KEEP_DAYS
+days (keep, below), used only while the Claude Code switch is on.
 
 On one person's days the picks read right (an estimate to the estimations task, a database upgrade to the client's
 "Database Upgrade" task, a personal project to none), for about $0.13 and 15 seconds a day.
@@ -93,6 +94,10 @@ NOTE_EXAMPLES = 5  # of the person's own notes per block
 _TLD = r"com|org|net|io|ca|dev|app|co|ai|vc|edu|gov|uk|us|info|site|cloud"
 _FILE_EXT = (r"php|py|js|ts|tsx|jsx|twig|ya?ml|json|md|scss|css|html?|sh|module|theme|install|inc|txt|log|sql|xml|lock"
              r"|env|conf|ini|csv")
+_NUMBER_WORD = (r"(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen"
+                r"|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand"
+                r"|million|billion|dozen|several)")
+_CURRENCY_WORD = r"(?:dollars?|bucks|euros?|cents|pounds?|quid|grand|hryvni?as?|USD|CAD|EUR|GBP|UAH)"
 _NOTE_CHECKS = [
     ("a web address", re.compile(rf"https?://|\bwww\.|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:{_TLD})\b", re.I)),
     ("a file path", re.compile(r"(?:^|[\s(\[\"'])(?:~|\.\.?)?/[\w.\-]+/"     # /web/themes/, ~/Sites/
@@ -102,34 +107,88 @@ _NOTE_CHECKS = [
                                           r"|\b(?:sk|pk|ghp|gho|ghs|github_pat|xox[abpr]|AKIA|eyJ)[\w\-]{8,}", re.I)),
     ("code or a log", re.compile(r"[`{}<>=\\]|\$[A-Za-z_{(]|::|->|\(\)|Traceback|SQLSTATE|Stack trace|Uncaught"
                                  r"|\w+(?:Exception|Error)\b")),
-    ("a tool's name", re.compile(r"\b(?:claude|pulsar|agents?|anthropic|chatgpt|gpt|openai|codex|copilot|llm)\b", re.I)),
-    # an amount of money: a currency sign or code next to a number, or a number of dollars, euros, cents
+    # a tool's name, also inside an identifier (pulsar_log, ClaudeCode), any MCP tool's (mcp__…) and any lower-case
+    # snake_case name (create_resource): an instruction to call a tool reads like one
+    ("a tool's name", re.compile(r"(?<![^\W\d_])(?:claude|pulsar|anthropic|chatgpt|openai|codex|copilot)"
+                                 r"|(?<![^\W\d_])(?:agents?|gpt|llm)(?![^\W\d_])|mcp__"
+                                 r"|\b(?-i:[a-z][a-z0-9]*(?:_[a-z0-9]+)+)\b", re.I)),
+    # an amount of money: a currency sign or code next to a number, or a number of dollars, euros, cents, in digits or
+    # in words ("five hundred dollars", "two thousand bucks", "$ two thousand")
     ("a money amount", re.compile(r"[$€£¥₴₹]\s?\d|\d\s?[$€£¥₴₹]"
                                   r"|\b(?:USD|CAD|EUR|GBP|UAH|AUD|NZD|CHF|JPY|INR)\s?[$€£]?\d"
                                   r"|\d(?:[\d.,]*\d)?\s?(?:[kKmMbB]\s?)?(?:USD|CAD|EUR|GBP|UAH|AUD|NZD|CHF|JPY|INR)\b"
-                                  r"|\d(?:[\d.,]*\d)?\s?(?:[kKmM]\s)?(?:dollars?|bucks|euros?|cents|hryvni?as?)\b", re.I)),
+                                  r"|\d(?:[\d.,]*\d)?\s?(?:[kKmM]\s)?(?:dollars?|bucks|euros?|cents|hryvni?as?)\b"
+                                  rf"|\b{_NUMBER_WORD}\b(?:[\s-]+\w+){{0,3}}?[\s-]+{_CURRENCY_WORD}\b(?!\s+signs?\b)"
+                                  rf"|[$€£¥₴₹]\s?{_NUMBER_WORD}\b", re.I)),
     ("how the time was spent", re.compile(r"\b(?:in parallel|overlap\w*|run time|time entr\w*|unattended|while away"
                                           r"|moved down|time (?:logged|tracked|counted))\b", re.I)),
 ]
 _SENTENCE_END = re.compile(r"[.!?]+(?=\s+[A-Z0-9\u00c0-\u024f]|\s*$)")
 
+# Characters that draw nothing or reorder what is around them: control, format (direction marks and overrides,
+# zero-width), unassigned, private and surrogate code points, line and paragraph separators, and the fillers and
+# variation selectors that show as nothing (Hangul fillers U+115F, U+1160, U+3164, U+FFA0; the blank Braille cell
+# U+2800; the combining grapheme joiner U+034F; U+17B4, U+17B5, U+180E; U+FE00-U+FE0F, U+E0100-U+E01EF).
+BLANK = set("\u115f\u1160\u3164\uffa0\u2800\u034f\u17b4\u17b5\u180e")
+
+
+def visible(c: str) -> bool:
+    if unicodedata.category(c) in ("Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp") or c in BLANK:
+        return False
+    return not (0xFE00 <= ord(c) <= 0xFE0F or 0xE0100 <= ord(c) <= 0xE01EF)
+
+
+def look_alike(text: str) -> bool:
+    """Letters that pass for others: fullwidth and halfwidth forms (＄, Ｃｌａｕｄｅ), mathematical and enclosed
+    letters (𝐂𝐥𝐚𝐮𝐝𝐞, Ⓒ), or a word that mixes Latin letters with Cyrillic or Greek ones (Сlaude with a Cyrillic С)."""
+    if any(0xFF00 <= ord(c) <= 0xFFEF or 0x1D400 <= ord(c) <= 0x1D7FF or 0x2460 <= ord(c) <= 0x24FF for c in text):
+        return True
+    for word in re.findall(r"[^\W\d_]+", text):
+        scripts = {unicodedata.name(c, "?").split(" ")[0] for c in word if c.isalpha()}
+        if "LATIN" in scripts and scripts & {"CYRILLIC", "GREEK"}:
+            return True
+    return False
+
+
+def fold(text: str) -> str:
+    """The text as the checks read it: compatibility forms as plain letters (NFKC: fullwidth Ｃ is C, ² is 2) and
+    accents taken off ("Cláude" is Claude), so a look-alike spelling cannot slip past a word the checks look for."""
+    t = unicodedata.normalize("NFKD", str(text or ""))
+    return unicodedata.normalize("NFKC", "".join(c for c in t if unicodedata.category(c) != "Mn")).translate(_LOOKS)
+
+
+_LOOKS = str.maketrans("\u3002\u2215\u2044\u29f8", ".///")  # an ideographic full stop and slashes that NFKC keeps
+
+
+def text_problem(text: str):
+    """Why a text written for Productive (a note, a task's title or description line) may not go, or None: a
+    character nobody sees, a look-alike letter, or any of _NOTE_CHECKS, read on the folded text."""
+    if not all(visible(c) for c in text):
+        return "a character nobody sees"
+    if look_alike(text):
+        return "a look-alike character"
+    folded = fold(text)
+    for why, rx in _NOTE_CHECKS:
+        if rx.search(folded):
+            return why
+    return None
+
 
 def guard_note(note) -> tuple:
     """(the note, None) when a drafted note may be offered, else ("", why). Productive can copy a note into a client's
-    invoice, so a draft with a path, a web address, something like a token, code, a tool's name, a remark on how the
-    time was spent, more than two sentences, or a character nobody sees (a control or format character: an escape,
-    a direction override, a zero-width space, which could hide or reorder words) is dropped whole."""
+    invoice, so a draft with a path, a web address, something like a token, code, a tool's name, a sum of money, a
+    remark on how the time was spent, more than two sentences, a character nobody sees (a control or format character,
+    a filler: an escape, a direction override, a zero-width space, which could hide or reorder words) or a look-alike
+    letter is dropped whole. The checks read the text folded (NFKC, no accents), so ｃｌａｕｄｅ or Cláude count."""
     text = re.sub(r"\s+", " ", str(note or "")).strip().strip('"\u201c\u201d').strip()
     if not text:
         return "", None
     if len(text) > NOTE_MAX + 20:
         return "", "too long"
-    if any(unicodedata.category(c) in ("Cc", "Cf") for c in text):
-        return "", "a character nobody sees"
-    for why, rx in _NOTE_CHECKS:
-        if rx.search(text):
-            return "", why
-    if len(_SENTENCE_END.findall(text)) > 2:
+    why = text_problem(text)
+    if why:
+        return "", why
+    if len(_SENTENCE_END.findall(fold(text))) > 2:
         return "", "more than two sentences"
     return text, None
 

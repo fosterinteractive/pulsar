@@ -120,14 +120,19 @@ async function openNewTask() {
   fillProjects(r);
   if (f.project.value) loadPlaces();
   if (!CONFIG?.likely?.askClaude || !draft.repo || draft.from === 'meeting' || s == null) return;
-  // with the Claude Code switch on: Claude (Haiku unless chosen) drafts from the session (typed, Claude's replies), commits
-  taskDrafting = true; $('#task-draft-hint').classList.add('drafting');
-  $('#task-draft-hint').innerHTML = esc((DRAFT_FROM[draft.from] || '') + ' Claude is drafting a better one…');
+  // with the Claude Code switch on: Claude (Haiku unless chosen) drafts from the session (typed, Claude's replies), commits.
+  // Create waits for it: a draft that came in while the button could be clicked would put text nobody read into
+  // Productive with that click. After a change, the button stays off a second more.
+  const save = $('#task-save');
+  taskDrafting = true; save.disabled = true; $('#task-draft-hint').classList.add('drafting');
+  $('#task-draft-hint').innerHTML = esc((DRAFT_FROM[draft.from] || '') + ' Claude is drafting a better one; Create waits for it…');
   const c = await postJSON('/api/task/draft', {date, s, e, claude: true, projectName: f.project.selectedOptions[0]?.dataset.name || ''});
   taskDrafting = false; $('#task-draft-hint').classList.remove('drafting');
   if (mine !== taskOpened || !taskDlg.open) return;
-  if ((c.title || c.description) && !(taskTyped.title && taskTyped.description)) fillDraft(c, CLAUDE_MARK.split('<span')[0] + esc('Drafted by Claude from this session and your commits: check it. A client may see tasks.'));
+  const changed = (c.title || c.description) && !(taskTyped.title && taskTyped.description);
+  if (changed) fillDraft(c, CLAUDE_MARK.split('<span')[0] + esc('Drafted by Claude from this session and your commits: check it. A client may see tasks.'));
   else fillDraft({}, esc(c.error ? `No draft from Claude: ${c.error}` : (DRAFT_FROM[draft.from] || '') + (c.why ? ` (Claude's draft: ${c.why}.)` : '')));
+  setTimeout(() => { if (mine === taskOpened) save.disabled = false; }, changed ? 1000 : 0);
 }
 
 function fillProjects(r) {
