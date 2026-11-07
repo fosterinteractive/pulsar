@@ -6,7 +6,7 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
-## Unreleased
+## 1.6.0 (2026-11-07)
 - Report: a Today range, and it opens on this week.
 - In Pulsar's window: 12-hour times when the Mac uses them (fields take "2:30 pm"), dates in the Mac's region order, weeks from its first weekday.
 - In Pulsar's window: Settings has the Dock badge, the end-of-day reminder and Open at Login; the Mac's accent colour; no wordmark or ✕ the window already gives.
