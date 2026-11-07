@@ -74,6 +74,50 @@ class IsolationTest(unittest.TestCase):
             os.execv(sys.executable, [sys.executable, "-c", "pass"])
         self.assertEqual(seen, ["os.execv"])
 
+    def test_git_sees_no_repository_or_settings_of_the_persons(self):
+        """git exports GIT_DIR into hooks: a hook that ran the tests would point every git command at the real
+        repository, and --global at the real ~/.gitconfig (the fourth review, D1)."""
+        self.assertEqual([k for k in os.environ if k.startswith("GIT_") and k not in ("GIT_CONFIG_NOSYSTEM",
+                                                                                     "GIT_CONFIG_GLOBAL")], [])
+        self.assertEqual(os.environ["GIT_CONFIG_NOSYSTEM"], "1")
+        scratch = os.path.realpath(isolation.SCRATCH)
+        self.assertTrue(os.path.realpath(os.environ["GIT_CONFIG_GLOBAL"]).startswith(scratch + os.sep))
+        git = __import__("shutil").which("git")
+        if git:
+            got = subprocess.run([git, "config", "--global", "--show-origin", "--list"], capture_output=True, text=True)
+            self.assertNotIn(os.path.expanduser("~" + os.environ.get("USER", "")), got.stdout.replace(scratch, ""))
+
+    def test_a_blocked_program_is_refused_by_any_route(self):
+        """Through env, a shell, os.system and os.posix_spawn too. Paths that do not exist: a guard that failed would
+        start nothing real."""
+        routes = [lambda: subprocess.run(["/usr/bin/env", "FOO=1", "/nonexistent/claude", "-p", "x"]),
+                  lambda: subprocess.run(["/bin/sh", "-c", "cd /; /nonexistent/security -w"]),
+                  lambda: subprocess.run(["/bin/bash", "-lc", "echo $(/nonexistent/osascript -e x)"]),
+                  lambda: subprocess.run("true && /nonexistent/open /", shell=True),
+                  lambda: subprocess.run(["x"], executable="/nonexistent/claude"),
+                  lambda: os.system("/nonexistent/claude -p x"),
+                  lambda: os.posix_spawn("/nonexistent/security", ["security"], dict(os.environ)),
+                  lambda: os.posix_spawnp("claude", ["claude"], dict(os.environ))]
+        with isolation.refused() as seen:
+            for route in routes:
+                with self.assertRaises(isolation.RealWorld):
+                    route()
+        self.assertEqual(len(seen), len(routes))
+        self.assertEqual(isolation._programs(["git", "-C", "/tmp", "commit", "-m", "open the claude door"]), ["git"])
+
+    def test_no_name_lookup_no_datagram_and_no_unix_socket_outside(self):
+        with isolation.refused() as seen:
+            for lookup in (lambda: socket.gethostbyname("api.productive.io"), lambda: socket.gethostbyaddr("1.1.1.1"),
+                           lambda: socket.getnameinfo(("1.1.1.1", 443), 0)):
+                with self.assertRaises(isolation.RealWorld):
+                    lookup()
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp, self.assertRaises(isolation.RealWorld):
+                udp.sendto(b"x", ("127.0.0.1", 9))
+            with socket.socket(socket.AF_UNIX) as unix, self.assertRaises(isolation.RealWorld):
+                unix.connect("/var/run/mDNSResponder")
+        self.assertEqual(len(seen), 5)
+        self.assertEqual(socket.gethostbyname("localhost"), "127.0.0.1")
+
     def test_every_test_module_imports_this_guard_before_anything_else(self):
         """Run alone (python3 -m unittest tests.test_x), a module is guarded only by its own import of isolation, which
         must come before it imports Pulsar or does anything: a temporary folder, an environment variable."""
