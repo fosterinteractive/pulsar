@@ -380,6 +380,8 @@ header { flex-wrap: wrap; row-gap: 8px; }
 .ver.has-update:hover { color: #fff; filter: brightness(1.08); }
 #updates .kv { font-size: 12.5px; }
 .btnrow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.btnrow[hidden] { display: none; }
+#aw-setup .btnrow { margin: 4px 0 12px; }
 .btn.primary { background: var(--text); color: var(--bg); }
 .btn.primary:hover { background: var(--text); opacity: .88; }
 .state .btn { margin-top: 8px; pointer-events: auto; }

@@ -8,7 +8,7 @@
 - Git sees no repository, global or system settings of the person's: every GIT_* variable is dropped (git exports
   GIT_DIR into hooks, so a hook that runs the tests would otherwise point them at the real repository), and its
   global settings file is one in the scratch folder.
-- The keychain (`security`), Claude Code (`claude`), `osascript` and `open` cannot be started: not directly, not
+- The keychain (`security`), Claude Code (`claude`), `osascript`, `open` and `pkill` cannot be started: not directly, not
   through `env`, `sh -c` or shell=True, os.system or os.posix_spawn; os.exec* not at all.
 - Nothing leaves this computer, and on it a connection goes only to a port this process opened itself: never the
   real Pulsar, a Preview or ActivityWatch. No name is looked up but this computer's own, no UDP datagram goes to a
@@ -46,7 +46,7 @@ os.environ.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.path.join(SCRATC
 if "pulsar" in sys.modules:  # its paths are read once, at import: too late to move them
     raise RuntimeError("tests/isolation.py must be imported before anything from pulsar/")
 
-BLOCKED = {"security", "claude", "osascript", "open"}
+BLOCKED = {"security", "claude", "osascript", "open", "pkill"}
 LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 TRIED: list = []      # what a test tried and was refused, for the report at the end of the run
 _expected: list = []  # while refused() is active: refusals a test provokes on purpose

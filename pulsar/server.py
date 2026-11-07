@@ -1,7 +1,8 @@
 """The local web server: the page, its files, and a small JSON API. Listens on 127.0.0.1 only.
 
 Reads go to the trackers, Productive and Google Calendar. It writes your settings and caches (owner-only files), the
-tokens (keychain or a private file), and a time entry in Productive only when you log one in the page. A POST must carry the X-Pulsar header, which a page on another site cannot
+tokens (keychain or a private file), a time entry in Productive only when you log one in the page, and ActivityWatch's
+AFK timeout only when you click Fix in Settings (awsetup.py). A POST must carry the X-Pulsar header, which a page on another site cannot
 send without the browser asking this server first, and this server never says yes.
 """
 
@@ -21,7 +22,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, appupdate, askclaude, calendar, claudelink, claudeuses, config, daymarks, dayplan, dayreview, flags, learn, likely, logbook, mcptools, newtask, productive, ranges, report, sessions, trackers, updater, names
+from . import __version__, appupdate, askclaude, awsetup, calendar, claudelink, claudeuses, config, daymarks, dayplan, dayreview, flags, learn, likely, logbook, mcptools, newtask, productive, ranges, report, sessions, trackers, updater, names
 from .mcp import whoami_proof
 
 UPDATER = updater.Updater()
@@ -188,6 +189,7 @@ def public_config(s: dict) -> dict:
         "targetMinutes": config.target_minutes(s), "targetHours": s["target_hours"], "personDayHours": s["person_day_hours"],
         "personalPatterns": s["personal_patterns"], "activitywatchUrl": s["activitywatch_url"], "rules": s["rules"],
         "roundTo": s["round_to"], "awayAfter": config.away_after(s),
+        "activitywatch": awsetup.status(config.away_after(s)),  # its AFK timeout, read from its file; no program started
         "update": {**UPDATER.public(), "skip": s["update_skip"], "asked": s["update_asked"]},
         "errors24h": sum(1 for e in logbook.read(1) if e["kind"] == "error"),
         "likely": {"setting": s["likely"], "available": likely.available(), "enabled": likely.enabled(s),
@@ -312,6 +314,27 @@ def away_minutes(v) -> int:
     if isinstance(v, bool) or v not in config.AWAY_AFTER:
         raise ValueError("Away after is 10, 15, 20 or 30 minutes.")
     return int(v)
+
+
+def api_aw_fix(body: dict) -> dict:
+    """Settings' Fix: ActivityWatch's AFK timeout set to "Away after" (`minutes`, saved too, so the two agree), then
+    ActivityWatch restarted (awsetup.fix). The page's session only (key_refusal); refused in a test or read-only run."""
+    minutes = away_minutes(body.get("minutes"))
+    s = config.load()
+    res = awsetup.fix(minutes, s["activitywatch_url"])
+    if res["changed"] or res["ok"]:
+        s = config.update({"away_after": minutes})
+    if res["changed"] and not res["ok"]:  # the file changed, the restart did not finish: worth a line in Logs
+        logbook.record("activitywatch", res["message"], kind="warning", once_per=0)
+    return {"result": res, "awayAfter": config.away_after(s), "activitywatch": awsetup.status(config.away_after(s))}
+
+
+def api_aw_login(body: dict) -> dict:
+    """Whether ActivityWatch opens at login, or (`add`) adding it, through System Events (awsetup.check_login,
+    add_login). The page's session only; refused in a test or a read-only run."""
+    res = awsetup.add_login() if body.get("add") is True else awsetup.check_login()
+    s = config.load()
+    return {"result": res, "awayAfter": config.away_after(s), "activitywatch": awsetup.status(config.away_after(s))}
 
 
 def productive_rows(d0: str, d1: str, s: dict, bulk: bool = False) -> tuple:
@@ -1714,8 +1737,8 @@ def key_refusal(path: str, body: dict = None):
     Pulsar, and Pulsar in Claude Code (mcp.py) asks the server-side tools (POST /api/mcp/<tool>, mcptools.py), whose
     answers are already cut down and whose only write is pulsar_preview's code with pulsar_log. Nothing else: no read
     of the day as the page sees it, no POST /api/log, no change or delete of an entry, no settings, no update, no Ask
-    Claude. A program of this user can still do more by other means (HOW-IT-WORKS.md, Security); this closes the
-    plain curl."""
+    Claude, no change to ActivityWatch. A program of this user can still do more by other means (HOW-IT-WORKS.md,
+    Security); this closes the plain curl."""
     if path == "/api/quit" or MCP_ROUTE.fullmatch(path):
         return None
     return KEY_ONLY
@@ -1946,6 +1969,10 @@ class Handler(BaseHTTPRequestHandler):
                                                       undone=body.get("undone") is True))
             if urlparse(self.path).path == "/api/dayplan/review":
                 return self.send_json(api_dayplan_review(body))
+            if urlparse(self.path).path == "/api/activitywatch/fix":  # Settings: ActivityWatch's AFK timeout
+                return self.send_json(api_aw_fix(body))
+            if urlparse(self.path).path == "/api/activitywatch/login":  # Settings: ActivityWatch in Login Items
+                return self.send_json(api_aw_login(body))
             if urlparse(self.path).path == "/api/calendar/connect":
                 url = calendar.start(self.server.server_address[1])
                 try:

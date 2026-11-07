@@ -19,6 +19,8 @@ function fillSettings(c) {
   f.target_hours.value = c.targetHours ?? '';
   f.target_hours.placeholder = c.personDayHours ? `${c.personDayHours}, from Productive` : '8';
   f.round_to.value = String(c.roundTo || 5);
+  f.away_after.value = String(c.awayAfter || 15);
+  paintAw(c.activitywatch);
   f.personal_patterns.value = (c.personalPatterns || []).join('\n');
   f.activitywatch_url.value = c.activitywatchUrl || '';
   f.likely.value = c.likely.setting === 'off' ? 'off' : 'auto';
@@ -202,6 +204,7 @@ function openSettings(tab) {
     paintUpdate(c.update);
     paintCalendar(c);
     paintSpent(c.claude?.uses || []);
+    paintAw(c.activitywatch);  // its file may have changed since the page loaded
   });
   const msg = $('#settings-msg'); msg.textContent = ''; msg.className = 'msg';
   const zones = $('#zones');
@@ -210,6 +213,58 @@ function openSettings(tab) {
   }
   dlg.showModal();
 }
+
+/* Away after, and ActivityWatch's own AFK timeout and Login Items (awsetup.py). ActivityWatch writes a pause only
+   after its timeout, so one longer than Away after hides the shorter pauses: Fix sets it to Away after (and saves
+   Away after) and restarts ActivityWatch. Login Items are asked through System Events, only on a click: the first
+   time macOS asks whether Pulsar may. Shown when ActivityWatch is on this Mac. */
+let awState = null;
+const awMins = s => { const m = s / 60; return `${Number.isInteger(m) ? m : m.toFixed(1)} minute${m === 1 ? '' : 's'}`; };
+function paintAw(a = awState) {
+  awState = a;
+  const box = $('#aw-setup');
+  box.hidden = !a?.installed;
+  if (!a?.installed) return;
+  const m = +form.elements.away_after.value || 15, st = $('#aw-timeout'), long = a.seconds != null && a.seconds > m * 60;
+  st.classList.toggle('warn', !!(a.problem || long));
+  st.textContent = a.problem ? `Pulsar could not read ActivityWatch's AFK timeout in ${a.file}: ${a.problem}. It changes nothing there.`
+    : long ? `ActivityWatch counts you as away only after ${awMins(a.seconds)}, so pauses from ${m} minutes to ${awMins(a.seconds)} are not in its data.`
+    : a.seconds === m * 60 ? `ActivityWatch counts you as away after ${awMins(a.seconds)} too.`
+    : `ActivityWatch counts you as away after ${awMins(a.seconds)}${a.fromFile ? '' : ' (its default)'}: a pause shorter than ${m} minutes between two stretches of work counts as work.`;
+  $('#aw-fix-row').hidden = $('#aw-fix-hint').hidden = !long;
+  $('#aw-fix').textContent = `Fix: set ActivityWatch to ${m} minutes`;
+  const on = a.login, login = $('#aw-login');
+  login.classList.toggle('warn', on === false);
+  login.textContent = on === true ? 'ActivityWatch opens when you log in.'
+    : on === false ? 'ActivityWatch is not in your Login Items: after a restart of the Mac it records nothing until you open it.'
+    : 'Is ActivityWatch in your Login Items? Without it, it records nothing after a restart of the Mac until you open it.';
+  $('#aw-login-check').hidden = on === true;
+  $('#aw-login-add').hidden = on !== false;
+  $('#aw-login-row').hidden = on === true;
+  $('#aw-login-hint').hidden = on === true;
+}
+form.elements.away_after.addEventListener('change', () => paintAw());
+async function awPost(path, body, busy) {
+  const msg = $('#aw-msg'), btns = [...document.querySelectorAll('#aw-setup button')];
+  for (const b of btns) b.disabled = true;
+  msg.classList.remove('warn'); msg.textContent = busy;
+  const r = await postJSON(path, body);
+  for (const b of btns) b.disabled = false;
+  if (r.error) { msg.classList.add('warn'); msg.textContent = r.error; return null; }
+  if (CONFIG) { CONFIG.activitywatch = r.activitywatch; CONFIG.awayAfter = r.awayAfter; }
+  paintAw(r.activitywatch);
+  msg.classList.toggle('warn', !r.result.ok);
+  // a check that worked is said by the Login Items line itself
+  msg.textContent = r.result.ok && path.endsWith('/login') && !body.add ? '' : r.result.message;
+  return r;
+}
+$('#aw-fix').onclick = async () => {
+  const r = await awPost('/api/activitywatch/fix', {minutes: +form.elements.away_after.value},
+    'Changing ActivityWatch’s timeout and restarting it. This can take up to a minute.');
+  if (r && (r.result.changed || r.result.ok)) reloadView();  // Away after is saved with it
+};
+$('#aw-login-check').onclick = () => awPost('/api/activitywatch/login', {add: false}, 'Asking macOS. Answer its question if it asks one.');
+$('#aw-login-add').onclick = () => awPost('/api/activitywatch/login', {add: true}, 'Adding ActivityWatch to your Login Items.');
 
 /* "Ask before any Claude Code session changes Productive" adds its rules only with the switch on (claudelink.py):
    off, the box cannot be ticked, and one ticked earlier says it waits for the switch */
@@ -298,6 +353,7 @@ async function saveSettings(extra = {}) {
   const body = {
     productive_source: f.productive_source.value, org_id: f.org_id.value.trim(), person_id: f.person_id.value.trim(),
     timezone: f.timezone.value.trim(), target_hours: f.target_hours.value.trim(), round_to: +f.round_to.value,
+    away_after: +f.away_after.value,
     personal_patterns: f.personal_patterns.value,
     activitywatch_url: f.activitywatch_url.value.trim(), likely: f.likely.value, ask_claude: f.ask_claude.checked,
     claude_models: Object.fromEntries([...document.querySelectorAll('#claude-uses select')].map(x => [x.dataset.use, x.value])),

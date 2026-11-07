@@ -169,6 +169,22 @@
           <p class="hint">One word per line. A window that contains one counts as personal, not work.</p>
           <label class="field"><span>ActivityWatch address</span><input name="activitywatch_url" placeholder="http://localhost:5600"></label>
         </section>
+        <section data-k="away after afk timeout break breaks pause idle sitting activitywatch login items open at login autostart restart" id="away-sec">
+          <h3>Away</h3>
+          <label class="field"><span>Away after</span>
+            <select name="away_after"><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="20">20 minutes</option><option value="30">30 minutes</option></select></label>
+          <p class="hint">This long without typing or moving the mouse is time away, and it ends a sitting. A shorter pause between two stretches of work counts as work.</p>
+          <div id="aw-setup" hidden>
+            <p class="status" id="aw-timeout"></p>
+            <p class="hint" id="aw-fix-hint" hidden>Fix changes that one line in ActivityWatch's file and keeps a copy of the file next to it, then restarts ActivityWatch. Days already recorded keep their breaks: the new timeout applies to new data only.</p>
+            <div class="btnrow" id="aw-fix-row" hidden><button type="button" class="btn primary" id="aw-fix"></button></div>
+            <p class="status" id="aw-login"></p>
+            <p class="hint" id="aw-login-hint">Pulsar asks macOS through System Events. The first time, macOS asks whether Pulsar may control System Events (Privacy &amp; Security, Automation): allow it, or nothing can be checked or added.</p>
+            <div class="btnrow" id="aw-login-row"><button type="button" class="btn bordered" id="aw-login-check">Check Login Items</button>
+              <button type="button" class="btn primary" id="aw-login-add" hidden>Open ActivityWatch at login</button></div>
+            <p class="hint" id="aw-msg" role="status" aria-live="polite"></p>
+          </div>
+        </section>
       </div>
       <div role="tabpanel" id="p-claude" aria-labelledby="t-claude" hidden>
         <section data-k="likely column ask claude sessions sonnet haiku opus model models ai suggestions mcp connect notes new task draft log from a session deny sandbox account plan cost usage productive ask rules">
