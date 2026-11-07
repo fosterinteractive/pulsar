@@ -42,6 +42,7 @@ ID = re.compile(r"^[0-9]{1,12}$")
 SESSION = re.compile(r"^[0-9a-f]{8}(?:-?[0-9a-f]{4}){0,3}(?:-?[0-9a-f]{12})?$")
 CODE = re.compile(r"^[0-9a-f]{16}$")  # pulsar_log's code: exactly as pulsar_preview gave it
 CONFIRM_FOR = 600  # seconds a preview's code stays good
+LOG_BUDGET = 60    # seconds after which pulsar_log starts no new entry: Claude Code hears back what was written in time
 MOST_ENTRIES = 40
 NOTE_MOST = 200    # characters in a note written from Claude Code (askclaude.NOTE_MAX)
 DAYS_BACK = 120    # the oldest day a tool reads or logs: as far back as Pulsar keeps copies of days
@@ -1122,7 +1123,9 @@ def pulsar_preview(args: dict) -> dict:
 
 def pulsar_log(args: dict) -> dict:
     """Writes what a pulsar_preview code holds, one entry at a time through api_log (a fresh read of the day, the
-    overlap check, the write lock, the journal), stopping at the first that is not logged, as Log the day does."""
+    overlap check, the write lock, the journal), stopping at the first that is not logged, as Log the day does. After
+    LOG_BUDGET seconds it starts no new entry: the rest come back "not sent", with what was written, well before the
+    MCP server stops waiting (mcp.LOG_WAIT), so Claude Code never hears "not answering" while entries are written."""
     if getattr(_ctx, "client", "") != "claude-code":
         raise ToolError("pulsar_log works only in Claude Code, which asks the person before every write. Nothing was "
                         "written. Log from Pulsar's window instead: Log the day, or the log dialog.")
@@ -1148,9 +1151,12 @@ def pulsar_log(args: dict) -> dict:
         if blocked:
             raise ToolError(error_out(blocked))
         _pending.pop(code)
-    date, results = held["date"], []
+    date, results, began, late = held["date"], [], time.time(), False
     unclear = " Check the Logged column; Pulsar's journal will not send it twice."
     for e in held["entries"]:
+        if results and time.time() - began > LOG_BUDGET:  # Productive is slow today: stop here and say so
+            late = True
+            break
         try:
             got = post("/api/log", {"date": date, "start": e["start"], "minutes": e["minutes"], "taskId": e["taskId"],
                                     "serviceId": e["serviceId"], "note": e["note"], "run": held["run"],
@@ -1180,7 +1186,9 @@ def pulsar_log(args: dict) -> dict:
         results.append(_preview(e, {"status": "not logged", "why": why}))
         break  # the first one that is not logged stops the run, as Log the day does
     for e in held["entries"][len(results):]:  # after a stop: never sent
-        results.append(_preview(e, {"status": "not sent"}))
+        results.append(_preview(e, {"status": "not sent", **({"why": (
+            f"Productive was slow, so Pulsar started no new entry after {LOG_BUDGET} seconds. This one was not sent: "
+            "preview it again and ask the person.")} if late else {})}))
     done = sum(1 for r in results if r["status"] == "logged")
     return {"date": date, "written": done, "of": len(held["entries"]), "results": results,
             "stopped": done < len(held["entries"]),

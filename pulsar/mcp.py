@@ -126,8 +126,17 @@ def _short(text, n: int = 300) -> str:
     return text.splitlines()[0][:n] if text else ""
 
 
+LOG_WAIT = 300  # seconds pulsar_log waits: Pulsar starts no entry after a minute (mcptools.LOG_BUDGET), and the last
+               # one can still take a fresh read of the day, the write lock and a create of up to a minute each
+NOT_KNOWN = ("Not known: Pulsar gave no clear answer in time, and it may have written some of these entries, or still "
+             "be writing them. Do not log them again: read pulsar_day for this date (or ask the person to look at "
+             "Pulsar's Logged column) to see what was written, then tell the person.")
+
+
 def _request(path: str, params: dict | None = None, body: dict | None = None, key: str | None = None,
-             timeout: float = 120) -> dict:
+             timeout: float = 120, writes: bool = False) -> dict:
+    """GET or POST to Pulsar; {"error", "_status"} for an HTTP error. `writes`: the request may write (pulsar_log),
+    so an answer that never came means "not known", never "not answering": Pulsar may be writing still."""
     url = f"http://127.0.0.1:{_state['port']}{path}" + (f"?{urlencode(params)}" if params else "")
     headers = {"Accept": "application/json"}
     data = None
@@ -150,6 +159,8 @@ def _request(path: str, params: dict | None = None, body: dict | None = None, ke
         return {"error": _short(got.get("error") if isinstance(got, dict) else "") or f"HTTP {exc.code}",
                 "_status": exc.code}
     except (urllib.error.URLError, ConnectionError, TimeoutError, OSError, ValueError) as exc:
+        if writes and not isinstance(getattr(exc, "reason", exc), ConnectionRefusedError):  # it was sent
+            raise ToolError(NOT_KNOWN)
         raise ToolError(f"Pulsar is not answering on 127.0.0.1:{_state['port']}. Open Pulsar, then ask again. "
                         f"({type(getattr(exc, 'reason', exc)).__name__})")
 
@@ -192,10 +203,14 @@ def _caller() -> dict:
 def ask(tool: str, args: dict, client: str = "") -> dict:
     """One tool's answer from Pulsar (POST /api/mcp/<tool>), after whoami."""
     key = _verify()
-    got = _request(f"/api/mcp/{tool}", None, {"args": args, "client": client, **_caller()}, key)
+    writes = tool == "pulsar_log"
+    got = _request(f"/api/mcp/{tool}", None, {"args": args, "client": client, **_caller()}, key,
+                   timeout=LOG_WAIT if writes else 120, writes=writes)
     status = got.get("_status")
     if status is None:
         return got
+    if writes and status >= 500:  # a fault in Pulsar after the code was used: some entries may be written
+        raise ToolError(NOT_KNOWN)
     if status == 404:
         raise ToolError("This Pulsar does not answer Pulsar's Claude Code tools: it is older than them. Quit Pulsar "
                         "and open it again, or update it.")
