@@ -6,6 +6,9 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- The warp plays on ↻ (and ⌘R) again, as before 1.6.0.
+
 ## 1.6.1 (2026-11-07)
 - Settings → Time and activity → Away after: 10, 15 (the default), 20 or 30 minutes without input is time away and ends a sitting; a shorter pause between two stretches of work counts as work.
 - Settings checks ActivityWatch's AFK timeout against Away after and fixes a longer one with a click (a copy of its file is kept, ActivityWatch restarts, new data only), and checks and adds ActivityWatch to Login Items.
