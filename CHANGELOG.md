@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- The now line moves every minute, and at midnight (or when the Mac wakes) today becomes the new day.
 - Log the day is the main button while time is unlogged, and "Active, not logged" opens it; one zoom menu, one refresh; the error log moved to Settings → Updates.
 - Log the day lists what is still to log; what is logged folds into one line (To review / All).
 - No more crumbs: entries run up to the entry next to them, and stretches shorter than the rounding step are not marked unlogged.

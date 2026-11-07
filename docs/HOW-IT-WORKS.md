@@ -1291,6 +1291,10 @@ question) and cannot tell when inside it the work happened.
 - **Where a day opens**: today with the now line in the lower third of the view; another day at the start of its
   first long run of work (activity, entries and meetings less than 15 minutes apart, 30 minutes or more of them), so
   a stray minute at 00:30 does not decide it.
+- **The clock**: the now line moves every minute. At midnight, or when the window comes back on a new day (a Mac
+  that slept), a person who was on today goes to the new today; another day stays where it is. Back in the window
+  after five minutes or more, today is read again. A move waits while a dialog is open or Log the day is writing
+  (`tickClock` in `day.js`). Besides that, today is read again every hour.
 - **The week** (under the day's name): "This week: X h logged of Y h active", Monday to Friday up to today, from
   `/api/report` for that week (kept 15 minutes) with the day on screen as its Logged column shows it now. A click
   lists each day; a day opens it. Where the header is narrow it reads "Week: X h of Y h".

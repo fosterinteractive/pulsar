@@ -711,6 +711,32 @@ $('#source-select').addEventListener('change', ev => {
   getJSON(`/api/activity?date=${d}&source=${state.source}`).then(x => { if (mine()) { state.act = x; render(); } });
   loadRepeats();  // the call is looked for in the tracker shown
 });
+/* The clock. Every minute the now line moves to the current minute. At midnight, or when the Mac wakes on another
+   day, a person who was looking at today goes to the new today; another day stays where it is. Coming back after five
+   minutes or more away from the window, today is read again (the Mac may have slept). A move waits while a dialog is
+   open or Log the day is writing, and is tried again the next minute. */
+let shownToday = todayLocal(), hiddenAt = 0;
+function tickClock(back = false) {
+  const today = todayLocal();
+  if (today !== shownToday) {
+    if (state.view === 'day' && state.date === shownToday) {
+      if (document.querySelector('dialog[open]') || (typeof LD !== 'undefined' && LD.writing)) return;
+      shownToday = today; go(today); return;
+    }
+    shownToday = today;
+  }
+  if (state.view !== 'day' || state.date !== today) return;
+  const now = $('#grid .now');
+  if (now) now.style.top = `${nowMin() * ppmOf(state.zoom)}px`; else render();
+  if (back) load({keepScroll: true});
+}
+setInterval(() => { if (document.visibilityState === 'visible') tickClock(); }, 60 * 1000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+  const away = hiddenAt ? Date.now() - hiddenAt : 0;
+  hiddenAt = 0;
+  tickClock(away >= 5 * 60 * 1000);
+});
 // today: refresh everything once an hour; the ↻ buttons do it on demand
 setInterval(async () => {
   if (state.view !== 'day' || state.date !== todayLocal() || document.visibilityState !== 'visible') return;
