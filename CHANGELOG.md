@@ -7,6 +7,8 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- A call that runs over its meeting (or starts early) is that meeting in Log the day: a 10:00-10:30 meeting whose call ended at 10:55 is one 55-minute entry, not 30 minutes and a call to pick a task for; meetings back to back each keep their own time.
+- A click outside a dialog closes it, as its ✕ does (Settings still asks about unsaved changes); a click outside Log the day's task picker closes it too.
 - If Claude Code changes how it keeps its Productive connection, Pulsar says it cannot read it (update Pulsar, or use a token) instead of failing with an error.
 - The warp in Pulsar's window no longer shows the page behind it: during an update the new version showed round the edges and through the middle while it loaded. Needs the new app (Update and restart).
 - Testing Pulsar counts as work on Pulsar: its own window, while a session in Pulsar's repository is at work, is that session's time in the Likely column instead of time spent logging (on one day, 80 more minutes in front and 71 fewer in the background).

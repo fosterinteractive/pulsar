@@ -385,3 +385,20 @@ function makeTabbable(root) {
 makeTabbable(document);
 new MutationObserver(list => { for (const m of list) for (const n of m.addedNodes) if (n.nodeType === 1) makeTabbable(n); })
   .observe(document.body, {childList: true, subtree: true});
+
+/* A click outside a dialog, on its backdrop, closes it as its ✕ does (so Settings still asks about unsaved changes);
+   a click outside Log the day's task picker closes it. Only when the press began outside too: a drag that selects
+   text in a field and ends outside closes nothing. The sign-in notice stays. */
+let pressedOutside = null;
+const outsideOf = (el, ev) => { const r = el.getBoundingClientRect(); return ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom; };
+document.addEventListener('pointerdown', ev => {
+  pressedOutside = ev.target instanceof HTMLDialogElement && ev.target.open && outsideOf(ev.target, ev) ? ev.target : null;
+  const pk = document.getElementById('ld-pk');
+  if (pk && !pk.hidden && !pk.contains(ev.target) && !ev.target.closest?.('dialog[open]')) pk.hidden = true;
+}, true);
+document.addEventListener('click', ev => {
+  const d = pressedOutside; pressedOutside = null;
+  if (!d || ev.target !== d || !d.open || d.id === 'signin' || !outsideOf(d, ev)) return;
+  const x = d.querySelector('.dh [aria-label="Close"], .dh [data-ld-x]');
+  if (x) x.click(); else d.close();
+});

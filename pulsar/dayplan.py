@@ -616,11 +616,40 @@ def _meetings(d: _Day) -> None:
             attended.append([s, e, i])
         else:
             unattended.append((m, c))
+    # a call that started before its meeting or ran over it is that meeting: the call's free minutes right before and
+    # after it go to it, up to the meeting's own length on each side (beyond that, the rest is a call of its own,
+    # below); the next meeting's minutes are not free, so meetings back to back each keep their own
+    grown: dict = {}  # claim index -> (grew before, grew after): no slack on a side the call already gave it
+    for item in attended:
+        s, e, i = item
+        length = max(1, int(math.ceil(e)) - int(s))
+        for a, b in calls:
+            if _overlap(a, b, s, e) <= 0:
+                continue
+            after, x = [], int(math.ceil(e))
+            while x < min(N, int(math.ceil(b)), int(math.ceil(e)) + length) and owner[x] is None:
+                after.append(x)
+                x += 1
+            before, x = [], int(s) - 1
+            while x >= max(0, int(a), int(s) - length) and owner[x] is None:
+                before.append(x)
+                x -= 1
+            for x in after + before:
+                owner[x] = i
+            if after:
+                item[1] = max(item[1], after[-1] + 1)
+                claims[i]["why"] += f"; the call ran {len(after)} min over"
+            if before:
+                item[0] = min(item[0], before[-1])
+                claims[i]["why"] += f"; the call started {len(before)} min early"
+            was = grown.get(i, (False, False))
+            grown[i] = (was[0] or bool(before), was[1] or bool(after))
+    slack = lambda y, side: 0 if grown.get(y[2], (False, False))[side] else MEETING_SLACK  # noqa: E731
     for a, b in calls:  # what is left of each call once the meetings above have their minutes
         b = max(b, a + 5)
         near = [x for x in attended if _overlap(x[0] - MEETING_SLACK, x[1] + MEETING_SLACK, a, b) > 0]
         free = [x for x in range(int(a), min(N, int(math.ceil(b)))) if owner[x] is None
-                and not any(y[0] - MEETING_SLACK <= x < y[1] + MEETING_SLACK for y in near)]
+                and not any(y[0] - slack(y, 0) <= x < y[1] + slack(y, 1) for y in near)]
         if len(free) < CALL_MIN:
             continue  # a glance at a call window, or the edges of a meeting already placed
         i, got = claim({"kind": "meeting", "source": "call", "task": None, "conf": "low", "attended": True,

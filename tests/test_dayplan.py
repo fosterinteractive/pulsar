@@ -120,6 +120,26 @@ class PlannerTest(unittest.TestCase):
         self.assertIn("Daily scrum", e["why"])
         self.assertTrue(e["checked"])
 
+    def test_a_call_that_runs_over_its_meeting_is_that_meeting(self):
+        meet = lambda s, e, tid, title: {"s": s, "e": e, "title": title, "uid": title, "declined": False,  # noqa: E731
+                                         "all_day": False, "tasks": [{"taskId": tid, "title": title, "project": "PM",
+                                                                      "n": 5, "of": 6}]}
+        zoom = lambda s, e: work(s, e, app="zoom.us", title="Zoom Meeting")  # noqa: E731
+        # 10:00-10:30 on the calendar, the call until 10:55: one entry of 55 minutes, not 30 and a call to pick a task for
+        p = dayplan.plan(day(items=[zoom(600, 655)], calls=[{"s": 600, "e": 655}],
+                             meetings=[meet(600, 630, "77", "Planning")]), self.ctx)
+        [e] = p["entries"]
+        self.assertEqual((e["taskId"], e["s"], e["minutes"]), ("77", 600, 55))
+        self.assertIn("ran 25 min over", e["why"])
+        # two meetings back to back on one call that ran over: each its own time, the second takes the overrun
+        p = dayplan.plan(day(items=[zoom(600, 675)], calls=[{"s": 600, "e": 675}],
+                             meetings=[meet(600, 630, "77", "Planning"), meet(630, 660, "88", "Review")]), self.ctx)
+        self.assertEqual([(e["taskId"], e["s"], e["minutes"]) for e in p["entries"]], [("77", 600, 30), ("88", 630, 45)])
+        # a call much longer than its meeting: the meeting takes its own length again, the rest is a call of its own
+        p = dayplan.plan(day(items=[zoom(600, 700)], calls=[{"s": 600, "e": 700}],
+                             meetings=[meet(600, 620, "77", "Standup")]), self.ctx)
+        self.assertEqual([(e["taskId"], e["s"], e["minutes"]) for e in p["entries"]], [("77", 600, 40), (None, 640, 60)])
+
     def test_a_calendar_meeting_without_a_call_is_unticked_and_its_idle_part_skipped(self):
         meet = {"s": 600, "e": 660, "title": "Client review", "uid": "u2", "declined": False, "all_day": False,
                 "tasks": [{"taskId": "33", "title": "Reviews", "project": "C", "n": 3, "of": 3}]}

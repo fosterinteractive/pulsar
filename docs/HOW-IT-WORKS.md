@@ -780,7 +780,10 @@ claim wins:
 2. meetings attended: a repeat whose call the tracker saw, a calendar meeting with a call seen, a call with no
    calendar entry. A repeat and a calendar meeting on the same call are one entry (when the repeat covers half of the
    meeting, so a repeat that runs on into the next meeting never swallows it); a Likely row inside a meeting gives
-   it its minutes;
+   it its minutes. A call that started early or ran over is that meeting: its free minutes right before and after
+   go to it, up to the meeting's own length on each side ("the call ran 25 min over" in its why); the next
+   meeting's minutes are not free, so meetings back to back each keep their own, and what is left of a longer call
+   is a call of its own;
 3. Likely rows at their own time, never on away minutes or time spent logging (Pulsar, Productive), in this order
    (parallel work, below): a client's work in front; then a client's agent that ran attended while internal work was
    in front (a **shared** row); then the rest of the work in front. The agents' other background time is noted, never
@@ -1449,7 +1452,7 @@ question) and cannot tell when inside it the work happened.
   `pulsarNative.setNativePrefs` and shown again on each `pulsar:prefs` event: the Dock badge, the end-of-day reminder
   and its time, and Open at Login (when macOS needs approval, a button opens Login Items; on macOS 12, the steps to
   do it by hand). The page leaves out what the window does itself: the wordmark and the theme button. Every dialog
-  keeps its ✕ (Escape and ⌘W close them too); buttons keep the arrow cursor, and the main button and focus rings take the Mac's
+  keeps its ✕ (Escape, ⌘W and a click on the backdrop close them too, as the ✕ does; the sign-in notice stays); buttons keep the arrow cursor, and the main button and focus rings take the Mac's
   accent colour (`--mac-accent`). In a browser none of this shows. Everywhere: a Delete asks with Cancel first and a
   red Delete; the logo pulses only while the day is being read (`html.loading`); ↻ plays one short warp while it reloads;
   `prefers-contrast: more` strengthens secondary text and lines; segmented controls say which is on (`aria-pressed`).
