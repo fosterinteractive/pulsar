@@ -424,6 +424,66 @@ def rule_in(items: list, rules: list, a: float, b: float, text: str = ""):
     return next((r for r in rules if r.get("match") and r["match"].lower() in low), None)
 
 
+DAY_MIN = 1440  # minutes in the planned day
+
+
+class _Day:
+    """One day being planned (plan): each minute's marks (work, logging, away, personal, its sitting), who has it
+    (owner: a claim's index, BLOCKED or None), the claims, what each source knows of a task's name, and what each step
+    of plan() leaves for the next ones."""
+
+    def __init__(self, day: dict, ctx: dict, o: dict):
+        self.day, self.ctx, self.o = day, ctx, o
+        N = DAY_MIN
+        self.work, self.logging, self.away = bytearray(N), bytearray(N), bytearray(N)
+        self.personal = bytearray(N)  # a personal window on screen: never work, even inside a Likely row's span
+        self.items = day.get("items") or []
+        for it in self.items:
+            if it.get("cat") == "personal":
+                for x in range(max(0, int(it["s"])), min(N, int(math.ceil(it["e"])))):
+                    self.personal[x] = 1
+            if it.get("cat") != "work":
+                continue  # personal windows never count as work
+            lg = 1 if any(LOGGING.search(str(it.get(k) or "")) for k in ("app", "host", "url")) else 0
+            for x in range(max(0, int(it["s"])), min(N, int(math.ceil(it["e"])))):
+                self.work[x] = 1
+                self.logging[x] = self.logging[x] or lg
+        for w in (day.get("away") or []) + (day.get("gone") or []):  # gone: the clock's missing spring hour
+            for x in range(max(0, int(math.ceil(w["s"]))), min(N, int(w["e"]))):
+                self.away[x] = 1
+        self.sitting: list = [None] * N
+        marks = [x for x in range(N) if self.work[x]]
+        if marks:
+            a = p = marks[0]
+            for x in marks[1:] + [None]:
+                if x is None or x - p > o.get("sitting_gap", SITTING_GAP):
+                    for y in range(a, p + 1):
+                        self.sitting[y] = a
+                    a = x
+                if x is not None:
+                    p = x
+        self.owner: list = [None] * N
+        for w in day.get("gone") or []:  # the clock's missing spring hour: no entry can start or run there
+            for x in range(max(0, int(math.ceil(w["s"]))), min(N, int(w["e"]))):
+                self.owner[x] = BLOCKED
+        self.claims: list = []
+        self.names: dict = {}  # taskId -> (title, project): what each source knows of a task
+
+    def known(self, tid, title="", project=""):
+        if tid and (title or project) and not (self.names.get(str(tid)) or ("", ""))[0]:
+            self.names[str(tid)] = (title or "", project or "")
+
+    def claim(self, c, minutes):
+        self.claims.append(c)
+        i = len(self.claims) - 1
+        got = 0
+        for x in minutes:
+            if 0 <= x < DAY_MIN and self.owner[x] is None:
+                self.owner[x] = i
+                got += 1
+        return i, got
+
+
 def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = None) -> dict:
     """The proposal for one day.
 
@@ -438,86 +498,65 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     keep: a dict that, when given, receives who has each minute before the layout joins and moves them (ranges.py).
     Returns {"entries", "unplaced", "skipped", "uncovered", "totals"}; each entry
     {s, e, minutes, taskId, title, project, serviceId, service, note, noteFrom, confidence, why, source, kind,
-     checked, flags, alts}."""
-    o = {"grid": GRID, "min_entry": MIN_ENTRY, "merge_gap": MERGE_GAP, "out_min": OUT_MIN, **(opts or {})}
-    N = 1440
-    work = bytearray(N)
-    logging_ = bytearray(N)
-    away = bytearray(N)
-    personal = bytearray(N)  # a personal window on screen: never work, even inside a Likely row's span
-    items = day.get("items") or []
-    for it in items:
-        if it.get("cat") == "personal":
-            for x in range(max(0, int(it["s"])), min(N, int(math.ceil(it["e"])))):
-                personal[x] = 1
-        if it.get("cat") != "work":
-            continue  # personal windows never count as work
-        lg = 1 if any(LOGGING.search(str(it.get(k) or "")) for k in ("app", "host", "url")) else 0
-        for x in range(max(0, int(it["s"])), min(N, int(math.ceil(it["e"])))):
-            work[x] = 1
-            logging_[x] = logging_[x] or lg
-    for w in (day.get("away") or []) + (day.get("gone") or []):  # gone: the clock's missing spring hour
-        for x in range(max(0, int(math.ceil(w["s"]))), min(N, int(w["e"]))):
-            away[x] = 1
-    sitting: list = [None] * N
-    marks = [x for x in range(N) if work[x]]
-    if marks:
-        a = p = marks[0]
-        for x in marks[1:] + [None]:
-            if x is None or x - p > o.get("sitting_gap", SITTING_GAP):
-                for y in range(a, p + 1):
-                    sitting[y] = a
-                a = x
-            if x is not None:
-                p = x
+     checked, flags, alts}.
 
-    owner: list = [None] * N
-    for w in day.get("gone") or []:  # the clock's missing spring hour: no entry can start or run there
-        for x in range(max(0, int(math.ceil(w["s"]))), min(N, int(w["e"]))):
-            owner[x] = BLOCKED
-    claims: list = []
-    names: dict = {}  # taskId -> (title, project): what each source knows of a task
+    The steps, each a function below, in this order: who has each minute (_logged, _meetings, _rows, time spent
+    logging blocked, _unattended, _outside), the pieces they make (_pieces), entries from them (_merge), laid out on
+    the grid (_layout), then the caps (_caps) and what is left uncovered (_result)."""
+    d = _Day(day, ctx, {"grid": GRID, "min_entry": MIN_ENTRY, "merge_gap": MERGE_GAP, "out_min": OUT_MIN, **(opts or {})})
+    _logged(d)
+    _meetings(d)
+    _rows(d)
+    # time spent logging (Pulsar, Productive): never proposed. An editor or terminal with no session row is work
+    # outside Claude, below (it was set aside, and the person logged most of it: 624 minutes in 34 days)
+    for x in range(DAY_MIN):
+        if d.work[x] and d.owner[x] is None and d.logging[x]:
+            d.owner[x] = BLOCKED
+    _unattended(d)
+    _outside(d)
+    pieces = _pieces(d)
+    if keep is not None:  # the log dialog's range (ranges.py): each minute's claim and piece, as placed here
+        keep.update(owner=d.owner, claims=d.claims, pieces=pieces, work=d.work, away=d.away, logging=d.logging,
+                    names=d.names, ctx=ctx,
+                    gone=[(int(math.ceil(w["s"])), int(w["e"])) for w in day.get("gone") or []])
+    entries = _merge(d, pieces)
+    out, unplaced = _layout(d, entries)
+    out, totals = _caps(d, out, unplaced, _evidence(d, pieces))
+    return _result(d, out, unplaced, totals)
 
-    def known(tid, title="", project=""):
-        if tid and (title or project) and not (names.get(str(tid)) or ("", ""))[0]:
-            names[str(tid)] = (title or "", project or "")
 
-    def claim(c, minutes):
-        claims.append(c)
-        i = len(claims) - 1
-        got = 0
-        for x in minutes:
-            if 0 <= x < N and owner[x] is None:
-                owner[x] = i
-                got += 1
-        return i, got
-
-    # 1. entries already logged
-    logged = day.get("logged") or []
-    busy = []
-    for r in logged:
+def _logged(d: _Day) -> None:
+    """1. entries already logged: their minutes taken (d.busy), their tasks (d.done_tasks), and the minutes logged
+    with no start, by task (d.untimed)."""
+    d.logged = d.day.get("logged") or []
+    d.busy = []
+    for r in d.logged:
         if r.get("s") is None:
             continue  # no start: not on the timeline (counted in the total, below)
         # its end on the clock: an hour later than s + minutes over the hour the clocks skip in spring
         end = max(r["s"] + r["minutes"], r.get("e") or 0)
-        claim({"kind": "logged"}, range(int(r["s"]), int(math.ceil(end))))
-        busy.append((r["s"], end))
-    busy.sort()
-    done_tasks = {str(r.get("taskId")) for r in logged if r.get("taskId")}
+        d.claim({"kind": "logged"}, range(int(r["s"]), int(math.ceil(end))))
+        d.busy.append((r["s"], end))
+    d.busy.sort()
+    d.done_tasks = {str(r.get("taskId")) for r in d.logged if r.get("taskId")}
     # minutes logged with no start, by task: they may be this very work, so their task's proposals give way first
     # under the cap and start unticked (an entry with no start is on no timeline, so no overlap check sees it)
-    untimed: dict = defaultdict(int)
-    for r in logged:
+    d.untimed = defaultdict(int)
+    for r in d.logged:
         if r.get("s") is None and r.get("taskId"):
-            untimed[str(r["taskId"])] += int(r["minutes"])
+            d.untimed[str(r["taskId"])] += int(r["minutes"])
 
-    # 2. meetings the person was in: repeats (a call was seen at the usual time), calendar meetings with a call seen,
-    # calls with no calendar entry. A repeat and a calendar meeting on the same call are one entry.
-    calls = join_calls(day.get("calls") or [])
-    attended = []  # [s, e, claim index]
-    for rp in day.get("repeats") or []:
+
+def _meetings(d: _Day) -> None:
+    """2. meetings the person was in: repeats (a call was seen at the usual time), calendar meetings with a call seen,
+    calls with no calendar entry. A repeat and a calendar meeting on the same call are one entry. Sets d.attended
+    ([s, e, claim index]) and d.unattended (calendar meetings with no call seen, for _unattended)."""
+    N, owner, claims, claim, known = DAY_MIN, d.owner, d.claims, d.claim, d.known
+    calls = join_calls(d.day.get("calls") or [])
+    attended = d.attended = []
+    for rp in d.day.get("repeats") or []:
         tid = str(rp["taskId"])
-        if tid in done_tasks:
+        if tid in d.done_tasks:
             continue  # its task already has an entry today: the page stops offering it too
         known(tid, rp.get("title"), rp.get("project"))
         conf = "high" if (rp.get("days") or 0) >= 5 else "medium"
@@ -528,10 +567,10 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
                       "service": str(rp.get("serviceId") or "") or None, "titles": []},
                      range(int(rp["s"]), int(rp["e"])))
         attended.append([rp["s"], rp["e"], i])
-    unattended = []
+    unattended = d.unattended = []
     from .calendar import note_of
     norm = lambda t: re.sub(r"\s+", " ", str(t or "").strip().lower())  # noqa: E731
-    for m in sorted(day.get("meetings") or [], key=lambda m: m["s"]):
+    for m in sorted(d.day.get("meetings") or [], key=lambda m: m["s"]):
         if m.get("all_day") or m.get("declined") or m["e"] - m["s"] < 5:
             continue
         s, e = m["s"], m["e"]
@@ -590,9 +629,14 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
         if got:
             attended.append([free[0], free[-1] + 1, i])
 
-    # 3. Likely rows at their own time: a client's work in front first; then a client's agent that ran attended while
-    # internal work was in front (shared: the client goes first); then the rest in front. What else the agents did
-    # meanwhile is noted, never placed (the skill script's agent-only rows, moved to free time, are not used at all)
+
+def _rows(d: _Day) -> None:
+    """3. Likely rows at their own time: a client's work in front first; then a client's agent that ran attended while
+    internal work was in front (shared: the client goes first); then the rest in front. What else the agents did
+    meanwhile is noted, never placed (the skill script's agent-only rows, moved to free time, are not used at all).
+    Sets d.shared_spans, d.bg_left (the agents' other minutes, by repository) and d.parallel."""
+    N, day, ctx, owner, claims, claim, known = DAY_MIN, d.day, d.ctx, d.owner, d.claims, d.claim, d.known
+    work, away, logging_, personal = d.work, d.away, d.logging, d.personal
     rows = [r for r in day.get("rows") or [] if (r.get("minutes") or r["e"] - r["s"]) >= 1 and r.get("kind") != "parallel"]
     back = sorted((r for r in day.get("background") or [] if r["e"] - r["s"] >= 1), key=lambda r: r["s"])
     picks = day.get("picks") or {}
@@ -616,7 +660,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
         """The claim of one row: its class (attribution.segment_class), its task (choose) and why."""
         text = " ".join([r.get("project") or ""] + list(r.get("titles") or []) + [r.get("first_message") or ""])
         # a rule matches the activity in front: never the background's work
-        hit = rule_in([] if bg else items, day.get("rules") or [], r["s"], r["e"], text)
+        hit = rule_in([] if bg else d.items, day.get("rules") or [], r["s"], r["e"], text)
         if hit:
             known(str(hit["taskId"]), hit.get("title"), hit.get("project"))
         hint = (str(hit["taskId"]) if hit else None) or (str(r["tasks"][0]) if r.get("tasks") else None) \
@@ -663,7 +707,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     for r, c in front:  # 3a. a client's work in front
         if c["class"] == CLIENT:
             claim(c, span_of(r, c))
-    shared_spans: list = []
+    d.shared_spans = []
     for r in back:  # 3b. a client's agent, attended, over internal work in front: the client goes first (shared)
         if not r.get("qualifies") or (repo_key(r.get("project")) in never and not r.get("tasks")):
             continue
@@ -683,41 +727,42 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
             lead = next(f for _, f in front if id(f) == max(under, key=under.get))
             _, got = claim({**c, "kind": "shared", "shared": True, "with": lead}, minutes)
             if got:
-                shared_spans.append((a, b + 1))
+                d.shared_spans.append((a, b + 1))
     for r, c in front:  # 3c. the rest of the work in front
         if c["class"] != CLIENT:
             claim(c, span_of(r, c))
     # what else the agents did while the person was at work: the minutes no claim of theirs took, by repository
-    bg_left: dict = {}
-    parallel = bytearray(N)
+    d.bg_left = {}
+    d.parallel = bytearray(N)
     for r in back:
         for x in range(int(r["s"]), min(N, int(math.ceil(r["e"])))):
             if not present(x, False):
                 continue
-            parallel[x] = 1
+            d.parallel[x] = 1
             who = owner[x]
             if who not in (None, BLOCKED) and claims[who].get("kind") == "shared" \
                     and claims[who].get("project") == r.get("project"):
                 continue
-            bg_left.setdefault(r.get("project") or "", set()).add(x)
+            d.bg_left.setdefault(r.get("project") or "", set()).add(x)
 
-    # time spent logging (Pulsar, Productive): never proposed. An editor or terminal with no session row is work
-    # outside Claude, below (it was set aside, and the person logged most of it: 624 minutes in 34 days)
-    for x in range(N):
-        if work[x] and owner[x] is None and logging_[x]:
-            owner[x] = BLOCKED
 
-    # 4. calendar meetings with no call seen: on free active minutes only, unticked; the rest is listed as skipped
-    skipped = []
-    for m, c in unattended:
-        free = [x for x in range(int(m["s"]), min(N, int(math.ceil(m["e"])))) if work[x] and owner[x] is None]
-        claim({**c, "kind": "unattended"}, free)  # the row says "No call seen" (logday.js)
+def _unattended(d: _Day) -> None:
+    """4. calendar meetings with no call seen: on free active minutes only, unticked; the rest is listed as skipped
+    (d.skipped)."""
+    d.skipped = []
+    for m, c in d.unattended:
+        free = [x for x in range(int(m["s"]), min(DAY_MIN, int(math.ceil(m["e"])))) if d.work[x] and d.owner[x] is None]
+        d.claim({**c, "kind": "unattended"}, free)  # the row says "No call seen" (logday.js)
         rest = int(m["e"] - m["s"]) - len(free)
         if rest >= 5:
-            skipped.append({"s": m["s"], "e": m["e"], "minutes": rest, "title": m.get("title") or "",
-                            "why": "on your calendar, no call seen and no activity: add it by hand if you were there"})
+            d.skipped.append({"s": m["s"], "e": m["e"], "minutes": rest, "title": m.get("title") or "",
+                              "why": "on your calendar, no call seen and no activity: add it by hand if you were there"})
 
-    # work outside Claude (a browser, Slack): stretches of unclaimed active minutes
+
+def _outside(d: _Day) -> None:
+    """5. work outside Claude (a browser, Slack): stretches of unclaimed active minutes; a short one joins the entry
+    beside it."""
+    N, work, away, owner, claims = DAY_MIN, d.work, d.away, d.owner, d.claims
     runs, cur = [], None
     for x in range(N):
         if work[x] and owner[x] is None and not away[x]:  # never time away (or the clock's missing spring hour)
@@ -731,10 +776,10 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
         runs.append(cur)
     short = []
     for a, b, n in runs:
-        if n >= o["out_min"]:
-            claim({"kind": "outside", "task": None, "source": "neighbour", "conf": "low", "titles": [],
-                   "why": "work outside Claude: the task of the work next to it"},
-                  [x for x in range(a, b + 1) if work[x] and not away[x]])
+        if n >= d.o["out_min"]:
+            d.claim({"kind": "outside", "task": None, "source": "neighbour", "conf": "low", "titles": [],
+                     "why": "work outside Claude: the task of the work next to it"},
+                    [x for x in range(a, b + 1) if work[x] and not away[x]])
         else:
             short.append((a, b))
     for a, b in short:  # a short one joins the entry beside it
@@ -747,9 +792,13 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
                 if work[x] and owner[x] is None:
                     owner[x] = pick_i
 
-    # pieces: runs of minutes per claim, in time order
+
+def _pieces(d: _Day) -> list:
+    """Runs of minutes per claim, in time order, with their claim's fields; an outside stretch takes the task of the
+    work before it, else after."""
+    owner, claims = d.owner, d.claims
     pieces, cur = [], None
-    for x in range(N):
+    for x in range(DAY_MIN):
         i = owner[x] if owner[x] != BLOCKED else None
         if i is not None and cur and cur["claim"] == i and x - cur["last"] <= 2:
             cur["last"], cur["minutes"] = x, cur["minutes"] + 1
@@ -772,22 +821,26 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
                 q = nb[0]
                 p.update(task=q["task"], project=q.get("project"), alts=list(q.get("alts") or []),
                          claudeFound=bool(q.get("claudeFound")))
-    if keep is not None:  # the log dialog's range (ranges.py): each minute's claim and piece, as placed here
-        keep.update(owner=owner, claims=claims, pieces=pieces, work=work, away=away, names=names, ctx=ctx,
-                    gone=[(int(math.ceil(w["s"])), int(w["e"])) for w in day.get("gone") or []])
+    return pieces
 
-    def logged_between(a, b) -> bool:  # an entry already logged between minutes a and b: laid out from a, a piece
-        # joined across it would stop at it, the rest not placed; a shared stretch stays where it was, so the same
-        return any(a < x[1] and x[0] < b for x in busy + shared_spans)
 
-    def billable_task(p) -> bool:
-        return p.get("class") == CLIENT or attribution.class_of_task(p.get("task"), ctx) == CLIENT
+def _blocked_between(d: _Day, a, b) -> bool:
+    """An entry already logged, or a shared stretch, between minutes a and b: laid out from a, a piece joined across it
+    would stop at it, the rest not placed; a shared stretch stays where it was, so the same."""
+    return any(a < x[1] and x[0] < b for x in d.busy + d.shared_spans)
 
-    def away_between(p, q, a, b) -> bool:  # a client's entry is never laid over time away: a break splits it
-        return (billable_task(p) or billable_task(q)) and any(away[x] for x in range(max(0, a), min(N, b)))
 
-    # one task in one sitting: one entry, laid out from its first piece; a meeting someone attended keeps its own
-    # time, so what comes before it joins it only when it touches it
+def _away_between(d: _Day, p, q, a, b) -> bool:
+    """A client's entry is never laid over time away: a break splits it."""
+    billable_task = lambda e: e.get("class") == CLIENT or attribution.class_of_task(e.get("task"), d.ctx) == CLIENT  # noqa: E731
+    return (billable_task(p) or billable_task(q)) and any(d.away[x] for x in range(max(0, a), min(DAY_MIN, b)))
+
+
+def _merge(d: _Day, pieces: list) -> list:
+    """Entries from the pieces: one task in one sitting is one entry, laid out from its first piece; a meeting someone
+    attended keeps its own time, so what comes before it joins it only when it touches it. Pieces too short to log
+    join a neighbour. Skipped work goes to d.skipped; the rest is returned."""
+    o, sitting = d.o, d.sitting
     merged: list = []
     for p in pieces:
         m = merged[-1] if merged else None
@@ -803,12 +856,13 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
         if m and m.get("task") and m["task"] == p.get("task") and not {"skip", "shared"} & {m["kind"], p["kind"]} \
                 and p["s"] - m["last"] <= o["merge_gap"] and sitting[m["last"]] == sitting[p["s"]] \
                 and (not p.get("attended") or p["s"] - m["last"] <= (o["grid"] or 1)) \
-                and not logged_between(m["last"] + 1, p["s"]) and not away_between(m, p, m["last"] + 1, p["s"]):
+                and not _blocked_between(d, m["last"] + 1, p["s"]) and not _away_between(d, m, p, m["last"] + 1, p["s"]):
             m["minutes"] += p["minutes"]
             m["last"] = p["last"]
             m["parts"].append(p)
         else:
             merged.append({**p, "parts": [p]})
+
     # pieces too short to log join a neighbour within MERGE_GAP in the same sitting (one far away pulled a 200-minute
     # afternoon entry to 00:40; laid out from the earlier start, a neighbour across a break would move into it), never
     # across an entry already logged; a meeting someone attended stays an entry of its own from 5 minutes, and keeps
@@ -819,7 +873,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
         if "shared" in (p["kind"], q["kind"]):  # a shared stretch stays as it was, at its real time
             return False
         a, b = (q["last"], p["s"]) if q_first else (p["last"], q["s"])
-        if logged_between(a + 1, b) or away_between(p, q, a + 1, b):
+        if _blocked_between(d, a + 1, b) or _away_between(d, p, q, a + 1, b):
             return False
         sa, sb = sitting[a], sitting[b]  # a minute with no activity, in a call, fits any sitting
         return b - a <= o["merge_gap"] and (sa is None or sb is None or sa == sb)
@@ -829,8 +883,8 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
         while changed:
             changed = False
             for k, p in enumerate(merged):
-                keep = p.get("attended") and p["minutes"] >= 5
-                if p["minutes"] < o["min_entry"] and p["kind"] != "skip" and not keep:
+                stays = p.get("attended") and p["minutes"] >= 5
+                if p["minutes"] < o["min_entry"] and p["kind"] != "skip" and not stays:
                     nb = [q for q, first in ((merged[k - 1] if k else None, True),
                                              (merged[k + 1] if k + 1 < len(merged) else None, False))
                           if joins(p, q, first)]
@@ -842,25 +896,31 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
                         merged.pop(k)
                         changed = True
                         break
-    skipped += [{"s": m["s"], "e": m["last"] + 1, "minutes": m["minutes"], "project": m.get("project") or "",
-                 "why": m.get("why") or ""} for m in merged if m["kind"] == "skip"]
-    entries = [m for m in merged if m["kind"] != "skip"]
+    d.skipped += [{"s": m["s"], "e": m["last"] + 1, "minutes": m["minutes"], "project": m.get("project") or "",
+                   "why": m.get("why") or ""} for m in merged if m["kind"] == "skip"]
+    return [m for m in merged if m["kind"] != "skip"]
 
-    # the minutes the person was seen at work on each task: in front, or its agent attended (shared). A billable
-    # entry never comes out longer than that (the evidence cap, below), whatever the layout and the grid did
+
+def _evidence(d: _Day, pieces: list) -> dict:
+    """The minutes the person was seen at work on each task: in front, or its agent attended (shared). A billable
+    entry never comes out longer than that (the evidence cap, _caps), whatever the layout and the grid did."""
     evidence: dict = defaultdict(int)
     for p in pieces:
         if p.get("task") and p["kind"] in ("focused", "shared", "outside"):
             evidence[str(p["task"])] += sum(1 for x in range(p["s"], p["last"] + 1)
-                                            if owner[x] == p["claim"] and work[x] and not away[x])
+                                            if d.owner[x] == p["claim"] and d.work[x] and not d.away[x])
+    return evidence
 
-    # lay out: a shared stretch first, where it was (its client's agent and the work in front both ran then); then
-    # the rest in time order, no overlap with each other, with what is logged or a shared stretch, boundaries on the
-    # grid, except against an entry already logged: an entry starts right where it ends, or stops right where it
-    # starts, so the minutes up to the grid are taken in rather than left as a crumb of "not covered" shorter than a step
-    g = o["grid"] or 1
+
+def _layout(d: _Day, entries: list) -> tuple:
+    """(entries laid out, unplaced). A shared stretch first, where it was (its client's agent and the work in front
+    both ran then); then the rest in time order, no overlap with each other, with what is logged or a shared stretch,
+    boundaries on the grid, except against an entry already logged: an entry starts right where it ends, or stops
+    right where it starts, so the minutes up to the grid are taken in rather than left as a crumb of "not covered"
+    shorter than a step."""
+    N, g = DAY_MIN, d.o["grid"] or 1
     out, end, unplaced = [], 0, []
-    fixed = [(a, b, "logged") for a, b in busy]
+    fixed = [(a, b, "logged") for a, b in d.busy]
     for m in sorted((m for m in entries if m["kind"] == "shared"), key=lambda m: m["s"]):
         s = int(round(m["s"] / g) * g)
         e = min(N, int(round((s + m["minutes"]) / g) * g))  # its own minutes, from its real start
@@ -869,7 +929,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
                 s, e = (s, int(a)) if s < a else (int(math.ceil(b)), e)
         if e - s < g:
             continue  # under a grid step: rounding
-        out.append(_entry(m, s, e, names))
+        out.append(_entry(m, s, e, d.names))
         fixed.append((s, e, "shared"))
     fixed.sort()
     for m in sorted((m for m in entries if m["kind"] != "shared"), key=lambda m: m["s"]):
@@ -900,17 +960,23 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
         if cut:
             unplaced.append({"minutes": cut, **room})
         end = e
-        out.append(_entry(m, s, e, names))
+        out.append(_entry(m, s, e, d.names))
     out.sort(key=lambda e: e["s"])
+    return out, unplaced
 
-    # the cap: proposed plus logged never more than active time plus attended meetings; the rest is shown, not placed
+
+def _caps(d: _Day, out: list, unplaced: list, evidence: dict) -> tuple:
+    """(entries, totals so far). The cap: proposed plus logged never more than active time plus attended meetings,
+    the rest shown, not placed; then the evidence cap: a task that may be billable never gets more minutes than the
+    person was seen at work on it. Entries whose task has time logged with no start are flagged."""
+    N, g, o, ctx = DAY_MIN, d.o["grid"] or 1, d.o, d.ctx
     att = bytearray(N)
-    for a, b, _ in attended:
+    for a, b, _ in d.attended:
         for x in range(max(0, int(a)), min(N, int(math.ceil(b)))):
             att[x] = 1
-    active = sum(work)
-    cap = sum(1 for x in range(N) if work[x] or att[x])
-    logged_total = sum(int(r["minutes"]) for r in logged)
+    active = sum(d.work)
+    cap = sum(1 for x in range(N) if d.work[x] or att[x])
+    logged_total = sum(int(r["minutes"]) for r in d.logged)
     allowed = max(0, cap - logged_total)
     over = sum(e["minutes"] for e in out) - allowed
 
@@ -928,7 +994,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     # what goes first: internal work, then mixed or unknown, a client's last; within each the least sure, the latest
     first_cut = lambda e: (CLASS_ORDER.get(e.get("class"), 1), RANK[e["confidence"]], -e["s"])  # noqa: E731
     if over > 0:
-        left = dict(untimed)  # first the task of an entry with no start, up to its minutes: it may be that work
+        left = dict(d.untimed)  # first the task of an entry with no start, up to its minutes: it may be that work
         for e in sorted(out, key=first_cut):
             if over > 0 and left.get(str(e["taskId"]), 0) > 0:
                 cut = cut_from(e, min(over, left[str(e["taskId"])]),
@@ -955,18 +1021,24 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
             total[t] -= cut_from(e, total[t] - evidence.get(t, 0), "more than the time this work was seen")
     out = [e for e in out if e["minutes"] >= g]
     for e in out:
-        if untimed.get(str(e["taskId"])):
+        if d.untimed.get(str(e["taskId"])):
             e["flags"].append("untimed")
             e["checked"] = False
-            e["untimed"] = untimed[str(e["taskId"])]
-    # active time no entry covers, logged or proposed
+            e["untimed"] = d.untimed[str(e["taskId"])]
+    return out, {"logged": logged_total, "active": active, "meetings": sum(att), "cap": cap}
+
+
+def _result(d: _Day, out: list, unplaced: list, totals: dict) -> dict:
+    """plan()'s answer: the entries, with the active time no entry covers (logged or proposed), the agents' other work
+    noted by repository, and the totals."""
+    N, g = DAY_MIN, d.o["grid"] or 1
     covered = bytearray(N)
-    for a, b in busy + [(e["s"], e["e"]) for e in out]:
+    for a, b in d.busy + [(e["s"], e["e"]) for e in out]:
         for x in range(max(0, int(a)), min(N, int(math.ceil(b)))):
             covered[x] = 1
     uncovered, start = [], None  # only stretches of a step or more: a shorter one is rounding, not work to log
     for x in range(N + 1):
-        gap = x < N and work[x] and not covered[x]
+        gap = x < N and d.work[x] and not covered[x]
         if gap and start is None:
             start = x
         if not gap and start is not None:
@@ -975,14 +1047,14 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
             start = None
     # the agents' other work while the person was at work: noted by repository, never placed
     noted = [{"s": min(xs), "e": max(xs) + 1, "minutes": len(xs), "project": p, "why": "ran in parallel"}
-             for p, xs in sorted(bg_left.items(), key=lambda kv: -len(kv[1])) if len(xs) >= 5]
-    return {"entries": out, "unplaced": unplaced, "skipped": skipped + noted, "uncovered": uncovered,
+             for p, xs in sorted(d.bg_left.items(), key=lambda kv: -len(kv[1])) if len(xs) >= 5]
+    return {"entries": out, "unplaced": unplaced, "skipped": d.skipped + noted, "uncovered": uncovered,
             "totals": {"proposed": sum(e["minutes"] for e in out),
                        "checked": sum(e["minutes"] for e in out if e["checked"]),
-                       "logged": logged_total, "active": active, "meetings": sum(att), "cap": cap,
+                       **totals,
                        "notCovered": sum(u["minutes"] for u in uncovered),
                        "over": sum(u["minutes"] for u in unplaced if u["why"].startswith("more than your")),
-                       "parallel": sum(parallel), "shared": sum(e["minutes"] for e in out if e.get("shared")),
+                       "parallel": sum(d.parallel), "shared": sum(e["minutes"] for e in out if e.get("shared")),
                        "leftOut": sum(n["minutes"] for n in noted)}}
 
 

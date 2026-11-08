@@ -791,7 +791,7 @@ class Run:
                 continue
             if loc["away"][x] and not loc["work"][x]:  # both: the edge of a window, rounded
                 self.fail("plan: a minute of away time placed", (hm(x), k))
-            elif loc["logging_"][x] and not own:
+            elif loc["logging"][x] and not own:
                 self.fail("plan: a minute spent logging placed", (hm(x), k, c.get("project")))
             elif k in ("agent", "outside", "unattended") and not loc["work"][x]:
                 self.fail("plan: agent-only or outside work placed on a minute with no activity", (hm(x), k))
@@ -1066,19 +1066,10 @@ def no_network():
 
 
 def run_plan(day: dict, ctx: dict) -> tuple:
-    """dayplan.plan, with its locals when it returns (where each minute went)."""
-    seen: dict = {}
-
-    def watch(frame, event, arg):
-        if event == "return" and frame.f_code is dayplan.plan.__code__:
-            seen.update(frame.f_locals)
-    old = sys.getprofile()
-    sys.setprofile(watch)
-    try:
-        res = dayplan.plan(day, ctx)
-    finally:
-        sys.setprofile(old)
-    return res, seen
+    """dayplan.plan, with where each minute went (what it keeps for ranges.py: owner, claims, work, away, logging)."""
+    kept: dict = {}
+    res = dayplan.plan(day, ctx, keep=kept)
+    return res, kept
 
 
 _httpd: list = []
