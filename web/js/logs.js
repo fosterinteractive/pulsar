@@ -8,6 +8,7 @@ async function openLogs(days = logsDays) {
   document.querySelectorAll('#logs-range button').forEach(b => { b.classList.toggle('on', +b.dataset.v === days); b.setAttribute('aria-pressed', String(+b.dataset.v === days)); });
   $('#logs-download').dataset.days = days;
   $('#logs-list').innerHTML = '<p class="hint">Loading…</p>';
+  $('#logs-seen').hidden = !CONFIG?.errors24h;
   if (!logsDlg.open) logsDlg.showModal();
   const r = await getJSON(`/api/logs?days=${days}`);
   if (days !== logsDays) return;
@@ -25,6 +26,16 @@ $('#open-logs').onclick = () => openLogs();
 $('#settings-logs').onclick = () => closeSettings(() => openLogs());  // settings.js: asks first about unsaved changes
 document.querySelectorAll('#logs-range button').forEach(b => b.onclick = () => openLogs(+b.dataset.v));
 logsDlg.querySelectorAll('[data-close]').forEach(b => b.onclick = () => logsDlg.close());
+
+/* "Mark as seen": the ! at the top waits for a newer error; the log keeps everything */
+$('#logs-seen').onclick = async () => {
+  const b = $('#logs-seen'); b.disabled = true;
+  const r = await postJSON('/api/settings', {logs_seen: Math.floor(Date.now() / 1000)});
+  b.disabled = false;
+  if (r.error) { toast(r.error, true); return; }
+  if (r.config) applyConfig(r.config);
+  b.hidden = true;
+};
 
 /* the page's own errors: at most 20 per page load, so a loop cannot flood the log */
 let pageErrors = 0;

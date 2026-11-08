@@ -743,6 +743,12 @@ chips of the summary) show one quiet line when Productive says something about a
   and at least two, of the project's 100 most recently active tasks have one. Estimates are rare in most projects (on
   one person's 14 projects, 0 to 35% of the recent tasks had one), so flagging every task without one would put a flag
   on nearly every row.
+- **+1 h 30 min over the estimate (5 h 30 min of 4 h)**: the time worked on the task by everyone (`worked_time`),
+  plus the minutes about to be logged, is over its estimate (`initial_estimate`). The log dialog works it out itself
+  from the task's numbers and follows the length as it is typed (an entry changed on its own task is in the time
+  worked already); Log the day adds, per row, the plan's earlier rows on the same task (`flags.over_estimate`;
+  `GET /api/services` takes `minutes=N`). A write drops the task from the 5-minute cache, so the next check reads
+  the new time worked.
 
 Each line links to the task in Productive (the address of 5.2b). Pulsar only reads: it never closes, estimates or
 budgets anything, and a flag never unticks a row of Log the day. The closed state comes with the task Pulsar already
@@ -1418,7 +1424,8 @@ question) and cannot tell when inside it the work happened.
 - **The next step**: while active time is not logged, **Log the day** is the Logged column's main (filled) button,
   and "Active, not logged" in Work time is a link that opens it. The header keeps the day's controls: one zoom menu
   (the time each row shows), one ↻ for everything; the error log is in Settings → Updates, with a small **!** in
-  the header only while there are errors of the last 24 hours. The Logged column's title shortens before its
+  the header only while there are errors of the last 24 hours that came after **Mark as seen** in the log
+  (`logs_seen` in the settings; the log itself keeps every one). The Logged column's title shortens before its
   buttons ever cover it.
 - **Day done, and time that was not work** (`pulsar/daymarks.py`, `~/.cache/pulsar/day-marks.json`, on this Mac
   only, never sent to Productive, 120 days). A day is done when its logged time reaches the daily target, unless the
@@ -1432,8 +1439,8 @@ question) and cannot tell when inside it the work happened.
   `in-app`): Settings → Time and activity has **This Mac**, the window's own choices, applied at once through
   `pulsarNative.setNativePrefs` and shown again on each `pulsar:prefs` event: the Dock badge, the end-of-day reminder
   and its time, and Open at Login (when macOS needs approval, a button opens Login Items; on macOS 12, the steps to
-  do it by hand). The page leaves out what the window does itself: the wordmark, the theme button and the dialogs' ✕
-  (Escape and ⌘W close them); buttons keep the arrow cursor, and the main button and focus rings take the Mac's
+  do it by hand). The page leaves out what the window does itself: the wordmark and the theme button. Every dialog
+  keeps its ✕ (Escape and ⌘W close them too); buttons keep the arrow cursor, and the main button and focus rings take the Mac's
   accent colour (`--mac-accent`). In a browser none of this shows. Everywhere: a Delete asks with Cancel first and a
   red Delete; the logo pulses only while the day is being read (`html.loading`); ↻ plays one short warp while it reloads;
   `prefers-contrast: more` strengthens secondary text and lines; segmented controls say which is on (`aria-pressed`).

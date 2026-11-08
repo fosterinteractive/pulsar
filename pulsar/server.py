@@ -191,7 +191,7 @@ def public_config(s: dict) -> dict:
         "roundTo": s["round_to"], "awayAfter": config.away_after(s),
         "activitywatch": awsetup.status(config.away_after(s)),  # its AFK timeout, read from its file; no program started
         "update": {**UPDATER.public(), "skip": s["update_skip"], "asked": s["update_asked"]},
-        "errors24h": sum(1 for e in logbook.read(1) if e["kind"] == "error"),
+        "errors24h": logbook.unseen(s.get("logs_seen") or 0),
         "likely": {"setting": s["likely"], "available": likely.available(), "enabled": likely.enabled(s),
                    "askClaude": s["ask_claude"], "askClaudeModel": claudeuses.model("ask", s), "claudeFound": askclaude.available(),
                    "askProductive": s["claude_ask_productive"], "link": claudelink.status(PORT[0], s)},
@@ -287,6 +287,11 @@ def validate(body: dict) -> dict:
         if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v < 2 ** 40:
             raise ValueError("update_asked is a time in seconds.")
         out["update_asked"] = v
+    if "logs_seen" in body:  # "Mark as seen" in the error log (seconds since 1970)
+        v = body["logs_seen"]
+        if isinstance(v, bool) or not isinstance(v, int) or not 0 <= v < 2 ** 40:
+            raise ValueError("logs_seen is a time in seconds.")
+        out["logs_seen"] = v
     if "rules" in body:
         rules = []
         if not isinstance(body["rules"], list) or not all(isinstance(r, dict) for r in body["rules"]):
@@ -1251,13 +1256,18 @@ def api_task_create(body: dict) -> dict:
 
 
 def api_services(q: dict) -> dict:
-    """The services that take time on that date; with flags=1 (the page), the task's ticket flags too (flags.py)."""
+    """The services that take time on that date; with flags=1 (the page), the task's ticket flags too (flags.py), with
+    minutes=N the time about to be logged (over the estimate)."""
     if not is_id(q.get("task") or ""):
         raise ValueError("task=<id>&date=YYYY-MM-DD")
     s = current_settings()
     got = productive.bookable_services(q["task"], q["date"], s)
     if q.get("flags") == "1":
-        got["flags"] = flags.for_task(got.get("task"), got.get("services"), q["date"], s)
+        try:
+            minutes = max(0, min(1440, int(q.get("minutes") or 0)))
+        except ValueError:
+            minutes = 0
+        got["flags"] = flags.for_task(got.get("task"), got.get("services"), q["date"], s, minutes=minutes)
     return got
 
 
@@ -1302,6 +1312,7 @@ def api_log(body: dict, via: str = "") -> dict:
         result = _log_checked(body, s, date, begin, minutes, task_id, service_id, tz, a, b, journal)
         if "created" in result:
             _just_logged[key] = time.time()
+            productive.forget_task(task_id)  # its time worked changed: the next estimate check reads it again
         return result
 
 

@@ -48,6 +48,7 @@ DEFAULTS = {
     "org_id": "", "org_name": "", "person_id": "", "person_name": "", "person_day_hours": None,
     "update_skip": "",           # a release the person chose to skip in the reminder
     "update_asked": 0,           # when the reminder last showed, in seconds
+    "logs_seen": 0,              # when the error log was last marked as seen (seconds): the header's ! waits for a newer error
     "rules": [],                 # [{match, taskId, title, project}]: activity containing `match` belongs to that task
     "calendar_account": "",      # the Google account whose calendar is connected (its email), shown in Settings
     "preview_writes": False,     # Pulsar Preview only: may it write to Productive (off by default)
@@ -189,7 +190,7 @@ def _keep_copy(text: str, why: str) -> None:
 # the Google account (its token is Pulsar's), where Productive comes from (a token is Pulsar's too: "auto" then uses
 # Claude Code's connection), permission to write, and the Claude Code switch (Ask Claude sends session text to
 # Anthropic and costs money, so it starts off in Preview until switched on there; the ask rules are Pulsar's own).
-SEED_SKIP = ("update_skip", "update_asked", "calendar_account", "productive_source", "preview_writes",
+SEED_SKIP = ("update_skip", "update_asked", "logs_seen", "calendar_account", "productive_source", "preview_writes",
              "ask_claude", "ask_claude_model", "claude_models", "claude_rules_added", "claude_denies_added",
              "claude_ask_productive")
 

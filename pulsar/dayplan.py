@@ -1127,8 +1127,8 @@ def _bookable(task: str, date: str, settings: dict) -> dict:
 
 
 def ticket_flags(entries: list, found: dict, date: str, settings: dict) -> None:
-    """Each entry's ticket flags (flags.py) in "ticket": the task closed, no budget on the date, no estimate where the
-    project's tasks have them. Read only, and never a reason to untick: the person decides. found: task id ->
+    """Each entry's ticket flags (flags.py) in "ticket": the task closed, no budget on the date, over its estimate with
+    this row and the plan's earlier rows on it, no estimate where the project's tasks have them. Read only, and never a reason to untick: the person decides. found: task id ->
     (bookable_services answer or None, error)."""
     from concurrent.futures import ThreadPoolExecutor
     from . import flags
@@ -1136,9 +1136,13 @@ def ticket_flags(entries: list, found: dict, date: str, settings: dict) -> None:
                        if b and not (b.get("task") or {}).get("estimate")} - {""})
     with ThreadPoolExecutor(4) as pool:  # read once per project here (kept a day), so each row below finds it
         list(pool.map(lambda pid: flags.project_share(pid, settings), projects))
-    for e in entries:
+    planned: dict = {}  # task id -> minutes of the plan's rows so far: the estimate counts them all, in time order
+    for e in sorted(entries, key=lambda e: e.get("s") or 0):
         b = (found.get(e["taskId"]) or (None, None))[0] if e.get("taskId") else None
-        e["ticket"] = flags.for_task(b.get("task"), b.get("services"), date, settings) if b else []
+        if b:
+            planned[e["taskId"]] = planned.get(e["taskId"], 0) + (e.get("minutes") or 0)
+        e["ticket"] = flags.for_task(b.get("task"), b.get("services"), date, settings,
+                                     minutes=planned[e["taskId"]]) if b else []
 
 
 def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: dict | None = None,

@@ -56,6 +56,23 @@ class FlagsTest(unittest.TestCase):
         self.assertEqual(self.reads, [])                                    # an estimate: the project is never asked
         self.assertEqual(flags.for_task(None, [], "2026-11-06", {}, self.names), [])
 
+    def test_over_the_estimate_counts_the_time_worked_and_the_minutes_about_to_be_logged(self):
+        t = {**task(estimate=240), "worked": 200}
+        self.assertEqual(flags.for_task(t, [{"id": "1"}], "2026-11-06", {}, self.names, minutes=30), [])  # 230 of 240
+        [f] = flags.for_task(t, [{"id": "1"}], "2026-11-06", {}, self.names, minutes=130)
+        self.assertEqual(f, {"kind": "overestimate", "text": "+1 h 30 min over the estimate (5 h 30 min of 4 h)"})
+        self.assertEqual(flags.for_task(t, [{"id": "1"}], "2026-11-06", {}, self.names), [])  # no minutes: no check
+        self.assertIsNone(flags.over_estimate({**t, "worked": None}, 600))  # time worked unknown: nothing said
+        self.assertIsNone(flags.over_estimate({**task(), "worked": 900}, 600))  # no estimate: noestimate's business
+
+    def test_log_the_day_counts_the_plans_earlier_rows_on_the_same_task(self):
+        t = {**task(estimate=120), "worked": 60}
+        found = {"7": ({"task": t, "services": [{"id": "1"}]}, None)}
+        rows = [{"s": 600, "minutes": 40, "taskId": "7"}, {"s": 540, "minutes": 30, "taskId": "7"}]
+        dayplan.ticket_flags(rows, found, "2026-11-06", {})
+        self.assertEqual(rows[1]["ticket"], [])  # 9:00, first: 90 of 120
+        self.assertEqual([f["text"] for f in rows[0]["ticket"]], ["+10 min over the estimate (2 h 10 min of 2 h)"])
+
     def test_no_estimate_is_flagged_only_where_the_projects_tasks_have_them(self):
         self.assertEqual(self.kinds(task()), ["noestimate"])  # 3 of 8 recent tasks have one
         [f] = flags.for_task(task(), [{"id": "1"}], "2026-11-06", {}, self.names)

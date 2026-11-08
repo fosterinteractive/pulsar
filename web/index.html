@@ -325,11 +325,13 @@
     <button type="button" class="btn icon" data-close aria-label="Close">✕</button></div>
   <div class="scrollarea"><div id="logs-list"></div></div>
   <div class="df"><span class="hint grow">Kept for 31 days. Tokens and keys are removed before anything is written.</span>
+    <button type="button" class="btn bordered" id="logs-seen" hidden title="Hides the ! at the top until a new error">Mark as seen</button>
     <button type="button" class="btn bordered" id="logs-download" data-days="1">Download</button>
     <button type="button" class="btn primary" data-close>Close</button></div>
 </dialog>
 <dialog id="updprompt" aria-labelledby="updprompt-title" aria-describedby="updprompt-text">
-  <h2 id="updprompt-title">A new Pulsar is out</h2>
+  <div class="dh"><h2 id="updprompt-title">A new Pulsar is out</h2>
+    <button type="button" class="btn icon" id="updprompt-x" aria-label="Close">✕</button></div>
   <p id="updprompt-text"></p>
   <p class="notes" id="updprompt-notes"></p>
   <div class="df"><button type="button" class="btn bordered" id="updprompt-skip">Skip this release</button>

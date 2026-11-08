@@ -477,7 +477,7 @@ function maybeRemind(u = CONFIG?.update) {
   u.asked = now; postJSON('/api/settings', {update_asked: now});
 }
 $('#updprompt-go').onclick = () => { remindDlg.close(); startUpdate(); };
-$('#updprompt-later').onclick = () => remindDlg.close();
+$('#updprompt-later').onclick = $('#updprompt-x').onclick = () => remindDlg.close();
 $('#updprompt-skip').onclick = () => {
   const u = CONFIG.update; remindDlg.close(); u.skip = u.latest;
   postJSON('/api/settings', {update_skip: u.latest});

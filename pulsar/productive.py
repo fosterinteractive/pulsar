@@ -821,6 +821,11 @@ TASK_FIELDS = ["title", "task_number", "initial_estimate", "worked_time", "remai
 _task_cache = config.Newest(300)  # task id -> (time, details)
 
 
+def forget_task(task_id) -> None:
+    """Read the task again next time (time was just logged to it, so its time worked changed)."""
+    _task_cache.pop(str(task_id), None)
+
+
 def task_details(ids: list, settings: dict, reasons: Optional[dict] = None, transient: Optional[set] = None) -> dict:
     """Each task's estimate, time worked by everyone, and what is left, as Productive has them (cached 5 minutes).
     When none could be given because of the connection (the token refused or expired, Productive unreachable or down),

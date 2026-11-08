@@ -6,8 +6,13 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- Over the estimate: the log dialog and Log the day say when the time logged would take a task over its estimate ("+1 h 30 min over the estimate (5 h 30 min of 4 h)"); the dialog follows the length as you type it.
+- The error log has Mark as seen: the ! at the top waits for a new error. The log keeps everything.
+- Every dialog has its ✕ again in Pulsar's window, and the update reminder has one too.
+
 ## 1.6.4 (2026-11-07)
-- Pauses and time away are named on the day ("Pause · 12 min", "Away · 1h 20m") wherever no card covers them, and a click on one only says what it is: Pulsar never offers to log away time.
+- Pauses and time away are named on the day ("Pause · 12 min", "Away · 1 h 20 min") wherever no card covers them, and a click on one only says what it is: Pulsar never offers to log away time.
 - Update also updates the Pulsar app when the window has changed: one click, one restart, and the button says so ("Update to 1.6.4 and restart"). No separate app box in Settings > Updates any more.
 
 ## 1.6.3 (2026-11-07)

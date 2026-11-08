@@ -2997,6 +2997,27 @@ class CapTest(unittest.TestCase):
         logbook._last.clear()
 
 
+class LogsSeenTest(unittest.TestCase):
+    def test_mark_as_seen_quiets_the_header_until_a_newer_error(self):
+        from pulsar import logbook
+        logbook._last.clear()
+        with mock.patch.object(logbook, "LOG_DIR", tempfile.mkdtemp()):
+            logbook.record("test", "first", once_per=0)
+            logbook.record("test", "a warning", kind="warning", once_per=0)
+            self.assertEqual(logbook.unseen(0), 1)  # warnings never count
+            seen = time.time() + 1
+            self.assertEqual(logbook.unseen(seen), 0)
+            with mock.patch.object(logbook, "datetime", wraps=logbook.datetime) as dt:
+                dt.now.return_value = logbook.datetime.now().astimezone() + logbook.timedelta(seconds=5)
+                logbook.record("test", "second", once_per=0)
+            self.assertEqual(logbook.unseen(seen), 1)
+            self.assertEqual(len(logbook.read(1)), 3)  # the log keeps them all
+        logbook._last.clear()
+        with self.assertRaises(ValueError):
+            server.validate({"logs_seen": "yesterday"})
+        self.assertEqual(server.validate({"logs_seen": 1700000000}), {"logs_seen": 1700000000})
+
+
 class KeychainStuckTest(unittest.TestCase):
     def test_a_keychain_that_does_not_answer_is_named_not_a_missing_token(self):
         import subprocess

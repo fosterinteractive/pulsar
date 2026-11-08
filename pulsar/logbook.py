@@ -105,6 +105,19 @@ def read(days: int) -> list:
     return sorted(out, key=lambda e: e["time"], reverse=True)[:5000]
 
 
+def unseen(seen: float = 0) -> int:
+    """Errors of the last 24 hours newer than `seen` (seconds; "Mark as seen" in the error log): the header's ! counts
+    these. The log itself keeps them all."""
+    n = 0
+    for e in read(1):
+        try:
+            if e["kind"] == "error" and datetime.fromisoformat(e["time"]).timestamp() > seen:
+                n += 1
+        except (ValueError, KeyError, TypeError):
+            continue
+    return n
+
+
 def as_text(days: int) -> str:
     """The log as a plain text file to attach to a message: who runs what, then every event."""
     events = read(days)

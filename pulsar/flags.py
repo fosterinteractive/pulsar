@@ -4,6 +4,8 @@ Productive.
 
 * closed: the task is closed;
 * nobudget: no service of the task's project takes time on that date, so there is no budget to log it to;
+* overestimate: with this entry (and the plan's earlier ones on the task), the time worked on the task, by everyone,
+  goes over its estimate;
 * noestimate: the task has no estimate, while at least a quarter (and at least two) of the project's 100 most recently
   active tasks have one. Estimates are rare in most projects (on one person's 14 projects, 0 to 35% of recent tasks
   had one), so a flag for every task without one would be on nearly every row.
@@ -72,11 +74,29 @@ def project_share(project_id, settings: dict, names: Optional[productive.Names] 
     return got
 
 
+def over_estimate(task: Optional[dict], minutes: float) -> Optional[dict]:
+    """The overestimate flag when `minutes` more on the task take its time worked over its estimate, else None."""
+    est, worked = (task or {}).get("estimate"), (task or {}).get("worked")
+    if not minutes or not est or worked is None:
+        return None
+    total = worked + minutes
+    if total <= est:
+        return None
+    return {"kind": "overestimate", "text": f"+{dur(total - est)} over the estimate ({dur(total)} of {dur(est)})"}
+
+
+def dur(minutes) -> str:
+    """90 -> "1 h 30 min", as the page writes a duration (core.js dur)."""
+    m = int(round(float(minutes or 0)))
+    return f"{m} min" if m < 60 else f"{m // 60} h" + (f" {m % 60} min" if m % 60 else "")
+
+
 def for_task(task: Optional[dict], services: Optional[list], date: str, settings: dict,
-             names: Optional[productive.Names] = None) -> list:
+             names: Optional[productive.Names] = None, minutes: float = 0) -> list:
     """[{kind, text}] for the task on that date. task: as productive.task_details gives it; services: the services
-    that take time on that date (bookable_services), or None when they could not be read (then no "nobudget").
-    Never raises: a flag that cannot be worked out is left out."""
+    that take time on that date (bookable_services), or None when they could not be read (then no "nobudget");
+    minutes: the time about to be logged to it (0: no "overestimate"). Never raises: a flag that cannot be worked out
+    is left out."""
     out: list = []
     if not task:
         return out
@@ -84,6 +104,9 @@ def for_task(task: Optional[dict], services: Optional[list], date: str, settings
         out.append({"kind": "closed", "text": "Closed in Productive"})
     if services is not None and not services:
         out.append({"kind": "nobudget", "text": f"No service takes time on {_day(date)}: no budget for it"})
+    over = over_estimate(task, minutes)
+    if over:
+        out.append(over)
     if not task.get("estimate"):
         share = project_share(task.get("projectId"), settings, names)
         if share and share["n"]:

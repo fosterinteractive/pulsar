@@ -293,13 +293,26 @@ function roundMinutes(date, start, minutes) {
 }
 
 /* the picked task's ticket flags (pulsar/flags.py): closed, no budget on the date, no estimate where the project's
-   tasks have one. Read only: one quiet line, and a link to fix it in Productive. */
-function showFlags(task, flags) {
+   tasks have one; and over its estimate with the length in the form, worked out here so it follows that length
+   (the same words as flags.over_estimate). Read only: one quiet line, and a link to fix it in Productive. */
+let flagsShown = {task: null, flags: [], nums: null};
+function showFlags(task, flags, nums) {
+  flagsShown = {task, flags: flags || [], nums: nums || null};
   const el = $('#log-flags'), url = productiveTaskURL(task?.taskId);
-  el.hidden = !flags?.length;
-  el.innerHTML = flags?.length ? '! ' + flags.map(f => esc(f.text)).join(' · ')
+  const texts = flagsShown.flags.map(f => f.text), over = overEstimate();
+  if (over) texts.push(over);
+  el.hidden = !texts.length;
+  el.innerHTML = texts.length ? '! ' + texts.map(esc).join(' · ')
     + (url ? ` · <a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open in Productive</a>` : '') : '';
 }
+function overEstimate() {
+  const n = flagsShown.nums, t = flagsShown.task, mins = +logForm.elements.minutes.value || 0;
+  if (!n?.estimate || n.worked == null || !mins) return '';
+  // an entry changed on its own task is in the time worked already
+  const total = n.worked + mins - (logEdit && t && String(logEdit.taskId) === String(t.taskId) ? logEdit.minutes || 0 : 0);
+  return total > n.estimate ? `+${dur(total - n.estimate)} over the estimate (${dur(total)} of ${dur(n.estimate)})` : '';
+}
+logForm.elements.minutes.addEventListener('input', () => { if (flagsShown.task) showFlags(flagsShown.task, flagsShown.flags, flagsShown.nums); });
 
 /* entries of that day with no start time: the overlap check cannot see them, so say they are there (it is how a
    time already logged in Productive by duration only gets logged twice) */
@@ -339,7 +352,7 @@ async function loadServices(task) {
   f.service.disabled = true; f.service.innerHTML = '<option value="">Loading services…</option>';
   const r = await getJSON(`/api/services?task=${task.taskId}&date=${date}&flags=1`);
   if (logPicker.selected?.taskId !== task.taskId || f.date.value !== date) return;  // a newer choice is loading
-  showFlags(task, r.flags);
+  showFlags(task, r.flags, r.task && {estimate: r.task.estimate, worked: r.task.worked});
   // an entry edited on its own task keeps its service, even one that takes no new time on this date: never another
   // picked for it
   const own = logEdit && task.taskId === logEdit.taskId && logEdit.serviceId

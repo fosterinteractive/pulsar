@@ -544,6 +544,9 @@ dialog#updprompt { border: 1px solid var(--line); border-radius: 14px; backgroun
   padding: 18px 20px 14px; width: min(460px, calc(100vw - 32px)); box-shadow: var(--shadow); }
 dialog#updprompt::backdrop { background: rgba(0,0,0,.35); }
 #updprompt h2 { margin: 0 0 8px; font-size: 15px; }
+#updprompt .dh { display: flex; align-items: flex-start; gap: 8px; }
+#updprompt .dh h2 { flex: 1; }
+#updprompt .dh .btn.icon { margin: -6px -10px 0 0; }
 #updprompt p { margin: 0 0 8px; font-size: 13px; line-height: 1.5; }
 #updprompt .notes { color: var(--muted); }
 #updprompt .df { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
@@ -656,11 +659,9 @@ kbd { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px
 .btn.danger { background: #d70015; color: #fff; }
 .btn.danger:hover { background: #d70015; opacity: .9; }
 /* in Pulsar's own window (html.in-app): the window draws its title, menus (View > Appearance, Help > Error Log) and
-   closes dialogs with Escape and Cmd+W, so the page leaves out its wordmark, theme button and the dialogs' ✕; buttons
-   keep the arrow, as Mac buttons do; the main button takes the Mac's accent colour */
+   closes dialogs with Escape and Cmd+W, so the page leaves out its wordmark and theme button (every dialog keeps its
+   ✕); buttons keep the arrow, as Mac buttons do; the main button takes the Mac's accent colour */
 html.in-app header .brand h1, html.in-app #theme-btn { display: none; }
-html.in-app dialog .dh .btn.icon[aria-label="Close"], html.in-app dialog .dh [data-ld-x] { display: none; }
 html.in-app button, html.in-app .btn, html.in-app summary, html.in-app .card, html.in-app .gaprail, html.in-app .awayband, html.in-app .nwrail { cursor: default; }
 html.in-app .btn.primary { background: var(--accent); color: #fff; }
 html.in-app .btn.primary:hover { background: var(--accent); }
-/* Settings > Updates: "Reinstall Pulsar" (native.js) as a box of its own */

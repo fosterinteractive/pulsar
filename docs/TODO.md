@@ -10,8 +10,6 @@ Agreed next steps, newest first. Done items go to `CHANGELOG.md`.
   file; anyone still on 1.5.0 or older runs the install line once. Then sign with one touch, not two.
 - **The warp, smoother.** It is not smooth now, and on an update it bends oddly: the new build already shows behind
   it before the warp ends. To test together; maybe a nicer loading animation instead.
-- **A ✕ on every dialog.** Some close only with Cancel (the update reminder, and dialogs the scripts build, such as
-  confirmations): give each the same ✕ in the corner as Settings.
 - **Leave an entry out of learning.** A mark on a logged entry ("not an example") so Pulsar never learns from it: an
   entry logged to the right task at the wrong time (a billable task written over another project's minutes) now
   teaches the wrong task for that repository. Kept on this Mac per entry, shown on the entry, with undo. The same for

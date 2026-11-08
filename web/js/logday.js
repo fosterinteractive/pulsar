@@ -241,7 +241,7 @@ function renderReview() {
     toCheck.length ? `<button type="button" class="iss" data-ld-goto="${ldNextCheck(toCheck).id}" title="Open the next row to check"><span class="g" aria-hidden="true">!</span>${toCheck.length} to check</button>`
       : LD.rows.some(ldPending) ? '<span class="iss ok all" role="status"><span class="g" aria-hidden="true">✓</span>All checked</span>' : '',
     ov.size ? `<button type="button" class="iss" data-ld-goto="${[...ov.keys()][0]}"><span class="g" aria-hidden="true">!</span>${Math.ceil(ov.size / 2)} ${ov.size > 2 ? 'overlaps' : 'overlap'}, ${dur(Math.round(ovMin))}</button>` : '',
-    nFlags ? `<button type="button" class="iss" data-ld-goto="${flagged[0].id}" title="A closed task, no budget on this date, or no estimate"><span class="g" aria-hidden="true">!</span>${nFlags} to fix in Productive</button>` : '',
+    nFlags ? `<button type="button" class="iss" data-ld-goto="${flagged[0].id}" title="A closed task, no budget on this date, over or without an estimate"><span class="g" aria-hidden="true">!</span>${nFlags} to fix in Productive</button>` : '',
     T.notCovered ? `<span class="iss ok" title="Active time no entry covers, logged or proposed">${dur(T.notCovered)} not logged</span>` : '',
     T.over ? `<span class="iss ok" title="More than your active time and meetings: shown, never placed">${dur(T.over)} over the day</span>` : '',
     T.parallel ? `<span class="iss ok" title="${esc(`Agents ran while you did other work: ${dur(T.shared)} went to a client first, ${dur(T.leftOut)} left out`)}">Parallel ${dur(T.parallel)}</span>` : '',
@@ -469,7 +469,7 @@ async function ldSetTask(r, t) {
   r.flags = r.flags.filter(f => !['notask', 'low', 'noservice', 'claudefound'].includes(f));
   if (r.noteFrom === 'claude' && !r.noteEdited) { r.note = ''; r.noteFrom = ''; r.flags = r.flags.filter(f => f !== 'claudenote'); }  // Claude wrote it for another task
   renderReview(); render();  // its note, if Claude's for the old task, went: a new draft when the note field is focused
-  const [list, sug] = await Promise.all([getJSON(`/api/services?task=${r.taskId}&date=${LD.date}&flags=1`), suggestions(LD.date)]);
+  const [list, sug] = await Promise.all([getJSON(`/api/services?task=${r.taskId}&date=${LD.date}&flags=1&minutes=${Math.round(r.minutes || 0)}`), suggestions(LD.date)]);
   if (r.taskId !== String(t.taskId)) return;
   if (list.error) { r.serviceProblem = list.error; renderReview(); return; }
   r.ticket = list.flags || [];
