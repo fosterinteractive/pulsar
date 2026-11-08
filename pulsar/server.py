@@ -875,7 +875,7 @@ def history_ready(date: str, s: dict) -> bool:
 
 def history_rows(date: str, s: dict, days: int = REPEAT_DAYS) -> tuple:
     """(your entries of the `days` days before `date`, problem), kept an hour: the history the repeats, the meetings
-    and the Likely rows learn from."""
+    and the Likely rows learn from, less the entries marked not an example (daymarks.no_learn)."""
     # One read per date covers every caller: the longest history anyone asks for, sliced for the shorter ones (it used
     # to be three reads, 60 + 28 + 31 days, before the day's own entries could load). The columns ask at the same
     # moment, so a caller that comes while it is being read waits for that read instead of starting another.
@@ -898,7 +898,8 @@ def history_rows(date: str, s: dict, days: int = REPEAT_DAYS) -> tuple:
             kept = (time.time() - (HISTORY_FOR - 60 if from_copy else 0), rows)
             with _rows_lock:
                 _rows_before[key] = kept
-    return [r for r in kept[1] if r.get("date", "") >= first], None
+    skip = daymarks.no_learn()  # entries marked not an example teach nothing (daymarks.py)
+    return [r for r in kept[1] if r.get("date", "") >= first and str(r.get("id") or "") not in skip], None
 
 
 _fresh: dict = {}  # (date, person) -> (when, tasks)
@@ -1986,7 +1987,8 @@ class Handler(BaseHTTPRequestHandler):
             if urlparse(self.path).path == "/api/daymarks":  # the day done, time not work: this Mac only
                 return self.send_json(daymarks.change(str(body.get("date") or ""), done=body.get("done"),
                                                       add=body.get("add"), remove=body.get("remove"),
-                                                      undone=body.get("undone") is True))
+                                                      undone=body.get("undone") is True,
+                                                      nolearn=body.get("nolearn"), learn=body.get("learn")))
             if urlparse(self.path).path == "/api/dayplan/review":
                 return self.send_json(api_dayplan_review(body))
             if urlparse(self.path).path == "/api/activitywatch/fix":  # Settings: ActivityWatch's AFK timeout

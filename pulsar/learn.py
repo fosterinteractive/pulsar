@@ -434,7 +434,10 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
         days = {d: rows for d in _days_before(date) for rows in [_stored(d)] if rows}
         days[date] = rows_of(proposal)  # rows already logged today teach the ones after them
         t0_of = lambda d: datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=tz).timestamp()  # noqa: E731
-        entries = [r for r in entries_before + entries_today if r.get("taskId")]
+        from . import daymarks
+        not_example = daymarks.no_learn()  # marked not an example (daymarks.py); server.history_rows leaves them out too
+        entries = [r for r in entries_before + entries_today
+                   if r.get("taskId") and str(r.get("id") or "") not in not_example]
         sess, repo, sr = votes(days, entries, t0_of, date)
         names = {r["taskId"]: r for r in sorted(entries, key=lambda r: r.get("date") or "")}
         skip = frozenset(w for _, w in words(settings.get("person_name") or ""))

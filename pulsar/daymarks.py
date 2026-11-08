@@ -1,8 +1,11 @@
 """What the person says about a day's own time, kept on this Mac and never sent to Productive: the day is done (or, on
 a day past its target, not done after all), and stretches of active time that were not work. The Day view greys a
 done day's yellow rails and counts no stretch marked "not work"; Log the day proposes nothing there; Earlier days
-leaves done days out. One owner-only file, ~/.cache/pulsar/day-marks.json: {date: {"done": true|false, "notWork":
-[[start, end], ...]}} in minutes of the day as the page draws them, KEEP_DAYS days.
+leaves done days out. And logged entries that are not an example ("noLearn": their ids): time moved by hand, or logged
+to the right task at the wrong time. Pulsar never learns from them (server.history_rows, learn.annotate): not for the
+Likely rows, the repeats, the meetings or Log the day. One owner-only file, ~/.cache/pulsar/day-marks.json:
+{date: {"done": true|false, "notWork": [[start, end], ...], "noLearn": [entry id, ...]}}, spans in minutes of the
+day as the page draws them, KEEP_DAYS days (longer than learning looks back).
 """
 
 from __future__ import annotations
@@ -19,6 +22,8 @@ PATH = os.path.join(config.CACHE_DIR, "day-marks.json")
 KEEP_DAYS = 120
 _lock = threading.Lock()
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+ENTRY_ID = re.compile(r"\d{1,20}")
+NO_LEARN_MAX = 200  # entries marked per day
 
 
 def _read() -> dict:
@@ -38,6 +43,9 @@ def clean(m: dict) -> dict:
     spans = merge(m.get("notWork") or [])
     if spans:
         out["notWork"] = spans
+    ids = sorted({str(x) for x in m.get("noLearn") or [] if isinstance(x, str) and ENTRY_ID.fullmatch(x)})
+    if ids:
+        out["noLearn"] = ids[:NO_LEARN_MAX]
     return out
 
 
@@ -81,9 +89,15 @@ def between(first: str, last: str) -> dict:
     return {d: clean(m) for d, m in _read().items() if first <= d <= last and clean(m)}
 
 
-def change(date: str, done=None, add=None, remove=None, undone: bool = False) -> dict:
+def no_learn() -> set:
+    """The ids of every entry marked not an example, on any day kept."""
+    return {i for m in _read().values() for i in clean(m).get("noLearn", [])}
+
+
+def change(date: str, done=None, add=None, remove=None, undone: bool = False, nolearn=None, learn=None) -> dict:
     """Changes one day's marks and returns them: done True or False (undone: forget what was said, so the target
-    decides again), add or remove a "not work" span [a, b)."""
+    decides again), add or remove a "not work" span [a, b), mark an entry of that day not an example (nolearn: its
+    id) or an example again (learn: its id)."""
     if not DATE.fullmatch(date or ""):
         raise ValueError("date=YYYY-MM-DD")
     with _lock:
@@ -104,6 +118,13 @@ def change(date: str, done=None, add=None, remove=None, undone: bool = False) ->
             if not r:
                 raise ValueError("a span [start, end) in minutes of the day")
             m["notWork"] = cut(m.get("notWork") or [], *r[0])
+        for v in (nolearn, learn):
+            if v is not None and not (isinstance(v, str) and ENTRY_ID.fullmatch(v)):
+                raise ValueError("an entry id")
+        if nolearn is not None:
+            m["noLearn"] = (m.get("noLearn") or []) + [nolearn]
+        if learn is not None:
+            m["noLearn"] = [i for i in m.get("noLearn") or [] if i != learn]
         m = clean(m)
         if m:
             doc[date] = m

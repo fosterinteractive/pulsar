@@ -10,12 +10,9 @@ Agreed next steps, newest first. Done items go to `CHANGELOG.md`.
   file; anyone still on 1.5.0 or older runs the install line once. Then sign with one touch, not two.
 - **The warp, smoother.** It is not smooth now, and on an update it bends oddly: the new build already shows behind
   it before the warp ends. To test together; maybe a nicer loading animation instead.
-- **Leave an entry out of learning.** A mark on a logged entry ("not an example") so Pulsar never learns from it: an
-  entry logged to the right task at the wrong time (a billable task written over another project's minutes) now
-  teaches the wrong task for that repository. Kept on this Mac per entry, shown on the entry, with undo. The same for
-  time moved by hand (internal work put on billable hours, or the other way): it must not shape future predictions.
-  To think through: whether Pulsar can tell such an entry by itself (its task does not match the sessions under it)
-  or only by the mark.
+- **Moved time, told apart by itself.** "Not an example" is a mark by hand. To think through: whether Pulsar
+  can tell such an entry itself (its task does not match the sessions under it) and leave it out of learning without
+  a mark.
 - **Working days** as a setting (Monday to Friday is fixed today: Earlier days, the week line, the reminder).
 - **Advanced settings**, a small closed set (join gap, outside-Claude entry length, learning memory, daily meeting
   cards, split hint, the "No estimate" flag), and a developer override for calibration in read-only runs.

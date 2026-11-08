@@ -434,7 +434,7 @@ function render() {
       const rz = x.s == null ? '' : '<i class="rz rz-t" data-rz="t" title="Drag to change the start"></i><i class="rz rz-b" data-rz="b" title="Drag to change the end"></i>';
       return `<div class="card logged" data-k="logged" data-i="${i}" style="--c:${color(x.project)};${place(x, ppm, 18)}"
         tabindex="0" role="button" aria-label="${esc(`Logged ${hm(x.s)}–${hm(x.e)}${x.fromClaudeCode ? ' from Claude Code' : ''}: ${x.project}${x.task ? ', ' + x.task : ''}, ${dur(x.minutes)}`)}"${x.fromClaudeCode ? ' title="Logged from Claude Code"' : ''}>
-        <div class="row"><span class="t">${esc(x.task || x.project)}</span>${x.billable ? `<span class="bill" title="Billable${x.billing ? ': ' + esc(x.billing) : ''}">$</span>` : ''}<span class="m num">${dur(x.minutes)}</span></div>
+        <div class="row"><span class="t">${esc(x.task || x.project)}</span>${notExample(x) ? '<span class="nolearn" title="Not an example: Pulsar does not learn from this entry">⊘</span>' : ''}${x.billable ? `<span class="bill" title="Billable${x.billing ? ': ' + esc(x.billing) : ''}">$</span>` : ''}<span class="m num">${dur(x.minutes)}</span></div>
         ${h > 34 && x.task ? `<div class="d">${esc(x.project)}</div>` : ''}
         ${lines ? `<div class="n" style="-webkit-line-clamp:${lines}">${esc(x.note)}</div>` : ''}${rz}</div>`;
     }).join('') + repeatCache.map((x, i) => {
@@ -631,6 +631,15 @@ document.addEventListener('click', ev => {
   // may have filled with another one; the server also refuses it if it changed since (seen)
   if (ev.target.closest('[data-edit]') && popEntry) { const x = popEntry; closePop(); editEntry(x); return; }
   if (ev.target.closest('[data-del]') && popEntry) { askDelete(popEntry, ev); return; }
+  const nl = ev.target.closest('[data-nolearn]');
+  if (nl && popEntry) {
+    const x = popEntry, off = nl.dataset.nolearn === 'nolearn';
+    closePop();
+    markDay(off ? {nolearn: String(x.id)} : {learn: String(x.id)},
+            off ? 'Not an example: Pulsar no longer learns from this entry.' : 'Pulsar learns from this entry again.',
+            {label: 'Undo', run: () => markDay(off ? {learn: String(x.id)} : {nolearn: String(x.id)})});
+    return;
+  }
   const delYes = ev.target.closest('[data-del-yes]');
   if (delYes && popEntry) { deleteEntry(popEntry, delYes); return; }
   const rzYes = ev.target.closest('[data-rz-yes]');
@@ -680,7 +689,9 @@ document.addEventListener('click', ev => {
       <dl><dt>Task</dt><dd>${esc(x.task)}</dd><dt>Budget</dt><dd>${esc(x.budget)}</dd><dt>Service</dt><dd>${esc(x.service)}</dd><dt>Billable</dt><dd>${x.billable == null ? 'Unknown' : x.billable ? 'Yes' : 'No'}${x.billing ? ' · ' + esc(x.billing) : ''}</dd></dl>
       <div class="btnrow"><button class="btn bordered sm" data-edit>Edit</button><button class="btn bordered sm" data-del>Delete</button>${
         productiveTaskURL(x.taskId) ? `<a class="btn bordered sm" href="${esc(productiveTaskURL(x.taskId))}" target="_blank" rel="noopener noreferrer">Open in Productive</a>` : ''}</div>
-      ${x.approved ? '<p class="sub">Approved: Productive may refuse a change.</p>' : ''}`, ev);
+      ${x.approved ? '<p class="sub">Approved: Productive may refuse a change.</p>' : ''}
+      ${x.id ? `<p class="sub nolearn-line">${notExample(x) ? 'Not an example: Pulsar does not learn from this entry.' : 'Pulsar learns which task goes with which work from entries like this one.'}
+        <button class="btn sm" data-nolearn="${notExample(x) ? 'learn' : 'nolearn'}">${notExample(x) ? 'Learn from it again' : 'Not an example'}</button></p>` : ''}`, ev);
   }
 });
 function closePop(refocus = false) {
@@ -812,6 +823,9 @@ setInterval(async () => {
 
 /* ---------- the day done, and time that was not work (pulsar/daymarks.py: this Mac only) ---------- */
 function notWorkSpans() { return state.marks?.date === state.date ? state.marks.notWork || [] : []; }
+/* a logged entry marked not an example: time moved by hand, or logged to the right task at the wrong time; Pulsar
+   does not learn from it (daymarks.py) */
+function notExample(x) { return !!x?.id && state.marks?.date === state.date && (state.marks.noLearn || []).includes(String(x.id)); }
 /* 'said' (marked done), 'target' (logged time reached the daily target and nobody said "not done"), or '' */
 function dayDone() {
   const m = state.marks?.date === state.date ? state.marks : {};

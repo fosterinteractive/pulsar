@@ -9,6 +9,7 @@ What each Pulsar release changed, newest first.
 ## Unreleased
 - Over the estimate: the log dialog and Log the day say when the time logged would take a task over its estimate ("+1 h 30 min over the estimate (5 h 30 min of 4 h)"); the dialog follows the length as you type it.
 - The error log has Mark as seen: the ! at the top waits for a new error. The log keeps everything.
+- Not an example: a logged entry can be marked so Pulsar never learns from it (time moved by hand, or logged to the right task at the wrong time). In the entry's popover, with Undo; a ⊘ on the entry; kept on this Mac.
 - Every dialog has its ✕ again in Pulsar's window, and the update reminder has one too.
 
 ## 1.6.4 (2026-11-07)

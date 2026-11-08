@@ -164,6 +164,30 @@ class DayMarksTest(unittest.TestCase):
         self.assertEqual(daymarks.cut([[60, 110]], 70, 80), [[60, 70], [80, 110]])
         self.assertEqual(daymarks.cut([[60, 110]], 0, 2000), [])
 
+    def test_an_entry_marked_not_an_example_teaches_nothing_until_taken_back(self):
+        from pulsar import learn
+        self.assertEqual(daymarks.change("2026-11-05", nolearn="900000001"), {"noLearn": ["900000001"]})
+        daymarks.change("2026-11-05", nolearn="900000001")  # twice is once
+        self.assertEqual(daymarks.no_learn(), {"900000001"})
+        with self.assertRaises(ValueError):
+            daymarks.change("2026-11-05", nolearn="1; rm")
+        # the history every learner reads leaves it out
+        rows = [{"id": "900000001", "date": "2026-11-05", "taskId": "1"}, {"id": "2", "date": "2026-11-05", "taskId": "1"}]
+        with mock.patch.object(server, "productive_rows", lambda *a, **k: (rows, None, None, False)):
+            server._rows_before.clear()
+            got, _ = server.history_rows("2026-11-06", {"person_id": "p"}, days=30)
+            self.assertEqual([r["id"] for r in got], ["2"])
+            # Likely's rows: annotate gets the entries, and drops the marked one before it votes
+            seen = []
+            with mock.patch.object(learn, "votes", lambda days, entries, *a: (seen.append(entries), ({}, {}, {}))[1]), \
+                    mock.patch.object(learn, "warm", lambda *a: None):
+                learn.annotate({"entries": []}, "2026-11-06", {}, rows, [], None)
+            self.assertEqual([r["id"] for r in seen[0]], ["2"])
+            self.assertEqual(daymarks.change("2026-11-05", learn="900000001"), {})
+            got, _ = server.history_rows("2026-11-06", {"person_id": "p"}, days=30)
+            self.assertEqual(len(got), 2)
+            server._rows_before.clear()
+
     def test_a_day_is_marked_done_and_time_not_work_and_both_can_be_taken_back(self):
         self.assertEqual(daymarks.get("2026-11-05"), {})
         self.assertEqual(daymarks.change("2026-11-05", done=True), {"done": True})

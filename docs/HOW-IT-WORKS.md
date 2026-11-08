@@ -1434,7 +1434,13 @@ question) and cannot tell when inside it the work happened.
   the log dialog opened on a stretch or on a Log the day row, marks that time as not work: it counts nowhere (no rail,
   not in "Active, not logged", not proposed by Log the day, less in Earlier days) and shows as a quiet hatched rail; a
   click on it, or Undo in the note at the bottom, counts it as work again. `GET /api/daymarks?date=` (or `from=&to=`),
-  `POST /api/daymarks` `{date, done | undone | add: [a, b] | remove: [a, b]}`, the page's session only.
+  `POST /api/daymarks` `{date, done | undone | add: [a, b] | remove: [a, b] | nolearn: id | learn: id}`, the page's
+  session only.
+- **Not an example** (the same file, `noLearn`: entry ids per day): a logged entry's popover marks it so Pulsar never
+  learns from it, for time moved by hand (internal work put on billable hours, or the other way) or logged to the
+  right task at the wrong time. `server.history_rows` leaves such entries out, so the repeats, the meetings' tasks,
+  Log the day and the Likely rows (`learn.annotate`, which also drops the day's own) all skip them. The entry shows a
+  ⊘; **Learn from it again**, or Undo in the note, takes the mark back. The entry itself stays as it is in Productive.
 - **In Pulsar's own window** (1.6 and later sets `window.PULSAR_APP`; `theme-early.js` then marks `<html>` with
   `in-app`): Settings → Time and activity has **This Mac**, the window's own choices, applied at once through
   `pulsarNative.setNativePrefs` and shown again on each `pulsar:prefs` event: the Dock badge, the end-of-day reminder
