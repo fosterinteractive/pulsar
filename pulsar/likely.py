@@ -145,6 +145,18 @@ def _load_day(date: str, tz_name: str):
     return None
 
 
+def keep_day(date: str, tz_name: str, result: dict, settings: dict) -> None:
+    """A past day learning just worked out in the background (learn.warm), kept for the day view as _add_hints keeps
+    one the page asked for, with its commits: opening it then reads it from disk instead of working it out again.
+    Never a day with no tracker's data (it may only be ActivityWatch not up yet), and never over one kept already."""
+    if result.get("error") or result.get("tracker") == "no tracker" or _load_day(date, tz_name) is not None:
+        return
+    kept = {**result, "entries": [dict(e) for e in result.get("entries") or []],
+            **({"background": [dict(e) for e in result["background"]]} if "background" in result else {})}
+    _with_tasks(kept, date, settings, True)
+    _save_day(date, tz_name, kept)
+
+
 def _save_day(date: str, tz_name: str, result: dict) -> None:
     try:
         os.makedirs(DAYS_DIR, mode=0o700, exist_ok=True)

@@ -99,12 +99,15 @@ def warm(date: str, settings: dict) -> None:
             todo = [d for d, doc in docs.items() if doc is None or (doc.get("blind") and answering())]
             _state.update(done=LEARN_DAYS - len(todo), of=LEARN_DAYS)
             os.makedirs(DIR, mode=0o700, exist_ok=True)
+            recent = (datetime.now(config.tz(settings)) - timedelta(days=likely.KEEP_DAYS)).strftime("%Y-%m-%d")
             for d in todo:
                 got = likely.proposal(d, config.timezone_name(settings), today, False, settings, keep=False)
                 if not got.get("error"):
                     blind = got.get("tracker") == "no tracker" and not answering()
                     config.write_atomic(_path(d), json.dumps({"format": FORMAT, "rows": rows_of(got),
                                                               **({"blind": True} if blind else {})}))
+                    if d >= recent:  # kept for the day view too, so it opens at once (yesterday, after midnight)
+                        likely.keep_day(d, config.timezone_name(settings), got, settings)
                 _state["done"] += 1
         except Exception as exc:  # a hint: the suggestions just use fewer days
             logbook.record("learn", f"Learning tasks from past days: {type(exc).__name__}: {exc}", kind="warning")

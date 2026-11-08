@@ -468,7 +468,10 @@ Which Claude Code session, and so which project, each minute of work most likely
   itself; the script's own rows are not used: they laid each sitting's minutes out one project after another (on one
   person's days, only 57% of the minutes in front had the same project in the script's row) and moved the agents'
   parallel time into free time. It is never part of the repository.
-- **Caching**: a past day is worked out once (about 3 to 6 seconds), today again after 3 minutes or on ↻. Copies kept
+- **Caching**: a past day is worked out once (about 3 to 6 seconds), today again after 3 minutes or on ↻. Learning's
+  background run (`learn.warm`), which works out each past day anyway, also keeps the last 31 days for the day view
+  (`likely.keep_day`, with their commits), so yesterday opens at once the first time after midnight; the page says
+  "reading Claude sessions…" only after 0.4 seconds, so a day read from disk never flashes it. Copies kept
   in the older shape (`likely-full` format 1, `likely-days` format 2) are worked out again. A past day
   worked out while no tracker answered (ActivityWatch not up yet at login) is not final: it is reused for 3 minutes, as
   today is, never kept on disk (`likely-full`), and learning never takes it from memory, so it is worked out again

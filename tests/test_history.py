@@ -136,6 +136,23 @@ class LearnTrackerTest(unittest.TestCase):
         self.warm()
         self.assertEqual(len(self.runs), 2)  # then kept
 
+    def test_a_recent_day_learning_works_out_is_kept_for_the_day_view_too(self):
+        kept = []
+        with mock.patch.object(likely, "keep_day", lambda d, tz, got, s: kept.append((d, got["tracker"]))):
+            self.up, self.answer = True, {"tracker": "ActivityWatch", "entries": [{"s": 540, "e": 600, "project": "p"}]}
+            self.warm()
+        self.assertEqual(kept, [(self.yesterday, "ActivityWatch")])
+        # likely.keep_day itself: never a day with no tracker's data, never over one kept already
+        saved = []
+        with mock.patch.object(likely, "_save_day", lambda d, tz, r: saved.append(d)), \
+                mock.patch.object(likely, "_with_tasks", lambda *a: None):
+            with mock.patch.object(likely, "_load_day", lambda d, tz: None):
+                likely.keep_day(self.yesterday, "UTC", {"tracker": "no tracker", "entries": []}, {})
+                likely.keep_day(self.yesterday, "UTC", {"tracker": "ActivityWatch", "entries": []}, {})
+            with mock.patch.object(likely, "_load_day", lambda d, tz: {"entries": []}):
+                likely.keep_day(self.yesterday, "UTC", {"tracker": "ActivityWatch", "entries": []}, {})
+        self.assertEqual(saved, [self.yesterday])
+
     def test_a_day_with_no_activity_while_a_tracker_answers_is_kept(self):
         self.up = True
         self.warm()

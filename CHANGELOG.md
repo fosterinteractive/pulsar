@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Past days open at once: the background run that learns from them also keeps them for the day view, so yesterday is not worked out again the first time you open it, and "reading Claude sessions…" no longer flashes on a day already kept.
 - A call that runs over its meeting (or starts early) is that meeting in Log the day: a 10:00-10:30 meeting whose call ended at 10:55 is one 55-minute entry, not 30 minutes and a call to pick a task for; meetings back to back each keep their own time.
 - A click outside a dialog closes it, as its ✕ does (Settings still asks about unsaved changes); a click outside Log the day's task picker closes it too.
 - If Claude Code changes how it keeps its Productive connection, Pulsar says it cannot read it (update Pulsar, or use a token) instead of failing with an error.

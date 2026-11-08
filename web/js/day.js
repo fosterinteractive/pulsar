@@ -390,7 +390,7 @@ function render() {
 
   // likely
   const laneLikely = $('#lane-likely');
-  if (!likely) { setHTML(laneLikely, '<div class="state">reading Claude sessions…</div>'); setText($('#h-likely'), '…'); }
+  if (!likely) { setHTML(laneLikely, '<div class="state wait">reading Claude sessions…</div>'); setText($('#h-likely'), '…'); }
   else if (likely.disabled) { setHTML(laneLikely, ''); setText($('#h-likely'), ''); }
   else if (likely.error) { setHTML(laneLikely, `<div class="state err">${esc(likely.error)}</div>`); setText($('#h-likely'), 'error'); }
   else {
