@@ -3011,6 +3011,28 @@ class CapTest(unittest.TestCase):
         logbook._last.clear()
 
 
+class EntriesCopyTest(unittest.TestCase):
+    def test_the_days_copy_comes_at_once_and_never_asks_productive(self):
+        s = {**config.DEFAULTS, "person_id": "42", "timezone": "UTC"}
+        path = server._copy_path("2026-11-04", s)
+        start = datetime(2026, 11, 4, 10, 0, tzinfo=timezone.utc).timestamp()
+        server.write_json(path, {"fetched": "2026-11-04T18:30+00:00", "rows": [
+            {"id": "9", "date": "2026-11-04", "start": start, "minutes": 30, "taskId": "7", "task": "T", "project": "P"}]})
+        self.addCleanup(os.remove, path)
+
+        def asked(*a, **k):
+            raise AssertionError("asked Productive")
+        with mock.patch.object(server, "current_settings", lambda: s), \
+                mock.patch.object(server.productive, "entries", asked), \
+                mock.patch.object(server, "from_claude_code", lambda d: set()):
+            got = server.api_entries({"date": "2026-11-04", "copy": "1"})
+            none = server.api_entries({"date": "2026-11-05", "copy": "1"})
+        self.assertEqual((got["copy"], got["fetched"]), (True, "04.11 18:30"))
+        [e] = got["entries"]
+        self.assertEqual((e["id"], e["minutes"], e["s"], e["e"]), ("9", 30, 600.0, 630.0))
+        self.assertEqual(none, {"entries": [], "copy": False})
+
+
 class LogsSeenTest(unittest.TestCase):
     def test_mark_as_seen_quiets_the_header_until_a_newer_error(self):
         from pulsar import logbook

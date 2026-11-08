@@ -1662,6 +1662,7 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `GET /api/services?task=&date=[&flags=1]` | Services that take time on that date; with `flags=1`, the task's ticket flags (5.3). |
 | `GET /api/report?from=&to=` | A range in numbers. |
 | `GET /api/logs?days=`, `/api/logs/download` | The error log. |
+| `GET /api/entries?date=&copy=1` | The copy of the day's entries kept from the last read (`days/<person>/<date>.json`), at once and without asking Productive: `{entries, copy: true, fetched}`, or `{entries: [], copy: false}`. The page draws it while it asks Productive itself, then draws Productive's answer over it (`setHTML` leaves unchanged columns alone). Not on ↻ or a refresh after a write. |
 | `GET /api/changelog`, `/api/version`, `/api/whoami?nonce=` | Changelog; version (public); proof of the key, bound to the port (`proof1`), and the older form (`proof`) (public). |
 | `POST /api/mcp/<tool>` | `{args, client, session, sessionFrom, projectDir, ignoreLogged}`: one of Pulsar in Claude Code's tools, answered in the server (5.6). The key opens it. |
 | `POST /api/session` | Trade a sign-in code for a session token. `POST /api/session/end` signs out. |

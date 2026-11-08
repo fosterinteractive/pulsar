@@ -342,6 +342,12 @@ def api_aw_login(body: dict) -> dict:
     return {"result": res, "awayAfter": config.away_after(s), "activitywatch": awsetup.status(config.away_after(s))}
 
 
+def _copy_path(date: str, s: dict) -> str:
+    """Where the copy of one day's entries is kept (productive_rows), per person."""
+    who = re.sub(r"\D", "", str(s.get("person_id") or "")) or "unknown"
+    return os.path.join(config.CACHE_DIR, "days", who, f"{date}.json")
+
+
 def productive_rows(d0: str, d1: str, s: dict, bulk: bool = False) -> tuple:
     """(rows, problem, source, from_copy). Every answer is kept per day, so when Productive cannot be reached
     the day view and the report show the last copy of each day, and say so, instead of nothing. bulk: a long read
@@ -351,8 +357,7 @@ def productive_rows(d0: str, d1: str, s: dict, bulk: bool = False) -> tuple:
     rows, problem, source = productive.entries(d0, d1, s, bulk=bulk)
     if problem and source:  # a connection that failed (no connection at all is a setup step, not an error)
         logbook.record("productive", problem)
-    who = re.sub(r"\D", "", str(s.get("person_id") or "")) or "unknown"
-    path = lambda d: os.path.join(config.CACHE_DIR, "days", who, f"{d}.json")  # noqa: E731
+    path = lambda d: _copy_path(d, s)  # noqa: E731
     if not problem:
         stamp = datetime.now(config.tz(s)).isoformat(timespec="minutes")
         by_date: dict = {d: [] for d in dates}
@@ -430,12 +435,35 @@ def away(items: list, least: float | None = None, until: float | None = None) ->
 
 
 def api_entries(q: dict) -> dict:
+    """The day's entries from Productive. copy=1: the copy kept from the last read instead, at once and with no
+    request to Productive ({"copy": true}, or {"copy": false} when there is none), for the page to draw while it asks
+    Productive itself (an entry changes there by other people and other tools too)."""
     s = current_settings()
     date, tz = q["date"], config.tz(s)
-    t0, _ = day_bounds(date, tz)
+    if q.get("copy") == "1":
+        kept = read_json(_copy_path(date, s), None)
+        if not (isinstance(kept, dict) and isinstance(kept.get("rows"), list)):
+            return {"entries": [], "copy": False}
+        rows = [r for r in kept["rows"] if isinstance(r, dict) and r.get("date") and "minutes" in r]
+        try:
+            stamp = datetime.fromisoformat(str(kept.get("fetched"))).strftime("%d.%m %H:%M")
+        except ValueError:
+            stamp = None
+        return {"entries": _entry_rows(rows, date, s), "copy": True, "fetched": stamp, "warning": None,
+                "needsSetup": False}
     rows, problem, source, from_copy = productive_rows(date, date, s)
     if problem and not from_copy:
         return {"error": problem, "entries": [], "needsSetup": source is None}
+    return {"entries": _entry_rows(rows, date, s), "source": source,
+            "fetched": None if from_copy else datetime.now(tz).strftime("%d.%m %H:%M"),
+            "warning": problem, "needsSetup": bool(problem) and source is None}
+
+
+def _entry_rows(rows: list, date: str, s: dict) -> list:
+    """Productive's rows of one day as the page draws them: minutes on the day's clock, in time order, the ones
+    Pulsar in Claude Code wrote marked."""
+    tz = config.tz(s)
+    t0, _ = day_bounds(date, tz)
     out = []
     for x in rows:
         start = None if x.get("start") is None else round(clock(x["start"], t0, tz), 2)
@@ -448,8 +476,7 @@ def api_entries(q: dict) -> dict:
         if str(x.get("id") or "") in mine:
             x["fromClaudeCode"] = True
     out.sort(key=lambda x: (x["s"] is None, x["s"] or 0))
-    return {"entries": out, "source": source, "fetched": None if from_copy else datetime.now(tz).strftime("%d.%m %H:%M"),
-            "warning": problem, "needsSetup": bool(problem) and source is None}
+    return out
 
 
 def from_claude_code(date: str) -> set:

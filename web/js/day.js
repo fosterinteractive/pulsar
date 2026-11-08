@@ -17,6 +17,12 @@ function load({fresh = false, keepScroll = false} = {}) {
   return Promise.all([
     getJSON(`/api/activity?date=${d}&source=${state.source}`).then(x => { if (act()) { state.act = x; drawSoon(); } return x; }),
     getJSON(`/api/entries?date=${d}`).then(x => { if (logged()) { state.logged = x; drawSoon(); loadEstimates(); } return x; }),
+    // ...and before it, at once, the copy kept from the last read: Productive itself (entries change there by other
+    // people and tools too) is drawn over it when it answers, and setHTML leaves alone what did not change.
+    // Placed after it, so callers still find the entries second.
+    keepScroll || fresh ? null : getJSON(`/api/entries?date=${d}&copy=1`).then(x => {
+      if (logged() && !state.logged && x.copy) { state.logged = x; drawSoon(); }
+    }),
     getJSON(`/api/proposal?date=${d}&quick=1${fresh ? '&fresh=1' : ''}`).then(x => {
       if (likely()) { state.likely = x; drawSoon(); if (x.learnPending || x.hintsPending) setTimeout(() => loadLearned(d), 3000); }
       return x;
