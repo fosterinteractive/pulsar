@@ -1254,6 +1254,9 @@ final class NativeWarp {
         view.layerUsesCoreImageFilters = true
         view.autoresizingMask = [.width, .height]
         let root = view.layer!
+        // the page's own background under the picture: the picture shrinks and its hole opens, and the live page must
+        // not show there (during an update it is already the new version, loading)
+        root.backgroundColor = (web?.underPageBackgroundColor ?? NSColor.windowBackgroundColor).cgColor
         let scale = host.window?.backingScaleFactor ?? 2
 
         let pic = CALayer()

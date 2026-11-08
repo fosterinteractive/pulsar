@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- The warp in Pulsar's window no longer shows the page behind it: during an update the new version showed round the edges and through the middle while it loaded. Needs the new app (Update and restart).
 - Testing Pulsar counts as work on Pulsar: its own window, while a session in Pulsar's repository is at work, is that session's time in the Likely column instead of time spent logging (on one day, 80 more minutes in front and 71 fewer in the background).
 - Over the estimate: the log dialog and Log the day say when the time logged would take a task over its estimate ("+1 h 30 min over the estimate (5 h 30 min of 4 h)"); the dialog follows the length as you type it.
 - The error log has Mark as seen: the ! at the top waits for a new error. The log keeps everything.

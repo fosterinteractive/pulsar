@@ -1482,7 +1482,9 @@ question) and cannot tell when inside it the work happened.
   (`task_details`, cached 5 minutes).
 - **Refreshing**: ↻ reloads everything and asks Google and the Likely proposal afresh. Today refreshes by itself once an hour while the page is visible.
 - **The warp**: an update plays a short gravitational-lens animation. In the window it is native
-  (a snapshot of the page bent by Core Image's hole distortion, animated by Core Animation on the graphics card); in a
+  (a snapshot of the page bent by Core Image's hole distortion, animated by Core Animation on the graphics card, over
+  the page's own background colour, so the live page never shows round the shrunken picture or through its hole:
+  during an update that page is already the new version, loading); in a
   browser it is a CSS version. It is off with Reduce motion, or in Settings. Taking the snapshot comes first (50 to 70
   ms), so the page waits that much more before it lets go, and the window lets go only once the pull is all the way
   in (it used to let go at about 60% of it). The data that comes back while the warp pulls in is drawn once, when it
