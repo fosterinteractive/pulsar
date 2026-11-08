@@ -443,7 +443,10 @@ Which Claude Code session, and so which project, each minute of work most likely
   whose agent was running; else the one last used in that sitting (a sitting ends after Away after with no sign of
   work, 4.1). In a
   browser, a page whose title or address names a project goes to that project's session. Meetings, personal
-  windows and time logging (a minute that went mostly to Pulsar or Productive) go to none.
+  windows and time logging (a minute that went mostly to Pulsar or Productive) go to none. Except Pulsar's own
+  window while a session in Pulsar's own repository (`pulsar`, `pulsar-preview`) is at work, a message typed or its
+  agent running within the away time: that is testing what was just built, so the minute is that session's
+  (`sessions.OWN_REPO`, as `dayplan.OWN_REPO` for Log the day). Productive stays logging.
 - **Without a tracker**, the time an agent ran on a request, and answers typed within Away after, count as work.
 - **Rows**: neighbouring minutes of one project join into rows `{s, e, minutes, project, titles, messages,
   first_message, sessions, single, repoLinks}`, at the real time of the work. `single`: each of the row's sessions was

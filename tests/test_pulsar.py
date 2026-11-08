@@ -498,6 +498,21 @@ class SessionsTest(unittest.TestCase):
         self.assertEqual(sum(e["minutes"] for e in got["entries"]), 11)    # only the editor's minutes
         self.assertEqual(got["logging"], 13)
 
+    def test_testing_pulsar_in_its_own_window_is_the_pulsar_sessions_work(self):
+        with open(os.path.join(self.repo, ".git", "config"), "w") as fh:  # the session works on Pulsar itself
+            fh.write('[core]\n\tbare = false\n[remote "origin"]\n\turl = git@github.com:acme/pulsar.git\n')
+        self.write_session()  # typed at 10, the agent ran to 25
+        items = [{"s": 9, "e": 20, "app": "Cursor", "title": "Fix the checkout form", "host": "", "url": "", "cat": "work"},
+                 {"s": 20, "e": 28, "app": "Pulsar", "title": "Saturday, November 7", "host": "", "url": "", "cat": "work"},
+                 {"s": 28, "e": 33, "app": "Google Chrome", "title": "Time", "host": "app.productive.io",
+                  "url": "https://app.productive.io/1-acme/time", "cat": "work"},
+                 {"s": 60, "e": 66, "app": "Pulsar", "title": "Saturday, November 7", "host": "", "url": "", "cat": "work"}]
+        got = self.sessions.propose(self.t0, self.t0 + 86400, items, "ActivityWatch", os.path.dirname(self.projects))
+        self.assertEqual([(e["project"], e["s"], e["e"]) for e in got["entries"]], [("pulsar", 9, 28)])
+        self.assertEqual(got["background"], [])  # its agent ran in front of you, not behind
+        # Productive is still logging; Pulsar at 60, half an hour after the session's last act, is logging too
+        self.assertEqual(got["logging"], 5 + 6)
+
     def test_a_minute_mostly_spent_logging_is_logging_even_when_shared(self):
         self.write_session()
         edit = lambda s, e: {"s": s, "e": e, "app": "Cursor", "title": "Fix the checkout form", "host": "", "url": "", "cat": "work"}  # noqa: E731

@@ -583,20 +583,23 @@ class Run:
         rows = [r for r in self.proposal["entries"] if r.get("kind") == "focused"]
         ids = {s["id"][:8] for s in d.sessions}
         allowed = set(REPOS) | {"Claude Code", "scratch-notes", "repos"} | {s["title"].strip()[:40] for s in d.sessions}
-        # the minutes a session could have: a work window that is not a call or mostly logging
+        # the minutes a session could have: a work window that is not a call or mostly logging; a session in Pulsar's
+        # own repository may also have a minute mostly in Pulsar's window (testing it: sessions.OWN_REPO)
         n = d.n
-        work_s, log_s, open_ = [0.0] * n, [0.0] * n, [False] * n
+        work_s, log_s, pul_s, open_ = [0.0] * n, [0.0] * n, [0.0] * n, [False] * n
         for it in d.items:
             if it["cat"] != "work":
                 continue
             logging_ = bool(sessions.LOGGING.search(it["app"]) or sessions.LOGGING.search(it["host"])
                             or sessions.LOGGING.search(it["url"]))
+            pulsar_ = logging_ and any(sessions.PULSAR_WINDOW.search(it[k]) for k in ("app", "host", "url"))
             meeting = not sessions.CLAUDE_APPS.search(it["app"]) and sessions.MEETING.search(
                 " ".join((it["app"], it["title"], it["host"])))
             for x in range(max(0, int(it["s"])), min(n, int(math.ceil(it["e"])))):
                 sec = (min(it["e"], x + 1) - max(it["s"], x)) * 60
                 work_s[x] += sec
                 log_s[x] += sec if logging_ else 0
+                pul_s[x] += sec if pulsar_ else 0
                 open_[x] = open_[x] or not (logging_ or meeting)
         for r in rows:
             if not (0 <= r["s"] < r["e"] <= n) or not 1 <= r["minutes"] <= r["e"] - r["s"]:
@@ -606,7 +609,10 @@ class Run:
             if not set(r.get("sessions") or []) <= ids:
                 self.fail("likely: a session that does not exist", r.get("sessions"))
             if d.items:
-                can = sum(1 for x in range(r["s"], r["e"]) if open_[x] and not (log_s[x] and 2 * log_s[x] >= work_s[x]))
+                own = bool(sessions.OWN_REPO.match(r["project"] or ""))
+                logs = lambda x: log_s[x] and 2 * log_s[x] >= work_s[x]  # noqa: E731
+                can = sum(1 for x in range(r["s"], r["e"])
+                          if (open_[x] and not logs(x)) or (own and logs(x) and 2 * pul_s[x] >= log_s[x]))
                 if r["minutes"] > can:
                     self.fail("likely: minutes on calls, logging or idle time", (r["s"], r["e"], r["minutes"], can))
             if any(s in (r.get("first_message") or "") for s in d.secrets if s.startswith("zqtool")) or \

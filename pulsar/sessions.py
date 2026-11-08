@@ -61,6 +61,10 @@ ROOTS = {HOME, "/", "/private", "/private/tmp", "/tmp", "/private/var", "/privat
 TOOLING = os.path.join(HOME, ".claude")  # Claude Code's own files (memory, skills, plans): tools, not a project
 # Logging time: Pulsar itself, or Productive in a browser. It is work, but no client's: it goes to no session.
 LOGGING = re.compile(r"^Pulsar$|app\.productive\.io|(127\.0\.0\.1|localhost):56\d\d", re.I)
+# ...except Pulsar's own window while a session in Pulsar's own repository is at work (a message typed, or its agent
+# running, within the away time): that is testing what was just built, the session's work (dayplan.OWN_REPO too)
+PULSAR_WINDOW = re.compile(r"^Pulsar$|(127\.0\.0\.1|localhost):56\d\d", re.I)
+OWN_REPO = re.compile(r"^pulsar(-preview)?$", re.I)
 
 
 def parse_ts(s: str) -> float:
@@ -500,24 +504,25 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
 
     focus: list = [None] * n
     logging_s, work_s = [0.0] * n, [0.0] * n  # seconds of each minute in Pulsar or Productive, and in any work window
+    pulsar_s, pulsar_it = [0.0] * n, [None] * n  # of those, in Pulsar's own window
     for it in items:
         if it.get("cat") != "work":
             continue  # personal windows (Settings > Personal windows) and away time go to no session
         is_logging = any(LOGGING.search(str(it.get(k) or "")) for k in ("app", "host", "url"))
+        is_pulsar = is_logging and any(PULSAR_WINDOW.search(str(it.get(k) or "")) for k in ("app", "host", "url"))
         for x in range(max(0, int(it["s"])), min(n, int(-(-it["e"] // 1)))):
             seconds = (min(it["e"], x + 1) - max(it["s"], x)) * 60
             work_s[x] += seconds
             if is_logging:
                 logging_s[x] += seconds
+                if is_pulsar:
+                    pulsar_s[x] += seconds
+                    pulsar_it[x] = it
             else:
                 focus[x] = it
     # a minute that went mostly to logging is logging, even when another window shared it (a look at Pulsar between
     # two edits): it goes to no session
     logging_at = [logging_s[x] > 0 and 2 * logging_s[x] >= work_s[x] for x in range(n)]
-    for x in range(n):
-        if logging_at[x]:
-            focus[x] = None
-    present = [f is not None for f in focus]
     run_at: list = [[] for _ in range(n)]
     acts = []  # (minute, session) of every message and every end of an agent's run
     for i, s in enumerate(sessions):
@@ -527,6 +532,22 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
             acts.append((m(b), i))
         acts += [(m(p), i) for p, _ in s["prompts"]]
     acts.sort()
+    # Pulsar's own window, while a session in Pulsar's repository is at work: that session's minute, not logging
+    own_at: list = [None] * n
+    for x in range(n):
+        if not (logging_at[x] and pulsar_s[x] and 2 * pulsar_s[x] >= logging_s[x]):
+            continue
+        near = [(t, i) for t, i in acts if x - away <= t <= x] + [(x, i) for i in run_at[x]]
+        if not near:
+            continue
+        i = max(near)[1]
+        project = project_at(sessions[i], t0 + x * 60 + 59)
+        if OWN_REPO.match(project or "") and project != logging_name:
+            own_at[x], logging_at[x], focus[x] = (i, project), False, pulsar_it[x]
+    for x in range(n):
+        if logging_at[x]:
+            focus[x] = None
+    present = [f is not None for f in focus]
     if not any(present):  # no tracker: an agent working on a request, and answers typed within the away time
         tracker = "no tracker"
         for s in sessions:
@@ -575,6 +596,9 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
     logged_turn = 0  # minutes of a turn that was time logging (logging_name)
     for x in range(n):
         if not present[x]:
+            continue
+        if own_at[x]:  # testing Pulsar in its own window (above)
+            owner[x] = own_at[x]
             continue
         f, cands = focus[x], []
         if f is None or CLAUDE_APPS.search(f.get("app") or ""):
