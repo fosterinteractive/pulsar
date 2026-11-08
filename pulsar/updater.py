@@ -33,7 +33,7 @@ import urllib.error
 import urllib.request
 import zipfile
 from datetime import datetime, timezone
-from typing import Callable, Optional
+from typing import Optional
 
 from . import __version__, config
 from .release_sig import PUBLIC_KEYS, openssl, verify  # noqa: F401  (release.sh and the tests use them from here)

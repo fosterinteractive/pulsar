@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from isolation import SCRATCH as _SCRATCH  # noqa: E402,F401  first: nothing real is reachable (isolation.py)
 
-from pulsar import askclaude, config, dayplan, learn, likely, productive, server  # noqa: E402
+from pulsar import askclaude, config, dayplan, learn, likely, server  # noqa: E402
 
 DATE = "2026-11-04"
 S = {"timezone": "UTC", "person_id": "1", "org_id": "2", "rules": [], "person_name": "", "ask_claude": True,

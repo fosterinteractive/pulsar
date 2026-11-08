@@ -17,7 +17,6 @@ import os
 import re
 import subprocess
 import threading
-import unicodedata
 
 from . import askclaude, claudeuses, config, productive
 

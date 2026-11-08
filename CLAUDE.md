@@ -25,6 +25,8 @@ launcher (`macos/`). How each part works is in `docs/HOW-IT-WORKS.md`; read the 
   `tests/isolation.py` first; never work around it (no real network, keychain, Claude Code or home folder).
 - New logic gets a unit test; the whole suite runs once before a commit that ends the work, not after every edit.
 - `python3 pulsar.py --self-test` checks that the page files are there and the server answers.
+- `ruff check pulsar pulsar.py tests` (development only, `pyproject.toml`: unused and undefined names, syntax) must
+  pass when ruff is installed (`python3 -m pip install --user ruff`).
 - What a change does goes under `## Unreleased` in `CHANGELOG.md`; behaviour in `docs/HOW-IT-WORKS.md`; agreed
   next steps in `docs/TODO.md`.
 

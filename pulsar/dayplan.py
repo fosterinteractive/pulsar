@@ -1151,7 +1151,7 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
     logged that day, to show a whole proposal on a day already logged. keep: as for plan(). inputs: a dict to fill
     with what the day was planned from, for Log the day with Claude's digest (dayreview.digest)."""
     from concurrent.futures import ThreadPoolExecutor
-    from . import askclaude, calendar, learn as learning, likely, logbook, productive, server
+    from . import askclaude, calendar, learn as learning, likely, logbook, server
     s = server.current_settings()
     tz = config.tz(s)
     t0, t1 = server.day_bounds(date, tz)

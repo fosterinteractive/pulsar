@@ -1574,7 +1574,6 @@ class CreateEntryTest(unittest.TestCase):
                                          "task_id": "1", "service_id": "2"}, {"person_id": "3"})
 
     def test_an_mcp_answer_marked_as_error_raises(self):
-        import io
         answer = 'data: {"jsonrpc":"2.0","id":1,"result":{"isError":true,"content":[{"type":"text","text":"Error: service ID: 987"}]}}'
         with mock.patch.object(productive, "https", lambda *a, **k: (200, answer.encode())):
             with self.assertRaises(productive.ProductiveError):

@@ -1,0 +1,8 @@
+# Development only: Pulsar itself needs nothing but Python's standard library (CLAUDE.md). The linter's rules are
+# the ones that find real mistakes (pyflakes: unused or undefined names, and syntax errors), not style.
+[tool.ruff]
+target-version = "py39"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["F", "E9"]

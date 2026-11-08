@@ -43,7 +43,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
-from datetime import date, datetime, time as dtime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional, Tuple
 
 from . import __version__, config

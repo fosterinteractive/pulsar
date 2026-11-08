@@ -8,7 +8,6 @@ import os
 import stat
 import sys
 import tempfile
-import threading
 import unittest
 from datetime import datetime, timezone
 from unittest import mock
