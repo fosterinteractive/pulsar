@@ -19,9 +19,10 @@ const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const WEEKDAYS_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const pct = (a, b) => (b ? Math.round(a / b * 100) : 0);
 const hh = h => String(h % 24).padStart(2, '0') + ':00';
+/** @type {(d: string, opts?: Intl.DateTimeFormatOptions) => string} */
 const dayLabel = (d, opts = {weekday: 'short', day: 'numeric', month: 'short'}) => {
   const t = new Date(d + 'T12:00:00Z');
-  return isNaN(t) ? String(d ?? '') : new Intl.DateTimeFormat(DATE_LOCALE, {...opts, timeZone: 'UTC'}).format(t);
+  return isNaN(t.getTime()) ? String(d ?? '') : new Intl.DateTimeFormat(DATE_LOCALE, {...opts, timeZone: 'UTC'}).format(t);
 };
 /* sequential: one blue ramp, more is stronger; empty cells stay the neutral well */
 const seq = t => (t <= 0 ? 'var(--seg)' : `color-mix(in oklab, var(--seq-hi) ${Math.round(14 + 86 * Math.min(1, t))}%, var(--seq-lo))`);
@@ -226,9 +227,12 @@ function dailyChart(days) {
   el.innerHTML = s + '</svg>';
 }
 /* [minutes, colour] for billable, not billable and billing unknown, the empty ones left out */
+/** @returns {[number, string][]} */
 function billParts(total, billable, nonBillable) {
   const b = Math.min(billable || 0, total), n = Math.min(nonBillable || 0, total - b);
-  return [[b, 'var(--accent)'], [n, 'var(--accent2)'], [total - b - n, 'var(--unknown)']].filter(p => p[0] > 0);
+  /** @type {[number, string][]} */
+  const parts = [[b, 'var(--accent)'], [n, 'var(--accent2)'], [total - b - n, 'var(--unknown)']];
+  return parts.filter(p => p[0] > 0);
 }
 function barOf(it, max) {
   const width = `width:${(it.minutes / max * 100).toFixed(1)}%`;

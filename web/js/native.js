@@ -307,6 +307,7 @@
     return null;
   }
   document.addEventListener('contextmenu', ev => {
+    /** @type {any[]} */
     const items = menuFor(ev);
     if (!items) return;  // anywhere else: the window's own menu (Copy, Look Up)
     ev.preventDefault();

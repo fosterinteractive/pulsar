@@ -318,7 +318,7 @@ function render() {
 
   // header
   const noon = new Date(state.date + 'T12:00:00Z');  // a date it cannot read shows as written, instead of stopping the page
-  const label = isNaN(noon) ? String(state.date || '') : new Intl.DateTimeFormat(DATE_LOCALE, {weekday: 'long', day: 'numeric',
+  const label = isNaN(noon.getTime()) ? String(state.date || '') : new Intl.DateTimeFormat(DATE_LOCALE, {weekday: 'long', day: 'numeric',
     month: 'long', year: 'numeric', timeZone: 'UTC'}).format(noon);
   setText($('#dayname'), label.charAt(0).toUpperCase() + label.slice(1));
   $('#date').value = state.date;

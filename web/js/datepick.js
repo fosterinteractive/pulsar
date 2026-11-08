@@ -141,7 +141,8 @@ pop.addEventListener('click', ev => {
 });
 /* a click anywhere else closes it, leaving the focus where the click put it */
 document.addEventListener('pointerdown', ev => {
-  if (cur && !pop.contains(ev.target) && !cur.btn.contains(ev.target)) close(false);
+  const t = /** @type {Node} */ (ev.target);
+  if (cur && !pop.contains(t) && !cur.btn.contains(t)) close(false);
 }, true);
 addEventListener('resize', () => cur && place());
 document.addEventListener('scroll', () => cur && place(), true);

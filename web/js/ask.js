@@ -5,6 +5,7 @@
    * Screen readers hear "Claude is working" once, then the toast with the answer. The button stays focusable
      (aria-disabled, not disabled), so the focus ring stays where it was.
    * A hidden window stops the status timer and pauses the motion; nothing runs once it has ended. */
+/** @type {[number, string][]} */
 const ASK_LINES = [[0, 'Sending the day to Claude…'], [3, 'Picking tasks and drafting notes…'],
                    [25, 'Still working: it can take a minute…'], [65, 'Taking longer than usual…']];
 const ASK = {btn: $('#ask-claude'), head: $('#ask-claude').closest('.colhead'), status: null, live: null,
@@ -68,7 +69,7 @@ function askLight() {
   likelyCache.forEach((b, i) => {
     const card = claudePick(b) && document.querySelector(`#lane-likely .card.likely[data-i="${i}"]`);
     if (!card) return;
-    card.style.setProperty('--ask-i', k++);
+    card.style.setProperty('--ask-i', String(k++));
     card.classList.add('ask-lit');
     // the light's own end (the mark's flash inside ends earlier and bubbles up too)
     card.addEventListener('animationend', function done(ev) {

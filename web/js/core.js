@@ -32,9 +32,9 @@ function holdDrawing(on) {
 function validDate(d) {
   if (typeof d !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d)) return false;
   const t = new Date(d + 'T12:00:00Z'), y = +d.slice(0, 4);
-  return !isNaN(t) && y >= 1900 && y <= 2999 && t.toISOString().slice(0, 10) === d;
+  return !isNaN(t.getTime()) && y >= 1900 && y <= 2999 && t.toISOString().slice(0, 10) === d;
 }
-const daysBetween = (a, b) => Math.round((new Date(b + 'T12:00:00Z') - new Date(a + 'T12:00:00Z')) / 864e5);
+const daysBetween = (a, b) => Math.round((new Date(b + 'T12:00:00Z').getTime() - new Date(a + 'T12:00:00Z').getTime()) / 864e5);
 const ZOOMS = [1, 5, 15, 30, 60], SOURCES = ['auto', 'aw', 'memtime'];
 
 /* the address is only a suggestion: a value that is not one of ours falls back to the default, silently */
@@ -244,6 +244,7 @@ function warpTo(level, instant = false) {
   const w = warpParts(), from = instant ? level : warpLevel(), dur = instant ? 0 : Math.max(1, 520 * Math.abs(level - from));
   warpStop();
   Object.assign(W8, {from, to: level, t0: performance.now(), dur: Math.max(1, dur)});
+  /** @type {KeyframeAnimationOptions} */
   const opts = {duration: dur, easing: WARP_IN_EASE, fill: 'forwards'};
   const page = document.body.animate([{transform: pageScale(from)}, {transform: pageScale(level)}], opts);
   const core = w.core.animate([corePose(from), corePose(level)], opts);
@@ -272,6 +273,7 @@ function warpOut(from = 1) {
   document.documentElement.append(flash);
   flash.animate([{opacity: 0, transform: 'scale(.25)'}, {opacity: 1, offset: .18}, {opacity: 0, transform: 'scale(2.6)'}],
     {duration: 700, easing: 'cubic-bezier(.15, .7, .3, 1)'}).finished.catch(() => {}).then(() => flash.remove());
+  /** @type {KeyframeAnimationOptions} */
   const opts = {duration: 520, easing: 'cubic-bezier(.2, .9, .3, 1)', fill: 'forwards'};
   const page = document.body.animate([{transform: pageScale(from)}, {transform: 'scale(1.012)', offset: .45}, {transform: 'none'}], opts);
   const core = w.core.animate([corePose(from), {...corePose(0), offset: .55}, corePose(0)], opts);
@@ -357,7 +359,7 @@ function loggedChange(before, after) {
 
 /* ---------- controls ---------- */
 function syncURL() {
-  const p = new URLSearchParams({view: state.view, date: state.date, zoom: state.zoom, source: state.source, range: R.range});
+  const p = new URLSearchParams({view: state.view, date: state.date, zoom: String(state.zoom), source: state.source, range: R.range});
   if (R.range === 'custom') { p.set('from', R.from); p.set('to', R.to); }
   history.replaceState(null, '', '?' + p);
 }
@@ -394,7 +396,7 @@ const outsideOf = (el, ev) => { const r = el.getBoundingClientRect(); return ev.
 document.addEventListener('pointerdown', ev => {
   pressedOutside = ev.target instanceof HTMLDialogElement && ev.target.open && outsideOf(ev.target, ev) ? ev.target : null;
   const pk = document.getElementById('ld-pk');
-  if (pk && !pk.hidden && !pk.contains(ev.target) && !ev.target.closest?.('dialog[open]')) pk.hidden = true;
+  if (pk && !pk.hidden && !pk.contains(/** @type {Node} */ (ev.target)) && !ev.target.closest?.('dialog[open]')) pk.hidden = true;
 }, true);
 document.addEventListener('click', ev => {
   const d = pressedOutside; pressedOutside = null;

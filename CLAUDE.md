@@ -27,6 +27,9 @@ launcher (`macos/`). How each part works is in `docs/HOW-IT-WORKS.md`; read the 
 - `python3 pulsar.py --self-test` checks that the page files are there and the server answers.
 - `ruff check pulsar pulsar.py tests` (development only, `pyproject.toml`: unused and undefined names, syntax) must
   pass when ruff is installed (`python3 -m pip install --user ruff`).
+- `npx -p typescript@5.6.3 tsc -p jsconfig.json` (development only) type-checks the page's scripts as the one global
+  scope they share: an unknown or misspelt name, or a wrong number of arguments, across files. It must report 0
+  errors. `types/page.d.ts` says what Pulsar's window adds and what the page's elements are; JSDoc types the rest.
 - What a change does goes under `## Unreleased` in `CHANGELOG.md`; behaviour in `docs/HOW-IT-WORKS.md`; agreed
   next steps in `docs/TODO.md`.
 

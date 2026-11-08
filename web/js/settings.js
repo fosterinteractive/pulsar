@@ -107,7 +107,7 @@ function applySearch() {
     for (const s of panel.querySelectorAll('section')) {
       const words = `${s.textContent} ${s.dataset.k || ''} ${[...s.querySelectorAll('[placeholder]')].map(x => x.placeholder).join(' ')}`;
       s.hidden = !words.toLowerCase().includes(q);
-      hits += !s.hidden;
+      hits += s.hidden ? 0 : 1;
     }
     panel.hidden = !hits;
     settingsTabs.find(t => t.getAttribute('aria-controls') === panel.id)?.classList.toggle('dim', !hits);
@@ -353,6 +353,7 @@ async function saveSettings(extra = {}) {
     msg.className = 'msg warn'; msg.textContent = 'The daily target is a number of hours from 0.5 to 24, or empty for the default. Nothing was saved.';
     showTab(tabOf(th)); th.focus(); return;
   }
+  /** @type {Record<string, any>} */
   const body = {
     productive_source: f.productive_source.value, org_id: f.org_id.value.trim(), person_id: f.person_id.value.trim(),
     timezone: f.timezone.value.trim(), target_hours: f.target_hours.value.trim(), round_to: +f.round_to.value,
