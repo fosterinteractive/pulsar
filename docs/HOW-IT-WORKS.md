@@ -1784,7 +1784,12 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   is not read-only), "logged lately" stops the day before, and the preview's dry run does not report overlaps with the
   real entries. Used to measure proposals against days already logged.
 - The window has test hooks when built with `PULSAR_SWIFT_FLAGS="-D PULSAR_TEST"`: with `PULSAR_TEST_DIR` it saves a
-  picture of the page, a download and a PDF, then quits.
+  picture of the page, a download and a PDF, then quits; with `PULSAR_TEST_WARP` too, three pictures of the native
+  warp; with `PULSAR_TEST_SCRIPT=<file>`, it runs that file in the page once the day has loaded (the body of an async
+  function returning JSON) and saves its answer as `ui.json`. `macos/ui_smoke.sh` builds that window and runs
+  `tests/ui/smoke.js`: a click-through of the page that writes nothing (dialogs and their ✕, a click outside them,
+  breaks named and never offered for logging, Not an example, the over-estimate line, Update's "and restart", the
+  day's kept copy, no page error), each check printed, exit 1 on a failure.
 
 ## 13. Known limits
 

@@ -1127,6 +1127,7 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
         tested = true
         let at = URL(fileURLWithPath: dir)
         if ProcessInfo.processInfo.environment["PULSAR_TEST_WARP"] != nil { testWarp(at); return }
+        if let script = ProcessInfo.processInfo.environment["PULSAR_TEST_SCRIPT"] { testScript(at, script); return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
             let probe = """
                 JSON.stringify({signedIn: !!localStorage.getItem('pulsar-session'), address: location.href,
@@ -1157,6 +1158,24 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
                         op.runModal(for: self.window, delegate: self, didRun: #selector(self.printed), contextInfo: nil)
                     }
                 }
+            }
+        }
+    }
+
+    /// tests/ui (macos/ui_smoke.sh): a script run in the page once it has loaded, as the body of an async function
+    /// that returns JSON text; its answer goes to ui.json, then the window quits.
+    private func testScript(_ at: URL, _ path: String) {
+        guard let body = try? String(contentsOfFile: path, encoding: .utf8) else { quitAsked = true; NSApp.terminate(nil); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
+            self.web.callAsyncJavaScript(body, arguments: [:], in: nil, in: .page) { result in
+                var text = "{\"error\": \"the script returned no text\"}"
+                switch result {
+                case .success(let value): if let s = value as? String { text = s }
+                case .failure(let error): text = "{\"error\": \(Self.json(error.localizedDescription))}"
+                }
+                try? text.write(to: at.appendingPathComponent("ui.json"), atomically: true, encoding: .utf8)
+                self.quitAsked = true
+                NSApp.terminate(nil)
             }
         }
     }

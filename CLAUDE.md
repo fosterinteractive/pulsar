@@ -30,6 +30,9 @@ launcher (`macos/`). How each part works is in `docs/HOW-IT-WORKS.md`; read the 
 - `npx -p typescript@5.6.3 tsc -p jsconfig.json` (development only) type-checks the page's scripts as the one global
   scope they share: an unknown or misspelt name, or a wrong number of arguments, across files. It must report 0
   errors. `types/page.d.ts` says what Pulsar's window adds and what the page's elements are; JSDoc types the rest.
+- `macos/ui_smoke.sh` clicks through the page in Pulsar's real window (`tests/ui/smoke.js`, read only: dialogs, breaks,
+  Not an example, the estimate line, Update's restart, the day's copy) and must pass after a change to the page or the
+  window. A new feature on the page gets a check there.
 - What a change does goes under `## Unreleased` in `CHANGELOG.md`; behaviour in `docs/HOW-IT-WORKS.md`; agreed
   next steps in `docs/TODO.md`.
 
