@@ -3033,6 +3033,23 @@ class LogsSeenTest(unittest.TestCase):
         self.assertEqual(server.validate({"logs_seen": 1700000000}), {"logs_seen": 1700000000})
 
 
+class ClaudeCodeTokenShapeTest(unittest.TestCase):
+    def test_an_unknown_shape_of_claude_codes_credentials_says_so_and_never_raises(self):
+        ok = {"mcpOAuth": {"productive|abc": {"serverUrl": "https://mcp.productive.io/mcp", "accessToken": "t",
+                                               "expiresAt": int(time.time() * 1000) + 60000}}}
+        self.assertEqual(productive._token_in(ok)[0], "t")
+        self.assertEqual(productive._token_in([])[2], False)              # not an object: no connection
+        self.assertEqual(productive._token_in({"mcpOAuth": []})[2], False)
+        self.assertEqual(productive._token_in({"mcpOAuth": {"productive|x": "a string"}})[2], False)
+        run = mock.Mock(stdout=json.dumps({"mcpOAuth": {"productive|x": {"accessToken": "t", "expiresAt": "soon"}}}))
+        with mock.patch.object(productive.config, "tests_offline", lambda: False), \
+                mock.patch.object(productive.sys, "platform", "darwin"), \
+                mock.patch.object(productive.subprocess, "run", lambda *a, **k: run):
+            token, problem, connected, _, _ = productive._claude_code_token()
+        self.assertEqual((token, connected), (None, True))
+        self.assertIn("cannot read", problem)
+
+
 class KeychainStuckTest(unittest.TestCase):
     def test_a_keychain_that_does_not_answer_is_named_not_a_missing_token(self):
         import subprocess

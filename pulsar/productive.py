@@ -403,14 +403,28 @@ def _claude_code_token() -> tuple:
         config.keychain_timed_out()
         return None, "The keychain did not answer when Pulsar asked for Claude Code's Productive connection.", False, False, ""
     try:
-        servers = json.loads(run.stdout).get("mcpOAuth", {})
+        doc = json.loads(run.stdout)
     except ValueError:
         return None, "Claude Code has no Productive connection on this computer.", False, False, ""
-    for key, value in servers.items():
+    try:
+        return _token_in(doc)
+    except (AttributeError, TypeError, ValueError):  # Claude Code keeps it in a shape this Pulsar does not know
+        return None, ("Claude Code keeps its Productive connection in a form this Pulsar cannot read. Update Pulsar, "
+                      "or use a token in Settings."), True, False, ""
+
+
+def _token_in(doc) -> tuple:
+    """_claude_code_token's answer from Claude Code's credentials as the keychain holds them (JSON already read)."""
+    servers = doc.get("mcpOAuth", {}) if isinstance(doc, dict) else {}
+    for key, value in (servers.items() if isinstance(servers, dict) else ()):
+        if not isinstance(value, dict):
+            continue
         if key.split("|")[0] == "productive":  # the key itself contains a pipe
             if urllib.parse.urlparse(value.get("serverUrl") or MCP_URL).hostname != "mcp.productive.io":
                 return None, "Claude Code's \"productive\" connection points somewhere else than Productive; use a token.", True, False, ""
             token, expires = value.get("accessToken"), int(value.get("expiresAt") or 0)
+            if token is not None and not isinstance(token, str):
+                raise TypeError("accessToken")
             if not token:
                 return None, "Claude Code's Productive connection is not authorised (/mcp in Claude Code).", True, False, ""
             if expires and expires < time.time() * 1000:
