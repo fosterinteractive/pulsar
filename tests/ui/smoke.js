@@ -118,12 +118,15 @@ try {
     check('Update says it restarts when the window is behind', text === 'Update to 9.9.9 and restart', text);
   } else check('Update says it restarts when the window is behind', true, 'skipped: not in Pulsar\'s window');
 
-  // today's Activity is asked for again every five minutes, so it keeps up with the now line
+  // today's Activity is asked for again every minute, so it keeps up with the now line; what one redraw costs
   if (state.view === 'day' && state.date === todayLocal()) {
     const shown = state.act;
     actAt = 0;
-    tickClock();
-    check('today\'s activity is read again', await until(() => state.act !== shown, 5000));
+    refreshToday();
+    const again = await until(() => state.act !== shown, 5000);
+    const t = performance.now();
+    for (let i = 0; i < 5; i++) render();
+    check('today\'s activity is read again', again, `a redraw takes ${((performance.now() - t) / 5).toFixed(1)} ms`);
   } else check('today\'s activity is read again', true, 'skipped: not on today');
 
   // the theme: ◐ at the top, in Pulsar's window too, and Settings > Appearance set it (put back as it was)

@@ -9,11 +9,10 @@ function newest(kind) {
 
 /* Day view: one day on one time axis (activity, likely, logged) */
 let loading = 0;  // reads under way: the logo pulses while there are any (style.css html.loading)
-let actAt = 0;    // when the day's activity was last asked for: today's is asked again every ACT_EVERY (tickClock)
-const ACT_EVERY = 5 * 60 * 1000;
+let actAt = 0, loggedAt = 0;  // when the day's activity and entries were last asked for (refreshToday)
 function load({fresh = false, keepScroll = false} = {}) {
   const d = state.date, act = newest('activity'), logged = newest('entries'), likely = newest('proposal');
-  actAt = Date.now();
+  actAt = loggedAt = Date.now();
   document.documentElement.classList.add('loading'); loading++;
   if (!keepScroll) { state.act = state.likely = state.logged = state.repeats = null; render(); }
   loadRepeats();
@@ -811,15 +810,36 @@ function tickClock(back = false) {
   const now = $('#grid .now');
   if (now) now.style.top = `${nowMin() * ppmOf(state.zoom)}px`; else render();
   if (back) load({keepScroll: true});
-  else if (Date.now() - actAt >= ACT_EVERY) {  // the Activity column keeps up with the now line (the rest: hourly)
-    actAt = Date.now();
-    const mine = newest('activity');
-    getJSON(`/api/activity?date=${today}&source=${state.source}`)
-      .then(x => { if (mine()) { state.act = x; drawSoon(); } })
-      .catch(() => {});  // the column stays as it was; the next tick or the hourly read asks again
-  }
 }
 setInterval(() => { if (document.visibilityState === 'visible') tickClock(); }, 60 * 1000);
+
+/* Today's activity every minute, also while the window is hidden, so the Activity column, the time not logged, the
+   Dock badge and the menu bar line (native.js) keep up: a local read of the tracker, about 0.02 s. While hidden, the
+   entries too every 10 minutes (Productive: when the window shows, the hourly refresh and logging take care of them).
+   A hidden page draws nothing on its own (requestAnimationFrame waits), so it is drawn here. */
+const ACT_EVERY = 60 * 1000, LOGGED_EVERY = 10 * 60 * 1000;
+function refreshToday() {
+  const today = todayLocal(), now = Date.now(), hidden = document.visibilityState !== 'visible';
+  if (state.view !== 'day' || state.date !== today || !state.act) return;
+  const asks = [];
+  if (now - actAt >= ACT_EVERY - 5000) {
+    actAt = now;
+    const mine = newest('activity');
+    asks.push(getJSON(`/api/activity?date=${today}&source=${state.source}`).then(x => { if (mine()) state.act = x; }));
+  }
+  if (hidden && now - loggedAt >= LOGGED_EVERY) {
+    loggedAt = now;
+    const mine = newest('entries');
+    asks.push(getJSON(`/api/entries?date=${today}`).then(x => { if (mine() && !x.error) state.logged = x; }));
+  }
+  if (!asks.length) return;
+  // a read that fails leaves the day as it was; the next minute asks again
+  Promise.all(asks.map(p => p.catch(() => {}))).then(() => {
+    if (state.date !== today) return;
+    if (document.visibilityState !== 'visible' && !drawHeld) render(); else drawSoon();
+  });
+}
+setInterval(refreshToday, 60 * 1000);
 // the app's window says when the Mac woke or midnight passed (native.js): handled here, so it does not move on itself
 addEventListener('pulsar:wake', ev => { ev.preventDefault(); tickClock(state.date === todayLocal()); });
 document.addEventListener('visibilitychange', () => {

@@ -251,7 +251,7 @@ grey hatched rail to undo). These marks, and Not an example, stay on this Mac an
   background and redraws only if something changed. Past days' Likely columns open at once too.
 - If Productive cannot be reached, the Day view and the Report show the last copy of each day and say from when. A read
   that Productive drops without answering is tried up to twice more; time you log is never sent twice.
-- Today's activity refreshes by itself every 5 minutes, the rest every hour; **↻** (Cmd+R) reads everything again.
+- Today's activity refreshes by itself every minute, the rest every hour; **↻** (Cmd+R) reads everything again.
 - **The warp**: ↻ and updates draw the page in towards a black hole (a bright one on the light theme) with a ring of
   light while it loads, then let go with a small flash. In Pulsar's window the page really bends, drawn with Core Image
   on the graphics card, so it stays smooth on any Mac; a browser shows a version without the bend. Turn it off in

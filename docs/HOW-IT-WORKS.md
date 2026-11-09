@@ -1443,8 +1443,10 @@ question) and cannot tell when inside it the work happened.
 - **The clock**: the now line moves every minute. At midnight, or when the window comes back on a new day (a Mac
   that slept), a person who was on today goes to the new today; another day stays where it is. Back in the window
   after five minutes or more, today is read again. A move waits while a dialog is open or Log the day is writing
-  (`tickClock` in `day.js`). Besides that, today's activity is read again every 5 minutes (`ACT_EVERY`, from the same
-tick; 2026-11-09: at 14:20 the column still ended at 14:01, the last read), and the whole day every hour. The app's window sends `pulsar:wake`
+  (`tickClock` in `day.js`). Besides that, today's activity is read again every minute (`refreshToday`, `ACT_EVERY`), also
+while the window is hidden, and drawn then too, so the time not logged, the Dock badge and the menu bar line keep up
+(2026-11-09: at 14:20 the column still ended at 14:01, the last read); while hidden, today's entries every 10 minutes;
+and the whole day every hour while the page shows. The app's window sends `pulsar:wake`
   after a sleep or at midnight; the page takes it (`preventDefault`) and does the same. `window.pulsarUnsaved()`
   says in a sentence what quitting would lose (Settings not saved, a note typed in the log dialog, Log the day
   writing), for the window to ask before ⌘Q. The zoom menu keeps hidden `#zoom button[data-v]` for the window's
@@ -1511,7 +1513,7 @@ tick; 2026-11-09: at 14:20 the column still ended at 14:01, the last read), and 
 - **Total project time**: per project, then budget and service.
 - **Tasks against estimates**: each task logged today, with everyone's time on it against its estimate
   (`task_details`, cached 5 minutes).
-- **Refreshing**: ↻ reloads everything and asks Google and the Likely proposal afresh. Today's activity refreshes by itself every 5 minutes, the rest once an hour, while the page is visible.
+- **Refreshing**: ↻ reloads everything and asks Google and the Likely proposal afresh. Today's activity refreshes by itself every minute (also while the window is hidden), the rest once an hour while the page is visible.
 - **The warp**: an update plays a short gravitational-lens animation. In the window it is native
   (a snapshot of the page bent by Core Image's hole distortion, animated by Core Animation on the graphics card, over
   the page's own background colour, so the live page never shows round the shrunken picture or through its hole:

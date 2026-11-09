@@ -6,6 +6,9 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- Today's activity refreshes every minute, also while Pulsar's window is hidden, so the Dock badge and the menu bar line keep up with it (a local read of the tracker, about 0.02 s).
+
 ## 1.6.6 (2026-11-09)
 - A session that did the same work for one client after another (a database upgrade on four sites) no longer offers the first client's task on the next site: its tasks carry into a repository with no history only when most of them are one client's.
 - A command that names its folder as `~/Sites/…` or `$HOME/Sites/…` counts for that repository: such a stretch was named after the session's title instead, with the tasks logged under that title.
