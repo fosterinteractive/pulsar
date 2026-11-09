@@ -12,6 +12,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -265,6 +266,19 @@ class BackgroundTest(Fixture):
         got = sessions.propose(T0, T0 + 86400, items, "ActivityWatch", self.projects)
         self.assertEqual([(r["project"], r["s"], r["e"]) for r in got["entries"]], [("acme-site", 60, 80)])
 
+    def test_a_look_at_pulsar_in_the_middle_of_work_is_that_work(self):
+        # 1.6.9: time in Pulsar or Productive counts as the work around it; set aside as time spent logging, short looks
+        # at Pulsar while deploying a site showed as gaps there (2026-11-09)
+        self.write("cccc0007", [typed(60, "deploy the client's site", self.acme), call(61, "Edit", file_path=os.path.join(self.acme, "a.js"))],
+                   title="Client deploy")
+        items = [self.editor(60, 70, "Client deploy"),
+                 {"s": 70, "e": 72, "app": "Pulsar", "title": "Pulsar", "host": "", "url": "", "cat": "work"},
+                 self.editor(72, 80, "Client deploy")]
+        got = sessions.propose(T0, T0 + 86400, items, "ActivityWatch", self.projects)
+        acme = [r for r in got["entries"] if r["project"] == "acme-site"]
+        self.assertEqual(sum(r["minutes"] for r in acme), 20)
+        self.assertEqual(got["logging"], 0)
+
     def test_a_turn_with_only_reads_in_the_repository_never_qualifies(self):
         self.write("cccc0003", [typed(5, "read the client's code", self.acme)]
                    + [call(m, "Read", file_path=os.path.join(self.acme, "src", "m.js")) for m in range(6, 30, 3)],
@@ -453,6 +467,7 @@ class SharedTest(unittest.TestCase):
         self.assertEqual(p["totals"]["shared"], 40)
         self.assertEqual(p["totals"]["parallel"], 40)
 
+    @mock.patch("pulsar.sessions.LOGGING_IS_WORK", False)  # the rule before 1.6.9, kept behind its switch
     def test_a_shared_stretch_with_a_gap_in_it_is_one_entry(self):
         # 640-642: a glance at Pulsar itself (logging time) inside the agent's stretch: still one shared entry
         items = [work(600, 640), work(640, 642, app="Pulsar", title="Pulsar"), work(642, 700)]

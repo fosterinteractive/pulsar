@@ -488,6 +488,7 @@ class SessionsTest(unittest.TestCase):
         self.assertEqual((e["titles"], e["messages"], e["first_message"]),
                          (["Fix the checkout form"], 1, "The checkout button does nothing"))
 
+    @mock.patch("pulsar.sessions.LOGGING_IS_WORK", False)  # the rule before 1.6.9, kept behind its switch
     def test_time_spent_logging_goes_to_no_session(self):
         self.write_session()
         items = [{"s": 9, "e": 20, "app": "Cursor", "title": "Fix the checkout form", "host": "", "url": "", "cat": "work"},
@@ -498,6 +499,7 @@ class SessionsTest(unittest.TestCase):
         self.assertEqual(sum(e["minutes"] for e in got["entries"]), 11)    # only the editor's minutes
         self.assertEqual(got["logging"], 13)
 
+    @mock.patch("pulsar.sessions.LOGGING_IS_WORK", False)  # the rule before 1.6.9, kept behind its switch
     def test_testing_pulsar_in_its_own_window_is_the_pulsar_sessions_work(self):
         with open(os.path.join(self.repo, ".git", "config"), "w") as fh:  # the session works on Pulsar itself
             fh.write('[core]\n\tbare = false\n[remote "origin"]\n\turl = git@github.com:acme/pulsar.git\n')
@@ -513,6 +515,7 @@ class SessionsTest(unittest.TestCase):
         # Productive is still logging; Pulsar at 60, half an hour after the session's last act, is logging too
         self.assertEqual(got["logging"], 5 + 6)
 
+    @mock.patch("pulsar.sessions.LOGGING_IS_WORK", False)  # the rule before 1.6.9, kept behind its switch
     def test_a_minute_mostly_spent_logging_is_logging_even_when_shared(self):
         self.write_session()
         edit = lambda s, e: {"s": s, "e": e, "app": "Cursor", "title": "Fix the checkout form", "host": "", "url": "", "cat": "work"}  # noqa: E731

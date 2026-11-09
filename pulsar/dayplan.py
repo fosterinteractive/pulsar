@@ -38,7 +38,7 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from . import attribution, commits as git_commits, config
+from . import attribution, commits as git_commits, config, sessions as sessions_mod
 from .attribution import CLIENT, INTERNAL, repo_key
 
 GRID = 5             # entry boundaries on this grid, in minutes (Settings: "Round entries to", opts_for)
@@ -434,7 +434,8 @@ class _Day:
                     self.personal[x] = 1
             if it.get("cat") != "work":
                 continue  # personal windows never count as work
-            lg = 1 if any(LOGGING.search(str(it.get(k) or "")) for k in ("app", "host", "url")) else 0
+            lg = 1 if not sessions_mod.LOGGING_IS_WORK and any(LOGGING.search(str(it.get(k) or ""))
+                                                               for k in ("app", "host", "url")) else 0
             for x in range(max(0, int(it["s"])), min(N, int(math.ceil(it["e"])))):
                 self.work[x] = 1
                 self.logging[x] = self.logging[x] or lg

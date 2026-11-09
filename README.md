@@ -178,8 +178,8 @@ Pulsar reads your Claude Code sessions (`~/.claude/projects`, on this Mac only) 
 session you were most likely working in: the one whose title your editor showed, else one whose agent was running, else
 the one you used last in that sitting. Each row is named after the git repository the session worked in, so a session
 that worked in two repositories gives a row for each; another session's agent working meanwhile is a thin dashed rail.
-Meetings, personal windows and time spent logging go to no session (Pulsar's own window counts as work while a session
-in Pulsar's repository is at work). Nothing is sent anywhere unless you switch on Claude Code, and nothing is logged by
+Meetings and personal windows go to no session. Time in Pulsar or Productive counts as the work around it, like any
+other window. Nothing is sent anywhere unless you switch on Claude Code, and nothing is logged by
 itself.
 
 **Log this time** on a row offers first a Productive task you pasted into that session in the three hours before, then

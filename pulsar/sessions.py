@@ -69,6 +69,9 @@ ROOTS = {HOME, "/", "/private", "/private/tmp", "/tmp", "/private/var", "/privat
 TOOLING = os.path.join(HOME, ".claude")  # Claude Code's own files (memory, skills, plans): tools, not a project
 # Logging time: Pulsar itself, or Productive in a browser. It is work, but no client's: it goes to no session.
 LOGGING = re.compile(r"^Pulsar$|app\.productive\.io|(127\.0\.0\.1|localhost):56\d\d", re.I)
+# Time in Pulsar or Productive counts as the work around it (1.6.9): set aside as "time spent logging", its glances in
+# the middle of other work showed as gaps there (2026-11-09: 17 minutes in turns of 1 to 3 while deploying a site)
+LOGGING_IS_WORK = True
 # ...except Pulsar's own window while a session in Pulsar's own repository is at work (a message typed, or its agent
 # running, within the away time): that is testing what was just built, the session's work (dayplan.OWN_REPO too)
 PULSAR_WINDOW = re.compile(r"^Pulsar$|(127\.0\.0\.1|localhost):56\d\d", re.I)
@@ -549,6 +552,7 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
     focus: list = [None] * n
     logging_s, work_s = [0.0] * n, [0.0] * n  # seconds of each minute in Pulsar or Productive, and in any work window
     pulsar_s, pulsar_it = [0.0] * n, [None] * n  # of those, in Pulsar's own window
+    logging_it: list = [None] * n  # the Pulsar or Productive window of each such minute
     for it in items:
         if it.get("cat") != "work":
             continue  # personal windows (Settings > Personal windows) and away time go to no session
@@ -559,6 +563,7 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
             work_s[x] += seconds
             if is_logging:
                 logging_s[x] += seconds
+                logging_it[x] = it
                 if is_pulsar:
                     pulsar_s[x] += seconds
                     pulsar_it[x] = it
@@ -590,7 +595,10 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
             own_at[x], logging_at[x], focus[x] = (i, project), False, pulsar_it[x]
     for x in range(n):
         if logging_at[x]:
-            focus[x] = None
+            if LOGGING_IS_WORK:  # a window like any other: the work it sits in (the session whose tab came before)
+                logging_at[x], focus[x] = False, logging_it[x]
+            else:
+                focus[x] = None
     present = [f is not None for f in focus]
     if not any(present):  # no tracker: an agent working on a request, and answers typed within the away time
         tracker = "no tracker"

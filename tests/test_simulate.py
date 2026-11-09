@@ -590,8 +590,9 @@ class Run:
         for it in d.items:
             if it["cat"] != "work":
                 continue
-            logging_ = bool(sessions.LOGGING.search(it["app"]) or sessions.LOGGING.search(it["host"])
-                            or sessions.LOGGING.search(it["url"]))
+            # time in Pulsar or Productive is work like any other since 1.6.9 (sessions.LOGGING_IS_WORK)
+            logging_ = not sessions.LOGGING_IS_WORK and bool(
+                sessions.LOGGING.search(it["app"]) or sessions.LOGGING.search(it["host"]) or sessions.LOGGING.search(it["url"]))
             pulsar_ = logging_ and any(sessions.PULSAR_WINDOW.search(it[k]) for k in ("app", "host", "url"))
             meeting = not sessions.CLAUDE_APPS.search(it["app"]) and sessions.MEETING.search(
                 " ".join((it["app"], it["title"], it["host"])))

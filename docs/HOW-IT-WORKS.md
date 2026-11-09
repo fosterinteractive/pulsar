@@ -451,7 +451,12 @@ Which Claude Code session, and so which project, each minute of work most likely
   went to the session used last, often another one whose agent was running in the background; on 19 past days the
   minutes per task were right for 43.6% instead of 42.6%, the dialog's first task for 34.4% instead of 33.8%); else
   the one used last. Meetings, personal
-  windows and time logging (a minute that went mostly to Pulsar or Productive) go to none. Except Pulsar's own
+  windows go to none. Time in Pulsar or Productive is a window like any other since 1.6.9 (`sessions.LOGGING_IS_WORK`):
+  set aside as time spent logging until then, its short looks in the middle of other work showed as gaps there (on 9
+  November, 17 minutes in looks of 1 to 3 while deploying a site); counted, on 19 past days 180 more minutes had a task,
+  the minutes per task were right for 44.7% instead of 44.2%, the right task at the right minute 48.5% instead of
+  48.0%, and 46 more minutes were proposed where nothing had been logged. With the switch off, as before: a minute
+  that went mostly to Pulsar or Productive goes to none. Except Pulsar's own
   window while a session in Pulsar's own repository (`pulsar`, `pulsar-preview`) is at work, a message typed or its
   agent running within the away time: that is testing what was just built, so the minute is that session's
   (`sessions.OWN_REPO`, as `dayplan.OWN_REPO` for Log the day). Productive stays logging.
@@ -795,7 +800,7 @@ claim wins:
    go to it, up to the meeting's own length on each side ("the call ran 25 min over" in its why); the next
    meeting's minutes are not free, so meetings back to back each keep their own, and what is left of a longer call
    is a call of its own;
-3. Likely rows at their own time, never on away minutes or time spent logging (Pulsar, Productive), in this order
+3. Likely rows at their own time, never on away minutes, in this order
    (parallel work, below): a client's work in front; then a client's agent that ran attended while internal work was
    in front (a **shared** row); then the rest of the work in front. The agents' other background time is noted, never
    placed ("Left out: pulsar 48 min (ran in parallel)");
