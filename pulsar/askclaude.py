@@ -334,6 +334,7 @@ def _conversation(path: str, t0: float):
         return _talk[k]
     titles, typed_, said = set(), [], []
     lo, hi = t0 - 6 * 3600, t0 + 86400 + 3600
+    lo_s, hi_s = sessions._bounds(lo, hi)
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
             if '"ai-title"' in line or '"custom-title"' in line:
@@ -341,7 +342,7 @@ def _conversation(path: str, t0: float):
                 if r.get("type") in ("ai-title", "custom-title"):
                     titles.add(sessions.norm_title(r.get("customTitle") or r.get("aiTitle") or ""))
                     continue
-            if '"timestamp"' not in line:
+            if '"timestamp"' not in line or sessions._outside(line, lo_s, hi_s):  # outside the day, unparsed
                 continue
             try:
                 r = sessions.record(line)
@@ -400,7 +401,7 @@ def typed(t0: float, titles: list, a: float, b: float, projects_dir: str | None 
         try:
             if os.path.getmtime(path) < t0 - 3600:
                 continue
-            s = sessions.read_session(path, t0, t0 + 86400)
+            s = sessions.read_day(path, t0, t0 + 86400)
         except (OSError, ValueError, TypeError, AttributeError):  # that session only
             continue
         if not s:

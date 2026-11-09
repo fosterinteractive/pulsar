@@ -429,7 +429,11 @@ project as its colour stripe and, where the card is tall enough, its second line
 Which Claude Code session, and so which project, each minute of work most likely went to.
 
 - **Source**: Claude Code keeps every session as JSON lines in `~/.claude/projects/<folder>/<id>.jsonl`: what you
-  typed, what the agent did (its tool calls name the files it touched) and the session's title.
+  typed, what the agent did (its tool calls name the files it touched) and the session's title. A line whose every
+  UTC time (`"timestamp":"…Z"`) is outside the day (with six hours before and one after) is skipped before it is
+  parsed (`sessions._outside`): parsing every line of long sessions was most of a day's cost. A day reads each session
+  once: commits and Ask Claude's steps take the read Likely made (`sessions.read_day`). On five past days the rows,
+  commits and steps came out the same, in 4.3 to 5.6 seconds of CPU instead of 8.1 to 9.6.
 - **A turn's project** is the git repository its tool calls worked in: the folder that holds `.git`, named after its
   `origin` address (a clone in a folder called `repo` is still `fi-drupal-qa`). Names that say nothing
   (`repository.git`, `repo`, `src`, `app`…) fall back to the folder name. Each call weighs by what it did there: a file
@@ -1472,7 +1476,10 @@ tick; 2026-11-09: at 14:20 the column still ended at 14:01, the last read), and 
   `in-app`): Settings → Time and activity has **This Mac**, the window's own choices, applied at once through
   `pulsarNative.setNativePrefs` and shown again on each `pulsar:prefs` event: the Dock badge, the end-of-day reminder
   and its time, and Open at Login (when macOS needs approval, a button opens Login Items; on macOS 12, the steps to
-  do it by hand). The page leaves out what the window does itself: the wordmark and the theme button. Every dialog
+  do it by hand). The page leaves out what the window does itself: the wordmark. The theme button stays (1.6.0 hid it,
+  and a theme chosen before then could be changed only from View > Appearance, which was hard to find); Settings >
+  Appearance sets the theme too. The menu bar line takes today's numbers from the day view each time it draws today
+  (`native.js`), and reads `/api/report` itself every 10 minutes only while another day or the Report is on screen. Every dialog
   keeps its ✕ (Escape, ⌘W and a click on the backdrop close them too, as the ✕ does; the sign-in notice stays); buttons keep the arrow cursor, and the main button and focus rings take the Mac's
   accent colour (`--mac-accent`). In a browser none of this shows. Everywhere: a Delete asks with Cancel first and a
   red Delete; the logo pulses only while the day is being read (`html.loading`); ↻ plays one short warp while it reloads;

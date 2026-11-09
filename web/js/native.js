@@ -324,6 +324,7 @@
 
   /* ---------- today's time not logged: the Dock badge and the reminder ---------- */
   let lastGap = null;  // {minutes, at}: from the day view, when it shows today
+  let todayAt = 0;      // when the day view last gave the menu bar today's numbers
   if (fn(window.renderAside)) {
     const aside = window.renderAside;
     window.renderAside = function (gapMin) {
@@ -332,7 +333,11 @@
         if (state.date === todayLocal() && state.logged && !state.logged.error && state.act && !state.act.error) {
           lastGap = {minutes: Math.round(gapMin), at: Date.now()};
           send({action: 'badge', minutes: lastGap.minutes, date: state.date});
-          if (typeof todayLater === 'function') todayLater();
+          // the menu bar line: what the day view shows, each time it draws today (no read of its own)
+          const work = state.act.items.filter(x => x.cat !== 'personal').reduce((s, x) => s + x.e - x.s, 0);
+          const sum = state.logged.entries.reduce((s, x) => s + x.minutes, 0);
+          todayAt = Date.now();
+          send({action: 'today', date: state.date, active: Math.round(work), logged: Math.round(sum), notLogged: lastGap.minutes});
         }
       } catch (e) {}
       return out;
@@ -355,6 +360,7 @@
   /* ---------- today in the menu bar: active work and logged time (the window's status item) ---------- */
   let todaySoon = 0;
   async function todayLine() {
+    if (Date.now() - todayAt < 10 * 60 * 1000) return;  // the day view gave them lately (above)
     const d = todayLocal(), r = await getJSON(`/api/report?from=${d}&to=${d}`);
     const day = r && !r.error && r.days ? r.days[0] : null;
     if (day) send({action: 'today', date: d, active: Math.round(day.active || 0), logged: Math.round(day.logged || 0),
@@ -362,7 +368,9 @@
   }
   const todayLater = (ms = 3000) => { clearTimeout(todaySoon); todaySoon = setTimeout(todayLine, ms); };
   todayLater(8 * 1000);
-  setInterval(todayLine, 3 * 60 * 1000);
+  // while the day view shows another day (or Report): a read of its own every 10 minutes (each also reads Productive,
+  // and MemTime's database when it is there)
+  setInterval(todayLine, 10 * 60 * 1000);
 
   /* ---------- after a sleep, or at midnight: the day it is now ---------- */
   function wake() {

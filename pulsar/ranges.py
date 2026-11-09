@@ -15,7 +15,7 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 
-from . import dayplan
+from . import attribution, dayplan
 
 # A range is worth splitting when its biggest task holds less than this share of its work minutes, or when two tasks
 # have MIXED_MIN minutes or more each, counted as the split would make them (a short piece joins its neighbour).
@@ -58,6 +58,15 @@ def _minute(keep: dict, at: list, x: int) -> tuple:
 
 def _label(kind: str, repo: str) -> str:
     return (repo or "Claude Code") if kind in ("claude", "skip") else LABEL.get(kind, kind)
+
+
+def _class(g: dict, ctx: dict) -> str | None:
+    """A group's class: its task's (attribution.class_of_task), else its project's (a task never logged to)."""
+    got = attribution.class_of_task(g.get("taskId"), ctx) if g.get("taskId") else None
+    project = g.get("project") or ""
+    if got is None and project:
+        got = attribution.INTERNAL if attribution.internal_project(project) else (ctx.get("project_class") or {}).get(project)
+    return got
 
 
 def analyse(keep: dict, s: float, e: float, opts: dict | None = None) -> dict:
@@ -139,6 +148,13 @@ def analyse(keep: dict, s: float, e: float, opts: dict | None = None) -> dict:
                      for t in lead.get("alts") or [] if t and str(t) != tid and names.get(str(t), ("", ""))[0]][:3],
             "_gk": gk})
     out_groups.sort(key=lambda g: -g["minutes"])
+    # a client's work leads when it holds at least as much of the stretch as internal work does, whatever its tasks:
+    # 2026-11-09, a client's 51 minutes in two tasks (32 and 19) and the tool's own 34 led with the tool's task
+    ctx = keep.get("ctx") or {}
+    cls = {id(g): _class(g, ctx) for g in out_groups}
+    client = sum(g["minutes"] for g in out_groups if cls[id(g)] == attribution.CLIENT)
+    if client and client >= sum(g["minutes"] for g in out_groups if cls[id(g)] == attribution.INTERNAL):
+        out_groups.sort(key=lambda g: cls[id(g)] != attribution.CLIENT)  # stable: by minutes within each
     dominant = out_groups[0] if out_groups else None
     share = dominant["share"] if dominant else 0
     split = _split(marks, a, o) if work else []

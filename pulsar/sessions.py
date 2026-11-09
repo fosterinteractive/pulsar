@@ -27,6 +27,7 @@ from __future__ import annotations
 import bisect
 import glob
 import json
+import math
 import os
 import re
 import time
@@ -253,6 +254,24 @@ def tool_result(r: dict) -> bool:
     return isinstance(content, list) and any(isinstance(x, dict) and x.get("type") == "tool_result" for x in content)
 
 
+# A record's UTC time as Claude Code writes it, "2026-11-09T11:21:05.123Z": compared as text with the day's bounds, a
+# line whose every such time is outside them is skipped before it is parsed (most of a long session's lines; parsing
+# them was most of a day's cost). Any other line is parsed and checked as before.
+_TS = re.compile(r'"timestamp":"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?Z"')
+
+
+def _bounds(lo: float, hi: float) -> tuple:
+    """lo and hi as _TS's text, rounded outwards: a time skipped by them is outside [lo, hi) for certain."""
+    return (time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(math.floor(lo))),
+            time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(math.ceil(hi))))
+
+
+def _outside(line: str, lo_s: str, hi_s: str) -> bool:
+    """Every record time in the line is before lo_s or at hi_s or later (_bounds); False when it has none."""
+    found = _TS.findall(line)
+    return bool(found) and all(x < lo_s or x >= hi_s for x in found)
+
+
 def read_session(path: str, t0: float, t1: float, subagents: bool = False, strings_of=None) -> dict | None:
     """One session's messages, agent activity and titles around [t0, t1); None if nobody typed in it that day.
     subagents: also the calls of the subagents it started (<folder>/<id>/subagents/*.jsonl). strings_of(record): the
@@ -260,6 +279,7 @@ def read_session(path: str, t0: float, t1: float, subagents: bool = False, strin
     prompts, triggers, notified, assistant, titles, cwd, title, custom = [], [], [], [], set(), None, "", False
     calls, events, strings = [], [], []
     lo, hi = t0 - 6 * 3600, t1 + 3600
+    lo_s, hi_s = _bounds(lo, hi)
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
             if '"ai-title"' in line or '"custom-title"' in line:
@@ -270,7 +290,7 @@ def read_session(path: str, t0: float, t1: float, subagents: bool = False, strin
                     if r.get("type") == "custom-title" or not custom:  # a title the person set wins
                         title, custom = name, custom or r.get("type") == "custom-title"
                     continue
-            if '"timestamp"' not in line:
+            if '"timestamp"' not in line or _outside(line, lo_s, hi_s):
                 continue
             try:
                 r = record(line)
@@ -322,13 +342,14 @@ def read_session(path: str, t0: float, t1: float, subagents: bool = False, strin
 def _read_subagents(path: str, lo: float, hi: float, calls: list, events: list) -> None:
     """The calls and activity of the subagents a session started, added to the session's own: Claude Code keeps each
     in <folder>/<id>/subagents/<agent>.jsonl, and the session waits on them (or they report back)."""
+    lo_s, hi_s = _bounds(lo, hi)
     for sub in glob.glob(os.path.join(path[:-len(".jsonl")] if path.endswith(".jsonl") else path, "subagents", "*.jsonl")):
         try:
             if os.path.getmtime(sub) < lo:
                 continue
             with open(sub, encoding="utf-8", errors="replace") as fh:
                 for line in fh:
-                    if '"timestamp"' not in line:
+                    if '"timestamp"' not in line or _outside(line, lo_s, hi_s):
                         continue
                     r = record(line)
                     try:
@@ -475,6 +496,20 @@ def project_at(s: dict, t: float) -> str:
     return turn_at(s, t)["project"]
 
 
+_day_reads = Newest(400)  # (session file, its size and time, t0, t1) -> its read for that day (read_day)
+
+
+def read_day(path: str, t0: float, t1: float) -> dict | None:
+    """read_session(path, t0, t1) for readers of the session's own messages and calls only (commits.py, Ask Claude's
+    steps): kept while the file is unchanged, and the read load() made of that day when it made one (a fuller read:
+    its own records are the same). Raises OSError as open() does."""
+    st = os.stat(path)
+    k = (path, st.st_size, st.st_mtime, t0, t1)
+    if k not in _day_reads:
+        _day_reads[k] = read_session(path, t0, t1)
+    return _day_reads[k]
+
+
 def load(t0: float, t1: float, projects_dir: str = PROJECTS_DIR, namer=None, turns=None) -> list:
     """The sessions someone typed in during [t0, t1), each read with its subagents and analysed (turns: analyse)."""
     sessions = []
@@ -482,7 +517,9 @@ def load(t0: float, t1: float, projects_dir: str = PROJECTS_DIR, namer=None, tur
         try:
             if os.path.getmtime(path) < t0 - 3600:
                 continue
+            st = os.stat(path)
             s = read_session(path, t0, t1, subagents=True, strings_of=(turns or {}).get("strings"))
+            _day_reads[(path, st.st_size, st.st_mtime, t0, t1)] = s
             if s:
                 analyse(s, namer, turns)
                 sessions.append(s)

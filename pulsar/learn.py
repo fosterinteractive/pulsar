@@ -534,7 +534,9 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
         front = [e for e in proposal.get("entries") or [] if e.get("e", 0) - e.get("s", 0) >= 5]
         back = [e for e in proposal.get("background") or [] if e.get("e", 0) - e.get("s", 0) >= 5]
         stored = days[date]
-        for e, row in list(zip(front, stored)) + list(zip(back, stored[len(front):])):
+        named: dict = {}  # (session keys, repository) -> the work's task named earlier today (work_match)
+        pairs = list(zip(front, stored)) + list(zip(back, stored[len(front):]))
+        for e, row in sorted(pairs, key=lambda p: p[0].get("s", 0)):
             row = {**row, "single": bool(e.get("single"))}
             found: list = []
             work: list = []
@@ -546,6 +548,13 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
                     found = new_tasks(fresh, work_text(e, t0, steps=steps, replies=NEW_REPLIES), skip)
                 at = attribution.repo_key(row.get("p"))
                 work = work_match(said, work_projects(at, repo, project_of, work_tasks), work_tasks, skip)
+                # a later stretch of the same session in the same repository that names nothing ("go on", "done")
+                # goes on with the task the work named earlier that day
+                here = (tuple(row.get("k") or ()), at)
+                if work:
+                    named[here] = work
+                elif row.get("k") and here in named:
+                    work = [{**w, "carried": True} for w in named[here]]
             except (OSError, ValueError) as exc:  # the votes alone, as before
                 logbook.record("learn", f"Words of the work: {type(exc).__name__}: {exc}", kind="warning")
                 text = {}

@@ -963,6 +963,26 @@ class LearnWordsTest(unittest.TestCase):
         self.assertTrue(got[0]["why"].startswith("your notes on it share words with this work: "))
 
 
+    def test_a_later_stretch_of_the_same_session_goes_on_with_the_task_its_work_named(self):
+        """2026-11-09: "D11 db upgrade" named the task at 13:21; at 14:00 only "go on, I back up live myself" was typed,
+        and that stretch went back to the repository's history. Same session, same repository: the named task goes on."""
+        from zoneinfo import ZoneInfo
+        from pulsar import learn, sessions
+        empty = tempfile.mkdtemp()
+        rows = [{"s": 600, "e": 660, "project": "law-site", "titles": ["Morning work session"], "commits": ["Blog feature: newest first"]},
+                {"s": 700, "e": 760, "project": "law-site", "titles": ["Morning work session"]},
+                {"s": 800, "e": 860, "project": "other-site", "titles": ["Morning work session"]}]
+        proposal = {"entries": rows}
+        with mock.patch.object(learn, "warm", lambda *a: None), mock.patch.object(learn, "_stored", lambda d: None), \
+             mock.patch.object(sessions, "PROJECTS_DIR", empty), \
+             mock.patch.object(learn, "work_projects", lambda at, *a: {"Law Faculty"} if at == "law-site" else set()):
+            learn.annotate(proposal, "2026-11-04", {"person_name": "Nick Example"}, self.ENTRIES, [], ZoneInfo("UTC"))
+        first, later, elsewhere = (r["learned"] for r in proposal["entries"])
+        self.assertEqual((first[0]["taskId"], first[0].get("carried")), ("2", None))
+        self.assertEqual((later[0]["taskId"], later[0].get("carried")), ("2", True))
+        self.assertFalse(any(x.get("work") for x in elsewhere))  # another repository: never carried there
+
+
 class AskClaudeTest(unittest.TestCase):
     """The Ask Claude button: what Claude Code is run with, and how its answer becomes picks."""
 

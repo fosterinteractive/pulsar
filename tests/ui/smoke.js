@@ -126,6 +126,16 @@ try {
     check('today\'s activity is read again', await until(() => state.act !== shown, 5000));
   } else check('today\'s activity is read again', true, 'skipped: not on today');
 
+  // the theme: ◐ at the top, in Pulsar's window too, and Settings > Appearance set it (put back as it was)
+  const themeWas = q('#theme-btn').dataset.v;
+  check('the theme button shows', getComputedStyle(q('#theme-btn')).display !== 'none');
+  const sel = q('#theme-sel'), other = themeWas === 'dark' ? 'light' : 'dark';
+  sel.value = other;
+  sel.dispatchEvent(new Event('change'));
+  const set = (document.documentElement.dataset.theme || 'system') === other && q('#theme-btn').dataset.v === other;
+  applyTheme(themeWas);
+  check('Settings > Appearance sets the theme', set && sel.value === themeWas, `${themeWas} → ${other} → ${sel.value}`);
+
   // the day's entries come from the kept copy first
   const copy = await getJSON(`/api/entries?date=${state.date}&copy=1`);
   check('the server gives the day\'s kept copy', typeof copy.copy === 'boolean', JSON.stringify({copy: copy.copy, n: copy.entries?.length}));

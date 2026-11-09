@@ -94,6 +94,19 @@ class AnalyseTest(unittest.TestCase):
         self.assertEqual(sum(x["minutes"] for x in res["split"]), 80)  # the whole range, nothing more
         self.assertEqual(res["dominant"]["taskId"], "11")
 
+    def test_a_clients_work_leads_when_it_holds_as_much_as_internal_work(self):
+        # 2026-11-09: a client's 51 minutes in two tasks and the tool's own 34 in one led with the tool's task
+        ctx = ctx_for({"Fix the importer": "11", "Hero video": "22", "Footer links": "33"})
+        ctx = {**ctx, "task_class": {"11": "internal", "22": "client", "33": "client"}}
+        d = day(items=[work(540, 625)], rows=[row(540, 575), row(575, 605, titles=["Hero video"]),
+                                              row(605, 625, titles=["Footer links"])])
+        res = analyse(d, ctx, 540, 625)
+        self.assertEqual([g["taskId"] for g in res["groups"]], ["22", "33", "11"])  # 50 against 35
+        self.assertEqual(res["dominant"]["taskId"], "22")
+        # internal work holding more of the stretch still leads: a client is never billed for it by default
+        d = day(items=[work(540, 625)], rows=[row(540, 600), row(600, 625, titles=["Hero video"])])
+        self.assertEqual(analyse(d, ctx, 540, 625)["dominant"]["taskId"], "11")
+
     def test_a_task_holding_most_of_the_range_with_nothing_else_of_20_minutes_is_not_mixed(self):
         d = day(items=[work(540, 612)], rows=[row(540, 600), row(600, 612, project="site", titles=["Hero video"])])
         res = analyse(d, self.ctx, 540, 612)

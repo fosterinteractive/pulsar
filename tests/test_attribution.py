@@ -127,6 +127,20 @@ class TurnRepositoryTest(Fixture):
         self.assertEqual((s["turns"][0]["project"], s["turns"][0]["hard"]), ("tilde-site", {"tilde-site": 4}))
         self.assertEqual(sessions.find_paths("x~/a b/~/c ~/d"), [os.path.join(sessions.HOME, "d")])
 
+    def test_lines_outside_the_day_are_skipped_before_they_are_parsed_and_the_read_is_the_same(self):
+        lo_s, hi_s = sessions._bounds(T0 - 6 * 3600, T0 + 86400 + 3600)
+        self.assertTrue(sessions._outside('{"type":"user","timestamp":"2020-01-01T00:00:00.000Z"}', lo_s, hi_s))
+        inside = at(10)
+        # a time of its own inside the day, after one inside the content that is not: parsed
+        self.assertFalse(sessions._outside('{"x":{"timestamp":"2020-01-01T00:00:00Z"},"timestamp":"%s"}' % inside, lo_s, hi_s))
+        self.assertFalse(sessions._outside('{"timestamp":"2026-11-04T10:00:00+02:00"}', lo_s, hi_s))  # not UTC: parsed
+        self.assertFalse(sessions._outside('{"type":"summary"}', lo_s, hi_s))
+        old = {"type": "user", "timestamp": "2020-01-01T00:00:00.000Z", "cwd": "/elsewhere", "origin": {"kind": "human"},
+               "message": {"content": "long ago"}}
+        self.write("aaaa0007", [old, typed(10, "today", self.acme), call(11, "Edit", file_path=os.path.join(self.acme, "a.js"))])
+        [s] = self.load()
+        self.assertEqual(([t for _, t in s["prompts"]], s["cwd"]), (["today"], self.acme))
+
     def test_a_subagents_calls_count_for_the_turn_that_started_it(self):
         self.write("aaaa0003", [typed(10, "look into it", self.root), call(11, "Task", prompt=f"edit {self.tool}"),
                                 said(30)],

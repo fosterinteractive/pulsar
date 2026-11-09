@@ -363,7 +363,8 @@ function syncURL() {
   if (R.range === 'custom') { p.set('from', R.from); p.set('to', R.to); }
   history.replaceState(null, '', '?' + p);
 }
-/* theme: Auto follows the system; Light and Dark are remembered in this browser */
+/* theme: Auto follows the system; Light and Dark are remembered in this browser (and by Pulsar's window). The ◐ button
+   at the top, Settings > Appearance and the window's View > Appearance all set it. */
 function applyTheme(t) {
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
   else { t = 'system'; delete document.documentElement.dataset.theme; }
@@ -371,9 +372,11 @@ function applyTheme(t) {
   btn.textContent = {system: '◐', light: '☀︎', dark: '☾'}[t];
   btn.title = label; btn.setAttribute('aria-label', label);
   btn.dataset.v = t;
+  /** @type {HTMLSelectElement} */ ($('#theme-sel')).value = t;
   try { t === 'system' ? localStorage.removeItem('pulsar-theme') : localStorage.setItem('pulsar-theme', t); } catch (e) {}
 }
 $('#theme-btn').onclick = () => applyTheme({system: 'light', light: 'dark', dark: 'system'}[$('#theme-btn').dataset.v]);
+$('#theme-sel').onchange = ev => applyTheme(/** @type {HTMLSelectElement} */ (ev.target).value);
 applyTheme(document.documentElement.dataset.theme);
 
 /* Tab reaches every button and link. WebKit (the app's window) skips them unless macOS's keyboard navigation is on,

@@ -665,9 +665,10 @@ kbd { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px
 .btn.danger { background: #d70015; color: #fff; }
 .btn.danger:hover { background: #d70015; opacity: .9; }
 /* in Pulsar's own window (html.in-app): the window draws its title, menus (View > Appearance, Help > Error Log) and
-   closes dialogs with Escape and Cmd+W, so the page leaves out its wordmark and theme button (every dialog keeps its
-   ✕); buttons keep the arrow, as Mac buttons do; the main button takes the Mac's accent colour */
-html.in-app header .brand h1, html.in-app #theme-btn { display: none; }
+   closes dialogs with Escape and Cmd+W, so the page leaves out its wordmark (the theme button stays: the menu was hard
+   to find; every dialog keeps its ✕); buttons keep the arrow, as Mac buttons do; the main button takes the Mac's
+   accent colour */
+html.in-app header .brand h1 { display: none; }
 html.in-app button, html.in-app .btn, html.in-app summary, html.in-app .card, html.in-app .gaprail, html.in-app .awayband, html.in-app .nwrail { cursor: default; }
 html.in-app .btn.primary { background: var(--accent); color: #fff; }
 html.in-app .btn.primary:hover { background: var(--accent); }

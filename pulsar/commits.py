@@ -175,7 +175,7 @@ def _session(path: str, t0: float):
     st = os.stat(path)
     k = (path, st.st_size, st.st_mtime, t0)
     if k not in _read:
-        s = sessions.read_session(path, t0, t0 + 86400)
+        s = sessions.read_day(path, t0, t0 + 86400)
         if s:
             paths = [(t, p) for t, ps in s["assistant"] for p in ps]
             paths += [(t, p) for t, text in s["prompts"] for p in sessions.find_paths(text)]

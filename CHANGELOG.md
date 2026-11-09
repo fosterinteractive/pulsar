@@ -11,6 +11,11 @@ What each Pulsar release changed, newest first.
 - A command that names its folder as `~/Sites/…` or `$HOME/Sites/…` counts for that repository: such a stretch was named after the session's title instead, with the tasks logged under that title.
 - What you are doing comes before where you usually log: the task of the repository's project whose name the work names ("D11 db upgrade" → "D11 Upgrades - Dev work") is first in the log dialog's list, yours before a near twin assigned to someone else; in Log the day it comes right after the session's own task. On 19 past days the dialog's first task was right 33% of the time instead of 31%.
 - Today's activity refreshes every 5 minutes instead of every hour, so the Activity column keeps up with the now line.
+- A later stretch of the same session in the same repository goes on with the task its work named earlier that day ("go on" names nothing).
+- A stretch that mixes a client's work with internal work leads with the client's when it holds at least as much of it, even split over two tasks.
+- The menu bar shows today's numbers as the day view does, with no read of its own while the day view shows today.
+- Days are worked out about 40% faster: session lines outside the day are skipped before they are read, and a day reads each session once.
+- The theme button is back in Pulsar's window, and Settings has Appearance > Theme (same as the Mac, Light or Dark).
 - Words match across their endings: "upgrade" and "upgrades" (or "update" and "updates") are the same word when a task is found by its words.
 
 ## 1.6.5 (2026-11-09)
