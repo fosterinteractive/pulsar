@@ -443,6 +443,7 @@ def events_on(items: list, day: str, tz, domain: str = "") -> list:
                 "declined": any(isinstance(a, dict) and a.get("self") and a.get("responseStatus") == "declined"
                                 for a in x.get("attendees") or []),
                 "recurring": bool(x.get("recurringEventId")),
+                "private": x.get("visibility") in ("private", "confidential"),  # marked so in Google Calendar
                 "uid": str(x.get("recurringEventId") or x.get("id") or ""),
                 "external": external, "note": note_of(title, external)}
         item.update({k: v for k, v in (("url", conference), ("link", _https(x.get("htmlLink")))) if v})

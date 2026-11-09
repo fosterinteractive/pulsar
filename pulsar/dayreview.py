@@ -345,10 +345,19 @@ def digest(day: str, d: dict, budget: int = BUDGET_TOKENS) -> tuple:
                      "learned": [{"taskId": t.get("taskId"), "task": _cut(t.get("title"), 70), "why": _cut(t.get("why"), 60)}
                                  for t in (r.get("learned") or [])[:5]],
                      "linked": [str(x) for x in (r.get("tasks") or [])[:3]]})
-    meetings = [{"time": f"{_hm(m['s'])}-{_hm(m['e'])}", "title": _cut(m.get("title"), 60),
-                 "declined": bool(m.get("declined")),
+    # meetings: never one you declined; the title of one marked private in Google Calendar, or holding a word of
+    # Settings' personal windows, is not sent (only that a meeting was there)
+    personal = [w.lower() for w in config.load().get("personal_patterns") or [] if isinstance(w, str) and w.strip()]
+
+    def shown(m: dict) -> str:
+        title = m.get("title") or ""
+        if m.get("private") or any(w.strip() in title.lower() for w in personal):
+            return "private event"
+        return _cut(title, 60)
+
+    meetings = [{"time": f"{_hm(m['s'])}-{_hm(m['e'])}", "title": shown(m),
                  "tasks": [{"taskId": t.get("taskId"), "task": _cut(t.get("title"), 60)} for t in (m.get("tasks") or [])[:2]]}
-                for m in d.get("meetings") or [] if not m.get("all_day")]
+                for m in d.get("meetings") or [] if not m.get("all_day") and not m.get("declined")]
     logged = [{"time": "no start" if x.get("s") is None else _hm(x["s"]), "min": x.get("minutes"),
                "taskId": str(x.get("taskId") or ""), "task": _cut(x.get("task"), 70), "service": _cut(x.get("service"), 40),
                "note": _cut(x.get("note"), 120)} for x in d.get("logged") or []]

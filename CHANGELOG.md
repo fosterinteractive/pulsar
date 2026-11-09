@@ -8,6 +8,8 @@ What each Pulsar release changed, newest first.
 
 ## 1.6.11 (2026-11-09)
 - The git branch of the work's repository counts as words of the work ("campaign-guides-cta"), and a ticket key in it as a ticket.
+- "Check my day with Claude" no longer sends meetings you declined, and sends "private event" instead of the title of a meeting marked private in Google Calendar or holding a word of Settings' personal windows.
+- A meeting's title finds its task by word stems ("upgrades" is "upgrade") and prefers the project of the work logged within the hour around it: a meeting about one client's D11 upgrade no longer goes to another client's.
 - The titles of the repository's pull requests and issues open during the work count as words of the work.
 - A Productive task page open during the work ("… - Tasks - <project> - Productive") is that work's task, when it is of the repository's own project.
 - A task the session's Claude opened in Productive, or gave the link of, is that work's task (after a link you typed, before where you usually log): found on this Mac, no one asks Claude.

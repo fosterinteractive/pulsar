@@ -1497,6 +1497,22 @@ class MeetingTasksTest(unittest.TestCase):
         h, m = map(int, hm.split(":"))
         return datetime(2026, 11, day, h, m, tzinfo=timezone.utc).timestamp()
 
+    def test_a_meetings_title_matches_by_word_stems_and_the_work_logged_around_it(self):
+        # 2026-11-09: "Future Students: D11 db upgrade" went to another client's "D11 Upgrade" ("upgrades" and
+        # "students" did not count as "upgrade" and "student")
+        from pulsar import server
+        meeting = {"title": "Future Students: D11 db upgrade", "s": 50400, "e": 54000}
+        offered = [{"taskId": "1", "title": "Music - D11 Upgrade", "project": "Music Support"},
+                   {"taskId": "2", "title": "Stu-D11 Upgrades - Dev work", "project": "Student Recruitment Support"}]
+        got = server.meeting_tasks(meeting, [], [], offered)
+        self.assertEqual(got[0]["taskId"], "2")
+        self.assertIn("“upgrade”", got[0]["why"])                      # the title's own word, not its stem
+        # between equals, the project of the work logged within the hour around it
+        offered = [{"taskId": "1", "title": "D11 Upgrade", "project": "A"}, {"taskId": "2", "title": "D11 Upgrade", "project": "B"}]
+        rows = [{"start": 50000, "minutes": 30, "taskId": "9", "project": "B"}]
+        got = server.meeting_tasks({"title": "D11 upgrade call", "s": 50400, "e": 54000}, [], rows, offered)
+        self.assertEqual(got[0]["taskId"], "2")
+
     def test_the_series_history_comes_first_then_words_of_the_title(self):
         past = [{"s": self.at(d, "16:25"), "e": self.at(d, "17:25"), "uid": "scrum", "title": "Daily Scrum", "declined": False}
                 for d in (2, 3, 4)]

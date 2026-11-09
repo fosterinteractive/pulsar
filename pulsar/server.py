@@ -982,7 +982,10 @@ GENERIC_WORDS = {"meeting", "meetings", "sync", "call", "calls", "weekly", "dail
 
 
 def words_of(text: str, skip: set) -> set:
-    return {w for w in WORD.findall((text or "").lower()) if w not in GENERIC_WORDS and w not in skip}
+    """The telling words of a meeting's title or a task's name, each by its stem (learn._stem: "upgrades" and "upgrade",
+    "students" and "student" are one word; 2026-11-09 they were not, and another client's "D11 Upgrade" won)."""
+    return {learn._stem(w.lstrip("#")) if not w.startswith("#") else w for w in WORD.findall((text or "").lower())
+            if w not in GENERIC_WORDS and w not in skip}
 
 
 def meeting_tasks(meeting: dict, past: list, rows: list, offered: list, skip: set = frozenset()) -> list:
@@ -1015,19 +1018,24 @@ def meeting_tasks(meeting: dict, past: list, rows: list, offered: list, skip: se
             "why": f"logged during {n} of the last {len(same)} like it", "n": n, "of": len(same), "lastTitle": last[t][1]}
            for t, n in sorted(counts.items(), key=lambda kv: -kv[1])]
     words = words_of(title, skip)
+    # the projects of the work logged within an hour of it: a meeting about that client's work names its tasks
+    around = {r.get("project") for r in rows if r.get("start") is not None and r.get("project")
+              and r["start"] < meeting.get("e", 0) + 3600 and r["start"] + r["minutes"] * 60 > meeting.get("s", 0) - 3600}
     if words:
         scored = []
         for t in offered:
             shared = words & words_of(f"{t.get('title', '')} {t.get('project', '')}", skip)
             if shared:
                 meetingish = "meeting" in (t.get("title") or "").lower()
-                scored.append((len(shared) + (0.5 if meetingish else 0), t, shared))
+                scored.append((len(shared) + (0.5 if meetingish else 0) + (1 if t.get("project") in around else 0),
+                               t, shared))
         have = {o["taskId"] for o in out}
         for _, t, shared in sorted(scored, key=lambda x: -x[0]):
             if t["taskId"] not in have and len(out) < 5:
                 have.add(t["taskId"])
+                said = sorted({w for w in WORD.findall(title.lower()) if words_of(w, skip) & shared})  # as written
                 out.append({"taskId": t["taskId"], "title": t.get("title") or "", "project": t.get("project") or "",
-                            "why": "the title says " + ", ".join(f"“{w}”" for w in sorted(shared))})
+                            "why": "the title says " + ", ".join(f"“{w}”" for w in said or sorted(shared))})
     return out[:5]
 
 

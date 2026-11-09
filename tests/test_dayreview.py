@@ -121,6 +121,20 @@ class Digest(unittest.TestCase):
         self.assertIn("Weekly sync", text)          # the person's own meeting titles, for the review only
         self.assertIn("Importer keeps accents", text)
 
+    def test_declined_and_private_meetings_send_no_title(self):
+        d = self.inputs()
+        d["meetings"] = [{"s": 630, "e": 690, "title": "Weekly sync"},
+                         {"s": 700, "e": 730, "title": "Board offsite", "declined": True},
+                         {"s": 740, "e": 760, "title": "Doctor visit", "private": True},
+                         {"s": 770, "e": 780, "title": "Telegram call with family"}]  # a personal window's word
+        with mock.patch.object(dayreview.config, "load", lambda: {"personal_patterns": ["Telegram"]}):
+            doc, _, _ = dayreview.digest(DAY, d)
+        text = json.dumps(doc, ensure_ascii=False)
+        self.assertIn("Weekly sync", text)
+        for hidden in ("Board offsite", "Doctor visit", "family"):
+            self.assertNotIn(hidden, text)
+        self.assertEqual(text.count("private event"), 2)  # there, without its title; the declined one not at all
+
     def test_steps_about_logging_time_are_left_out(self):
         doc, _, _ = dayreview.digest(DAY, self.inputs())
         self.assertNotIn("залогуй", json.dumps(doc, ensure_ascii=False))
