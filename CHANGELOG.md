@@ -16,7 +16,7 @@ What each Pulsar release changed, newest first.
 - The titles of the repository's pull requests and issues open during the work count as words of the work.
 - A Productive task page open during the work ("… - Tasks - <project> - Productive") is that work's task, when it is of the repository's own project.
 - A task the session's Claude opened in Productive, or gave the link of, is that work's task (after a link you typed, before where you usually log): found on this Mac, no one asks Claude.
-- A session titled with its task's number ("Productive task 21429921"), or a message naming one, picks that task, as a pasted task link does.
+- A session titled with its task's number ("Productive task 12345678"), or a message naming one, picks that task, as a pasted task link does.
 
 ## 1.6.10 (2026-11-09)
 - A few minutes of a task right before or after its own logged entry are offered, however short, instead of left as a gap; when two short pieces join, the shorter one goes with the longer one's task.

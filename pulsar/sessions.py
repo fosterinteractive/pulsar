@@ -827,7 +827,7 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
 # ---- Productive tasks named in a session ------------------------------------------------------------------
 
 TASK_LINK = re.compile(r"app\.productive\.io/[^\s/]+/(?:projects/\d+/)?tasks/(?:task/)?(\d+)")
-# a task named by its number, as tools that start a session for a task title it: "Productive task 21429921" (2026-11-09:
+# a task named by its number, as tools that start a session for a task title it: "Productive task 12345678" (2026-11-09:
 # such a session's own task was not found, and another client's task logged once in it came first)
 # a git branch that names no work: the trunk, an environment, a person's own branch
 PLAIN_BRANCH = re.compile(r"^(main|master|qa|dev|develop|development|stag(e|ing)|live|prod(uction)?|head|.+-dev)$", re.I)

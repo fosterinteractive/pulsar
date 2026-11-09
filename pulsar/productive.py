@@ -1536,7 +1536,7 @@ def create_task(task: dict, settings: dict) -> dict:
         raise ProductiveError(task_refusal(str(exc).replace("Productive refused it: ", "")))
     except (OSError, http.client.HTTPException, ValueError) as exc:
         raise ProductiveUnclear(TASK_UNCLEAR.format(exc))
-    # only Productive's success sentence counts: "task created (ID: 21297146)." (one), "Created 2 tasks (ID: …)"
+    # only Productive's success sentence counts: "task created (ID: 12345670)." (one), "Created 2 tasks (ID: …)"
     ids = re.findall(r"(?:\btask created|\bcreated 1 tasks?) \(IDs?:\s*(\d+)", text, re.I)
     if ids:
         return {"taskId": ids[0]}

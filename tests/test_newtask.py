@@ -146,9 +146,9 @@ class CreateTaskBodyTest(unittest.TestCase):
             self.assertEqual(wire.calls, [], bad)
 
     def test_both_success_sentences_are_read(self):
-        for text in ("task created (ID: 21297146).", "Created 1 task (ID: 21297146)."):
+        for text in ("task created (ID: 12345670).", "Created 1 task (ID: 12345670)."):
             with connected("claude-code"), mock.patch.object(productive, "https", Wire(text)):
-                self.assertEqual(productive.create_task(TASK, SETTINGS), {"taskId": "21297146"}, text)
+                self.assertEqual(productive.create_task(TASK, SETTINGS), {"taskId": "12345670"}, text)
 
     def test_refusals_in_plain_words_and_never_unclear(self):
         cases = [("Failed to create task. task_list is required (unless task_list=null)", False, "needs a task list"),

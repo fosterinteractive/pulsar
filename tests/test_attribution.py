@@ -288,7 +288,7 @@ class BackgroundTest(Fixture):
         self.assertTrue(reading and not any(r["qualifies"] for r in reading))
 
     def test_a_task_number_in_the_sessions_title_or_a_message_is_its_task(self):
-        # 2026-11-09: a session titled "Productive task 21429921" was offered another client's task logged once in it
+        # 2026-11-09: a session titled "Productive task 12345678" was offered another client's task logged once in it
         self.write("cccc0008", [typed(100, "check what the client wrote", self.acme),
                                 call(101, "Edit", file_path=os.path.join(self.acme, "a.js"))], title="Productive task 777777")
         got = sessions.propose(T0, T0 + 86400, [self.editor(100, 120, "Productive task 777777")], "ActivityWatch", self.projects)
