@@ -1584,6 +1584,12 @@ estimate, and a table of every day. A day's bar and its row in the tables open t
 **Download** gives the days or the entries as CSV (values starting with `=`,
 `+`, `-` or `@` are escaped, so a spreadsheet never runs them) or a print view that saves as PDF.
 
+Going to the Report reads it again (`main.js` setView, `report.js` reportStale) when it was read more than a minute
+ago, or this page has logged, changed or deleted an entry since (`wroteAt`, set by `postJSON` on `/api/log` and
+`/api/entry/…`). The report on screen stays, not dimmed, while ↻ turns; it is replaced when the answer comes. Work
+logged elsewhere (Claude Code, Productive) shows on the next read after that minute, or on ↻. Before 1.6.12 the
+Report was read only the first time it opened, and then only on ↻.
+
 ## 8. What is kept, and where
 
 | Where | What |

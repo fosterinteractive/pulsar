@@ -13,7 +13,7 @@ function rangeProblem(from, to) {
 const R = (() => {
   const range = params.get('range'), from = params.get('from'), to = params.get('to');
   const ok = range === 'custom' ? !rangeProblem(from, to) : RANGES.includes(range);
-  return {range: ok ? range : DEFAULT_RANGE, from: ok && range === 'custom' ? from : '', to: ok && range === 'custom' ? to : '', data: null, days: [], seq: 0};
+  return {range: ok ? range : DEFAULT_RANGE, from: ok && range === 'custom' ? from : '', to: ok && range === 'custom' ? to : '', data: null, days: [], seq: 0, at: 0};
 })();
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const WEEKDAYS_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -47,18 +47,25 @@ function paintFilters() {
   $('#rlabel').textContent = R.from && R.to
     ? `${dayLabel(R.from, {day: 'numeric', month: 'short'})} to ${dayLabel(R.to, {day: 'numeric', month: 'short', year: 'numeric'})}` : '';
 }
-async function loadReport(note = false) {
+/* quiet: the report on screen stays as it is (not dimmed) while it is read again, only ↻ turns: going back to the tab */
+async function loadReport(note = false, quiet = false) {
   if (R.range !== 'custom' || rangeProblem(R.from, R.to)) { if (!RANGES.includes(R.range)) R.range = DEFAULT_RANGE; [R.from, R.to] = rangeDates(R.range); }
   syncURL(); paintFilters();
-  const id = ++R.seq, btn = $('#refresh');
-  $('#report').classList.add('loading'); btn.classList.add('busy');
+  const id = ++R.seq, btn = $('#refresh'), asked = Date.now();
+  if (!quiet) $('#report').classList.add('loading');
+  btn.classList.add('busy');
   const x = await getJSON(`/api/report?from=${R.from}&to=${R.to}`);
   if (id !== R.seq) return;
   $('#report').classList.remove('loading'); btn.classList.remove('busy');
-  R.data = x; renderReport();
+  R.data = x; R.at = asked; renderReport();
   if (note) toast(x.error ? `Report not updated: ${x.error}` : x.warning ? x.warning
     : `Report updated: ${x.entries.length} entries, ${dur(x.entries.reduce((s, e) => s + e.minutes, 0))}`, !!(x.error || x.warning));
 }
+
+/* going to the Report reads it again unless it was read in the last minute and nothing was logged from this page
+   since; work logged elsewhere (Claude Code, Productive) shows within that minute, or on ↻ */
+const REPORT_FRESH = 60000;
+const reportStale = (now = Date.now()) => !R.data || now - (R.at || 0) > REPORT_FRESH || wroteAt > (R.at || 0);
 
 /* hover: one tooltip, values first; every value is also in a table */
 let tips = [];

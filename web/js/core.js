@@ -325,8 +325,11 @@ async function callJSON(path, opts) {
   if (!data || typeof data !== 'object') return {error: `The server answered ${r.status} without data.`};
   return data;
 }
+/* when this page last logged, changed or deleted an entry (ms): the Report reads the range again after it */
+let wroteAt = 0;
 function postJSON(path, body) {
-  return callJSON(path, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Pulsar': '1'}, body: JSON.stringify(body)});
+  return callJSON(path, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Pulsar': '1'}, body: JSON.stringify(body)})
+    .then(r => { if (/^\/api\/(log|entry\/)/.test(path)) wroteAt = Date.now(); return r; });
 }
 function getJSON(path) { return callJSON(path); }
 /* Claude's mark, next to what Claude suggested (Ask Claude): a small eight-ray spark in Claude's orange. The words for

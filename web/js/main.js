@@ -28,7 +28,7 @@ function setView(v) {
   document.querySelectorAll('#view button').forEach(b => { b.classList.toggle('on', b.dataset.v === state.view); b.setAttribute('aria-pressed', String(b.dataset.v === state.view)); });
   pop.classList.remove('on'); tipEl.classList.remove('on');
   syncURL();
-  if (state.view === 'report' && !R.data) return loadReport();
+  if (state.view === 'report' && reportStale()) return loadReport(false, !!R.data);  // report.js: older than a minute
   if (state.view === 'day' && !dayLoaded) { dayLoaded = true; return load(); }
   return null;  // what it loads, if anything: the warp after an update waits for it
 }

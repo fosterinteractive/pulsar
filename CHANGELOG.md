@@ -6,6 +6,9 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- Going to the Report reads it again when it is more than a minute old, or right after you logged or changed an entry, instead of showing what it read the first time until ↻.
+
 ## 1.6.11 (2026-11-09)
 - Log the day fills in the notes by itself: Claude drafts one for each row of a Claude session in turn, or takes the one it already drafted for that work from the Likely column (Ask Claude's note only with its own task). A note from the commits is replaced, one you typed never. Before, a note came only after a click in it.
 - Settings > Time and activity > Advanced, closed by default: how far apart pieces of one task still join, how long work outside Claude must be to get its own entry, how fast older logging fades in learning, the daily meeting cards (Usual, Strict or Off), when a selected stretch is offered as a split, and the "No estimate" flag. The usual values are what Pulsar did before.

@@ -20,7 +20,8 @@ program with full access to your account can get around any confirmation, as wit
 - **Report**: today, this week (where it opens), last week, this or last month, the last 30 days, or any range up to 93
   days: logged against active time by day, time by project, top apps and sites, projects by day, when in the week you
   work, tasks against their estimates, and every day in a table. **Download** gives the days or the time entries as CSV
-  (for Excel or Numbers), or a print view that saves as PDF.
+  (for Excel or Numbers), or a print view that saves as PDF. Coming back to it reads it again when it is more than a
+  minute old, or after you logged something.
 
 ## Install on a Mac
 

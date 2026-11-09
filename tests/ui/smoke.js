@@ -165,6 +165,18 @@ try {
   const copy = await getJSON(`/api/entries?date=${state.date}&copy=1`);
   check('the server gives the day\'s kept copy', typeof copy.copy === 'boolean', JSON.stringify({copy: copy.copy, n: copy.entries?.length}));
 
+  // going to the Report reads it, and again only when older than a minute or after a write from this page
+  setView('report');
+  const read = await until(() => R.data && R.at && !$('#refresh').classList.contains('busy'), 60000);
+  const at = R.at, w = wroteAt;
+  setView('day'); setView('report');
+  const kept = R.at === at && !$('#refresh').classList.contains('busy');
+  const old = reportStale(at + 61000), wrote = (wroteAt = at + 1, reportStale(at + 1000));
+  wroteAt = w;
+  setView('day');
+  check('the Report is read again when it is stale', read && kept && old && wrote,
+    `read ${read}, kept within the minute ${kept}, stale after a minute ${old}, after a write ${wrote}`);
+
   check('no page errors during the run', !errors.length, errors.join(' | ') || 'none');
 } catch (e) {
   check('the script ran to the end', false, `${e.name}: ${e.message}`);
