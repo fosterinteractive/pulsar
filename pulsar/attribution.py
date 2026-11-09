@@ -26,6 +26,8 @@ CLASS_MIN = 60       # minutes of billable history before a repository counts as
 SR_MIN = 5           # minutes of a session's votes in a repository before they say anything there
 FIT_SHARE = 0.25     # a project with less of a repository's logged time than this is another client's there
 FIT_MIN = 60         # minutes of a repository's (fading) votes before its projects say anything
+ONE_PROJECT = 0.8    # of a session's votes, the share one project needs before they carry into a repository with too
+                     # little history: a session that went from client to client says nothing about the next one
 # The agency's own projects: never a client's, whatever their services say
 INTERNAL_PREFIXES = ("FI-",)
 # One repository under several names: Pulsar's first name, and its preview checkout
@@ -202,11 +204,22 @@ def fits(votes: dict, project_of, task) -> bool | None:
     return mine / total >= FIT_SHARE
 
 
+def one_project(votes: dict, project_of) -> bool:
+    """Whether a session's votes ({task: weight}) are mostly (ONE_PROJECT) one project's. 2026-11-09: one session
+    upgraded the database of four clients' sites in turn; on the fifth site, which had no history yet, it offered the
+    first client's task."""
+    by: dict = defaultdict(float)
+    for t, w in votes.items():
+        by[project_of(t)] += w
+    total = sum(by.values())
+    return total > 0 and max(by.values()) / total >= ONE_PROJECT
+
+
 def session_votes(keys: list, repo, sess: dict, sr: dict, repo_votes: dict, project_of, single: bool) -> tuple:
     """(votes {task: weight}, in this repository) for a session's title keys: its votes earned in this repository
     when they reach SR_MIN; else its other votes, only for a task this repository is logged to, or, when the session has
     been in this repository all along (single), for one whose fit is not known yet; never into a repository with no
-    history otherwise."""
+    history otherwise, nor when its votes are of several projects (one_project)."""
     key = repo_key(repo)
     here: dict = defaultdict(float)
     for k in keys:
@@ -219,6 +232,7 @@ def session_votes(keys: list, repo, sess: dict, sr: dict, repo_votes: dict, proj
         for t, w in (sess.get(k) or {}).items():
             wide[t] += w
     out = {}
+    single = single and one_project(wide, project_of)
     for t, w in wide.items():
         f = fits(repo_votes, project_of, t)
         if f is True or (single and f is None):

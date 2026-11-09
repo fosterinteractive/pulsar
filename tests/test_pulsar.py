@@ -726,9 +726,14 @@ class LearnTest(unittest.TestCase):
         self.assertEqual([(t["taskId"], t["why"]) for t in got], [("2", "logged while in this Claude session: 30 min")])
         # a repository the session never worked in: none of its votes, however many
         self.assertEqual(learn.suggest({"k": [k], "p": "client-c"}, sess, repo, names, sr=sr), [])
-        # ...unless the session has been in that repository all along (a session's first day there)
-        got = learn.suggest({"k": [k], "p": "client-c", "single": True}, sess, repo, names, sr=sr)
-        self.assertEqual([t["taskId"] for t in got], ["1", "2"])
+        # ...nor when it has been in that repository all along today: its votes are two clients' (90 and 30 minutes),
+        # and say nothing about a third
+        self.assertEqual(learn.suggest({"k": [k], "p": "client-c", "single": True}, sess, repo, names, sr=sr), [])
+        # a session that worked for one client carries its votes into a repository it has been in all along (a
+        # session's first day there)
+        sess1 = {k: {"1": sess[k]["1"]}}
+        got = learn.suggest({"k": [k], "p": "client-c", "single": True}, sess1, repo, names, sr=sr)
+        self.assertEqual([t["taskId"] for t in got], ["1"])
 
     def test_recent_logging_comes_first_and_the_minutes_shown_are_real(self):
         """A day's votes halve every HALF_LIFE days: an hour logged yesterday beats two hours three weeks ago, and the
@@ -865,6 +870,8 @@ class LearnWordsTest(unittest.TestCase):
         # your own name is in many task names and notes: it finds nothing
         self.assertEqual(learn.text_match(index, "Nick Example", "2026-11-04", skip), {})
         self.assertEqual(learn.words("Updates"), [("updat", "updates")])  # a light stem: update and updates agree
+        self.assertEqual({w for w, _ in learn.words("upgrade upgrades upgraded upgrading")}, {"upgrad"})
+        self.assertEqual([w for w, _ in learn.words("site sites")], ["site", "site"])  # short words keep their e
 
     def test_the_task_found_by_words_takes_the_fifth_place(self):
         from pulsar import learn

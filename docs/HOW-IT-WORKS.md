@@ -833,8 +833,11 @@ ticket key in the title, the tasks logged in the same session in the same reposi
 names that share words with the work (your own name and common words such as "not" and "the" do not count). A
 session's history applies per repository (`attribution.session_votes`): its votes from another repository count only
 for a task this repository is logged to (a quarter of its votes or more, once it has an hour of them, `dayplan.fits`),
-or when the session has been in this repository all day (`single`); never in a repository with no history otherwise
-(2026-11-06: a session's client task went to hours of work in a repository of the agency's own). On internal work a
+or when the session has been in this repository all day (`single`) and four fifths of its votes are one project's
+(`attribution.one_project`); never in a repository with no history otherwise (2026-11-06: a session's client task
+went to hours of work in a repository of the agency's own; 2026-11-09: a session that upgraded four clients'
+databases in turn offered the first client's task on the fifth site). A path a command writes as `~/Sites/x` or
+`$HOME/Sites/x` is that repository, as its full path is (`sessions.find_paths`). On internal work a
 client's task is the pick only from a rule, a link or a ticket key in that work; on a client's repository, another
 client's task from the session's history is never the pick; with no task the class admits, no task rather than a
 wrong billable one (`dayplan.admissible`; such tasks stay among the alternatives). So QA hub work for a client goes to

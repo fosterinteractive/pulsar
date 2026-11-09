@@ -41,10 +41,17 @@ CLAUDE_APPS = re.compile(r"^(Cursor|Code|Visual Studio Code|Windsurf|Terminal|iT
 MEETING = re.compile(r"zoom|meet\.google|google meet|microsoft teams|\bteams\b|huddle|webex|meeting", re.I)
 NOT_TYPED = ("<task-notification>", "<local-command", "Caveat:", "<command-message>", "[Request interrupted",
              "This session is being continued")
-# paths in the home folder, in temporary folders (a clone an agent made there) and on other disks
-PATH = (r"(?:" + re.escape(HOME) + r"|/private/tmp|/private/var/folders|/tmp|/var/folders|/Volumes)"
-        r"/[^\s'\"`<>|;,()\[\]{}]+")
+# paths in the home folder (also written ~/ or $HOME/, as commands often do), in temporary folders (a clone an agent
+# made there) and on other disks
+PATH = (r"(?:" + re.escape(HOME) + r"|(?<![\w~$/.-])(?:~|\$HOME|\$\{HOME\})|/private/tmp|/private/var/folders|/tmp"
+        r"|/var/folders|/Volumes)/[^\s'\"`<>|;,()\[\]{}]+")
 PATH_RE = re.compile(PATH)
+_TILDE = re.compile(r"^(?:~|\$HOME|\$\{HOME\})(?=/)")
+
+
+def find_paths(text: str) -> list:
+    """The paths named in a text, each as a full path: ~/Sites/x and $HOME/Sites/x become the home folder's."""
+    return [_TILDE.sub(lambda _: HOME, p) for p in PATH_RE.findall(text)]
 # What a tool call says about the repository a turn worked in: changing a file most, running a command in a folder
 # next, reading or searching least. A path the person typed counts as a read; a word that only names a project (a
 # search for it, a commit message, an instruction to a subagent) counts nothing.
@@ -134,7 +141,7 @@ def tool_paths(r: dict) -> list:
             while stack:
                 v = stack.pop()
                 if isinstance(v, str):
-                    found += PATH_RE.findall(v[:4000])
+                    found += find_paths(v[:4000])
                 elif isinstance(v, dict):
                     stack.extend(v.values())
                 elif isinstance(v, list):
@@ -165,14 +172,14 @@ def tool_calls(r: dict) -> list:
             continue
         name, inp = str(item.get("name") or ""), _obj(item.get("input"))
         if name in EDITS:
-            found += [(p, W_EDIT) for k in ("file_path", "notebook_path") for p in PATH_RE.findall(str(inp.get(k) or "")[:1000])]
+            found += [(p, W_EDIT) for k in ("file_path", "notebook_path") for p in find_paths(str(inp.get(k) or "")[:1000])]
         elif name == "Bash":
             cmd = str(inp.get("command") or "")[:4000]
-            named = set(CD.findall(cmd)) | set(GIT_C.findall(cmd))
-            found += [(p, W_RUN) for p in PATH_RE.findall(cmd) if p in named or _real(p)]
+            named = {_TILDE.sub(lambda _: HOME, p) for p in CD.findall(cmd) + GIT_C.findall(cmd)}
+            found += [(p, W_RUN) for p in find_paths(cmd) if p in named or _real(p)]
         elif name in READS:
             found += [(p, W_READ) for k in ("file_path", "notebook_path", "path", "pattern")
-                      for p in PATH_RE.findall(str(inp.get(k) or "")[:1000])]
+                      for p in find_paths(str(inp.get(k) or "")[:1000])]
         elif name.startswith("mcp__productive__") and "time_entries" in json.dumps(inp)[:4000]:
             # a call on time entries: logging time. Not a path: only a naming function that knows it names it (the
             # fi-time-from-activity script's "time logging"), so such a turn is never another project's work
@@ -366,7 +373,7 @@ def analyse(s: dict, namer=None, turns=None) -> None:
         nxt = prompts[i + 1][0] if i + 1 < len(prompts) else float("inf")
         counts: dict = {}
         hard: dict = {}
-        found = [(x, W_TYPED) for x in PATH_RE.findall(text)]
+        found = [(x, W_TYPED) for x in find_paths(text)]
         for _, pairs in calls[bisect.bisect_left(at, p):bisect.bisect_left(at, nxt)]:
             found += pairs
         for path, w in found:

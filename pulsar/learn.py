@@ -191,9 +191,10 @@ def suggest(row: dict, sess: dict, repo: dict, names: dict, limit: int = 5, text
         project_of = lambda t: (names.get(t) or {}).get("project")  # noqa: E731
         weights = {t: w for t, (w, _) in (repo.get(at) or {}).items()}
         here = {}
+        single = row.get("single") and attribution.one_project({t: w for t, (w, _) in wide.items()}, project_of)
         for t, v in wide.items():
             f = attribution.fits(weights, project_of, t)
-            if f is True or (row.get("single") and f is None):
+            if f is True or (single and f is None):
                 here[t] = v
     for t, (w, m) in sorted(here.items(), key=lambda kv: -kv[1][0]):
         out.setdefault(t, f"logged while in this Claude session: {_dur(m)}")
@@ -231,10 +232,13 @@ same been being were had his her him she he us am off over under again still bac
 
 
 def _stem(w: str) -> str:
+    """A word without its ending, so that upgrade, upgrades, upgraded and upgrading are one word (a final e goes too:
+    "upgrades" lost its "es" and "upgrade" kept its e, and the two never matched)."""
     for suf in ("ing", "ed", "es", "s"):
         if len(w) > len(suf) + 3 and w.endswith(suf):
-            return w[: -len(suf)]
-    return w
+            w = w[: -len(suf)]
+            break
+    return w[:-1] if len(w) > 4 and w.endswith("e") else w
 
 
 def words(text: str, skip: frozenset = frozenset()) -> list:

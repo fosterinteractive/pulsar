@@ -178,7 +178,7 @@ def _session(path: str, t0: float):
         s = sessions.read_session(path, t0, t0 + 86400)
         if s:
             paths = [(t, p) for t, ps in s["assistant"] for p in ps]
-            paths += [(t, p) for t, text in s["prompts"] for p in sessions.PATH_RE.findall(text)]
+            paths += [(t, p) for t, text in s["prompts"] for p in sessions.find_paths(text)]
             s = ({n for n in s["titles"] | {sessions.norm_title(s["title"])} if n}, s["cwd"], paths)
         _read[k] = s
     return _read[k]

@@ -113,6 +113,20 @@ class TurnRepositoryTest(Fixture):
         [s] = self.load()
         self.assertEqual((s["turns"][0]["project"], s["turns"][0]["hard"]), ("acme-site", {"acme-site": 2}))
 
+    def test_paths_written_with_a_tilde_or_home_count_as_the_full_path(self):
+        """Commands often say cd ~/Sites/x or git -C $HOME/Sites/x: that is the repository in the home folder. (A turn
+        that only did this was named after the session's title, and offered the tasks logged under that title.)"""
+        site = repo(sessions.HOME, "tilde-site")
+        self.addCleanup(lambda: __import__("shutil").rmtree(os.path.join(sessions.HOME, "code"), ignore_errors=True))
+        rel = os.path.relpath(site, sessions.HOME)
+        self.write("aaaa0006", [typed(10, "prepare the db upgrade", self.root),
+                                call(11, "Bash", command=f"cd ~/{rel} && terminus env:list site"),
+                                call(12, "Bash", command=f"git -C $HOME/{rel} status"),
+                                call(13, "Read", file_path=f"~/{rel}/src/a.js")])
+        [s] = self.load()
+        self.assertEqual((s["turns"][0]["project"], s["turns"][0]["hard"]), ("tilde-site", {"tilde-site": 4}))
+        self.assertEqual(sessions.find_paths("x~/a b/~/c ~/d"), [os.path.join(sessions.HOME, "d")])
+
     def test_a_subagents_calls_count_for_the_turn_that_started_it(self):
         self.write("aaaa0003", [typed(10, "look into it", self.root), call(11, "Task", prompt=f"edit {self.tool}"),
                                 said(30)],
