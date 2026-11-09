@@ -15,4 +15,10 @@ Agreed next steps, newest first. Done items go to `CHANGELOG.md`.
   nothing (`attribution.credits`). Replayed on 19 days it was slightly worse (top 3 48.7 to 47.7%, right minute 48.8 to
   48.2%), so it is not in. Another sign is needed, or the mark stays the way.
 - **Security, to decide:** the window's sign-in through a pipe instead of a file, and writes made with the key
-  confirmed in the window.
+  confirmed in the window. Reviewed 2026-11-09: the pipe is not worth building; for writes, no confirm before them,
+  but perhaps a toast with Undo after Claude Code writes (about 50 lines).
+- **Productive through Claude Code's connection, to decide.** To take the Productive token, Pulsar reads the whole
+  keychain item "Claude Code-credentials", which probably also holds the claude.ai sign-in: Anthropic's terms do not
+  let other programs collect it. Pulsar never uses it, but it reads it. Options: tell people to use their own token;
+  Automatic uses the token only, and Claude Code's connection only when chosen, with the reason shown; or drop the
+  connection. A token never expires, but the daily target then comes from Settings, not Productive.

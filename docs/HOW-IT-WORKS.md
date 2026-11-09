@@ -878,7 +878,9 @@ more and log under a tenth of is set aside as one you never log; days with entri
 count, since they cannot be matched to the work. Confidence: high, medium or low, in words and a three-bar meter; the
 same session's votes are high from 60% (and 30 minutes), else low. **Unticked at the start**: low confidence, no task,
 no service, meetings with no call seen, **Claude's pick of a task you did not log to in the last 30
-days** (one it found by searching Productive), **a note Claude drafted**, and a task that already has time logged with
+days** (one it found by searching Productive), **a note Ask Claude drafted** (a note Claude drafts later, while the
+review is open, leaves the tick as it is: the confirm step marks it "Claude's note"), and a task that already has time
+logged with
 **no start time** that day: such an entry is on no timeline, so no overlap check sees it, and it may be the same work. The review
 lists it ("no start"), the confirm step names it, and under the cap that task's proposals give way first, up to its
 minutes, before the least sure rows. **Notes** are never written from session text: only a meeting's title, your usual
@@ -1719,7 +1721,8 @@ publishes; none of them is done yet unless noted in section 13.
 4. **Move the release key to Touch ID** (`macos/README.md`, "Moving to a Touch ID key"): `macos/sign.sh keygen`
    makes it in the Mac's Secure Enclave, where no program can copy it, and each signature then needs a fingerprint.
    **Under way**: the key was made on 2026-11-07 and is listed from 1.5.1 (signed with the old key file); the next
-   release is signed with it, and the release after drops the old key, whose file is then deleted.
+   release is signed with it, and the release after drops the old key, whose file is then deleted. As of 1.6.11 the
+   old key is still listed and still signs `latest.json` (`docs/TODO.md`).
 5. **Release at least every 60 days**, or installed copies stop seeing updates until the next release (`expires`).
 
 ## 10. The API
@@ -1733,7 +1736,7 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `GET /api/entries?date=` | Productive entries; `fromClaudeCode` on those Pulsar in Claude Code wrote. |
 | `GET /api/proposal?date=[&fresh=1][&quick=1][&wait=1]` | Likely rows, with task links, commits and learned tasks (`quick=1`: `hintsPending` while the links and commits are worked out; `learnPending` while the history is read; `wait=1` waits for both). |
 | `GET /api/calendar?date=[&fresh=1]` | Meetings. `GET /api/calendar/status` while signing in. |
-| `GET /api/repeats?date=&source=` | Repeats seen today. |
+| `GET /api/repeats?date=&source=` | Repeats seen today (none with Advanced > Daily meeting cards: Off). |
 | `GET /api/meeting-tasks?date=&uid=&title=` | A meeting's tasks. |
 | `GET /api/tasks/suggest?date=` | Recent and assigned tasks. `/api/tasks/search?q=&date=` (yours first), `/api/tasks/estimates?ids=`. |
 | `GET /api/services?task=&date=[&flags=1]` | Services that take time on that date; with `flags=1`, the task's ticket flags (5.3). |
@@ -1743,7 +1746,7 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `GET /api/changelog`, `/api/version`, `/api/whoami?nonce=` | Changelog; version (public); proof of the key, bound to the port (`proof1`), and the older form (`proof`) (public). |
 | `POST /api/mcp/<tool>` | `{args, client, session, sessionFrom, projectDir, ignoreLogged}`: one of Pulsar in Claude Code's tools, answered in the server (5.6). The key opens it. |
 | `POST /api/session` | Trade a sign-in code for a session token. `POST /api/session/end` signs out. |
-| `POST /api/settings` | Save settings (each field checked). |
+| `POST /api/settings` | Save settings (each field checked; `advanced` is merged with what is saved, and only choices other than the usual are kept, 5.4). |
 | `POST /api/activitywatch/fix` | `{minutes}`: ActivityWatch's AFK timeout set to Away after (saved too), with a copy of its file, then ActivityWatch restarted (4.1). The page's session only; refused read-only and in tests. |
 | `POST /api/activitywatch/login` | `{add}`: whether ActivityWatch is in Login Items, or adding it, through System Events (4.1). The page's session only; refused read-only and in tests. |
 | `POST /api/log` | Log one entry. With `run` and `row`: one row of Log the day, journalled. |
@@ -1752,7 +1755,7 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `GET /api/range?date=&s=&e=[&source=]` | What a stretch of the day (minutes `s` to `e`) holds, by Log the day's minutes: parts, task groups, the one that leads, `mixed` and the `split` (5.1). Nothing is written. `ignore_logged=1` as for `/api/dayplan`. |
 | `POST /api/entry/update`, `/api/entry/delete` | Change or delete one of your entries. Delete with `run`: only what that Log the day run created. |
 | `POST /api/likely/ask` | Ask Claude (only when switched on). |
-| `POST /api/likely/note` | `{date, s, e, project}`: the log dialog's note for a Likely block, from its session and commits (Haiku unless another model is chosen; only with the Claude Code switch on, 5.7). |
+| `POST /api/likely/note` | `{date, s, e, project[, reuse]}`: the note for a Likely block, a stretch or a row of Log the day, from its session and commits (the background session's when none was in front), Haiku unless another model is chosen; only with the Claude Code switch on, 5.7. `reuse` (Log the day): a note already drafted that day for the same work (`askclaude.kept_note`), with no new run. |
 | `GET /api/task/projects?date=[&hint=][&repo=]` | Active projects for a new task, those logged to lately first, and the likeliest (5.1). |
 | `GET /api/task/places?project=&date=` | Where in a project a new task can go, and which first (4.2). |
 | `GET /api/task/fields?project=&date=&place=[&title=]` | For a new task at `place` (`parent:<id>`, `list:<id>` or `none`): the project's open statuses and the services that take time on the date, and the status, estimate and service proposed, each with why (5.1). Read only. |

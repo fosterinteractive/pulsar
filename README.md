@@ -212,13 +212,16 @@ are kept 31 days so they open at once (`~/.cache/pulsar/likely-full/`); ↻ work
 
 **Log the day** in the Logged column proposes the whole day at once, from your activity, Claude sessions, meetings,
 daily repeats, rules and what you logged before. The side panel lists each entry with its task, service, how sure
-Pulsar is and why. Unsure entries, and those whose note Claude drafted, start unticked. You can change the task,
-service, start, length and note, or remove an entry.
+Pulsar is and why. Unsure entries, and those whose task and note Claude picked, start unticked. You can change the
+task, service, start, length and note, or remove an entry.
 
 - **Tick all with a task** ticks every entry that has a task and a service, except one whose task Claude found by
   searching Productive (it waits until you open it). Enter on an open entry ticks it and opens the next.
 - Nothing is written until you confirm. Then the entries go to Productive one at a time, stopping at the first one that
   is refused, and **Undo this run** deletes only what that run wrote.
+- With the Claude Code switch on, the notes fill in by themselves: Claude drafts one for each entry from a Claude
+  session, one after another, a few seconds each, or takes the one it already drafted for that work in the log dialog.
+  A note from your commits is replaced; one you typed never is. The confirm step marks each draft "Claude's note".
 - Notes come only from a meeting's title, your usual note for a repeat, your commits, or Claude's drafts. A meeting's
   title is a note only when you or someone of your own company (your Google account's domain) organized it and it reads
   like a meeting's name (not an instruction, a sum or an address); a series renamed since you last logged it starts
@@ -270,8 +273,9 @@ on this Mac and turns on:
   change anything are refused). The button's tooltip names the models and the most each run may cost. A run takes from
   about 15 seconds to a couple of minutes. Nothing runs by itself.
 - **Notes from the session**: the log dialog drafts the note by itself when it opens on work from a session (a block, a
-  rail, a drag, **+ Log**, **Log and next**), from the session that holds most of that time; a Log the day row drafts
-  one when you click in its empty note. A few seconds; it never replaces what you typed.
+  rail, a drag, **+ Log**, **Log and next**), from the session that holds most of that time; Log the day drafts one
+  for each row from a session by itself, one row at a time. A few seconds each; it never replaces what you typed, and
+  work already drafted for is not asked again.
 - **A new task's draft**: **Create a task** asks Claude at once for a title and a description.
 - **Logging from a session**: Pulsar adds itself to Claude Code, so in any new session you can ask "what did I not log
   today?" or "log the time of this session". The session reads your day from Pulsar and shows the entries; Claude Code
@@ -299,7 +303,8 @@ hooks, other MCP servers or auto memory.
   commit subjects, and up to 5 of your earlier notes on its likely tasks. Also the tasks you logged to in the last 30
   days, with their projects and minutes. No window titles, other apps or meetings.
 - **The review**: a digest of the day: Log the day's plan, your messages and Claude's replies (cut short), session
-  titles, commit subjects, meeting titles, app names by hour, the notes of entries already logged, and your tasks of the
+  titles, commit subjects, meeting titles (not those of meetings you declined, marked private, or holding a word of
+  your personal windows), app names by hour, the notes of entries already logged, and your tasks of the
   last 30 days. Never window titles, sites or addresses.
 - **A note**: that stretch's time and repository, your messages and Claude's replies, commit subjects and a few of your
   earlier notes.
