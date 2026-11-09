@@ -257,7 +257,7 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
         if src == "rule" and rule_hit:
             out.append((str(rule_hit["taskId"]), "rule", "high", f"your rule “{rule_hit['match']}”"))
         elif src == "link" and row.get("tasks"):
-            out.append((str(row["tasks"][0]), "link", "high", "a task link you pasted in this Claude session"))
+            out.append((str(row["tasks"][0]), "link", "high", "a task link or number in this Claude session"))
         elif src == "ticket":
             found = set(TICKET.findall(" ".join(list(row.get("titles") or []) + [row.get("first_message") or ""])))
             if found:

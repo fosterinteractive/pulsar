@@ -689,7 +689,8 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
     def links(ids: set, project: str, a: float, b: float) -> list:
         """Task links typed in these sessions, in a turn of this project, from LINK_BEFORE before a to b: newest first."""
         found = sorted(((t, tid) for i in ids for t, text in sessions[i]["prompts"] if a - LINK_BEFORE <= t <= b
-                        and project_at(sessions[i], t) == project for tid in TASK_LINK.findall(text)), reverse=True)
+                        and project_at(sessions[i], t) == project
+                        for tid in TASK_LINK.findall(text) + TASK_NUMBER.findall(text)), reverse=True)
         return list(dict.fromkeys(tid for _, tid in found))[:4]
 
     def row_of(e: dict, kind: str) -> dict:
@@ -701,7 +702,8 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
                 "messages": len(typed), "first_message": (typed[0][1] if typed else "")[:200],
                 "sessions": sorted(sessions[i]["id"] for i in e["_sessions"]),
                 "single": all(single(i, e["project"], b) for i in e["_sessions"]),
-                "repoLinks": links(e["_sessions"], e["project"], a, b)}
+                "repoLinks": list(dict.fromkeys(links(e["_sessions"], e["project"], a, b)
+                                                 + [tid for i in e["_sessions"] for tid in TASK_NUMBER.findall(sessions[i]["title"] or "")]))[:4]}
 
     entries: list = []
     for x in range(n):
@@ -760,6 +762,9 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
 # ---- Productive tasks named in a session ------------------------------------------------------------------
 
 TASK_LINK = re.compile(r"app\.productive\.io/[^\s/]+/(?:projects/\d+/)?tasks/(?:task/)?(\d+)")
+# a task named by its number, as tools that start a session for a task title it: "Productive task 21429921" (2026-11-09:
+# such a session's own task was not found, and another client's task logged once in it came first)
+TASK_NUMBER = re.compile(r"\bproductive\s+task\s*#?\s*(\d{5,10})\b", re.I)
 
 
 def task_links(t0: float, projects_dir: str = PROJECTS_DIR) -> list:

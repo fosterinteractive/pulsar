@@ -287,6 +287,15 @@ class BackgroundTest(Fixture):
         reading = [r for r in got["background"] if r["sessions"] == ["cccc0003"]]
         self.assertTrue(reading and not any(r["qualifies"] for r in reading))
 
+    def test_a_task_number_in_the_sessions_title_or_a_message_is_its_task(self):
+        # 2026-11-09: a session titled "Productive task 21429921" was offered another client's task logged once in it
+        self.write("cccc0008", [typed(100, "check what the client wrote", self.acme),
+                                call(101, "Edit", file_path=os.path.join(self.acme, "a.js"))], title="Productive task 777777")
+        got = sessions.propose(T0, T0 + 86400, [self.editor(100, 120, "Productive task 777777")], "ActivityWatch", self.projects)
+        row = next(r for r in got["entries"] if r["project"] == "acme-site")
+        self.assertEqual(row["repoLinks"], ["777777"])
+        self.assertEqual(sessions.TASK_NUMBER.findall("see productive task #123456, and task 99"), ["123456"])
+
     def test_a_link_counts_only_in_the_repository_it_was_typed_for(self):
         self.write("cccc0004", [
             typed(100, "https://app.productive.io/1-x/tasks/777 fix this", self.tool),
