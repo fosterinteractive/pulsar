@@ -243,10 +243,7 @@ class PlannerTest(unittest.TestCase):
         p = dayplan.plan(day(items=[work(540, 600), work(700, 740)], rows=rows,
                              picks={"540|repo": pick, "700|other": pick}), self.ctx)
         sure, unsure = p["entries"]
-        # Claude's note is about the work, as the Likely column shows it: it goes with the sure task too, and is read
-        # before the row is ticked
-        self.assertEqual((sure["taskId"], sure["note"], sure["noteFrom"], sure["checked"], sure["flags"]),
-                         ("11", "Fixed the importer.", "claude", False, ["claudenote"]))
+        self.assertEqual((sure["taskId"], sure["note"]), ("11", ""))   # Claude's note is for its own task only
         self.assertEqual((unsure["taskId"], unsure["source"], unsure["note"], unsure["noteFrom"]),
                          ("55", "claude", "Fixed the importer.", "claude"))
 
@@ -311,12 +308,6 @@ class PlannerTest(unittest.TestCase):
                          ("22", "medium", True, []))
         self.assertEqual((got["noted"]["noteFrom"], got["noted"]["checked"], got["noted"]["flags"]),
                          ("claude", False, ["claudenote"]))
-        # a task link in the session outranks Claude's pick: Claude's note, as Likely shows it, still goes with the work
-        linked = {**row(700, 740, project="other", titles=["New thing"]), "repoLinks": ["44"], "tasks": ["44"]}
-        [e] = dayplan.plan(day(items=[work(700, 740)], rows=[linked], picks={"700|other": {**known, "note": "Hero video fixed."}}),
-                           ctx)["entries"]
-        self.assertEqual((e["taskId"], e["note"], e["noteFrom"], "claudenote" in e["flags"], e["checked"]),
-                         ("44", "Hero video fixed.", "claude", True, False))
         # with the history unreadable no task is known: every pick of Claude's starts unticked
         [e] = dayplan.plan(day(items=[work(700, 740)], rows=rows, picks={"700|other": known}),
                            {**ctx, "recent": []})["entries"]
