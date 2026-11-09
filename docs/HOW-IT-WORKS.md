@@ -828,7 +828,9 @@ it). The grid and the shortest entry follow Settings' **Round entries to** (`day
 5-minute grid and the 10-minute shortest entry, 10 gives 10 and 10, 15 gives quarter hours and 15. Each row shows its
 ticket flags (5.3). "Not covered" lists only stretches of a step or more (`uncovered`, `totals.notCovered`). A
 row's task comes from, in this order: a rule, a task link pasted in the session (in a turn of that repository), a
-ticket key in the title, the tasks logged in the same session in the same repository, then the same repository
+ticket key in the title, the tasks logged in the same session in the same repository, the task of the repository's
+project that the work names (`learn.work_match`, below; unticked, and never replaced by a new task), then the same
+repository
 (votes from the last 60 days, older days counting half every 7 days), the same session earlier that day, and task
 names that share words with the work (your own name and common words such as "not" and "the" do not count). A
 session's history applies per repository (`attribution.session_votes`): its votes from another repository count only
@@ -1089,6 +1091,18 @@ not a verdict.
   point. Below cosine 0.5, the first one found was the logged task for 1% of the minutes; at the second place they
   pushed out tasks you had logged before (3 points fewer in the first five). Most of the gain needs the task to exist
   when you log: counting only tasks created before the day, the first five held 389 minutes, not 579.
+- **What you are doing, first** (`learn.work_match`, `learn.with_work`): the Productive projects of the row's
+  repository (a quarter of its votes or more, once it has an hour of them; with less history, the projects of tasks
+  whose names name the repository) narrow the tasks to that project's: the ones you logged to in the 60 days and the
+  ones in the new-task pool, not closed. Of those, the task whose name shares most words with the work (its sessions'
+  titles, what you typed, your commit subjects; TF-IDF over those names only, cosine 0.3 or more) goes first in the
+  dialog's list, and one almost as good (90%) with it, yours (logged to or assigned) before the other. With fewer than
+  three words in common it goes just after the same session's own vote instead. In Log the day it comes after the
+  session's vote and before the repository's history. On the replay of 19 days (13 October to 6 November 2026) the
+  dialog's first task was the logged one for 33.3% of the Likely blocks instead of 30.8%, and among the first three for
+  47.2% instead of 44.6%; Log the day had 49.3% of the minutes right instead of 49.4%. Placed first everywhere, with
+  any number of words, it was worse: 27.2% first and 44.0% of the minutes (one shared word such as "page" or "qa" in a
+  project with many tasks).
 - **A task found by its words** (`learn.text_match`): after the first four learned tasks, the fifth place goes to
   the task whose name, project and your own notes on it (the 60 days of entries already read) share most words with
   the row's work: its sessions' titles, what you typed in them during the row (`askclaude.steps`: up to 15 messages
@@ -1425,7 +1439,8 @@ question) and cannot tell when inside it the work happened.
 - **The clock**: the now line moves every minute. At midnight, or when the window comes back on a new day (a Mac
   that slept), a person who was on today goes to the new today; another day stays where it is. Back in the window
   after five minutes or more, today is read again. A move waits while a dialog is open or Log the day is writing
-  (`tickClock` in `day.js`). Besides that, today is read again every hour. The app's window sends `pulsar:wake`
+  (`tickClock` in `day.js`). Besides that, today's activity is read again every 5 minutes (`ACT_EVERY`, from the same
+tick; 2026-11-09: at 14:20 the column still ended at 14:01, the last read), and the whole day every hour. The app's window sends `pulsar:wake`
   after a sleep or at midnight; the page takes it (`preventDefault`) and does the same. `window.pulsarUnsaved()`
   says in a sentence what quitting would lose (Settings not saved, a note typed in the log dialog, Log the day
   writing), for the window to ask before ⌘Q. The zoom menu keeps hidden `#zoom button[data-v]` for the window's
@@ -1489,7 +1504,7 @@ question) and cannot tell when inside it the work happened.
 - **Total project time**: per project, then budget and service.
 - **Tasks against estimates**: each task logged today, with everyone's time on it against its estimate
   (`task_details`, cached 5 minutes).
-- **Refreshing**: ↻ reloads everything and asks Google and the Likely proposal afresh. Today refreshes by itself once an hour while the page is visible.
+- **Refreshing**: ↻ reloads everything and asks Google and the Likely proposal afresh. Today's activity refreshes by itself every 5 minutes, the rest once an hour, while the page is visible.
 - **The warp**: an update plays a short gravitational-lens animation. In the window it is native
   (a snapshot of the page bent by Core Image's hole distortion, animated by Core Animation on the graphics card, over
   the page's own background colour, so the live page never shows round the shrunken picture or through its hole:

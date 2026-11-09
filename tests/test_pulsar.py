@@ -873,6 +873,43 @@ class LearnWordsTest(unittest.TestCase):
         self.assertEqual({w for w, _ in learn.words("upgrade upgrades upgraded upgrading")}, {"upgrad"})
         self.assertEqual([w for w, _ in learn.words("site sites")], ["site", "site"])  # short words keep their e
 
+    WORK_TASKS = [{"taskId": "1", "title": "Fix QA issues reported by the client", "project": "Stu", "mine": True},
+                  {"taskId": "2", "title": "Stu-D11 Upgrades - PM time", "project": "Stu", "new": True},
+                  {"taskId": "3", "title": "Stu-D11 Upgrades - Dev work", "project": "Stu", "new": True, "mine": True},
+                  {"taskId": "4", "title": "Stu - stusite - Maintenance release", "project": "Stu", "new": True},
+                  {"taskId": "5", "title": "Drupal 11 upgrade", "project": "Law", "mine": True}]
+
+    def test_what_you_are_doing_first_in_the_works_own_project(self):
+        """2026-11-09: "D11 db upgrade" on a site's repository; the first offers were tasks logged in that session for
+        other clients, then one logged once in that repository. The task of the repository's project the work names
+        goes first, yours before an equal one; another project's task with the same words never."""
+        from pulsar import learn
+        got = learn.work_match("Prepare Future Students: D11 db upgrade", {"Stu"}, self.WORK_TASKS)
+        self.assertEqual([x["taskId"] for x in got], ["3", "2"])
+        self.assertEqual(got[0]["why"], "what you typed names it: d11, upgrade (no entry of yours yet)")
+        self.assertEqual(learn.work_match("ok, go on", {"Stu"}, self.WORK_TASKS), [])        # names nothing
+        self.assertEqual(learn.work_match("D11 db upgrade", set(), self.WORK_TASKS), [])     # no project known
+        voted = [{"taskId": "1", "why": "logged while in stusite: 50 min"}, {"taskId": "3", "why": "x"}]
+        self.assertEqual([x["taskId"] for x in learn.with_work(voted, got)], ["3", "2", "1"])
+        # two words in common: after the same session's own vote, which was right more often (replay)
+        voted = [{"taskId": "1", "why": "logged while in this Claude session: 50 min"}]
+        self.assertEqual([x["taskId"] for x in learn.with_work(voted, got)], ["1", "3", "2"])
+        # three or more: first all the same
+        got3 = [{**got[0], "words": 3}]
+        self.assertEqual([x["taskId"] for x in learn.with_work(voted, got3)], ["3", "1"])
+        # the session's own vote is the work's task: first, never pushed behind the session's next vote
+        voted = [{"taskId": "3", "why": "logged while in this Claude session: 9 h"},
+                 {"taskId": "1", "why": "logged while in this Claude session: 50 min"}]
+        self.assertEqual([x["taskId"] for x in learn.with_work(voted, got)], ["3", "2", "1"])
+
+    def test_a_repositorys_projects_from_its_history_else_from_task_names(self):
+        from pulsar import learn
+        project_of = {"1": "Stu", "9": "Other"}.get
+        repo = {"stusite": {"1": (50.0, 50), "9": (12.0, 12)}}
+        self.assertEqual(learn.work_projects("stusite", repo, project_of, self.WORK_TASKS), {"Stu"})  # 9: under 25%
+        self.assertEqual(learn.work_projects("stusite", {}, project_of, self.WORK_TASKS), {"Stu"})    # 4 names it
+        self.assertEqual(learn.work_projects("elsewhere", {}, project_of, self.WORK_TASKS), set())
+
     def test_the_task_found_by_words_takes_the_fifth_place(self):
         from pulsar import learn
         names = {t: {"task": f"Task {t}", "project": "P"} for t in "abcdefg"}

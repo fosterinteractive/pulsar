@@ -383,9 +383,9 @@ def new_task_index(pool: list, skip: frozenset = frozenset()) -> dict:
             "task": {str(t["taskId"]): t for t in pool}}
 
 
-def new_tasks(index: dict, text: str, skip: frozenset = frozenset(), limit: int = NEW_LIMIT) -> list:
-    """The pool's tasks the work names, best first: [{taskId, title, project, why, score, key}]. A ticket key or
-    #number of the task named in the work comes first; else the words they share (cosine, at least NEW_MIN)."""
+def _scores(index: dict, text: str, skip: frozenset = frozenset()) -> list:
+    """[(taskId, cosine, ticket keys named, the words shared as written, most telling first)] of an index
+    (new_task_index) against a text."""
     idf = index.get("idf") or {}
     count: dict = {}
     shown: dict = {}
@@ -396,16 +396,23 @@ def new_tasks(index: dict, text: str, skip: frozenset = frozenset(), limit: int 
     q = {w: (1 + math.log(f)) * idf[w] for w, f in count.items()}
     size = math.sqrt(sum(x * x for x in q.values())) or 1
     named = ticket_keys(text)
-    found = []
+    out = []
     for t, v in (index.get("vec") or {}).items():
-        keys = (index.get("keys") or {}).get(t, set()) & named
         parts = {w: x * v[w] for w, x in q.items() if w in v}
-        score = sum(parts.values()) / size
+        out.append((t, sum(parts.values()) / size, (index.get("keys") or {}).get(t, set()) & named,
+                    [shown[w] for w, _ in sorted(parts.items(), key=lambda kv: -kv[1])]))
+    return out
+
+
+def new_tasks(index: dict, text: str, skip: frozenset = frozenset(), limit: int = NEW_LIMIT) -> list:
+    """The pool's tasks the work names, best first: [{taskId, title, project, why, score, key}]. A ticket key or
+    #number of the task named in the work comes first; else the words they share (cosine, at least NEW_MIN)."""
+    found = []
+    for t, score, keys, shared in _scores(index, text, skip):
         if not keys and score < NEW_MIN:
             continue
         task = index["task"][t]
-        why = (f"the work names {sorted(keys)[0]}" if keys else
-               "named in this work: " + ", ".join(shown[w] for w, _ in sorted(parts.items(), key=lambda kv: -kv[1])[:3]))
+        why = f"the work names {sorted(keys)[0]}" if keys else "named in this work: " + ", ".join(shared[:3])
         found.append({"taskId": t, "title": task.get("title") or "", "project": task.get("project") or "",
                       "why": why + " (no entry of yours yet)", "score": score + (1 if keys else 0), "key": bool(keys),
                       "new": True})
@@ -431,6 +438,68 @@ def with_new(learned: list, found: list) -> list:
     return out
 
 
+# ---- what you are doing, first --------------------------------------------------------------------------------------
+
+WORK_MIN = 0.3   # the words (cosine) a task of the work's own project must share with the work (its sessions' titles,
+                 # what you typed, your commits) to go first, above where you usually log. 2026-11-09: "D11 db
+                 # upgrade" on a site's repository, and the first offer was a task once logged there
+WORK_TIE = 0.9   # a task this close to the best goes first with it (one name, a PM task and a Dev task)
+WORK_LIMIT = 2
+WORK_WORDS = 3   # words in common that put it above the same session's own vote; with fewer it comes just after
+                 # it. Replay of 19 days (13 Oct to 6 Nov 2026): with 1 or 2 words the session's vote was right 34 times
+                 # and the work's task 23; with 3 or more the work's task 24 times and what was first before 20
+
+
+def work_projects(at: str, repo: dict, project_of, tasks: list) -> set:
+    """The Productive projects of the work's repository: those with FIT_SHARE of its votes, once it has FIT_MIN of
+    them; with less history, the projects of tasks whose names name the repository ("… - acme - Maintenance")."""
+    votes = {t: w for t, (w, _) in (repo.get(at) or {}).items()}
+    total = sum(votes.values())
+    if total >= attribution.FIT_MIN:
+        by: dict = {}
+        for t, w in votes.items():
+            p = project_of(t)
+            if p:
+                by[p] = by.get(p, 0.0) + w
+        return {p for p, w in by.items() if w / total >= attribution.FIT_SHARE}
+    name = (at or "").lower()
+    if len(name) < 3:
+        return set()
+    return {t["project"] for t in tasks if t.get("project") and name in {w for _, w in words(t.get("title") or "")}}
+
+
+def work_match(text: str, projects: set, tasks: list, skip: frozenset = frozenset()) -> list:
+    """The tasks of the work's projects whose names share most words with the work, best first, the ones almost as
+    good with it (WORK_TIE), yours before the others among them: [{taskId, title, project, why, score, work}]. Only
+    task names count, not the project's name, which all of them have. tasks: [{taskId, title, project, new, mine}]
+    (new: no entry of yours yet; mine: you logged to it or it is assigned to you)."""
+    cands = {str(t["taskId"]): t for t in tasks if t.get("taskId") and t.get("project") in projects}
+    if not cands or not (text or "").strip():
+        return []
+    index = new_task_index([{"taskId": t, "title": x.get("title") or ""} for t, x in cands.items()], skip)
+    hits = sorted((h for h in _scores(index, text, skip) if h[1] >= WORK_MIN), key=lambda h: -h[1])
+    hits = [h for h in hits if h[1] >= hits[0][1] * WORK_TIE] if hits else []
+    out = []
+    for t, score, _, shared in sorted(hits, key=lambda h: (not cands[h[0]].get("mine"), -h[1]))[:WORK_LIMIT]:
+        x = cands[t]
+        out.append({"taskId": t, "title": x.get("title") or "", "project": x.get("project") or "", "score": score,
+                    "why": "what you typed names it: " + ", ".join(shared[:3])
+                           + (" (no entry of yours yet)" if x.get("new") else ""), "work": True, "words": len(shared)})
+    return out
+
+
+def with_work(learned: list, work: list) -> list:
+    """What you are doing first (work_match), then where you usually log; just after the same session's own vote
+    when it shares fewer than WORK_WORDS words with the work. The ones placed first say so ("first")."""
+    ids = {w["taskId"] for w in work}
+    rest = [x for x in learned if x["taskId"] not in ids]
+    # the session's own vote first, unless it is the work's task too (then that one is first either way)
+    second = bool(work) and work[0].get("words", 0) < WORK_WORDS and bool(learned) \
+        and learned[0]["taskId"] not in ids and learned[0]["why"].startswith("logged while in this Claude session")
+    work = [{**w, "first": not second} for w in work]
+    return rest[:1] + work + rest[1:] if second else work + rest
+
+
 def annotate(proposal: dict, date: str, settings: dict, entries_before: list, entries_today: list, tz,
              pool: list | None = None) -> None:
     """Add "learned" (tasks, why) to each row of a day's proposal, and "learning" ({done, of}) while past days are
@@ -449,8 +518,18 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
         names = {r["taskId"]: r for r in sorted(entries, key=lambda r: r.get("date") or "")}
         skip = frozenset(w for _, w in words(settings.get("person_name") or ""))
         index = note_index(entries, skip)
-        fresh = new_task_index(new_task_pool(pool, entries, date, str(settings.get("person_id") or "")), skip) \
-            if pool else None
+        unseen = new_task_pool(pool, entries, date, str(settings.get("person_id") or "")) if pool else []
+        fresh = new_task_index(unseen, skip) if pool else None
+        closed = {str(t.get("taskId")) for t in pool or [] if str(t.get("closed") or "")[:10]
+                  and str(t.get("closed"))[:10] < date}
+        me = str(settings.get("person_id") or "")
+        known = [{"taskId": str(t), "title": n.get("task") or "", "project": n.get("project") or "", "mine": True}
+                 for t, n in names.items()]
+        work_tasks = [t for t in known + [{"taskId": str(t["taskId"]), "title": t.get("title") or "",
+                                            "project": t.get("project") or "", "new": True,
+                                            "mine": bool(me) and str(t.get("assignee") or "") == me} for t in unseen]
+                      if t["taskId"] not in closed]
+        project_of = lambda t: (names.get(t) or {}).get("project")  # noqa: E731
         t0 = t0_of(date)
         front = [e for e in proposal.get("entries") or [] if e.get("e", 0) - e.get("s", 0) >= 5]
         back = [e for e in proposal.get("background") or [] if e.get("e", 0) - e.get("s", 0) >= 5]
@@ -458,15 +537,19 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
         for e, row in list(zip(front, stored)) + list(zip(back, stored[len(front):])):
             row = {**row, "single": bool(e.get("single"))}
             found: list = []
+            work: list = []
             try:
                 steps = work_steps(e, t0)
-                text = text_match(index, work_text(e, t0, steps=steps), date, skip)
+                said = work_text(e, t0, steps=steps)
+                text = text_match(index, said, date, skip)
                 if fresh and fresh["vec"]:
                     found = new_tasks(fresh, work_text(e, t0, steps=steps, replies=NEW_REPLIES), skip)
+                at = attribution.repo_key(row.get("p"))
+                work = work_match(said, work_projects(at, repo, project_of, work_tasks), work_tasks, skip)
             except (OSError, ValueError) as exc:  # the votes alone, as before
                 logbook.record("learn", f"Words of the work: {type(exc).__name__}: {exc}", kind="warning")
                 text = {}
-            e["learned"] = with_new(suggest(row, sess, repo, names, text=text, sr=sr), found)
+            e["learned"] = with_work(with_new(suggest(row, sess, repo, names, text=text, sr=sr), found), work)
         proposal["learning"] = dict(_state) if _state["of"] and _state["done"] < _state["of"] else None
     except Exception as exc:
         logbook.record("learn", f"Suggesting tasks: {type(exc).__name__}: {exc}", kind="warning")

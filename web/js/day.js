@@ -9,8 +9,11 @@ function newest(kind) {
 
 /* Day view: one day on one time axis (activity, likely, logged) */
 let loading = 0;  // reads under way: the logo pulses while there are any (style.css html.loading)
+let actAt = 0;    // when the day's activity was last asked for: today's is asked again every ACT_EVERY (tickClock)
+const ACT_EVERY = 5 * 60 * 1000;
 function load({fresh = false, keepScroll = false} = {}) {
   const d = state.date, act = newest('activity'), logged = newest('entries'), likely = newest('proposal');
+  actAt = Date.now();
   document.documentElement.classList.add('loading'); loading++;
   if (!keepScroll) { state.act = state.likely = state.logged = state.repeats = null; render(); }
   loadRepeats();
@@ -808,6 +811,13 @@ function tickClock(back = false) {
   const now = $('#grid .now');
   if (now) now.style.top = `${nowMin() * ppmOf(state.zoom)}px`; else render();
   if (back) load({keepScroll: true});
+  else if (Date.now() - actAt >= ACT_EVERY) {  // the Activity column keeps up with the now line (the rest: hourly)
+    actAt = Date.now();
+    const mine = newest('activity');
+    getJSON(`/api/activity?date=${today}&source=${state.source}`)
+      .then(x => { if (mine()) { state.act = x; drawSoon(); } })
+      .catch(() => {});  // the column stays as it was; the next tick or the hourly read asks again
+  }
 }
 setInterval(() => { if (document.visibilityState === 'visible') tickClock(); }, 60 * 1000);
 // the app's window says when the Mac woke or midnight passed (native.js): handled here, so it does not move on itself

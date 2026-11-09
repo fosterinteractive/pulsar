@@ -53,7 +53,7 @@ HALF_LIFE = 7        # days: older logging counts half as much this many days la
 LEARN_DAYS = 60
 RECENT_DAYS = 30
 RANK = {"low": 0, "medium": 1, "high": 2}
-ORDER = ("rule", "link", "ticket", "session", "scoped", "repo", "sameday", "words")
+ORDER = ("rule", "link", "ticket", "session", "work", "repo", "sameday", "words")
 BLOCKED = -1
 
 # time spent logging time (Pulsar, Productive): never proposed, never given to a session (sessions.LOGGING)
@@ -68,6 +68,7 @@ GENERIC = {"the", "and", "for", "with", "drupal", "site", "website", "issues", "
            "check", "new", "task", "tasks", "from", "into", "about", "plan"}
 
 CONF_WORDS = {"high": "likely right", "medium": "probably right", "low": "check"}
+WORK_CONF = "low"     # a task picked by what the work names starts unticked (replay first)
 NEW_PICK_MIN = 0.5   # the words a task you never logged to must share with the work to be picked (or a key named)
 FIT_SHARE = attribution.FIT_SHARE  # a project with less of a repository's logged time than this is another client's
 FIT_MIN = attribution.FIT_MIN      # minutes of a repository's (fading) votes before its projects say anything
@@ -290,23 +291,12 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
                 if k in sameday:
                     out.append((sameday[k], "sameday", "medium", "the same session as another entry today"))
                     break
-        elif src == "scoped":
-            # the repository's projects (from its votes), then the task in them whose name shares most words with
-            # the session's titles and first message
-            v = ctx["repo"].get(repo_key(row.get("project"))) or {}
-            projects = {name(t)[1] for t in v} - {""}
-            if projects:
-                w = words(" ".join(list(row.get("titles") or []) + [row.get("first_message") or ""]), skip)
-                best = None
-                pool = [t for t in ctx.get("recent") or [] if name(t)[1] in projects]
-                pool += [t for t in by_id if name(t)[1] in projects]
-                for tid in pool:
-                    shared = w & words(name(tid)[0], skip)
-                    if shared and (best is None or len(shared) > best[1]):
-                        best = (tid, len(shared), shared)
-                if best:
-                    out.append((best[0], "scoped", "low",
-                                "a task of this repository's project named " + ", ".join(sorted(best[2]))))
+        elif src == "work":
+            # what you are doing: the task of the repository's project the work names (learn.work_match), after the
+            # same session's vote and before where you usually log (replay: above the session's vote it lost minutes)
+            hit = next((x for x in row.get("learned") or [] if x.get("work")), None)
+            if hit:
+                out.append((str(hit["taskId"]), "work", WORK_CONF, hit.get("why") or "what you typed names it"))
         elif src == "words":
             w = words(" ".join([row.get("project") or ""] + list(row.get("titles") or [])), skip)
             best = None
@@ -350,7 +340,7 @@ def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, ass
     # answer that is unsure and not one you gave (a rule, a link, a ticket key): never above a sure vote
     fresh = [x for x in row.get("learned") or [] if x.get("new")]
     new_alt = [(str(fresh[0]["taskId"]), "new", "low", fresh[0].get("why") or "")] if fresh else []
-    weak = conf == "low" and src not in ("rule", "link", "ticket")
+    weak = conf == "low" and src not in ("rule", "link", "ticket", "work")  # what the work names stays
     if fresh and weak and (fresh[0].get("key") or fresh[0].get("score", 0) >= NEW_PICK_MIN) \
             and admissible(row, ctx, str(fresh[0]["taskId"]), "ticket" if fresh[0].get("key") else "new"):
         if task:

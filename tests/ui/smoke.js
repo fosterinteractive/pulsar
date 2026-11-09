@@ -118,6 +118,14 @@ try {
     check('Update says it restarts when the window is behind', text === 'Update to 9.9.9 and restart', text);
   } else check('Update says it restarts when the window is behind', true, 'skipped: not in Pulsar\'s window');
 
+  // today's Activity is asked for again every five minutes, so it keeps up with the now line
+  if (state.view === 'day' && state.date === todayLocal()) {
+    const shown = state.act;
+    actAt = 0;
+    tickClock();
+    check('today\'s activity is read again', await until(() => state.act !== shown, 5000));
+  } else check('today\'s activity is read again', true, 'skipped: not on today');
+
   // the day's entries come from the kept copy first
   const copy = await getJSON(`/api/entries?date=${state.date}&copy=1`);
   check('the server gives the day\'s kept copy', typeof copy.copy === 'boolean', JSON.stringify({copy: copy.copy, n: copy.entries?.length}));

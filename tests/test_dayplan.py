@@ -374,6 +374,26 @@ class PlannerTest(unittest.TestCase):
         [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600)]), ctx)["entries"]
         self.assertEqual((e["taskId"], e["confidence"], e["checked"]), ("11", "low", False))
 
+    def test_what_the_work_names_comes_before_where_you_usually_log(self):
+        # 2026-11-09: "D11 db upgrade" on a site's repository; the session's and the repository's history offered other
+        # tasks first. A task of the repository's project that the work names (learn.work_match) is the pick, unticked
+        key = dayplan.title_key("Fix the importer")
+        names = {"M": {"task": "Database upgrade", "project": "Initech"}, "P": {"task": "Initech support", "project": "Initech"}}
+        ctx = {**self.ctx, "sess": {key: {"M": 120.0}}, "sr": {(key, "initech"): {"M": 120.0}},
+               "repo": {"initech": {"P": 300.0}}, "names": names}
+        r = {**row(540, 600, project="initech"),
+             "learned": [{"taskId": "W", "why": "what you typed names it: d11, upgrade", "work": True}]}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["alts"][0]["taskId"]), ("M", "W"))  # the session's own vote stays first
+        # with no vote of the session here, the work's task is the pick, unticked, above the repository's history
+        ctx = {**ctx, "sess": {}, "sr": {}}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"], e["confidence"]), ("W", "work", "low"))
+        self.assertEqual(e["alts"][0]["taskId"], "P")
+        # nothing named: the history decides, as before
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, project="initech")]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("P", "repo"))
+
     def test_a_sessions_task_does_not_carry_over_to_another_clients_repository(self):
         # replay, 3 Nov: a session that did one client's database upgrade the day before gave that task to the next
         # day's work for other clients

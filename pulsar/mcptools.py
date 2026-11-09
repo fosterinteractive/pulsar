@@ -304,7 +304,7 @@ BY_SOURCE = {
     "rule": "one of your rules", "link": "a task link in this Claude session", "ticket": "the work names its ticket",
     "session": "you logged it during this Claude session before", "repo": "you logged it in this repository before",
     "sameday": "you logged it earlier today in this session", "words": "your past notes on it match this work",
-    "new": "a new task that matches this work", "recent": "you logged it lately", "claude": "Ask Claude's pick",
+    "new": "a new task that matches this work", "work": "what you typed in this work names it", "recent": "you logged it lately", "claude": "Ask Claude's pick",
     "repeat": "you log this at this time on most days", "call": "a call with no calendar entry",
     "neighbour": "work outside Claude, next to other work", "none": "no match: pick the task",
 }
@@ -326,6 +326,7 @@ BY_TEXT = [  # (the start, or a part, of Pulsar's own reason, lower case) -> the
     ("no match", "no match: pick the task"),
     ("no signal", "no match: pick the task"),
     ("share words", "your past notes on it match this work"),
+    ("what you typed names", "what you typed in this work names it"),
     ("the work names", "the work names its ticket"),
     ("you never log this repository", "you never log this repository"),
     ("claude:", "Ask Claude's pick"),
