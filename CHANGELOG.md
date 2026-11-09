@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Beside ↻, how long ago the view was read from Productive ("3 min ago"; the time in its tooltip): the day's entries in the Day view, the range in the Report.
 - Going to the Report reads it again when it is more than a minute old, or right after you logged or changed an entry, instead of showing what it read the first time until ↻.
 
 ## 1.6.11 (2026-11-09)

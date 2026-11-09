@@ -165,15 +165,22 @@ try {
   const copy = await getJSON(`/api/entries?date=${state.date}&copy=1`);
   check('the server gives the day\'s kept copy', typeof copy.copy === 'boolean', JSON.stringify({copy: copy.copy, n: copy.entries?.length}));
 
+  // beside ↻, how long ago the day's entries were read from Productive
+  const dayAge = q('#updated').textContent;
+  check('↻ says when the day was read', /^(just now|\d+ min ago|\d+ h ago)$/.test(dayAge) && /at \d/.test(q('#refresh').title),
+    `${dayAge} · ${q('#refresh').title}`);
+
   // going to the Report reads it, and again only when older than a minute or after a write from this page
   setView('report');
   const read = await until(() => R.data && R.at && !$('#refresh').classList.contains('busy'), 60000);
   const at = R.at, w = wroteAt;
   setView('day'); setView('report');
   const kept = R.at === at && !$('#refresh').classList.contains('busy');
+  const reportAge = q('#updated').textContent;
   const old = reportStale(at + 61000), wrote = (wroteAt = at + 1, reportStale(at + 1000));
   wroteAt = w;
   setView('day');
+  check('↻ says when the Report was read', reportAge === 'just now', reportAge);
   check('the Report is read again when it is stale', read && kept && old && wrote,
     `read ${read}, kept within the minute ${kept}, stale after a minute ${old}, after a write ${wrote}`);
 

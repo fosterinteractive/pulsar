@@ -1590,6 +1590,12 @@ ago, or this page has logged, changed or deleted an entry since (`wroteAt`, set 
 logged elsewhere (Claude Code, Productive) shows on the next read after that minute, or on ↻. Before 1.6.12 the
 Report was read only the first time it opened, and then only on ↻.
 
+**How long ago** (`core.js` paintUpdated): beside ↻ in the header, in small grey type, "just now", "3 min ago" or
+"2 h ago", and in its tooltip and ↻'s the time: when the view on screen was last read from Productive. The Day: that
+day's entries (`dayRead`, on each read that Productive answered; a copy kept from an earlier read leaves the time as it
+was, and a day not read yet shows nothing); the Report: its range (`R.at`). Drawn when a read lands, on a change of
+view and every 30 seconds; left out in a window narrower than 820 pixels.
+
 ## 8. What is kept, and where
 
 | Where | What |

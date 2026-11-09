@@ -325,6 +325,26 @@ async function callJSON(path, opts) {
   if (!data || typeof data !== 'object') return {error: `The server answered ${r.status} without data.`};
   return data;
 }
+/* "3 min ago" beside ↻: when what the view shows was last read from Productive (the Day: the day's entries, dayRead;
+   the Report: its range, R.at), with the time in the tooltip. Drawn when a read lands, on a view change and every
+   30 s. A read that came from the kept copy (Productive did not answer) leaves the last time as it was. */
+const readAt = {day: 0, date: ''};
+function dayRead(x) {
+  if (x && !x.error && !x.warning && !x.copy) Object.assign(readAt, {day: Date.now(), date: state.date});
+  paintUpdated(); return x;
+}
+function paintUpdated() {
+  const el = $('#updated'), btn = $('#refresh'); if (!el) return;
+  const at = state.view === 'report' ? (R.data && !R.data.error ? R.at : 0) : readAt.date === state.date ? readAt.day : 0;
+  if (!at) { el.textContent = ''; el.removeAttribute('title'); btn.title = 'Refresh everything'; return; }
+  const m = Math.floor((Date.now() - at) / 60000);
+  const clock = new Intl.DateTimeFormat(DATE_LOCALE, {hour: '2-digit', minute: '2-digit'}).format(new Date(at));
+  el.textContent = m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)} h ago`;
+  el.title = `Read from Productive at ${clock}`;
+  btn.title = `Refresh everything (read at ${clock})`;
+}
+setInterval(paintUpdated, 30 * 1000);
+
 /* when this page last logged, changed or deleted an entry (ms): the Report reads the range again after it */
 let wroteAt = 0;
 function postJSON(path, body) {

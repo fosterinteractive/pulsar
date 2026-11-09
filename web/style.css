@@ -41,6 +41,10 @@ header { display: flex; align-items: center; gap: 16px; padding: 14px 20px; }
 header h1 { font-size: 17px; font-weight: 600; margin: 0; letter-spacing: -.01em; white-space: nowrap; }
 header .sub { color: var(--muted); font-size: 13px; white-space: nowrap; }
 header .spacer { flex: 1; }
+/* beside ↻: how long ago the view was read (core.js paintUpdated); quiet, and left out where the header is tight */
+header .updated { color: var(--faint); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; margin-right: -12px; }
+header .updated:empty { display: none; }
+@media (max-width: 820px) { header .updated { display: none; } }
 .seg { display: inline-flex; background: var(--seg); border-radius: 8px; padding: 2px; gap: 2px; }
 .seg button, .btn {
   border: 0; background: transparent; color: var(--text); font: inherit; font-size: 12.5px;

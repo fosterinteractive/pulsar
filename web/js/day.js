@@ -14,11 +14,11 @@ function load({fresh = false, keepScroll = false} = {}) {
   const d = state.date, act = newest('activity'), logged = newest('entries'), likely = newest('proposal');
   actAt = loggedAt = Date.now();
   document.documentElement.classList.add('loading'); loading++;
-  if (!keepScroll) { state.act = state.likely = state.logged = state.repeats = null; render(); }
+  if (!keepScroll) { state.act = state.likely = state.logged = state.repeats = null; render(); paintUpdated(); }
   loadRepeats();
   return Promise.all([
     getJSON(`/api/activity?date=${d}&source=${state.source}`).then(x => { if (act()) { state.act = x; drawSoon(); } return x; }),
-    getJSON(`/api/entries?date=${d}`).then(x => { if (logged()) { state.logged = x; drawSoon(); loadEstimates(); } return x; }),
+    getJSON(`/api/entries?date=${d}`).then(x => { if (logged()) { state.logged = x; dayRead(x); drawSoon(); loadEstimates(); } return x; }),
     // ...and before it, at once, the copy kept from the last read: Productive itself (entries change there by other
     // people and tools too) is drawn over it when it answers, and setHTML leaves alone what did not change.
     // Placed after it, so callers still find the entries second.
@@ -69,7 +69,7 @@ async function loadEstimates() {
 async function refreshLogged() {
   const d = state.date, mine = newest('entries');
   const x = await getJSON(`/api/entries?date=${d}`);
-  if (mine()) { state.logged = x; render(); loadEstimates(); }
+  if (mine()) { state.logged = x; dayRead(x); render(); loadEstimates(); }
   return x;
 }
 /* a task against its estimate: the words, and whether it is over */
@@ -832,7 +832,7 @@ function refreshToday() {
   if (hidden && now - loggedAt >= LOGGED_EVERY) {
     loggedAt = now;
     const mine = newest('entries');
-    asks.push(getJSON(`/api/entries?date=${today}`).then(x => { if (mine() && !x.error) state.logged = x; }));
+    asks.push(getJSON(`/api/entries?date=${today}`).then(x => { if (mine() && !x.error) { state.logged = x; dayRead(x); } }));
   }
   if (!asks.length) return;
   // a read that fails leaves the day as it was; the next minute asks again

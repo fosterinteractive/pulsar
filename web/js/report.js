@@ -57,7 +57,7 @@ async function loadReport(note = false, quiet = false) {
   const x = await getJSON(`/api/report?from=${R.from}&to=${R.to}`);
   if (id !== R.seq) return;
   $('#report').classList.remove('loading'); btn.classList.remove('busy');
-  R.data = x; R.at = asked; renderReport();
+  R.data = x; R.at = asked; renderReport(); paintUpdated();
   if (note) toast(x.error ? `Report not updated: ${x.error}` : x.warning ? x.warning
     : `Report updated: ${x.entries.length} entries, ${dur(x.entries.reduce((s, e) => s + e.minutes, 0))}`, !!(x.error || x.warning));
 }
