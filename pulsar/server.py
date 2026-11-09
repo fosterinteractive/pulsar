@@ -189,6 +189,7 @@ def public_config(s: dict) -> dict:
         "targetMinutes": config.target_minutes(s), "targetHours": s["target_hours"], "personDayHours": s["person_day_hours"],
         "personalPatterns": s["personal_patterns"], "activitywatchUrl": s["activitywatch_url"], "rules": s["rules"],
         "roundTo": s["round_to"], "awayAfter": config.away_after(s), "workingDays": s["working_days"],
+        "advanced": config.advanced(s),
         "activitywatch": awsetup.status(config.away_after(s)),  # its AFK timeout, read from its file; no program started
         "update": {**UPDATER.public(), "skip": s["update_skip"], "asked": s["update_asked"]},
         "errors24h": logbook.unseen(s.get("logs_seen") or 0),
@@ -279,6 +280,18 @@ def validate(body: dict) -> dict:
         if not days:
             raise ValueError("Pick at least one working day.")
         out["working_days"] = days
+    if "advanced" in body:  # merged into what is saved; only choices other than the default are kept
+        v = body["advanced"]
+        if not isinstance(v, dict):
+            raise ValueError("Advanced settings are an object.")
+        kept = dict(config.load().get("advanced") or {})
+        for k, x in v.items():
+            c = config._choice(k, x)
+            if c is None:
+                raise ValueError(f"Advanced: {k} is one of {', '.join(str(c) for c in config.ADVANCED.get(k, ()))}"
+                                 if k in config.ADVANCED else f"Advanced: no setting {k}")
+            kept[k] = c
+        out["advanced"] = {k: x for k, x in kept.items() if k in config.ADVANCED and x != config.ADVANCED[k][0]}
     if "productive_source" in body:
         if body["productive_source"] not in ("auto", "token", "claude-code"):
             raise ValueError("The Productive source is auto, token or claude-code")
@@ -785,10 +798,11 @@ REPEAT_DAYS = 28    # how far back the history goes
 REPEAT_NEAR = 5     # minutes: entries starting this close count as the same time (a meeting starts on the minute)
 REPEAT_MIN_DAYS = 3
 REPEAT_SHARE = 0.5  # of the days a task was logged, how many must be at that time: work logged all day is not a repeat
+REPEAT_STRICT = (5, 0.7)  # Advanced > Daily meeting cards: Strict (days, share)
 REPEAT_STALE = 10   # days: a repeat not seen this long has stopped (a meeting that was cancelled)
 CALL_WINDOW = 75    # minutes around the usual time to look for the call (wide enough for an hour's clock change)
 CALL_GAP = 20       # minutes: the call goes on while its window shows again within this; people work during calls
-_repeats = config.Newest(8)  # (date, person) -> (when, patterns)
+_repeats = config.Newest(8)  # (date, person, Advanced > Daily meeting cards) -> (when, patterns)
 
 
 def is_call(it: dict) -> bool:
@@ -807,7 +821,7 @@ def is_call(it: dict) -> bool:
                 or re.match(r"Meet\s*[-–]\s*[a-z]{3}-[a-z]{4}-[a-z]{3}", title) or "Google Meet" in title)
 
 
-def repeating(rows: list, tz, date: str) -> list:
+def repeating(rows: list, tz, date: str, strict: bool = False) -> list:
     """Tasks logged at the same time of day on at least three days of the history, and on at least half the days
     they were logged at all (the daily meeting, not a task worked on all day): the usual start and length, the note
     written most often, and the weekdays it happened on."""
@@ -830,7 +844,8 @@ def repeating(rows: list, tz, date: str) -> list:
             if d not in per_day or x[2]["minutes"] > per_day[d][2]["minutes"]:
                 per_day[d] = x
         logged_days = {x[2]["date"] for x in xs}
-        if len(per_day) < max(REPEAT_MIN_DAYS, REPEAT_SHARE * len(logged_days)):
+        min_days, share = REPEAT_STRICT if strict else (REPEAT_MIN_DAYS, REPEAT_SHARE)
+        if len(per_day) < max(min_days, share * len(logged_days)):
             continue
         last = max(per_day)
         if (datetime.strptime(date, "%Y-%m-%d") - datetime.strptime(last, "%Y-%m-%d")).days > REPEAT_STALE:
@@ -879,13 +894,16 @@ def api_repeats(q: dict) -> dict:
     s = current_settings()
     if not s.get("person_id"):
         return {"repeats": []}
+    cards = config.advanced(s)["meeting_cards"]
+    if cards == "off":  # Advanced > Daily meeting cards: Off (Log the day takes its repeats from here too)
+        return {"repeats": []}
     date, tz = q["date"], config.tz(s)
-    key = (date, s.get("person_id"))
+    key = (date, s.get("person_id"), cards)
     if key not in _repeats or time.time() - _repeats[key][0] > 3600:
         rows, problem = history_rows(date, s)
         if problem:
             return {"repeats": [], "error": problem}
-        _repeats[key] = (time.time(), repeating(rows, tz, date))
+        _repeats[key] = (time.time(), repeating(rows, tz, date, strict=cards == "strict"))
     t0, t1 = day_bounds(date, tz)
     found = trackers.both(t0, t1, s["activitywatch_url"], trackers.classifier(s["personal_patterns"]), config.away_after(s))
     items = found[trackers.pick(found, q.get("source", "auto"))]

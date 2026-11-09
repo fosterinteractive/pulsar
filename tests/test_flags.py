@@ -76,6 +76,9 @@ class FlagsTest(unittest.TestCase):
         self.assertEqual(self.kinds(task()), ["noestimate"])  # 3 of 8 recent tasks have one
         [f] = flags.for_task(task(), [{"id": "1"}], "2026-11-06", {}, self.names)
         self.assertEqual(f["text"], "No estimate, while 3 of the project's 8 recent tasks have one")
+        # Settings > Advanced can switch the flag off
+        self.assertEqual(flags.for_task(task(), [{"id": "1"}], "2026-11-06", {"advanced": {"no_estimate": False}},
+                                        self.names), [])
         for n, with_, flagged in ((100, 24, False), (100, 25, True), (5, 1, False), (5, 2, True), (0, 0, False)):
             self.names = names()
             self.share = {"n": n, "with": [str(i) for i in range(100, 100 + with_)]}

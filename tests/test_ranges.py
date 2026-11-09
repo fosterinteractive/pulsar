@@ -113,6 +113,10 @@ class AnalyseTest(unittest.TestCase):
         self.assertEqual([g["taskId"] for g in res["groups"]], ["11", "22"])  # the parts are there...
         self.assertFalse(res["mixed"])  # ...but 60 of 72 minutes is most of it
         self.assertEqual(res["split"], [])
+        # Settings > Advanced > Offer a split, "Main task under 90%": 60 of 72 minutes is no longer enough
+        keep = {}
+        dayplan.plan(d, self.ctx, OPTS, keep)
+        self.assertTrue(ranges.analyse(keep, 540, 612, {**OPTS, "mixed_share": 0.9})["mixed"])
 
     def test_no_part_holding_three_quarters_is_mixed_even_when_short(self):
         d = day(items=[work(540, 572)], rows=[row(540, 558), row(558, 572, project="site", titles=["Hero video"])])

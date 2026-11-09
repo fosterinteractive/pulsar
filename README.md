@@ -145,6 +145,7 @@ organization or person, Settings asks: the **Organization ID** is the number at 
 | Round entries to | 5 minutes (or 10 or 15): Log the day's entries start and end on this step (or against an entry already logged), a block you click to log is rounded to it (a drag or typed minutes are not), and shorter active time is not marked as unlogged |
 | Away after | 15 minutes (or 10, 20 or 30) without typing or moving the mouse: time away, and the end of a sitting (Likely, Log the day) |
 | Appearance | Theme: same as the Mac (or Light, or Dark); ◐ at the top and View > Appearance set it too |
+| Advanced | closed: join pieces of one task 30 min apart, work outside Claude an entry from 10 min, learning memory 7 days, daily meeting cards Usual, offer a split under 75%, the "No estimate" flag on |
 | This Mac | menu bar, Dock badge and reminder on; Open at login off (Pulsar's window only) |
 | Personal windows | Telegram, WhatsApp, YouTube, Netflix, Instagram, Facebook, TikTok, Reddit (one word per line; a window whose app, title or site contains one is personal, never work) |
 | ActivityWatch address | `http://localhost:5600` |

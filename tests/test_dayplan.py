@@ -665,7 +665,8 @@ class GatherClockChangeTest(unittest.TestCase):
         self.assertEqual([(r["s"], r["e"]) for r in got["rows"]], [(60, 180), (540, 660)])  # by the clock, real length
         self.assertEqual([r["pick_s"] for r in got["rows"]], [60, 480])  # Ask Claude's names stay as they were
         # no "Round entries to" saved: today's grid; no "Away after" saved: its default ends a sitting
-        self.assertEqual(got["opts"], {"grid": 5, "min_entry": 10, "sitting_gap": 15})
+        self.assertEqual(got["opts"], {"grid": 5, "min_entry": 10, "sitting_gap": 15, "merge_gap": 30, "out_min": 10,
+                                         "mixed_share": 0.75})
 
 
 class JournalTest(unittest.TestCase):

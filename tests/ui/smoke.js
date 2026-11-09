@@ -149,6 +149,12 @@ try {
   check('a day outside the working days is not one', typeof workingDay === 'function'
     && workingDay('2026-11-09') === (CONFIG.workingDays || [0, 1, 2, 3, 4]).includes(0), `Mon ${workingDay('2026-11-09')}, Sun ${workingDay('2026-11-08')}`);
 
+  // Settings > Advanced: closed, and showing the saved choices (the usual ones unless changed)
+  const adv = CONFIG.advanced || {}, fe = form.elements;
+  const shown = ADV_KEYS.map(k => fe[`adv_${k}`].value).join() + ',' + fe.adv_no_estimate.checked;
+  const saved = ADV_KEYS.map(k => String(adv[k])).join() + ',' + (adv.no_estimate !== false);
+  check('Settings shows the advanced choices', !q('#adv-more').open && shown === saved, shown);
+
   // the day's entries come from the kept copy first
   const copy = await getJSON(`/api/entries?date=${state.date}&copy=1`);
   check('the server gives the day\'s kept copy', typeof copy.copy === 'boolean', JSON.stringify({copy: copy.copy, n: copy.entries?.length}));

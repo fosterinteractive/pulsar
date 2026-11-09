@@ -173,7 +173,7 @@ def analyse(keep: dict, s: float, e: float, opts: dict | None = None) -> dict:
                         "claudeFound": g["claudeFound"]})
     # mixed, as the split would make it: a short piece that joins its neighbour is part of it
     top = max(kept.values(), default=0) / (sum(kept.values()) or 1)
-    mixed = len(kept) >= 2 and (top < MIXED_SHARE or sum(1 for w in kept.values() if w >= MIXED_MIN) >= 2)
+    mixed = len(kept) >= 2 and (top < o.get("mixed_share", MIXED_SHARE) or sum(1 for w in kept.values() if w >= MIXED_MIN) >= 2)
     for g in out_groups:
         g.pop("_gk")
         g["split"] = sum(x["minutes"] for x in entries if x["group"] == g["key"])

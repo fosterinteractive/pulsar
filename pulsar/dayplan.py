@@ -81,7 +81,9 @@ def opts_for(settings: dict) -> dict:
     10; 10 gives 10 and 10; 15 gives 15 and 15. And the end of a sitting from Settings' "Away after"."""
     step = settings.get("round_to")
     step = step if step in config.ROUNDING and not isinstance(step, bool) else GRID
-    return {"grid": step, "min_entry": max(MIN_ENTRY, step), "sitting_gap": config.away_after(settings)}
+    a = config.advanced(settings)  # Settings > Time and activity > Advanced
+    return {"grid": step, "min_entry": max(MIN_ENTRY, step), "sitting_gap": config.away_after(settings),
+            "merge_gap": a["join_gap"], "out_min": a["outside_min"], "mixed_share": a["split_hint"]}
 
 
 def words(text: str, skip: frozenset = frozenset()) -> set:
@@ -1398,7 +1400,7 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
     t0_of = lambda d: server.day_bounds(d, tz)[0]  # noqa: E731
     days = {d: learning._stored(d) for d in learning._days_before(date)}
     ctx = learn(date, [] if hproblem else history, {d: r for d, r in days.items() if r}, t0_of,
-                person=str(s.get("person_name") or ""))
+                half_life=config.advanced(s)["memory"], person=str(s.get("person_name") or ""))
     # Ask Claude's kept answer (askclaude.keep: on disk, 60 days) steers the plan only while the Claude Code switch is on
     answer = askclaude.latest(date) if s.get("ask_claude") else None
     day = {"items": act.get("items") or [], "away": act.get("away") or [], "rows": likely_rows, "background": bg_rows,

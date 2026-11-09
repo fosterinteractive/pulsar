@@ -298,7 +298,7 @@ Both readers return the same items: `{s, e, app, title, host, url, cat, icon}`, 
 - **Away** (`server.away`): every gap of Away after or more between the first and the last activity of the day. Gaps of
   3 hours or more are "Off" (a night, an afternoon off): drawn, never added to the total. Away after also ends a
   sitting in Likely (`sessions.propose`) and in Log the day (`dayplan.opts_for`, `sitting_gap`). The one setting drives all
-  four; `dayplan.MERGE_GAP`, `CALL_GAP` and `OFF_MIN` are not breaks and stay fixed.
+  four; `dayplan.MERGE_GAP` (Advanced > Join pieces of one task), `CALL_GAP` and `OFF_MIN` are not breaks.
 - **ActivityWatch's own settings** (`pulsar/awsetup.py`). Its AFK watcher writes "afk" only after its own timeout
   (`~/Library/Application Support/activitywatch/aw-watcher-afk/aw-watcher-afk.toml`, section `[aw-watcher-afk]`, key
   `timeout` in seconds; 180 without the file or the key), backdated to the last input, so a pause shorter than that
@@ -604,7 +604,8 @@ or a repeat's usual note. Parts with the same task are one group, and the group 
   (`POST /api/likely/note` for that repository and the stretch, 5.7), unless Claude's pick already brought one. Never
   once the person has typed in the note, and only in the dialog that asked.
 
-**A stretch that mixes work.** When the biggest group holds less than three quarters of the work minutes, or two
+**A stretch that mixes work.** When the biggest group holds less than three quarters of the work minutes (Advanced >
+Offer a split: 60% or 90% instead), or two
 groups have 20 minutes or more each, one line under the note says so: "Mixed work: fi-drupal-qa 50 min, a meeting
 30 min, client-site 20 min. Split into 3 entries?". The groups are counted as the split
 would make them: minutes that are not work (away, no activity, time spent logging) go with the work before them, time
@@ -761,7 +762,7 @@ chips of the summary) show one quiet line when Productive says something about a
 - **No estimate, while 19 of the project's 55 recent tasks have one**: the task has none (or 0), and a quarter or more,
   and at least two, of the project's 100 most recently active tasks have one. Estimates are rare in most projects (on
   one person's 14 projects, 0 to 35% of the recent tasks had one), so flagging every task without one would put a flag
-  on nearly every row.
+  on nearly every row. Advanced can switch this flag off.
 - **+1 h 30 min over the estimate (5 h 30 min of 4 h)**: the time worked on the task by everyone (`worked_time`),
   plus the minutes about to be logged, is over its estimate (`initial_estimate`). The log dialog works it out itself
   from the task's numbers and follows the length as it is typed (an entry changed on its own task is in the time
@@ -967,6 +968,17 @@ wrote it. It tries every one: an entry deleted or moved by hand is marked `gone`
 the rest were left. **Start over** clears the last run's results and Undo. Runs that started more than 31 days ago
 are dropped (counted from today, never from an entry's date).
 
+**Advanced** (Settings > Time and activity, closed by default; `config.ADVANCED`, `config.advanced`). A closed set,
+each with the usual value first: Join pieces of one task (30, 15 or 60 minutes apart: `merge_gap`), Work outside
+Claude (an entry of its own from 10, 5 or 20 minutes: `out_min`), Learning memory (logging halves in weight every 7,
+3 or 14 days: `half_life` in `learn.votes`, `learn.text_match` and `dayplan.learn`), Daily meeting cards (Usual,
+Strict, Off: `server.api_repeats`), Offer a split (the main task under 75, 60 or 90%: `mixed_share` in
+`ranges.analyse`) and the "No estimate" flag (on or off: `flags.for_task`). `dayplan.opts_for` carries the first,
+second and fifth to Log the day and to a selected stretch. Settings keeps only the choices that differ from the usual
+(`"advanced"` in settings.json); a value that is not one of the choices is read as the usual one. For calibration, a
+read-only run (`PULSAR_READ_ONLY=1`, as `tools/replay/` uses) takes `PULSAR_TUNE`, a JSON object of the same keys,
+and any positive number in it: `PULSAR_TUNE='{"join_gap": 45}'`. The app people use never reads it.
+
 Replayed on one person's 34 fully logged days (21 September to 4 November 2026, `tools/replay/`), each day planned
 as if nothing were logged, from the days before it only, and compared with what was logged: 45% of the minutes
 needed no change; the right task in the right amount for 49% of the logged minutes; the right task at the right time
@@ -1098,7 +1110,7 @@ not a verdict.
 - **Learned tasks** (`pulsar/learn.py`): for each Likely row, the task you logged while working in the same Claude
   session, then in the same repository, over the last 60 days. Each earlier row votes, with its minutes, for the task
   that took most of it. Older logging counts less: a day's votes halve every 7 days (`HALF_LIFE`, as in
-  `dayplan.py`), which sets the order; the "why" shows the minutes actually logged. A session's history applies per
+  `dayplan.py`; Advanced > Learning memory: 3 or 14), which sets the order; the "why" shows the minutes actually logged. A session's history applies per
   repository, as in Log the day (5.4): its votes earned in this repository first; its other votes only for a task
   this repository is logged to, or when the session has been here all day. Each logged stretch teaches the unit
   whose repository is logged to that task's project, not always the one in front (`attribution.credits`): while
@@ -1240,7 +1252,8 @@ not a verdict.
   "meeting"…) and your own name do not count.
 - **Repeats** (`server.repeating`, `server.repeat_suggestions`): a task you logged at the same time of day (within 5
   minutes) on at least 3 days of the last 28, and on at least half of the days you logged it at all, still seen in
-  the last 10 days. On a weekday it happened before, when the tracker sees a call (a Zoom meeting window, a Meet or
+  the last 10 days (Advanced > Daily meeting cards: Strict needs 5 days and 70% of them; Off offers none, in Log
+  the day too, and reads no history). On a weekday it happened before, when the tracker sees a call (a Zoom meeting window, a Meet or
   Teams call, a Slack huddle, Webex) within 75 minutes of the usual time, the Logged column shows a dashed card.
   The call runs from its first window to its last, windows up to 20 minutes apart, at most one and a half times the
   usual length. A start within 10 minutes of the usual time, or of an hour either side (clock changes), is snapped

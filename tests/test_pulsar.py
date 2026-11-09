@@ -651,6 +651,19 @@ class RepeatsTest(unittest.TestCase):
     def test_a_repeat_not_seen_for_ten_days_has_stopped(self):
         self.assertEqual(server.repeating(self.history(), self.TZ, "2026-11-25"), [])
 
+    def test_strict_daily_meeting_cards_need_five_days(self):
+        rows = [self.entry(d, "16:25", 50) for d in ["2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06"]]
+        self.assertEqual(len(server.repeating(rows, self.TZ, "2026-11-09")), 1)  # usual: 3 days are enough
+        self.assertEqual(server.repeating(rows, self.TZ, "2026-11-09", strict=True), [])
+        rows.append(self.entry("2026-11-02", "16:25", 50))
+        self.assertEqual(len(server.repeating(rows, self.TZ, "2026-11-09", strict=True)), 1)
+
+    def test_daily_meeting_cards_off_offers_none_and_reads_nothing(self):
+        s = {**config.DEFAULTS, "person_id": "1", "advanced": {"meeting_cards": "off"}}
+        with mock.patch.object(server, "current_settings", return_value=s), \
+                mock.patch.object(server, "history_rows", side_effect=AssertionError("read")):
+            self.assertEqual(server.api_repeats({"date": "2026-11-09"}), {"repeats": []})
+
     def calls(self):
         return [item(15 * 60 + 20, 15 * 60 + 30, app="Slack", title="Huddle: design"),
                 item(16 * 60 + 27, 16 * 60 + 40, app="zoom.us", title="Zoom Meeting"),
@@ -3200,6 +3213,63 @@ class LogsSeenTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             server.validate({"working_days": []})
         self.assertTrue(config._fits("working_days", [0, 6]) and not config._fits("working_days", [7]))
+
+
+class AdvancedSettingsTest(unittest.TestCase):
+    """Settings > Time and activity > Advanced: a closed set of choices, saved only where they differ from the usual."""
+
+    def setUp(self):
+        global dayplan, learn, ranges
+        from pulsar import dayplan, learn, ranges
+
+    def test_the_usual_values_unless_a_choice_is_saved(self):
+        a = config.advanced({})
+        self.assertEqual(a, {"join_gap": 30, "outside_min": 10, "memory": 7, "meeting_cards": "usual",
+                             "split_hint": 0.75, "no_estimate": True})
+        self.assertEqual(a["join_gap"], dayplan.MERGE_GAP)
+        self.assertEqual(a["outside_min"], dayplan.OUT_MIN)
+        self.assertEqual(a["memory"], learn.HALF_LIFE)
+        self.assertEqual(a["split_hint"], ranges.MIXED_SHARE)
+        got = config.advanced({"advanced": {"join_gap": 60, "memory": 99, "no_estimate": "no", "split_hint": "0.6"}})
+        self.assertEqual((got["join_gap"], got["memory"], got["no_estimate"], got["split_hint"]), (60, 7, True, 0.6))
+        self.assertEqual(config.advanced({"advanced": "broken"})["join_gap"], 30)
+
+    def test_a_developer_override_only_in_a_read_only_run(self):
+        tune = '{"join_gap": 45, "memory": 10.5, "meeting_cards": "nope", "no_estimate": false, "x": 1}'
+        with mock.patch.dict(os.environ, {"PULSAR_TUNE": tune, "PULSAR_READ_ONLY": ""}):
+            self.assertEqual(config.advanced({})["join_gap"], 30)
+        with mock.patch.dict(os.environ, {"PULSAR_TUNE": tune, "PULSAR_READ_ONLY": "1"}):
+            a = config.advanced({})
+        self.assertEqual((a["join_gap"], a["memory"], a["meeting_cards"], a["no_estimate"]), (45, 10.5, "usual", False))
+        self.assertNotIn("x", a)
+        with mock.patch.dict(os.environ, {"PULSAR_TUNE": "{not json", "PULSAR_READ_ONLY": "1"}):
+            self.assertEqual(config.advanced({})["join_gap"], 30)
+
+    def test_saving_keeps_only_choices_other_than_the_usual(self):
+        with mock.patch.object(config, "load", return_value={"advanced": {"memory": 14, "join_gap": 60}}):
+            got = server.validate({"advanced": {"join_gap": "30", "outside_min": 5, "meeting_cards": "strict",
+                                                "split_hint": 0.75, "no_estimate": False}})
+        self.assertEqual(got, {"advanced": {"memory": 14, "outside_min": 5, "meeting_cards": "strict",
+                                            "no_estimate": False}})
+        with mock.patch.object(config, "load", return_value={}):
+            for bad in ({"join_gap": 45}, {"colour": "red"}, {"no_estimate": "off"}, "all"):
+                with self.assertRaises(ValueError, msg=bad):
+                    server.validate({"advanced": bad})
+
+    def test_log_the_day_takes_them(self):
+        o = dayplan.opts_for({"advanced": {"join_gap": 15, "outside_min": 20, "split_hint": 0.9}})
+        self.assertEqual((o["merge_gap"], o["out_min"], o["mixed_share"]), (15, 20, 0.9))
+        o = dayplan.opts_for({})
+        self.assertEqual((o["merge_gap"], o["out_min"], o["mixed_share"]), (30, 10, 0.75))
+
+    def test_learning_memory_sets_how_fast_old_logging_fades(self):
+        rows = [{"s": 600, "e": 660, "p": "/w/repo", "sessions": ["a"], "minutes": 60}]
+        entries = [{"date": "2026-10-26", "taskId": "7", "project": "P", "start": 0, "minutes": 60}]
+        t0_of = lambda d: datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()  # noqa: E731
+        with mock.patch.object(learn.attribution, "credits", return_value=[("2026-10-26", ["a"], "repo", "7", 60)]):
+            week = learn.votes({"2026-10-26": rows}, entries, t0_of, "2026-11-09")[2][("a", "repo")]["7"][0]
+            fortnight = learn.votes({"2026-10-26": rows}, entries, t0_of, "2026-11-09", 14)[2][("a", "repo")]["7"][0]
+        self.assertEqual((week, fortnight), (15.0, 30.0))  # 14 days old: a quarter of 60, or half of it
 
 
 class ClaudeCodeTokenShapeTest(unittest.TestCase):

@@ -13,7 +13,5 @@ Agreed next steps, newest first. Done items go to `CHANGELOG.md`.
 - **Moved time, told apart by itself.** "Not an example" is a mark by hand. To think through: whether Pulsar
   can tell such an entry itself (its task does not match the sessions under it) and leave it out of learning without
   a mark.
-- **Advanced settings**, a small closed set (join gap, outside-Claude entry length, learning memory, daily meeting
-  cards, split hint, the "No estimate" flag), and a developer override for calibration in read-only runs.
 - **Security, to decide:** the window's sign-in through a pipe instead of a file, and writes made with the key
   confirmed in the window.

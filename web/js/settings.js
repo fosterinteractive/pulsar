@@ -1,5 +1,7 @@
 /* Settings: the Productive connection, time zone, daily target, personal windows, the Likely column */
 const dlg = $('#settings'), form = $('#settings-form');
+// Settings > Time and activity > Advanced: the selects named adv_<key> (config.ADVANCED); no_estimate is a checkbox
+const ADV_KEYS = ['join_gap', 'outside_min', 'memory', 'meeting_cards', 'split_hint'];
 
 function connectionText(p) {
   if (!p.active) return p.problem || 'Productive is not connected.';
@@ -22,6 +24,12 @@ function fillSettings(c) {
   const days = new Set(c.workingDays || [0, 1, 2, 3, 4]);
   document.querySelectorAll('#working-days input').forEach(x => { /** @type {HTMLInputElement} */ (x).checked = days.has(+/** @type {HTMLInputElement} */ (x).value); });
   f.away_after.value = String(c.awayAfter || 15);
+  const adv = c.advanced || {};
+  for (const k of ADV_KEYS) {
+    const el = /** @type {HTMLSelectElement} */ (f[`adv_${k}`]);
+    if (el && adv[k] !== undefined) el.value = String(adv[k]);
+  }
+  /** @type {HTMLInputElement} */ (f.adv_no_estimate).checked = adv.no_estimate !== false;
   paintAw(c.activitywatch);
   f.personal_patterns.value = (c.personalPatterns || []).join('\n');
   f.activitywatch_url.value = c.activitywatchUrl || '';
@@ -361,6 +369,10 @@ async function saveSettings(extra = {}) {
     timezone: f.timezone.value.trim(), target_hours: f.target_hours.value.trim(), round_to: +f.round_to.value,
     away_after: +f.away_after.value,
     working_days: [...document.querySelectorAll('#working-days input:checked')].map(x => +/** @type {HTMLInputElement} */ (x).value),
+    advanced: {...Object.fromEntries(ADV_KEYS.map(k => {
+      const v = /** @type {HTMLSelectElement} */ (f[`adv_${k}`]).value;
+      return [k, k === 'meeting_cards' ? v : +v];
+    })), no_estimate: /** @type {HTMLInputElement} */ (f.adv_no_estimate).checked},
     personal_patterns: f.personal_patterns.value,
     activitywatch_url: f.activitywatch_url.value.trim(), likely: f.likely.value, ask_claude: f.ask_claude.checked,
     claude_models: Object.fromEntries([...document.querySelectorAll('#claude-uses select')].map(x => [x.dataset.use, x.value])),

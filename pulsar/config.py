@@ -58,10 +58,67 @@ DEFAULTS = {
     "round_to": 5,               # 5 | 10 | 15 minutes: Log the day's grid and shortest entry, the log dialog's minutes
     "away_after": 15,            # 10 | 15 | 20 | 30 minutes without input that are time away (away_after)
     "working_days": [0, 1, 2, 3, 4],  # Monday 0 ... Sunday 6: Earlier days, the week line and the reminder
+    "advanced": {},  # Settings > Time and activity > Advanced: only the choices that differ from ADVANCED's defaults
 }
 
 ROUNDING = (5, 10, 15)
 AWAY_AFTER = (10, 15, 20, 30)
+
+# Settings > Time and activity > Advanced: a closed set, each with its choices; the first value is the default
+ADVANCED = {
+    "join_gap": (30, 15, 60),        # minutes: pieces of one task this close, in one sitting, are one entry (dayplan)
+    "outside_min": (10, 5, 20),      # minutes outside Claude from this long are an entry of their own (dayplan)
+    "memory": (7, 3, 14),            # days: logging counts half as much this many days later (learn, dayplan)
+    "meeting_cards": ("usual", "strict", "off"),  # the daily meeting cards: as now, only steadier repeats, never
+    "split_hint": (0.75, 0.6, 0.9),  # a stretch is offered as a split when its main task has less than this share
+    "no_estimate": (True, False),    # the "No estimate" flag (flags.py)
+}
+
+
+def _choice(key: str, value):
+    """The choice of ADVANCED[key] that `value` is (a select sends "30" or "0.75"), or None."""
+    for c in ADVANCED.get(key, ()):
+        if isinstance(c, bool) or isinstance(value, bool):
+            if value is c:
+                return c
+        elif isinstance(c, str):
+            if value == c:
+                return c
+        else:
+            try:
+                if float(value) == c:
+                    return c
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
+def advanced(settings: dict | None = None) -> dict:
+    """Every Advanced setting's value: its default, or the saved choice when it is one of the choices. In a read-only
+    run (calibration, never the app people use) PULSAR_TUNE, a JSON object of the same keys, sets any number, so a
+    replay can try values outside the choices."""
+    saved = (load() if settings is None else settings).get("advanced")
+    saved = saved if isinstance(saved, dict) else {}
+    out = {k: v[0] for k, v in ADVANCED.items()}
+    for k, v in saved.items():
+        c = _choice(k, v)
+        if c is not None:
+            out[k] = c
+    if read_only() and os.environ.get("PULSAR_TUNE"):
+        try:
+            tune = json.loads(os.environ["PULSAR_TUNE"])
+        except ValueError:
+            tune = {}
+        for k, v in (tune if isinstance(tune, dict) else {}).items():
+            if k not in out:
+                continue
+            if isinstance(out[k], bool) or isinstance(out[k], str):
+                c = _choice(k, v)
+                if c is not None:
+                    out[k] = c
+            elif isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0:
+                out[k] = v
+    return out
 
 
 def away_after(settings: dict | None = None) -> int:
@@ -164,6 +221,8 @@ def _fits(key: str, value) -> bool:
         return not isinstance(value, bool) and value in ROUNDING
     if key == "away_after":
         return not isinstance(value, bool) and value in AWAY_AFTER
+    if key == "advanced":
+        return isinstance(value, dict)
     if key == "working_days":
         return isinstance(value, list) and bool(value) and all(isinstance(d, int) and not isinstance(d, bool)
                                                                  and 0 <= d <= 6 for d in value)

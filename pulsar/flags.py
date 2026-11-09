@@ -8,7 +8,7 @@ Productive.
   goes over its estimate;
 * noestimate: the task has no estimate, while at least a quarter (and at least two) of the project's 100 most recently
   active tasks have one. Estimates are rare in most projects (on one person's 14 projects, 0 to 35% of recent tasks
-  had one), so a flag for every task without one would be on nearly every row.
+  had one), so a flag for every task without one would be on nearly every row. Settings > Advanced can switch it off.
 
 No flag for a budget nearly used up: budgets cannot be read without "View budgets where a user is a member"
 (budgets_view_restricted), and a service's budget fields (budget_total, budget_used, budgeted_time, worked_time) come
@@ -25,7 +25,7 @@ import time
 from datetime import datetime
 from typing import Optional
 
-from . import logbook, productive
+from . import config, logbook, productive
 
 ESTIMATE_SHARE = 0.25  # this share of the project's recent tasks have an estimate...
 ESTIMATE_MIN = 2       # ...and at least this many: then a task without one is flagged
@@ -107,7 +107,7 @@ def for_task(task: Optional[dict], services: Optional[list], date: str, settings
     over = over_estimate(task, minutes)
     if over:
         out.append(over)
-    if not task.get("estimate"):
+    if not task.get("estimate") and config.advanced(settings or {})["no_estimate"]:  # Advanced can switch it off
         share = project_share(task.get("projectId"), settings, names)
         if share and share["n"]:
             others = [i for i in share["with"] if str(i) != str(task.get("taskId"))]

@@ -132,7 +132,7 @@ def main_task(rows: list, a: float, b: float):
     return best if cover[best] >= min(600, (b - a) / 3) else None
 
 
-def votes(days: dict, entries: list, t0_of, date: str) -> tuple:
+def votes(days: dict, entries: list, t0_of, date: str, half_life: float = HALF_LIFE) -> tuple:
     """({session key: {task: [weight, minutes]}}, {repository: {task: [weight, minutes]}}, {(session key, repository):
     {task: [weight, minutes]}}) from past days' rows and your entries, for the rows of `date`, each logged stretch
     credited as attribution.credits says. The minutes are the real ones; the weight is the minutes halved every
@@ -159,7 +159,7 @@ def votes(days: dict, entries: list, t0_of, date: str) -> tuple:
         return main_task(by_day.get(d, []), t0 + s * 60, t0 + e * 60)
 
     for d, keys, at, task, m in attribution.credits(days, task_of, project.get):
-        fade = 0.5 ** (max((day0 - datetime.strptime(d, "%Y-%m-%d")).days, 0) / HALF_LIFE)
+        fade = 0.5 ** (max((day0 - datetime.strptime(d, "%Y-%m-%d")).days, 0) / half_life)
         for k in keys:
             add(sess, k, task, m * fade, m)
             add(sr, (k, at), task, m * fade, m)
@@ -281,7 +281,8 @@ def note_index(entries: list, skip: frozenset = frozenset()) -> dict:
     return {"idf": idf, "vec": vec, "last": last}
 
 
-def text_match(index: dict, text: str, date: str, skip: frozenset = frozenset()) -> dict:
+def text_match(index: dict, text: str, date: str, skip: frozenset = frozenset(),
+               half_life: float = HALF_LIFE) -> dict:
     """{task: (score, [up to three shared words])}: how much the work's words and each task's words agree (cosine),
     halved every HALF_LIFE days since the task was last logged before or on `date`."""
     found = words(text, skip)
@@ -304,7 +305,7 @@ def text_match(index: dict, text: str, date: str, skip: frozenset = frozenset())
             age = max((day0 - datetime.strptime(index["last"][t], "%Y-%m-%d")).days, 0)
         except (KeyError, ValueError):
             age = LEARN_DAYS
-        score = sum(parts.values()) / size * 0.5 ** (age / HALF_LIFE)
+        score = sum(parts.values()) / size * 0.5 ** (age / half_life)
         out[t] = (score, [shown[w] for w, _ in sorted(parts.items(), key=lambda kv: -kv[1])[:3]])
     return out
 
@@ -518,7 +519,8 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
         not_example = daymarks.no_learn()  # marked not an example (daymarks.py); server.history_rows leaves them out too
         entries = [r for r in entries_before + entries_today
                    if r.get("taskId") and str(r.get("id") or "") not in not_example]
-        sess, repo, sr = votes(days, entries, t0_of, date)
+        half_life = config.advanced(settings)["memory"]  # Settings > Time and activity > Advanced
+        sess, repo, sr = votes(days, entries, t0_of, date, half_life)
         names = {r["taskId"]: r for r in sorted(entries, key=lambda r: r.get("date") or "")}
         skip = frozenset(w for _, w in words(settings.get("person_name") or ""))
         index = note_index(entries, skip)
@@ -560,7 +562,7 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
             try:
                 steps = work_steps(e, t0)
                 said = work_text(e, t0, steps=steps)
-                text = text_match(index, said, date, skip)
+                text = text_match(index, said, date, skip, half_life)
                 if fresh and fresh["vec"]:
                     found = new_tasks(fresh, work_text(e, t0, steps=steps, replies=NEW_REPLIES), skip)
                 at = attribution.repo_key(row.get("p"))
