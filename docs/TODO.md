@@ -10,8 +10,9 @@ Agreed next steps, newest first. Done items go to `CHANGELOG.md`.
   file; anyone still on 1.5.0 or older runs the install line once. Then sign with one touch, not two.
 - **The warp, smoother.** It is not smooth now, and on an update it bends oddly: the new build already shows behind
   it before the warp ends. To test together; maybe a nicer loading animation instead.
-- **Moved time, told apart by itself.** "Not an example" is a mark by hand. To think through: whether Pulsar
-  can tell such an entry itself (its task does not match the sessions under it) and leave it out of learning without
-  a mark.
+- **Moved time, told apart by itself.** "Not an example" is a mark by hand. Tried 2026-11-09: an entry over a
+  repository's work, to a project under 5% of that repository's logged time and logged from another repository, taught
+  nothing (`attribution.credits`). Replayed on 19 days it was slightly worse (top 3 48.7 to 47.7%, right minute 48.8 to
+  48.2%), so it is not in. Another sign is needed, or the mark stays the way.
 - **Security, to decide:** the window's sign-in through a pipe instead of a file, and writes made with the key
   confirmed in the window.
