@@ -404,7 +404,9 @@ function render() {
   else {
     likelyCache = likelyBlocks(likely.entries, Z, end);
     setText($('#h-likely'), `Claude sessions · ${dur(likely.proposed || 0)}`);
-    $('#ask-claude').hidden = true;  // Claude's one way in is Log the day's "Check my day with Claude" (ldreview.js)
+    // with the Claude Code switch on: a task from Claude for each block, as "Check my day with Claude" asks first; the
+    // same blocks asked about again (also after a restart) give the kept answer, and Claude is not run
+    $('#ask-claude').hidden = !CONFIG?.likely?.askClaude;
     const rails = backgroundRails(likely.background, end).map(x => `<div class="bgrail" style="top:${x.s * ppm}px;height:${(x.e - x.s) * ppm}px"
         role="img" aria-label="${esc(`In the background ${hm(x.s)}–${hm(x.e)}: ${x.what}`)}" title="${esc(`In the background ${hm(x.s)}–${hm(x.e)}: ${x.what}`)}"></div>`).join('');
     setHTML(laneLikely, likelyCache.length ? rails + likelyCache.map((b, i) => {

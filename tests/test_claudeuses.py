@@ -111,6 +111,9 @@ class CallSiteTest(unittest.TestCase):
     """Each call runs the model it is given, with that model's cap, and keeps its isolation."""
 
     def setUp(self):
+        from pulsar import askclaude
+        askclaude._cache.clear()  # each test asks afresh: no answer kept by another (askclaude.kept)
+        __import__("shutil").rmtree(askclaude.PICKS_DIR, ignore_errors=True)
         self.runs = []
         patches = [mock.patch.object(productive, "_claude_binary", lambda: "/bin/claude-fake"),
                    mock.patch.object(askclaude, "steps", lambda *a, **k: [{"typed": "fix", "reply": "Menu fixed."}]),

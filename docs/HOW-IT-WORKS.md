@@ -871,10 +871,12 @@ log dialog's **Log this time** on a meeting fills the note in from the same `not
 date (`bookable_services`). With Productive unreadable, nothing is proposed. About 6 seconds for a day the first time,
 under a second after.
 
-**Ask Claude** (only when it is on in Settings, and only from **Check my day with Claude**, Claude's one button in
-Log the day: it asks for picks when the day has none yet and rows are unsure, then runs the review, 5.4c; its tooltip
-names each model and the most a run may cost, `sgCheck` in `ldreview.js`; nothing runs on opening, and the Likely
-column has no Ask Claude button of its own any more): the review shows the plan at once, then sends the day to Claude
+**Ask Claude** (only when it is on in Settings: from **Check my day with Claude** in Log the day, which asks for
+picks when the day has none yet and rows are unsure, then runs the review, 5.4c; its tooltip names each model and the
+most a run may cost, `sgCheck` in `ldreview.js`; and from **Ask Claude** in the Likely column's header again since
+1.6.8, picks only, shown on the blocks and first in the log dialog; nothing runs on opening; the same blocks asked
+about again, also after a restart, give the kept answer and Claude is not run, `askclaude.kept` with the blocks it was
+asked about): the review shows the plan at once, then sends the day to Claude
 (every row of ten minutes or more) and fills in the answer as it arrives. Claude's pick replaces only rows the planner
 is not sure of (medium, low), with the planner's guess kept as the first alternative; a row Claude found no task for
 keeps the planner's guess and says so. Claude's pick starts ticked only when it is one of the tasks you logged to in

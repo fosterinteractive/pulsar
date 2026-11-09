@@ -6,6 +6,9 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- Ask Claude is back in the Likely column's header (with the Claude Code switch on): Claude's task for each block, on the blocks and first in the log dialog. Asking again about the same blocks, also after a restart, reuses the kept answer and costs nothing; Check my day does the same.
+
 ## 1.6.7 (2026-11-09)
 - Today's activity refreshes every minute, also while Pulsar's window is hidden, so the Dock badge and the menu bar line keep up with it (a local read of the tracker, about 0.02 s).
 

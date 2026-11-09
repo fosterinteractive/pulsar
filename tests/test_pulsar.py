@@ -986,6 +986,35 @@ class LearnWordsTest(unittest.TestCase):
 class AskClaudeTest(unittest.TestCase):
     """The Ask Claude button: what Claude Code is run with, and how its answer becomes picks."""
 
+    def setUp(self):
+        from pulsar import askclaude
+        askclaude._cache.clear()  # each test asks afresh: no answer kept by another (askclaude.kept)
+        __import__("shutil").rmtree(askclaude.PICKS_DIR, ignore_errors=True)
+
+    def test_the_same_blocks_are_never_asked_again_also_after_a_restart(self):
+        """The Likely column's Ask Claude and Check my day: the same blocks give the kept answer at no cost; blocks
+        that changed ask again."""
+        import json as _json
+        from pulsar import askclaude
+        calls = []
+
+        def fake_run(cmd, **kw):
+            calls.append(1)
+            answer = 'Here. {"picks": [{"id": 0, "tasks": ["7"], "why": "estimate work"}]}'
+            return mock.Mock(stdout=_json.dumps({"result": answer, "total_cost_usd": 0.12}), stderr="", returncode=0)
+
+        rows = [{"s": 600, "e": 660, "project": "acme-site", "titles": [], "minutes": 60}]
+        entries = [{"taskId": "7", "task": "Estimations", "project": "Proposals", "minutes": 30, "date": "2026-09-28"}]
+        with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/bin/claude"), \
+                mock.patch.object(askclaude.productive, "task_details", lambda ids, s, *a: {}), \
+                mock.patch.object(askclaude.config, "load", lambda: {}):
+            first = askclaude.ask("2026-10-01", rows, 0, entries, run=fake_run)
+            askclaude._cache.clear()  # a restart
+            again = askclaude.ask("2026-10-01", rows, 0, entries, run=fake_run)
+            askclaude.ask("2026-10-01", [{**rows[0], "e": 670}], 0, entries, run=fake_run)  # the block grew
+        self.assertEqual(len(calls), 2)
+        self.assertEqual((again["picks"], again["cost"], again.get("kept")), (first["picks"], 0, True))
+
     def test_claude_runs_read_only_and_its_picks_are_named(self):
         import json as _json
         from pulsar import askclaude
@@ -1190,6 +1219,11 @@ class ClaudeNoteTest(unittest.TestCase):
              "learned": [{"taskId": "7", "title": "Events"}]}]
     ENTRIES = [{"taskId": "7", "task": "Events", "project": "Acme", "minutes": 30, "date": "2026-11-02"}]
 
+    def setUp(self):
+        from pulsar import askclaude
+        askclaude._cache.clear()  # each test asks afresh: no answer kept by another (askclaude.kept)
+        __import__("shutil").rmtree(askclaude.PICKS_DIR, ignore_errors=True)
+
     def run_ask(self, out, rows=None, history=(), seen=None, details=None):
         import json as _json
         from pulsar import askclaude
@@ -1199,6 +1233,7 @@ class ClaudeNoteTest(unittest.TestCase):
                 seen["cmd"], seen["input"] = cmd, kw["input"]
             return mock.Mock(stdout=_json.dumps(out), stderr="", returncode=0)
         askclaude._cache.clear()
+        __import__("shutil").rmtree(askclaude.PICKS_DIR, ignore_errors=True)
         with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/bin/claude"), \
                 mock.patch.object(askclaude.productive, "task_details", lambda ids, s: details or {}), \
                 mock.patch.object(askclaude.config, "load", lambda: {}):
@@ -1281,6 +1316,7 @@ class ClaudeNoteTest(unittest.TestCase):
         for draft, why in cases.items():
             out = {"structured_output": {"picks": [{"id": 0, "tasks": ["7"], "why": "events", "note": draft}]}}
             askclaude._cache.clear()
+            __import__("shutil").rmtree(askclaude.PICKS_DIR, ignore_errors=True)
             with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/bin/claude"), \
                     mock.patch.object(askclaude.config, "load", lambda: {"person_name": "Nick Example"}):
                 got = askclaude.ask("2026-11-04", self.ROWS, 0, entries, history=[],

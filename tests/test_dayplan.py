@@ -984,6 +984,11 @@ class SplitTest(unittest.TestCase):
 
 
 class AskAgainTest(unittest.TestCase):
+    def setUp(self):
+        from pulsar import askclaude
+        askclaude._cache.clear()  # each test asks afresh: no answer kept by another (askclaude.kept)
+        __import__("shutil").rmtree(askclaude.PICKS_DIR, ignore_errors=True)
+
     def test_an_empty_answer_is_asked_once_more_and_no_more(self):
         from pulsar import askclaude
         answers = [{"picks": []}, {"picks": [{"id": 0, "tasks": ["7"], "why": "w"}]}]

@@ -449,6 +449,9 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
     with _lock:
         if sig in _cache:
             return _cache[sig]
+    was = kept(date, sig)  # the same blocks asked about before, also before a restart: that answer, at no cost
+    if was:
+        return {**was, "cost": 0, "notesBlocked": []}
     mine = recent_tasks(entries_30)
     prompt = PROMPT.format(date=date, note_max=NOTE_MAX, blocks=json.dumps(blocks, ensure_ascii=False, indent=1),
                            tasks="\n".join(json.dumps(t, ensure_ascii=False) for t in mine))
@@ -553,7 +556,7 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
         _cache[sig] = answer
         for old in list(_cache)[:-30]:
             del _cache[old]
-    keep(date, answer)
+    keep(date, answer, sig)
     return answer
 
 
@@ -699,22 +702,33 @@ PICKS_DIR = os.path.join(config.CACHE_DIR, "claude-picks")
 KEEP_DAYS = 60
 
 
-def keep(date: str, answer: dict) -> None:
+def _sig_text(sig) -> str:
+    """What the answer was asked about (ask's sig: the day, the model, each block's time, repository and commits), as
+    text kept with it."""
+    return json.dumps(sig, ensure_ascii=False, default=str)
+
+
+def keep(date: str, answer: dict, sig=None) -> None:
     if not answer.get("picks"):
         return
     try:
         os.makedirs(PICKS_DIR, mode=0o700, exist_ok=True)
         config.write_atomic(os.path.join(PICKS_DIR, f"{date}.json"), json.dumps(
-            {"format": 1, "date": date, "picks": answer["picks"], "when": time.time()}, ensure_ascii=False))
+            {"format": 1, "date": date, "picks": answer["picks"], "when": time.time(),
+             **({"asked": _sig_text(sig)} if sig else {})}, ensure_ascii=False))
         _prune()
     except OSError:
         pass
 
 
-def kept(date: str):
+def kept(date: str, sig=None):
+    """The day's kept answer; with sig, only when it was asked about exactly those blocks (Ask Claude's button and
+    Check my day ask again only when the day's blocks changed, also after a restart)."""
     try:
         with open(os.path.join(PICKS_DIR, f"{date}.json"), encoding="utf-8") as fh:
             doc = json.load(fh)
+        if sig is not None and doc.get("asked") != _sig_text(sig):
+            return None
         return {"picks": doc["picks"], "kept": True} if doc.get("format") == 1 and isinstance(doc.get("picks"), dict) \
             else None
     except (OSError, ValueError, KeyError, TypeError):
