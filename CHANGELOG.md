@@ -6,7 +6,7 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
-## Unreleased
+## 1.6.7 (2026-11-09)
 - Today's activity refreshes every minute, also while Pulsar's window is hidden, so the Dock badge and the menu bar line keep up with it (a local read of the tracker, about 0.02 s).
 
 ## 1.6.6 (2026-11-09)
