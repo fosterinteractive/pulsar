@@ -325,7 +325,9 @@ def work_text(entry: dict, t0: float, projects_dir: str | None = None, steps: li
     said = [x.get("typed") or "" for x in steps] + ([x.get("reply") or "" for x in steps] if replies else [])
     # the git branch names the work too: "campaign-guides-cta", "feature/content-our-office-is-open"
     branch = [re.sub(r"[/_-]+", " ", b) for b in entry.get("branches") or []]
-    return " ".join(list(entry.get("titles") or []) + said + list(entry.get("commits") or []) + branch)
+    # and the titles of the repository's pull requests and issues open during the work (sessions.github_of)
+    return " ".join(list(entry.get("titles") or []) + said + list(entry.get("commits") or []) + branch
+                    + list(entry.get("github") or []))
 
 
 # ---- tasks you never logged to --------------------------------------------------------------------------------------

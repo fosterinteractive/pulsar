@@ -741,6 +741,19 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
                 out.append([task, m.group(2).strip()])
         return out[:3]
 
+    def github_of(x0: int, x1: int, ids: set, project: str) -> list:
+        """Titles of the pull requests and issues of this repository (or its "-kb-dev" tracker) in front in the row's
+        own minutes: words of the work."""
+        out = []
+        for x in range(max(0, x0), min(n, x1)):
+            if not owner[x] or owner[x][0] not in ids or owner[x][1] != project or not focus[x]:
+                continue
+            m = GITHUB_TAB.match(str(focus[x].get("title") or "").strip())
+            repo = m.group(2).lower().removesuffix("-kb-dev") if m else ""
+            if m and repo == (project or "").lower() and m.group(1).strip() not in out:
+                out.append(m.group(1).strip())
+        return out[:3]
+
     def row_of(e: dict, kind: str) -> dict:
         a, b = t0 + e["s"] * 60, t0 + e["e"] * 60
         typed = sorted((t, text) for i in e["_sessions"] for t, text in sessions[i]["prompts"]
@@ -754,7 +767,8 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
                                                  + [tid for i in e["_sessions"] for tid in TASK_NUMBER.findall(sessions[i]["title"] or "")]))[:4],
                 "seenTasks": seen(e["_sessions"], e["project"], a, b),
                 "branches": branches_of(e["_sessions"], e["project"], a, b),
-                "taskPages": pages_of(int(e["s"]), int(e["e"]), e["_sessions"], e["project"])}
+                "taskPages": pages_of(int(e["s"]), int(e["e"]), e["_sessions"], e["project"]),
+                "github": github_of(int(e["s"]), int(e["e"]), e["_sessions"], e["project"])}
 
     entries: list = []
     for x in range(n):
@@ -817,6 +831,8 @@ TASK_LINK = re.compile(r"app\.productive\.io/[^\s/]+/(?:projects/\d+/)?tasks/(?:
 # such a session's own task was not found, and another client's task logged once in it came first)
 # a git branch that names no work: the trunk, an environment, a person's own branch
 PLAIN_BRANCH = re.compile(r"^(main|master|qa|dev|develop|development|stag(e|ing)|live|prod(uction)?|head|.+-dev)$", re.I)
+# a GitHub pull request or issue, as the browser titles it: "<title> by <author> · Pull Request #12 · owner/repo"
+GITHUB_TAB = re.compile(r"^(.+?)(?: by [\w\[\].-]+)? · (?:Pull Request|Issue) #\d+ · [\w.-]+/([\w.-]+)")
 # a task's page in Productive, as the browser titles it: "<task> - Tasks - <project> - Productive"
 PRODUCTIVE_TAB = re.compile(r"^(.+?) - Tasks - (.+?) - Productive\b")
 TASK_NUMBER = re.compile(r"\bproductive\s+task\s*#?\s*(\d{5,10})\b", re.I)

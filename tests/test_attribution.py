@@ -324,6 +324,19 @@ class BackgroundTest(Fixture):
         self.assertEqual(row["branches"], ["fix-checkout-button"])
         self.assertEqual(row["taskPages"], [["Checkout bugs", "Acme Support"]])  # the page's "#12" goes
 
+    def test_the_repositorys_pull_requests_and_issues_are_words_of_the_work(self):
+        self.write("cccc0011", [typed(100, "review it", self.acme), call(101, "Edit", file_path=os.path.join(self.acme, "a.js"))],
+                   title="Review work")
+        tab = lambda s, e, t: {"s": s, "e": e, "app": "Google Chrome", "title": t, "host": "", "url": "", "cat": "work"}  # noqa: E731
+        items = [self.editor(100, 104, "Review work"),
+                 tab(104, 106, "Cookie banner: opt in first by someone[bot] · Pull Request #12 · example/acme-site"),
+                 tab(106, 107, "Footer links · Issue #3 · example/acme-site-kb-dev"),
+                 tab(107, 108, "Other things · Issue #9 · example/house-tool"),  # another repository: never
+                 self.editor(108, 120, "Review work")]
+        got = sessions.propose(T0, T0 + 86400, items, "ActivityWatch", self.projects)
+        row = next(r for r in got["entries"] if r["project"] == "acme-site")
+        self.assertEqual(row["github"], ["Cookie banner: opt in first", "Footer links"])
+
     def test_a_link_counts_only_in_the_repository_it_was_typed_for(self):
         self.write("cccc0004", [
             typed(100, "https://app.productive.io/1-x/tasks/777 fix this", self.tool),

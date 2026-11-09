@@ -1129,7 +1129,8 @@ not a verdict.
   whose names name the repository) narrow the tasks to that project's: the ones you logged to in the 60 days and the
   ones in the new-task pool, not closed. Of those, the task whose name shares most words with the work (its sessions'
   titles, what you typed, your commit subjects, and the git branch of the session's folder when it is that
-  repository's, `sessions.PLAIN_BRANCH` left out; TF-IDF over those names only, cosine 0.3 or more) goes first in the
+  repository's, `sessions.PLAIN_BRANCH` left out, and the titles of that repository's pull requests and issues in
+  front in the row's own minutes, `sessions.GITHUB_TAB`; TF-IDF over those names only, cosine 0.3 or more) goes first in the
   dialog's list, and one almost as good (90%) with it, yours (logged to or assigned) before the other. With fewer than
   three words in common it goes just after the same session's own vote instead. In Log the day it comes after the
   session's vote and before the repository's history. On the replay of 19 days (13 October to 6 November 2026) the
