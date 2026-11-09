@@ -6,7 +6,7 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
-## Unreleased
+## 1.6.8 (2026-11-09)
 - A minute in the browser, Slack or another work window goes to the session whose tab you came from, not to another session whose agent ran last in the background.
 - Short turns of a few minutes go on with the task their session's work named earlier, as longer ones do.
 - Ask Claude sees the tasks Pulsar would pick for each block, with why, and weighs them first: it no longer takes the first task with the site's name in it for other work. The tasks you never logged to are among them, as in the Likely column.
