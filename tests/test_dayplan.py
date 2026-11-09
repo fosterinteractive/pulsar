@@ -424,6 +424,17 @@ class PlannerTest(unittest.TestCase):
         p = dayplan.plan(day(items=[work(540, 600)], rows=[site(540, 560), tool(560, 575), site(575, 600)]), ctx)
         self.assertIn("B", [e["taskId"] for e in p["entries"]])
 
+    def test_a_short_piece_by_its_own_entry_is_offered_and_a_crumb_joins_the_larger_piece(self):
+        # 2026-11-09: 7 minutes of a task, then 3 of another, right before the task's own entry: the 7 joined the 3,
+        # took its task, and the evidence cap dropped them all
+        ctx = {**self.ctx, "names": {"A": {"task": "Site work", "project": "Initech"}, "C": {"task": "Other", "project": "Initech"}}}
+        site = lambda s, e, t: {**row(s, e, project="site", titles=["Site work"]), "tasks": [t]}  # noqa: E731
+        logged = [{"s": 600, "e": 610, "minutes": 10, "taskId": "A"}]
+        p = dayplan.plan(day(items=[work(588, 610)], rows=[site(588, 597, "A"), site(597, 600, "C")], logged=logged), ctx)
+        got = [(e["taskId"], e["s"], e["e"]) for e in p["entries"]]
+        self.assertEqual([t for t, _, _ in got], ["A"], got)       # A's task, not the crumb's
+        self.assertEqual(got[0][2], 600)                            # up to its own entry, cut from the start
+
     def test_a_sessions_task_does_not_carry_over_to_another_clients_repository(self):
         # replay, 3 Nov: a session that did one client's database upgrade the day before gave that task to the next
         # day's work for other clients

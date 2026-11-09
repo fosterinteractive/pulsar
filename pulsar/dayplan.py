@@ -938,22 +938,36 @@ def _merge(d: _Day, pieces: list) -> list:
         sa, sb = sitting[a], sitting[b]  # a minute with no activity, in a call, fits any sitting
         return b - a <= o["merge_gap"] and (sa is None or sb is None or sa == sb)
 
+    # a short piece right against an entry already logged for the same task stays: it is that entry's minutes before
+    # or after it (2026-11-09: 7 minutes of a task just before its own entry were never offered)
+    logged_ends = {(int(round(r["s"])), str(r.get("taskId") or "")) for r in d.logged if r.get("s") is not None} | \
+        {(int(round(max(r["s"] + r["minutes"], r.get("e") or 0))), str(r.get("taskId") or ""))
+         for r in d.logged if r.get("s") is not None}
+
+    def by_its_entry(p) -> bool:
+        t = str(p.get("task") or "")
+        return bool(t) and any((x, t) in logged_ends for x in range(p["s"] - 1, p["s"] + 1)) \
+            or bool(t) and any((x, t) in logged_ends for x in range(p["last"] + 1, p["last"] + 3))
+
     if o["min_entry"]:
         changed = True
         while changed:
             changed = False
             for k, p in enumerate(merged):
-                stays = p.get("attended") and p["minutes"] >= 5
+                stays = (p.get("attended") and p["minutes"] >= 5) or by_its_entry(p)
                 if p["minutes"] < o["min_entry"] and p["kind"] != "skip" and not stays:
                     nb = [q for q, first in ((merged[k - 1] if k else None, True),
                                              (merged[k + 1] if k + 1 < len(merged) else None, False))
                           if joins(p, q, first)]
                     if nb:
                         q = max(nb, key=lambda q: q["minutes"])
+                        if q["minutes"] < p["minutes"] and not q.get("attended") and q["kind"] == p["kind"] \
+                                and not by_its_entry(q):
+                            p, q = q, p  # the smaller joins the larger: its task stays, the crumb's goes with it
                         q["minutes"] += p["minutes"]
                         q["s"], q["last"] = min(q["s"], p["s"]), max(q["last"], p["last"])
                         q["parts"] += p["parts"]
-                        merged.pop(k)
+                        merged.remove(p)
                         changed = True
                         break
     d.skipped += [{"s": m["s"], "e": m["last"] + 1, "minutes": m["minutes"], "project": m.get("project") or "",
@@ -1040,14 +1054,28 @@ def _caps(d: _Day, out: list, unplaced: list, evidence: dict) -> tuple:
     allowed = max(0, cap - logged_total)
     over = sum(e["minutes"] for e in out) - allowed
 
+    def by_its_entry(e) -> bool:
+        """Right against an entry already logged for the same task: its minutes before or after it, offered however
+        short (_merge keeps such a piece too)."""
+        t = str(e.get("taskId") or "")
+        return bool(t) and any(str(r.get("taskId") or "") == t and r.get("s") is not None
+                               and (abs(e["e"] - r["s"]) <= g or abs(max(r["s"] + r["minutes"], r.get("e") or 0) - e["s"]) <= g)
+                               for r in d.logged)
+
     def cut_from(e, want: int, why: str) -> int:
         cut = min(e["minutes"], int(math.ceil(want / g) * g))
         if cut < e["minutes"] and (e["e"] - cut) % g:  # an end against an entry already logged: back on the grid
             cut = min(e["minutes"], e["e"] - int((e["e"] - cut) // g * g))
-        if e["minutes"] - cut < o["min_entry"] and not (e["kind"] == "meeting" and e["minutes"] - cut >= 5):
+        if e["minutes"] - cut < o["min_entry"] and not (e["kind"] == "meeting" and e["minutes"] - cut >= 5) \
+                and not (by_its_entry(e) and e["minutes"] - cut >= g):
             cut = e["minutes"]  # too short to stand alone once cut: all of it listed, none placed
+        before = by_its_entry(e) and any(str(r.get("taskId") or "") == str(e["taskId"]) and r.get("s") is not None
+                                         and abs(e["e"] - r["s"]) <= g for r in d.logged)
         e["minutes"] -= cut
-        e["e"] = e["s"] + e["minutes"]
+        if before:  # right before its own entry: it keeps its end there, the start moves
+            e["s"] = e["e"] - e["minutes"]
+        else:
+            e["e"] = e["s"] + e["minutes"]
         unplaced.append({"minutes": cut, "task": e["taskId"], "project": e["project"], "why": why})
         return cut
 
