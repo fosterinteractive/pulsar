@@ -264,7 +264,8 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
             # than a link you typed
             out.append((str(row["seenTasks"][0]), "seen", "medium", "this Claude session opened or linked this task"))
         elif src == "ticket":
-            found = set(TICKET.findall(" ".join(list(row.get("titles") or []) + [row.get("first_message") or ""])))
+            found = set(TICKET.findall(" ".join(list(row.get("titles") or []) + [row.get("first_message") or ""]
+                                                + list(row.get("branches") or []))))
             if found:
                 for tid in list(ctx.get("recent") or []) + list(by_id):
                     hit = found & set(TICKET.findall(name(tid)[0]))

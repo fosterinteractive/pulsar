@@ -297,7 +297,7 @@ def read_session(path: str, t0: float, t1: float, subagents: bool = False, strin
     subagents: also the calls of the subagents it started (<folder>/<id>/subagents/*.jsonl). strings_of(record): the
     strings a naming of turns counts (likely.skill_turns), kept per agent message as "strings"."""
     prompts, triggers, notified, assistant, titles, cwd, title, custom = [], [], [], [], set(), None, "", False
-    calls, events, strings, seen_tasks = [], [], [], []
+    calls, events, strings, seen_tasks, branches = [], [], [], [], []
     lo, hi = t0 - 6 * 3600, t1 + 3600
     lo_s, hi_s = _bounds(lo, hi)
     with open(path, encoding="utf-8", errors="replace") as fh:
@@ -324,6 +324,8 @@ def read_session(path: str, t0: float, t1: float, subagents: bool = False, strin
             if text is not None:
                 prompts.append((t, text.strip()))
                 triggers.append(t)
+                if isinstance(r.get("gitBranch"), str) and r["gitBranch"] and isinstance(r.get("cwd"), str):
+                    branches.append((t, r["gitBranch"], r["cwd"]))  # the branch of that folder's repository
             elif notification(r):
                 triggers.append(t)
                 notified.append(t)
@@ -357,7 +359,7 @@ def read_session(path: str, t0: float, t1: float, subagents: bool = False, strin
     events.sort()
     return {"id": os.path.basename(path)[:8], "cwd": cwd, "title": title, "titles": {x for x in titles if len(x) >= 5},
             "prompts": dedup, "triggers": triggers, "notified": sorted(notified), "assistant": assistant,
-            "calls": calls, "events": events, "seen_tasks": sorted(seen_tasks),
+            "calls": calls, "events": events, "seen_tasks": sorted(seen_tasks), "branches": sorted(branches),
             **({"strings": sorted(strings, key=lambda x: x[0])} if strings_of else {})}
 
 
@@ -718,6 +720,27 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
                         if a - LINK_BEFORE <= t <= b and project_at(sessions[i], t) == project), reverse=True)
         return list(dict.fromkeys(tid for _, tid in found))[:4]
 
+    def branches_of(ids: set, project: str, a: float, b: float) -> list:
+        """The git branches the sessions were on when you typed, in a turn of this project, that name work."""
+        found = [br for i in ids for t, br, cwd in sessions[i].get("branches") or []
+                 if a - LINK_BEFORE <= t <= b and project_at(sessions[i], t) == project and not PLAIN_BRANCH.match(br)
+                 and project_of_path(cwd) == project]  # the session's folder is this repository, not another's
+        return list(dict.fromkeys(found))[:3]
+
+    def pages_of(x0: int, x1: int, ids: set, project: str) -> list:
+        """The Productive task pages in front in the row's own minutes: [task, project]. The page's own "#123 " number
+        goes (Productive puts it before the task's name)."""
+        out = []
+        for x in range(max(0, x0), min(n, x1)):
+            if not owner[x] or owner[x][0] not in ids or owner[x][1] != project:
+                continue
+            f = focus[x]
+            m = PRODUCTIVE_TAB.match(str((f or {}).get("title") or "").strip()) if f else None
+            task = re.sub(r"^#\d+\s+", "", m.group(1).strip()) if m else ""
+            if m and [task, m.group(2).strip()] not in out:
+                out.append([task, m.group(2).strip()])
+        return out[:3]
+
     def row_of(e: dict, kind: str) -> dict:
         a, b = t0 + e["s"] * 60, t0 + e["e"] * 60
         typed = sorted((t, text) for i in e["_sessions"] for t, text in sessions[i]["prompts"]
@@ -729,7 +752,9 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
                 "single": all(single(i, e["project"], b) for i in e["_sessions"]),
                 "repoLinks": list(dict.fromkeys(links(e["_sessions"], e["project"], a, b)
                                                  + [tid for i in e["_sessions"] for tid in TASK_NUMBER.findall(sessions[i]["title"] or "")]))[:4],
-                "seenTasks": seen(e["_sessions"], e["project"], a, b)}
+                "seenTasks": seen(e["_sessions"], e["project"], a, b),
+                "branches": branches_of(e["_sessions"], e["project"], a, b),
+                "taskPages": pages_of(int(e["s"]), int(e["e"]), e["_sessions"], e["project"])}
 
     entries: list = []
     for x in range(n):
@@ -790,6 +815,10 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
 TASK_LINK = re.compile(r"app\.productive\.io/[^\s/]+/(?:projects/\d+/)?tasks/(?:task/)?(\d+)")
 # a task named by its number, as tools that start a session for a task title it: "Productive task 21429921" (2026-11-09:
 # such a session's own task was not found, and another client's task logged once in it came first)
+# a git branch that names no work: the trunk, an environment, a person's own branch
+PLAIN_BRANCH = re.compile(r"^(main|master|qa|dev|develop|development|stag(e|ing)|live|prod(uction)?|head|.+-dev)$", re.I)
+# a task's page in Productive, as the browser titles it: "<task> - Tasks - <project> - Productive"
+PRODUCTIVE_TAB = re.compile(r"^(.+?) - Tasks - (.+?) - Productive\b")
 TASK_NUMBER = re.compile(r"\bproductive\s+task\s*#?\s*(\d{5,10})\b", re.I)
 
 

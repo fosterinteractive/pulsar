@@ -323,7 +323,9 @@ def work_text(entry: dict, t0: float, projects_dir: str | None = None, steps: li
     with `replies` Claude's last words of each step too, and your commit subjects (commits.py)."""
     steps = work_steps(entry, t0, projects_dir) if steps is None else steps
     said = [x.get("typed") or "" for x in steps] + ([x.get("reply") or "" for x in steps] if replies else [])
-    return " ".join(list(entry.get("titles") or []) + said + list(entry.get("commits") or []))
+    # the git branch names the work too: "campaign-guides-cta", "feature/content-our-office-is-open"
+    branch = [re.sub(r"[/_-]+", " ", b) for b in entry.get("branches") or []]
+    return " ".join(list(entry.get("titles") or []) + said + list(entry.get("commits") or []) + branch)
 
 
 # ---- tasks you never logged to --------------------------------------------------------------------------------------
@@ -534,6 +536,18 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
         front = [e for e in proposal.get("entries") or [] if e.get("e", 0) - e.get("s", 0) >= 5]
         back = [e for e in proposal.get("background") or [] if e.get("e", 0) - e.get("s", 0) >= 5]
         stored = days[date]
+        # a Productive task page in front during the work ("<task> - Tasks - <project> - Productive"): that task, as
+        # one the session opened (sessions.pages_of), when its name and project are a task's you know of
+        by_page = {(str(t.get("title") or "").strip().lower(), str(t.get("project") or "").strip().lower()): t["taskId"]
+                   for t in work_tasks}
+        for e in (proposal.get("entries") or []) + (proposal.get("background") or []):
+            # only a page of the repository's own project: one opened on the way to other work names that work
+            ok = work_projects(attribution.repo_key(e.get("project")), repo, project_of, work_tasks)
+            ids = [by_page[(a.lower(), b.lower())] for a, b in e.get("taskPages") or []
+                   if (a.lower(), b.lower()) in by_page and b in ok]
+            if ids:
+                e["seenTasks"] = list(dict.fromkeys(ids + list(e.get("seenTasks") or [])))[:4]
+                e["tasks"] = list(dict.fromkeys(list(e.get("repoLinks") or []) + e["seenTasks"]))[:4]
         named: dict = {}  # (session keys, repository) -> the work's task named earlier today (work_match)
         named_at: dict = {}  # the same, with the start of each row that named it
         pairs = list(zip(front, stored)) + list(zip(back, stored[len(front):]))

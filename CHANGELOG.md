@@ -7,6 +7,8 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## 1.6.11 (2026-11-09)
+- The git branch of the work's repository counts as words of the work ("campaign-guides-cta"), and a ticket key in it as a ticket.
+- A Productive task page open during the work ("… - Tasks - <project> - Productive") is that work's task, when it is of the repository's own project.
 - A task the session's Claude opened in Productive, or gave the link of, is that work's task (after a link you typed, before where you usually log): found on this Mac, no one asks Claude.
 - A session titled with its task's number ("Productive task 21429921"), or a message naming one, picks that task, as a pasted task link does.
 

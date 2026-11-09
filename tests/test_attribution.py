@@ -310,6 +310,20 @@ class BackgroundTest(Fixture):
         self.assertEqual(sessions.tasks_seen({"message": {"content": [
             {"type": "tool_use", "name": "mcp__productive__load_resource", "input": {"resource_type": "services", "id": "1"}}]}}), [])
 
+    def test_the_branch_of_the_rows_own_repository_and_its_productive_task_pages(self):
+        typed_on = lambda m, text, cwd, branch: {**typed(m, text, cwd), "gitBranch": branch}  # noqa: E731
+        self.write("cccc0010", [typed_on(100, "fix the checkout", self.acme, "fix-checkout-button"),
+                                call(101, "Edit", file_path=os.path.join(self.acme, "a.js")),
+                                typed_on(110, "and the tool", self.tool, "main"),  # another folder, and a trunk: never
+                                call(111, "Edit", file_path=os.path.join(self.acme, "b.js"))], title="Checkout work")
+        page = {"s": 104, "e": 106, "app": "Google Chrome", "title": "#12 Checkout bugs - Tasks - Acme Support - Productive",
+                "host": "", "url": "", "cat": "work"}
+        items = [self.editor(100, 104, "Checkout work"), page, self.editor(106, 120, "Checkout work")]
+        got = sessions.propose(T0, T0 + 86400, items, "ActivityWatch", self.projects)
+        row = next(r for r in got["entries"] if r["project"] == "acme-site")
+        self.assertEqual(row["branches"], ["fix-checkout-button"])
+        self.assertEqual(row["taskPages"], [["Checkout bugs", "Acme Support"]])  # the page's "#12" goes
+
     def test_a_link_counts_only_in_the_repository_it_was_typed_for(self):
         self.write("cccc0004", [
             typed(100, "https://app.productive.io/1-x/tasks/777 fix this", self.tool),

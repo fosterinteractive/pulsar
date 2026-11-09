@@ -853,7 +853,8 @@ ticket flags (5.3). "Not covered" lists only stretches of a step or more (`uncov
 row's task comes from, in this order: a rule, a task link pasted in the session (in a turn of that repository), or
 its number in the session's title or a message ("Productive task 21429921", `sessions.TASK_NUMBER`), a task the
 session's Claude opened in Productive or gave the link of (`sessions.tasks_seen`, medium: on 19 past days the right
-task at the right minute 48.7% instead of 48.5%), a
+task at the right minute 48.7% instead of 48.5%; also a Productive task page in front in the row's own minutes, "<task>
+- Tasks - <project> - Productive", when the task is of the repository's own project, `sessions.PRODUCTIVE_TAB`), a
 ticket key in the title, the tasks logged in the same session in the same repository, the task of the repository's
 project that the work names (`learn.work_match`, below; unticked, and never replaced by a new task), then the same
 repository
@@ -1127,7 +1128,8 @@ not a verdict.
   repository (a quarter of its votes or more, once it has an hour of them; with less history, the projects of tasks
   whose names name the repository) narrow the tasks to that project's: the ones you logged to in the 60 days and the
   ones in the new-task pool, not closed. Of those, the task whose name shares most words with the work (its sessions'
-  titles, what you typed, your commit subjects; TF-IDF over those names only, cosine 0.3 or more) goes first in the
+  titles, what you typed, your commit subjects, and the git branch of the session's folder when it is that
+  repository's, `sessions.PLAIN_BRANCH` left out; TF-IDF over those names only, cosine 0.3 or more) goes first in the
   dialog's list, and one almost as good (90%) with it, yours (logged to or assigned) before the other. With fewer than
   three words in common it goes just after the same session's own vote instead. In Log the day it comes after the
   session's vote and before the repository's history. On the replay of 19 days (13 October to 6 November 2026) the
