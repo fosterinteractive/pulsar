@@ -296,6 +296,20 @@ class BackgroundTest(Fixture):
         self.assertEqual(row["repoLinks"], ["777777"])
         self.assertEqual(sessions.TASK_NUMBER.findall("see productive task #123456, and task 99"), ["123456"])
 
+    def test_a_task_the_sessions_claude_opened_or_linked_is_seen_in_its_repository_only(self):
+        # Claude in the session loaded a task from Productive, or answered with its link: no one asked Claude about it
+        link = {"type": "assistant", "timestamp": at(105), "message": {"content": [
+            {"type": "text", "text": "Here it is: https://app.productive.io/1-x/tasks/555555"}]}}
+        load = {"type": "assistant", "timestamp": at(103), "message": {"content": [
+            {"type": "tool_use", "name": "mcp__productive__load_resource", "input": {"resource_type": "tasks", "id": "444444"}}]}}
+        self.write("cccc0009", [typed(100, "give me the task's link", self.acme), call(101, "Edit", file_path=os.path.join(self.acme, "a.js")),
+                                load, link], title="Client fixes")
+        got = sessions.propose(T0, T0 + 86400, [self.editor(100, 120, "Client fixes")], "ActivityWatch", self.projects)
+        row = next(r for r in got["entries"] if r["project"] == "acme-site")
+        self.assertEqual((row["repoLinks"], row["seenTasks"]), ([], ["555555", "444444"]))  # the latest first
+        self.assertEqual(sessions.tasks_seen({"message": {"content": [
+            {"type": "tool_use", "name": "mcp__productive__load_resource", "input": {"resource_type": "services", "id": "1"}}]}}), [])
+
     def test_a_link_counts_only_in_the_repository_it_was_typed_for(self):
         self.write("cccc0004", [
             typed(100, "https://app.productive.io/1-x/tasks/777 fix this", self.tool),

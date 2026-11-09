@@ -165,6 +165,23 @@ def _real(path: str) -> bool:
     return got
 
 
+def tasks_seen(r: dict) -> list:
+    """The Productive tasks an agent message opened or linked: a task loaded by its id (Productive's MCP), or a task
+    link in Claude's own words. The session's own work names them; no one asked Claude about it."""
+    out: list = []
+    content = _obj(r.get("message")).get("content")
+    for item in content if isinstance(content, list) else []:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "text":
+            out += TASK_LINK.findall(str(item.get("text") or "")[:20000])
+        elif item.get("type") == "tool_use" and str(item.get("name") or "").startswith("mcp__productive__"):
+            inp = _obj(item.get("input"))
+            if inp.get("resource_type") == "tasks" and str(inp.get("id") or "").isdigit():
+                out.append(str(inp["id"]))
+    return out
+
+
 def tool_calls(r: dict) -> list:
     """[(path, weight)]: the paths an agent's tool calls named, weighted by what each call did with them (EDITS,
     Bash, READS above). Other tools count nothing (what a subagent did is in its own file), except a Productive call on
@@ -280,7 +297,7 @@ def read_session(path: str, t0: float, t1: float, subagents: bool = False, strin
     subagents: also the calls of the subagents it started (<folder>/<id>/subagents/*.jsonl). strings_of(record): the
     strings a naming of turns counts (likely.skill_turns), kept per agent message as "strings"."""
     prompts, triggers, notified, assistant, titles, cwd, title, custom = [], [], [], [], set(), None, "", False
-    calls, events, strings = [], [], []
+    calls, events, strings, seen_tasks = [], [], [], []
     lo, hi = t0 - 6 * 3600, t1 + 3600
     lo_s, hi_s = _bounds(lo, hi)
     with open(path, encoding="utf-8", errors="replace") as fh:
@@ -313,6 +330,7 @@ def read_session(path: str, t0: float, t1: float, subagents: bool = False, strin
             elif r.get("type") == "assistant":
                 assistant.append((t, tool_paths(r)))
                 events.append(t)
+                seen_tasks += [(t, tid) for tid in tasks_seen(r)]
                 found = tool_calls(r)
                 if found:
                     calls.append((t, found))
@@ -339,7 +357,8 @@ def read_session(path: str, t0: float, t1: float, subagents: bool = False, strin
     events.sort()
     return {"id": os.path.basename(path)[:8], "cwd": cwd, "title": title, "titles": {x for x in titles if len(x) >= 5},
             "prompts": dedup, "triggers": triggers, "notified": sorted(notified), "assistant": assistant,
-            "calls": calls, "events": events, **({"strings": sorted(strings, key=lambda x: x[0])} if strings_of else {})}
+            "calls": calls, "events": events, "seen_tasks": sorted(seen_tasks),
+            **({"strings": sorted(strings, key=lambda x: x[0])} if strings_of else {})}
 
 
 def _read_subagents(path: str, lo: float, hi: float, calls: list, events: list) -> None:
@@ -693,6 +712,12 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
                         for tid in TASK_LINK.findall(text) + TASK_NUMBER.findall(text)), reverse=True)
         return list(dict.fromkeys(tid for _, tid in found))[:4]
 
+    def seen(ids: set, project: str, a: float, b: float) -> list:
+        """Tasks the sessions' Claude opened or linked, in a turn of this project, from LINK_BEFORE before a to b."""
+        found = sorted(((t, tid) for i in ids for t, tid in sessions[i].get("seen_tasks") or []
+                        if a - LINK_BEFORE <= t <= b and project_at(sessions[i], t) == project), reverse=True)
+        return list(dict.fromkeys(tid for _, tid in found))[:4]
+
     def row_of(e: dict, kind: str) -> dict:
         a, b = t0 + e["s"] * 60, t0 + e["e"] * 60
         typed = sorted((t, text) for i in e["_sessions"] for t, text in sessions[i]["prompts"]
@@ -703,7 +728,8 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
                 "sessions": sorted(sessions[i]["id"] for i in e["_sessions"]),
                 "single": all(single(i, e["project"], b) for i in e["_sessions"]),
                 "repoLinks": list(dict.fromkeys(links(e["_sessions"], e["project"], a, b)
-                                                 + [tid for i in e["_sessions"] for tid in TASK_NUMBER.findall(sessions[i]["title"] or "")]))[:4]}
+                                                 + [tid for i in e["_sessions"] for tid in TASK_NUMBER.findall(sessions[i]["title"] or "")]))[:4],
+                "seenTasks": seen(e["_sessions"], e["project"], a, b)}
 
     entries: list = []
     for x in range(n):
@@ -846,8 +872,9 @@ def attach_tasks(rows: list, t0: float, found: list) -> None:
     one client's task in a session that also worked elsewhere names the task of that work alone."""
     for row in rows:
         if "repoLinks" in row:
-            if row["repoLinks"]:
-                row["tasks"] = list(row["repoLinks"])[:4]
+            both = list(dict.fromkeys(list(row["repoLinks"]) + list(row.get("seenTasks") or [])))[:4]
+            if both:
+                row["tasks"] = both  # the dialog's "linked in this session"; Log the day tells the two apart
             continue
         keys = {k for k in (norm_title(t) for t in row.get("titles") or []) if len(k) >= 5}
         a, b = t0 + row["s"] * 60 - LINK_BEFORE, t0 + row["e"] * 60

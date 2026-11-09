@@ -435,6 +435,18 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual([t for t, _, _ in got], ["A"], got)       # A's task, not the crumb's
         self.assertEqual(got[0][2], 600)                            # up to its own entry, cut from the start
 
+    def test_a_task_the_session_opened_comes_after_a_typed_link_and_before_the_history(self):
+        key = dayplan.title_key("Fix the importer")
+        ctx = {**self.ctx, "sess": {key: {"M": 120.0}}, "sr": {(key, "initech"): {"M": 120.0}}, "repo": {"initech": {"P": 300.0}},
+               "names": {"M": {"task": "Old", "project": "Initech"}, "P": {"task": "Support", "project": "Initech"},
+                         "S": {"task": "Seen", "project": "Initech"}, "L": {"task": "Linked", "project": "Initech"}}}
+        r = {**row(540, 600, project="initech"), "repoLinks": [], "seenTasks": ["S"], "tasks": ["S"]}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"], e["confidence"]), ("S", "seen", "medium"))
+        r = {**r, "repoLinks": ["L"], "tasks": ["L", "S"]}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("L", "link"))
+
     def test_a_sessions_task_does_not_carry_over_to_another_clients_repository(self):
         # replay, 3 Nov: a session that did one client's database upgrade the day before gave that task to the next
         # day's work for other clients

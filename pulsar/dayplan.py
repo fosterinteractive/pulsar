@@ -53,7 +53,7 @@ HALF_LIFE = 7        # days: older logging counts half as much this many days la
 LEARN_DAYS = 60
 RECENT_DAYS = 30
 RANK = {"low": 0, "medium": 1, "high": 2}
-ORDER = ("rule", "link", "ticket", "session", "work", "repo", "sameday", "words")
+ORDER = ("rule", "link", "ticket", "seen", "session", "work", "repo", "sameday", "words")
 BLOCKED = -1
 
 # time spent logging time (Pulsar, Productive): never proposed, never given to a session (sessions.LOGGING)
@@ -256,8 +256,13 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
     for src in ORDER:
         if src == "rule" and rule_hit:
             out.append((str(rule_hit["taskId"]), "rule", "high", f"your rule “{rule_hit['match']}”"))
-        elif src == "link" and row.get("tasks"):
-            out.append((str(row["tasks"][0]), "link", "high", "a task link or number in this Claude session"))
+        elif src == "link" and (row.get("repoLinks") if "repoLinks" in row else row.get("tasks")):
+            first = (row.get("repoLinks") if "repoLinks" in row else row.get("tasks"))[0]
+            out.append((str(first), "link", "high", "a task link or number in this Claude session"))
+        elif src == "seen" and row.get("seenTasks"):
+            # the session's Claude opened the task in Productive or gave its link: the work names it, less surely
+            # than a link you typed
+            out.append((str(row["seenTasks"][0]), "seen", "medium", "this Claude session opened or linked this task"))
         elif src == "ticket":
             found = set(TICKET.findall(" ".join(list(row.get("titles") or []) + [row.get("first_message") or ""])))
             if found:

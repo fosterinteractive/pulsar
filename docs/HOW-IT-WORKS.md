@@ -851,7 +851,9 @@ it). The grid and the shortest entry follow Settings' **Round entries to** (`day
 5-minute grid and the 10-minute shortest entry, 10 gives 10 and 10, 15 gives quarter hours and 15. Each row shows its
 ticket flags (5.3). "Not covered" lists only stretches of a step or more (`uncovered`, `totals.notCovered`). A
 row's task comes from, in this order: a rule, a task link pasted in the session (in a turn of that repository), or
-its number in the session's title or a message ("Productive task 21429921", `sessions.TASK_NUMBER`), a
+its number in the session's title or a message ("Productive task 21429921", `sessions.TASK_NUMBER`), a task the
+session's Claude opened in Productive or gave the link of (`sessions.tasks_seen`, medium: on 19 past days the right
+task at the right minute 48.7% instead of 48.5%), a
 ticket key in the title, the tasks logged in the same session in the same repository, the task of the repository's
 project that the work names (`learn.work_match`, below; unticked, and never replaced by a new task), then the same
 repository

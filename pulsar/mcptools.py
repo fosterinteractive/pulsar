@@ -304,7 +304,8 @@ BY_SOURCE = {
     "rule": "one of your rules", "link": "a task link in this Claude session", "ticket": "the work names its ticket",
     "session": "you logged it during this Claude session before", "repo": "you logged it in this repository before",
     "sameday": "you logged it earlier today in this session", "words": "your past notes on it match this work",
-    "new": "a new task that matches this work", "work": "what you typed in this work names it", "recent": "you logged it lately", "claude": "Ask Claude's pick",
+    "new": "a new task that matches this work", "work": "what you typed in this work names it",
+    "seen": "this Claude session opened or linked this task", "recent": "you logged it lately", "claude": "Ask Claude's pick",
     "repeat": "you log this at this time on most days", "call": "a call with no calendar entry",
     "neighbour": "work outside Claude, next to other work", "none": "no match: pick the task",
 }
