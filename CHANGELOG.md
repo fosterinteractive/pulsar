@@ -6,7 +6,7 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
-## Unreleased
+## 1.6.6 (2026-11-09)
 - A session that did the same work for one client after another (a database upgrade on four sites) no longer offers the first client's task on the next site: its tasks carry into a repository with no history only when most of them are one client's.
 - A command that names its folder as `~/Sites/…` or `$HOME/Sites/…` counts for that repository: such a stretch was named after the session's title instead, with the tasks logged under that title.
 - What you are doing comes before where you usually log: the task of the repository's project whose name the work names ("D11 db upgrade" → "D11 Upgrades - Dev work") is first in the log dialog's list, yours before a near twin assigned to someone else; in Log the day it comes right after the session's own task. On 19 past days the dialog's first task was right 33% of the time instead of 31%.
