@@ -887,7 +887,7 @@ class LearnWordsTest(unittest.TestCase):
         other clients, then one logged once in that repository. The task of the repository's project the work names
         goes first, yours before an equal one; another project's task with the same words never."""
         from pulsar import learn
-        got = learn.work_match("Prepare Future Students: D11 db upgrade", {"Stu"}, self.WORK_TASKS)
+        got = learn.work_match("Prepare Acme Students: D11 db upgrade", {"Stu"}, self.WORK_TASKS)
         self.assertEqual([x["taskId"] for x in got], ["3", "2"])
         self.assertEqual(got[0]["why"], "what you typed names it: d11, upgrade (no entry of yours yet)")
         self.assertEqual(learn.work_match("ok, go on", {"Stu"}, self.WORK_TASKS), [])        # names nothing
@@ -1498,10 +1498,10 @@ class MeetingTasksTest(unittest.TestCase):
         return datetime(2026, 11, day, h, m, tzinfo=timezone.utc).timestamp()
 
     def test_a_meetings_title_matches_by_word_stems_and_the_work_logged_around_it(self):
-        # 2026-11-09: "Future Students: D11 db upgrade" went to another client's "D11 Upgrade" ("upgrades" and
+        # 2026-11-09: "Acme Students: D11 db upgrade" went to another client's "D11 Upgrade" ("upgrades" and
         # "students" did not count as "upgrade" and "student")
         from pulsar import server
-        meeting = {"title": "Future Students: D11 db upgrade", "s": 50400, "e": 54000}
+        meeting = {"title": "Acme Students: D11 db upgrade", "s": 50400, "e": 54000}
         offered = [{"taskId": "1", "title": "Music - D11 Upgrade", "project": "Music Support"},
                    {"taskId": "2", "title": "Stu-D11 Upgrades - Dev work", "project": "Student Recruitment Support"}]
         got = server.meeting_tasks(meeting, [], [], offered)
