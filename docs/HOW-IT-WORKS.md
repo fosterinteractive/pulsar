@@ -828,7 +828,10 @@ days): most work in front had no settled class yet, or the client's agent was no
 
 Pieces of one task in one sitting (it ends after Away after with no activity) join, also across another task's pieces
 when every one of them is under 10 minutes (two works by turns, a few minutes of each: one entry each, one after the
-other, each its own minutes, within the time they took; before 1.6.8 the short turns folded into one entry that the
+other, each its own minutes, within the time they took; but a turn of internal work under 10 minutes between two turns
+of one client's work, in one sitting and within 30 minutes, is that client's, `3b'` in `_rows`, as the Likely column
+shows the stretch (on 19 past days 65 more minutes had a task, the minutes per task right for 44.2% instead of 44.0%,
+the right task at the right minute 48.0% instead of 48.8%: some of those turns had been logged on their own); before 1.6.8 the short turns folded into one entry that the
 evidence cap cut, and on 9 November 65 of 114 minutes showed as not logged; on 19 past days 145 more minutes had a
 task, the minutes per task were right for 42.6% instead of 41.3%, and the right task at the right minute 48.1%
 instead of 49.3%, as turns laid one after the other move their minutes), pieces under 10 minutes join a
@@ -1580,7 +1583,7 @@ Every file Pulsar writes is readable by its owner only. Settings and caches are 
 sequenceDiagram
   participant S as Server (installed copy)
   participant GH as GitHub releases
-  S->>GH: latest.json and latest.json.sig (every 6 hours)
+  S->>GH: latest.json and latest.json.sig (at start, every hour, on wake)
   S->>S: verify the signature against PUBLIC_KEYS, and that it has not expired
   S->>S: versions list → how many releases behind
   Note over S: the page shows the version in blue, at 2 or more behind, a reminder every 2 days

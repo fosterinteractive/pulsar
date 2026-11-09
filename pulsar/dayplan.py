@@ -755,6 +755,28 @@ def _rows(d: _Day) -> None:
             _, got = claim({**c, "kind": "shared", "shared": True, "with": lead}, minutes)
             if got:
                 d.shared_spans.append((a, b + 1))
+    # 3b'. a short turn of internal work (under an entry) between two turns of one client's work, in one sitting and
+    # within MERGE_GAP, is that client's: the stretch is the client's work, as the Likely column shows it. 2026-11-09:
+    # a few minutes at a time in the tool's own window while deploying a client's site made a separate internal entry
+    def internal(c: dict) -> bool:
+        return c["class"] == INTERNAL or bool(c.get("task")) and attribution.class_of_task(c["task"], ctx) == INTERNAL
+
+    def turn(r: dict, c: dict) -> bool:
+        return internal(c) and r["e"] - r["s"] < d.o["min_entry"]
+
+    for k, (r, c) in enumerate(front):
+        if not turn(r, c):
+            continue
+        before = next((front[j] for j in range(k - 1, -1, -1) if not turn(*front[j])), None)
+        after = next((front[j] for j in range(k + 1, len(front)) if not turn(*front[j])), None)
+        if not (before and after and before[1]["class"] == after[1]["class"] == CLIENT and before[1].get("task")
+                and repo_key(before[0].get("project")) == repo_key(after[0].get("project"))
+                and after[0]["s"] - before[0]["e"] <= d.o["merge_gap"]):
+            continue
+        a, b = int(before[0]["e"]) - 1, int(after[0]["s"])
+        if d.sitting[max(0, a)] is None or d.sitting[max(0, a)] != d.sitting[min(N - 1, b)]:
+            continue
+        claim(before[1], [x for x in span_of(r, before[1]) if owner[x] is None])
     for r, c in front:  # 3c. the rest of the work in front
         if c["class"] != CLIENT:
             claim(c, span_of(r, c))

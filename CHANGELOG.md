@@ -6,6 +6,10 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- Pulsar looks for a new version every hour and when the Mac wakes, instead of every 6 hours.
+- A short turn of internal work (under 10 minutes) in the middle of a client's work goes to that client, as the Likely column shows the stretch, instead of making a separate internal entry.
+
 ## 1.6.8 (2026-11-09)
 - A minute in the browser, Slack or another work window goes to the session whose tab you came from, not to another session whose agent ran last in the background.
 - Short turns of a few minutes go on with the task their session's work named earlier, as longer ones do.

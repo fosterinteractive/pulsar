@@ -97,7 +97,7 @@ running after you close the tab, until you log out.
 
 ## Updates
 
-Pulsar asks GitHub every 6 hours whether a newer version exists (it sends nothing about you) and shows it next to the
+Pulsar asks GitHub every hour (and when the Mac wakes) whether a newer version exists (it sends nothing about you) and shows it next to the
 version at the top and in **Settings → Updates**. It installs nothing by itself. When you click **Update**, it downloads
 the new version, checks its signature, runs its self-test and restarts into it, in a few seconds; you never download
 Pulsar again. Only releases signed with the maintainer's release key are accepted.

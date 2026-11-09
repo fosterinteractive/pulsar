@@ -382,6 +382,13 @@
     report();
     setTimeout(badge, 5000);
     setTimeout(todayLine, 5000);
+    // a new release while the Mac slept: looked for at once (the server's hourly look counts awake time only)
+    setTimeout(async () => {
+      const r = await postJSON('/api/update/check', {});
+      if (r && !r.error && r.update && typeof CONFIG === 'object' && CONFIG && fn(window.paintUpdate)) {
+        CONFIG.update = r.update; window.paintUpdate(r.update);
+      }
+    }, 10 * 1000);
   }
 
   /* ---------- the bridge: what the window calls (PulsarWindow.swift, callPage) ---------- */

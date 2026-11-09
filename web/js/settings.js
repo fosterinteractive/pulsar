@@ -484,12 +484,12 @@ $('#updprompt-skip').onclick = () => {
   postJSON('/api/settings', {update_skip: u.latest});
   toast(`Pulsar ${u.latest} skipped. A newer release will ask again.`);
 };
-/* what the server found since the page opened (it looks every few hours) */
+/* what the server found since the page opened (it looks every hour, and when the Mac wakes: native.js) */
 setInterval(async () => {
   const c = await getJSON('/api/config');
   if (c.error || !CONFIG) return;
   CONFIG.update = c.update; paintUpdate(c.update); maybeRemind(c.update);
-}, 3 * 3600 * 1000);
+}, 20 * 60 * 1000);
 $('#ver-chip').onclick = ev => {
   if (ev.altKey) { warp(); return; }  // Option-click: the warp an update plays, to look at
   openSettings('t-upd');

@@ -40,7 +40,7 @@ from .release_sig import PUBLIC_KEYS, openssl, verify  # noqa: F401  (release.sh
 
 DEFAULT_MANIFEST = "https://github.com/fosterinteractive/pulsar/releases/latest/download/latest.json"
 ROOT = os.path.expanduser("~/Library/Application Support/Pulsar")
-CHECK_EVERY = 6 * 3600       # seconds between checks
+CHECK_EVERY = 3600           # seconds between checks (two small files from GitHub, not its API: no limit near)
 MAX_ZIP = 30 * 1024 * 1024
 RELEASES = "https://github.com/fosterinteractive/pulsar/releases/download/"
 VERSION_RE = re.compile(r"[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}")  # always used with fullmatch
@@ -392,7 +392,7 @@ class Updater:
         return state
 
     def run_forever(self) -> None:
-        """Looks for a new release every few hours, so Settings and the reminder know about it. Never installs."""
+        """Looks for a new release at start and every hour, so Settings and the reminder know about it. Never installs."""
         while True:
             try:
                 self.check()

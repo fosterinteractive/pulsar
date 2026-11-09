@@ -409,6 +409,19 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual((got[0][1], got[0][2], got[1][1], got[1][2]), (540, 580, 580, 610))  # 40 and 32 seen, on the grid
         self.assertEqual(p["unplaced"], [])
 
+    def test_a_short_internal_turn_inside_a_clients_work_is_the_clients(self):
+        # 2026-11-09: a few minutes at a time in the tool's own window while deploying a client's site made a separate
+        # internal entry; the Likely column showed the whole stretch as the client's
+        ctx = {**self.ctx, "names": {"A": {"task": "Site work", "project": "Initech"}, "B": {"task": "Tool", "project": "FI-AI"}},
+               "task_class": {"A": "client", "B": "internal"}}
+        site = lambda s, e: {**row(s, e, project="site", titles=["Site work"]), "tasks": ["A"]}  # noqa: E731
+        tool = lambda s, e: {**row(s, e, project="tool", titles=["Tool"]), "tasks": ["B"]}  # noqa: E731
+        p = dayplan.plan(day(items=[work(540, 590)], rows=[site(540, 560), tool(560, 565), site(565, 590)]), ctx)
+        self.assertEqual([(e["taskId"], e["s"], e["e"]) for e in p["entries"]], [("A", 540, 590)])
+        # a block of its own (10 minutes or more) stays the tool's
+        p = dayplan.plan(day(items=[work(540, 600)], rows=[site(540, 560), tool(560, 575), site(575, 600)]), ctx)
+        self.assertIn("B", [e["taskId"] for e in p["entries"]])
+
     def test_a_sessions_task_does_not_carry_over_to_another_clients_repository(self):
         # replay, 3 Nov: a session that did one client's database upgrade the day before gave that task to the next
         # day's work for other clients
