@@ -6,7 +6,7 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
-## Unreleased
+## 1.6.10 (2026-11-09)
 - A few minutes of a task right before or after its own logged entry are offered, however short, instead of left as a gap; when two short pieces join, the shorter one goes with the longer one's task.
 
 ## 1.6.9 (2026-11-09)
