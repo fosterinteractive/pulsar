@@ -535,6 +535,7 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
         back = [e for e in proposal.get("background") or [] if e.get("e", 0) - e.get("s", 0) >= 5]
         stored = days[date]
         named: dict = {}  # (session keys, repository) -> the work's task named earlier today (work_match)
+        named_at: dict = {}  # the same, with the start of each row that named it
         pairs = list(zip(front, stored)) + list(zip(back, stored[len(front):]))
         for e, row in sorted(pairs, key=lambda p: p[0].get("s", 0)):
             row = {**row, "single": bool(e.get("single"))}
@@ -553,12 +554,22 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
                 here = (tuple(row.get("k") or ()), at)
                 if work:
                     named[here] = work
+                    named_at.setdefault(here, []).append((e["s"], work))
                 elif row.get("k") and here in named:
                     work = [{**w, "carried": True} for w in named[here]]
             except (OSError, ValueError) as exc:  # the votes alone, as before
                 logbook.record("learn", f"Words of the work: {type(exc).__name__}: {exc}", kind="warning")
                 text = {}
             e["learned"] = with_work(with_new(suggest(row, sess, repo, names, text=text, sr=sr), found), work)
+        # rows under five minutes are not read for words (work by turns makes many): they go on with the task their
+        # session's work named before them in the same repository; nothing else is added to them
+        for e in (proposal.get("entries") or []) + (proposal.get("background") or []):
+            if e.get("e", 0) - e.get("s", 0) >= 5:
+                continue
+            here = (tuple(k for k in (key(t) for t in e.get("titles") or []) if k), attribution.repo_key(e.get("project")))
+            got = [w for s0, w in named_at.get(here, []) if s0 <= e["s"]] if here[0] else []
+            if got:
+                e["learned"] = with_work(e.get("learned") or [], [{**w, "carried": True} for w in got[-1]])
         proposal["learning"] = dict(_state) if _state["of"] and _state["done"] < _state["of"] else None
     except Exception as exc:
         logbook.record("learn", f"Suggesting tasks: {type(exc).__name__}: {exc}", kind="warning")

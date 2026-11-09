@@ -7,6 +7,8 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- A minute in the browser, Slack or another work window goes to the session whose tab you came from, not to another session whose agent ran last in the background.
+- Short turns of a few minutes go on with the task their session's work named earlier, as longer ones do.
 - Ask Claude sees the tasks Pulsar would pick for each block, with why, and weighs them first: it no longer takes the first task with the site's name in it for other work. The tasks you never logged to are among them, as in the Likely column.
 - Two works by turns (a few minutes of each) are one entry each, one after the other, each its own minutes, instead of one entry cut back and the rest left as not logged.
 - A client's agent running in the background over internal work in short turns gets those minutes, as a shared row, also when the turns are under 10 minutes each and the repository is logged both ways.

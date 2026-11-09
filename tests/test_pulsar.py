@@ -971,13 +971,16 @@ class LearnWordsTest(unittest.TestCase):
         empty = tempfile.mkdtemp()
         rows = [{"s": 600, "e": 660, "project": "law-site", "titles": ["Morning work session"], "commits": ["Blog feature: newest first"]},
                 {"s": 700, "e": 760, "project": "law-site", "titles": ["Morning work session"]},
-                {"s": 800, "e": 860, "project": "other-site", "titles": ["Morning work session"]}]
+                {"s": 800, "e": 860, "project": "other-site", "titles": ["Morning work session"]},
+                {"s": 862, "e": 865, "project": "law-site", "titles": ["Morning work session"]}]  # a turn of 3 minutes
         proposal = {"entries": rows}
         with mock.patch.object(learn, "warm", lambda *a: None), mock.patch.object(learn, "_stored", lambda d: None), \
              mock.patch.object(sessions, "PROJECTS_DIR", empty), \
              mock.patch.object(learn, "work_projects", lambda at, *a: {"Law Faculty"} if at == "law-site" else set()):
             learn.annotate(proposal, "2026-11-04", {"person_name": "Nick Example"}, self.ENTRIES, [], ZoneInfo("UTC"))
-        first, later, elsewhere = (r["learned"] for r in proposal["entries"])
+        first, later, elsewhere = (r["learned"] for r in proposal["entries"][:3])
+        short = proposal["entries"][3].get("learned") or []  # under 5 minutes: not read for words, still carried
+        self.assertEqual((short[0]["taskId"], short[0].get("carried")) if short else None, ("2", True))
         self.assertEqual((first[0]["taskId"], first[0].get("carried")), ("2", None))
         self.assertEqual((later[0]["taskId"], later[0].get("carried")), ("2", True))
         self.assertFalse(any(x.get("work") for x in elsewhere))  # another repository: never carried there

@@ -446,7 +446,11 @@ Which Claude Code session, and so which project, each minute of work most likely
 - **Each minute** the tracker saw work goes to one session: the one whose title the editor window showed; else one
   whose agent was running; else the one last used in that sitting (a sitting ends after Away after with no sign of
   work, 4.1). In a
-  browser, a page whose title or address names a project goes to that project's session. Meetings, personal
+  browser (or Slack, or any other work window), a page whose title or address names a project goes to that project's
+  session; else the session whose tab was in front last in that sitting, the work the person came from (1.6.8: it
+  went to the session used last, often another one whose agent was running in the background; on 19 past days the
+  minutes per task were right for 43.6% instead of 42.6%, the dialog's first task for 34.4% instead of 33.8%); else
+  the one used last. Meetings, personal
   windows and time logging (a minute that went mostly to Pulsar or Productive) go to none. Except Pulsar's own
   window while a session in Pulsar's own repository (`pulsar`, `pulsar-preview`) is at work, a message typed or its
   agent running within the away time: that is testing what was just built, so the minute is that session's
@@ -1106,7 +1110,9 @@ not a verdict.
   point. Below cosine 0.5, the first one found was the logged task for 1% of the minutes; at the second place they
   pushed out tasks you had logged before (3 points fewer in the first five). Most of the gain needs the task to exist
   when you log: counting only tasks created before the day, the first five held 389 minutes, not 579.
-- **What you are doing, first** (`learn.work_match`, `learn.with_work`): the Productive projects of the row's
+- **What you are doing, first** (`learn.work_match`, `learn.with_work`; a later row of the same session in the same
+  repository that names nothing goes on with the task named earlier that day, rows under five minutes too, which are
+  not read for words): the Productive projects of the row's
   repository (a quarter of its votes or more, once it has an hour of them; with less history, the projects of tasks
   whose names name the repository) narrow the tasks to that project's: the ones you logged to in the 60 days and the
   ones in the new-task pool, not closed. Of those, the task whose name shares most words with the work (its sessions'

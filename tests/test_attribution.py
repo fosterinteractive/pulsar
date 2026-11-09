@@ -249,6 +249,22 @@ class BackgroundTest(Fixture):
         self.assertEqual(got["background"][0]["sessions"], ["cccc0002"])
         self.assertEqual(got["proposed"], 60)  # the background adds nothing to the column's own minutes
 
+    def test_a_browser_minute_goes_to_the_session_whose_tab_was_in_front_last(self):
+        # 2026-11-09: the client's pages between turns in its session went to another session whose agent ran last
+        self.write("cccc0005", [typed(60, "deploy the client's site", self.acme), call(61, "Edit", file_path=os.path.join(self.acme, "a.js"))],
+                   title="Client deploy")
+        # the tool's agent works on, reporting back from background jobs: each report ends one of its runs
+        self.write("cccc0006", [typed(58, "build the tool", self.tool), call(59, "Edit", file_path=os.path.join(self.tool, "x.py"))]
+                   + [x for m in range(66, 80, 4) for x in (
+                       {"type": "user", "timestamp": at(m), "origin": {"kind": "task-notification"},
+                        "message": {"content": "<task-notification>done</task-notification>"}},
+                       call(m + 1, "Edit", file_path=os.path.join(self.tool, "x.py")))], title="Busy tool agent")
+        items = [self.editor(60, 70, "Client deploy"),
+                 {"s": 70, "e": 80, "app": "Google Chrome", "title": "Status report - the client's site", "host": "", "url": "",
+                  "cat": "work"}]
+        got = sessions.propose(T0, T0 + 86400, items, "ActivityWatch", self.projects)
+        self.assertEqual([(r["project"], r["s"], r["e"]) for r in got["entries"]], [("acme-site", 60, 80)])
+
     def test_a_turn_with_only_reads_in_the_repository_never_qualifies(self):
         self.write("cccc0003", [typed(5, "read the client's code", self.acme)]
                    + [call(m, "Read", file_path=os.path.join(self.acme, "src", "m.js")) for m in range(6, 30, 3)],

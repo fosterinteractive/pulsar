@@ -638,6 +638,7 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
     projects_of = [{t["project"] for t in s["turns"]} for s in sessions]
     owner: list = [None] * n
     logged_turn = 0  # minutes of a turn that was time logging (logging_name)
+    tab = None  # (sitting, session) of the last session tab in front: the work a browser or Slack minute comes from
     for x in range(n):
         if not present[x]:
             continue
@@ -650,11 +651,18 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
             if key and key not in by_title:
                 by_title[key] = [i for i, s in enumerate(sessions)
                                  if len(key) >= 5 and any(t.startswith(key) or key.startswith(t) for t in s["titles"])]
-            cands = (by_title.get(key) if key else None) or run_at[x] or [i for i in [latest(x)] if i is not None]
+            named = by_title.get(key) if key else None
+            cands = named or run_at[x] or [i for i in [latest(x)] if i is not None]
+            if named and len(named) == 1:
+                tab = (sitting[x], named[0])
         elif not MEETING.search(" ".join((f.get("app") or "", f.get("title") or "", f.get("host") or ""))):
+            # a page that names a session's repository; else the session whose tab was in front last in this sitting
+            # (2026-11-09: the client's pages between turns in its session went to the session whose agent ran last,
+            # another one working in the background); else the session used last
             page = " ".join((f.get("title") or "", f.get("url") or "")).lower()
             cands = [i for i, ps in enumerate(projects_of)
                      if any(len(p) >= 4 and p != logging_name and p.lower() in page for p in ps)] \
+                or ([tab[1]] if tab and sitting[x] is not None and tab[0] == sitting[x] else []) \
                 or [i for i in [nearest(x)] if i is not None]
         if len(cands) > 1:
             pick = latest(x, set(cands))
