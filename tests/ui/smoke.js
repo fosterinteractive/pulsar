@@ -69,9 +69,10 @@ try {
     const b = band.getBoundingClientRect();
     band.dispatchEvent(new MouseEvent('click', {bubbles: true, clientX: b.left + 2, clientY: b.top + 4}));
     await wait(200);
-    const pop = q('#pop');
-    check('a break offers no logging', pop.classList.contains('on') && /^(Pause|Away|Off)$/.test(pop.querySelector('h3')?.textContent || '')
-      && !pop.querySelector('[data-log-a]') && !q('#logdlg').open, pop.querySelector('h3')?.textContent || 'no popover');
+    const pop = q('#pop'), word = pop.querySelector('h3')?.textContent || '';
+    const shown = pop.classList.contains('on'), offers = !!pop.querySelector('[data-log-a]'), dialog = q('#logdlg').open;
+    check('a break offers no logging', shown && /^(Pause|Away|Off)$/.test(word) && !offers && !dialog,
+      `${word || 'no title'}${shown ? '' : ', popover not shown'}${offers ? ', offers logging' : ''}${dialog ? ', log dialog open' : ''}`);
     closePop();
   } else check('breaks are named', true, 'skipped: no break on this day');
 
