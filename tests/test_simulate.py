@@ -719,11 +719,9 @@ class Run:
             if bool(e["note"]) != bool(e["noteFrom"]) or (e["noteFrom"] and e["noteFrom"] not in
                                                           ("meeting", "repeat", "claude", "commits")):
                 self.fail("plan: a note from nowhere", (where, e["note"], e["noteFrom"]))
-            elif e["noteFrom"] == "claude":
-                ok = any(p.get("note") == e["note"] and p.get("tasks") and str(p["tasks"][0]["taskId"]) == e["taskId"]
-                         for p in day["picks"].values())
-                if not ok:
-                    self.fail("plan: Claude's note on another task's entry", (where, e["note"], e["taskId"]))
+            elif e["noteFrom"] == "claude":  # since 1.6.11 with whatever task the entry has, as Likely shows it
+                if not any(p.get("note") == e["note"] for p in day["picks"].values()):
+                    self.fail("plan: Claude's note that Claude never wrote", (where, e["note"], e["taskId"]))
             elif e["noteFrom"] and e["note"] not in notes[e["noteFrom"]]:
                 self.fail("plan: a note that is not its source's", (where, e["noteFrom"], e["note"]))
             if e["noteFrom"] == "commits" and askclaude.guard_note(e["note"])[0] != e["note"]:

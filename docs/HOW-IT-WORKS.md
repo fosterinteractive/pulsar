@@ -882,8 +882,8 @@ days** (one it found by searching Productive), **a note Claude drafted**, and a 
 **no start time** that day: such an entry is on no timeline, so no overlap check sees it, and it may be the same work. The review
 lists it ("no start"), the confirm step names it, and under the cap that task's proposals give way first, up to its
 minutes, before the least sure rows. **Notes** are never written from session text: only a meeting's title, your usual
-note for a repeat, a note Ask Claude drafted for that task (from the session's messages, and unticked), or one from your commits in the work, each with "clients
-may see notes". **What goes into notes from the calendar**: anyone can send an invitation that Google puts on the
+note for a repeat, the note Ask Claude drafted for the work, as the Likely column shows it, whatever task the row
+has (from the session's messages, and unticked), or one from your commits in the work, each with "clients may see notes". **What goes into notes from the calendar**: anyone can send an invitation that Google puts on the
 calendar by itself, and its organizer can rename it at any time. So a meeting's title becomes its note only when the
 person or someone of their own company organized it (`calendar.outside`), and only through the note's checks
 (`askclaude.guard_note`, read folded: no tool's name, sum of money, web address, look-alike or invisible character;
@@ -921,9 +921,14 @@ each row was proposed for (the day, its start as proposed, its repository or mee
 its place in the list. A row's work is dropped when that row is no longer proposed or its time is logged in Productive
 now; a row a run wrote stays as the journal says. **Start over** forgets it all for that day. It lives in the page
 only: a reload starts again. The review itself is kept on the server too (8): opening the panel asks for it with
-`kept_only` (never a new run), and **Check again** asks Claude anew (`again`). A row's note is drafted by Claude only
-when its empty note field gets the focus, never by opening the row; the server keeps each draft (8), so the same work
-is not drafted twice, after a restart either.
+`kept_only` (never a new run), and **Check again** asks Claude anew (`again`). With the Claude Code switch on, Claude
+drafts the note of every row of a repository's work by itself (`ldDraftAll`), one row at a time in time order, as the
+log dialog drafts one on opening: an empty note, or one from the commits nobody edited. Focusing a row's note drafts
+that one first. A note already drafted for the same work (the log dialog on a Likely block, sharing at least half of
+the row: `askclaude.kept_note`, `reuse`) is taken as it is, with no new run; the server keeps each draft (8), so the
+same work is not drafted twice, after a restart either. A shared row's note comes from the background session it
+was for. What the person typed is never replaced, and a redraw keeps the field they are in. A draft that arrives
+while the confirm step is open shows there before Log. Before 1.6.11 a note was drafted only on focus.
 
 **Reviewing.** The list shows, by default (**To review**), the rows still to log and the time not covered; what is
 logged, in Productive or by this run, is one line at the top ("6 h 1 min logged, 17 entries"), and **All** shows each

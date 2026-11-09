@@ -155,6 +155,12 @@ try {
   const saved = ADV_KEYS.map(k => String(adv[k])).join() + ',' + (adv.no_estimate !== false);
   check('Settings shows the advanced choices', !q('#adv-more').open && shown === saved, shown);
 
+  // Log the day drafts the note of every row of a repository's work by itself: an empty one or one from the commits
+  const dr = x => ldDraftable({repo: 'site', note: '', noteFrom: '', ...x});
+  const drafts = [dr({}), dr({note: 'Fix', noteFrom: 'commits'}), !dr({note: 'Fix', noteFrom: 'commits', noteEdited: true}),
+    !dr({note: 'Mine', noteFrom: ''}), !dr({repo: ''}), !dr({noteTried: true}), !dr({status: 'logged'})];
+  check('Log the day drafts the notes by itself', drafts.every(Boolean), drafts.join(','));
+
   // the day's entries come from the kept copy first
   const copy = await getJSON(`/api/entries?date=${state.date}&copy=1`);
   check('the server gives the day\'s kept copy', typeof copy.copy === 'boolean', JSON.stringify({copy: copy.copy, n: copy.entries?.length}));

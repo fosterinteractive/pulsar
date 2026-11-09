@@ -1395,6 +1395,11 @@ class ClaudeNoteTest(unittest.TestCase):
             self.assertEqual(seen[0]["titles"], ["Auto task", "QA analysis"])
             self.assertEqual(server.api_likely_note({"date": "2026-11-05", "s": 150, "e": 160, "project": "qa"})["note"], "")
             self.assertEqual(len(seen), 1)  # nothing of qa there: Claude is not asked
+            # Log the day asks with reuse: a note already drafted for this work comes back with no new run
+            with mock.patch.object(askclaude, "kept_note", lambda d, p, a, b: "Kept." if (p, a, b) == ("qa", 0, 144) else ""):
+                self.assertEqual(server.api_likely_note({"date": "2026-11-05", "s": 0, "e": 150, "project": "qa",
+                                                         "reuse": 1})["note"], "Kept.")
+            self.assertEqual(len(seen), 1)
             s["ask_claude"] = False
             with self.assertRaises(ValueError):
                 server.api_likely_note({"date": "2026-11-05", "s": 0, "e": 150, "project": "qa"})

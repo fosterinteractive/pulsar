@@ -132,6 +132,15 @@ function ldClaudePlan(d, r, ans) {
     + (none ? `, ${none} with no task found (Pulsar's guess kept)` : '') + '.' + (ans.warning ? ` ${ans.warning}` : '');
   renderReview(); render();
 }
+/* the drafts, one row at a time in time order, while this day's review is open and nothing is being written */
+async function ldDraftAll() {
+  if (LD.drafting || !CONFIG?.likely?.askClaude) return;
+  const d = LD.date;
+  LD.drafting = true;
+  try {
+    for (let r; LD.on && LD.date === d && !LD.writing && (r = LD.rows.filter(ldDraftable).sort((a, b) => a.s - b.s)[0]);) await ldDraftNote(r);
+  } finally { LD.drafting = false; }
+}
 function closeLogDay() {
   if (LD.writing) { LD.stop = true; return; }
   ldStash();
@@ -221,8 +230,8 @@ function renderReview() {
   const el = $('#review');
   if (!LD.on) { el.hidden = true; return; }
   if (cuRender(el)) return;  // catchup.js: the list of earlier days, while it is open
-  // a tick, an edit or a late answer redraws the list: it stays scrolled where the person was
-  const was = {list: el.querySelector('.rv-list')?.scrollTop || 0, panel: el.scrollTop};
+  // a tick, an edit or a late answer redraws the list: it stays scrolled where the person was, in the field they were in
+  const was = {list: el.querySelector('.rv-list')?.scrollTop || 0, panel: el.scrollTop, focus: ldFocus(el)};
   const head = `<div class="rv-t"><h2>Log the day <span class="sub">· ${esc(dayTitle(LD.date))}</span></h2>${cuButton()}
     <button type="button" class="btn icon" id="ld-close" aria-label="Close Log the day">✕</button></div>`;
   if (LD.loading) { el.innerHTML = `<div class="rv-h">${head}<div class="rv-sum">Reading the day…</div></div>`; return; }
@@ -293,6 +302,29 @@ function renderReview() {
   if (list) list.scrollTop = was.list;
   el.scrollTop = was.panel;
   if (LD.open) el.querySelector(`[data-row="${LD.open}"] .ed`) && wireEditor(ldRow(LD.open));
+  ldRefocus(el, was.focus);
+  if (!LD.drafting && !LD.writing && LD.rows.some(ldDraftable)) setTimeout(ldDraftAll, 0);
+}
+/* the field of the open row the person is in, so a redraw (a note Claude drafted for another row) leaves them there:
+   a start or minutes still being typed (they apply on change) and where the caret was */
+function ldFocus(el) {
+  const a = /** @type {HTMLInputElement} */ (document.activeElement);
+  if (!a || !el.contains(a) || !/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return null;
+  const row = /** @type {HTMLElement} */ (a.closest('[data-row]'))?.dataset.row;
+  const attr = [...a.attributes].map(x => x.name).find(n => /^data-ld-(note|start|min|svc)$/.test(n));
+  let at = null; try { at = [a.selectionStart, a.selectionEnd]; } catch (e) { /* a number field has no caret */ }
+  return row && attr ? {row, attr, value: a.value, at} : null;
+}
+function ldRefocus(el, f) {
+  if (!f || el.contains(document.activeElement) && document.activeElement !== document.body) return;
+  const a = /** @type {HTMLInputElement} */ (el.querySelector(`[data-row="${f.row}"] [${f.attr}]`)); if (!a) return;
+  const typing = f.attr === 'data-ld-start' || f.attr === 'data-ld-min';
+  if (typing) a.value = f.value;
+  a.focus({preventScroll: true});
+  try {
+    if (a.value === f.value && f.at?.[0] != null) a.setSelectionRange(f.at[0], f.at[1]);
+    else if (a.tagName === 'TEXTAREA') a.setSelectionRange(a.value.length, a.value.length);  // Claude's draft came in
+  } catch (e) { /* a number field has no caret */ }
 }
 function loggedLine(x) {
   return `<li class="er done"><div class="eb"><span class="e-time num">${x.s == null ? 'no start' : hm(x.s)}</span>
@@ -363,8 +395,8 @@ function noteHint(r) {
   if (r.noteFrom === 'claude' && !r.noteEdited) return `${CLAUDE_MARK.split('<span')[0]}Drafted by Claude. Clients may see notes.`;
   if (r.noteFrom === 'meeting' && !r.noteEdited) return "The meeting's title. Clients may see notes.";
   if (r.noteFrom === 'repeat' && !r.noteEdited) return 'Your usual note for this. Clients may see notes.';
-  if (r.noteFrom === 'commits' && !r.noteEdited) return 'From your commits. Clients may see notes.';
-  if (CONFIG?.likely?.askClaude && r.repo && !(r.note || '').trim() && !r.noteTried) return `${CLAUDE_MARK.split('<span')[0]}Click in the note for Claude's draft. Clients may see notes.`;
+  if (r.noteFrom === 'commits' && !r.noteEdited) return 'From your commits' + (CONFIG?.likely?.askClaude && ldDraftable(r) ? '; Claude drafts one in a moment.' : '. Clients may see notes.');
+  if (CONFIG?.likely?.askClaude && ldDraftable(r)) return `${CLAUDE_MARK.split('<span')[0]}Claude drafts this note in a moment. Clients may see notes.`;
   return 'Clients may see notes: the outcome, in a sentence.';
 }
 const altName = a => a.title || 'task ' + a.taskId;
@@ -426,24 +458,28 @@ function wireEditor(r) {
 }
 function ldChanged(r) { r.edited = true; if (r.status === 'refused') { r.status = null; r.reason = ''; } renderReview(); render(); }
 
-/* a row's empty note, focused while the Claude Code switch is on: Claude drafts one from its sessions and commits, as
-   the log dialog does (POST /api/likely/note). Only on focus, never by opening the row: walking through ten rows asked
-   ten times. The note is about the work, not the task, so picking another task keeps it. Asked once per row (kept
-   with the day's work, ldkeep.js; the server keeps the draft too, so the same work is never drafted twice); what the
-   person typed meanwhile is never replaced. */
+/* With the Claude Code switch on, Claude drafts the note of every row with work of a repository, by itself, one row
+   at a time, as the log dialog drafts one on opening: an empty note, or one from the commits nobody edited (Claude's
+   says what was done, the commits only how). Focusing a row's note drafts that one first. Each row is asked once
+   (kept with the day's work, ldkeep.js; the server keeps the draft too, so opening the day again asks nothing new);
+   what the person typed is never replaced. A note already drafted for the same work in the Likely column is taken as
+   it is (reuse: askclaude.kept_note), with no new run. The note is about the work, not the task, so picking another
+   task keeps it. Before 1.6.11 a note was drafted only on focus. */
+const ldDraftable = r => !r.status && !!r.repo && !r.noteTried && !r.noteDrafting
+  && (!(r.note || '').trim() || (r.noteFrom === 'commits' && !r.noteEdited));
 async function ldDraftNote(r) {
-  if (!CONFIG?.likely?.askClaude || !r.repo || (r.note || '').trim() || r.noteDrafting || r.noteTried || LD.writing) return;
+  if (!CONFIG?.likely?.askClaude || !ldDraftable(r) || LD.writing) return;
+  const was = r.note || '';
   r.noteDrafting = true; r.noteTried = true; renderReview();
-  const got = await postJSON('/api/likely/note', {date: LD.date, s: r.s, e: r.e ?? r.s + r.minutes, project: r.repo}).catch(() => ({}));
+  const got = await postJSON('/api/likely/note', {date: LD.date, s: r.s, e: r.e ?? r.s + r.minutes, project: r.repo, reuse: 1}).catch(() => ({}));
   const row = ldRow(r.id); r.noteDrafting = false;
   if (!row) return;
   row.noteDrafting = false;
-  if (!(row.note || '').trim()) {  // nothing typed: the draft goes in, and the panel is drawn again
+  if ((row.note || '') === was && !row.noteEdited) {  // nothing typed: the draft goes in, and the panel is drawn again
     if (got.note) Object.assign(row, {note: got.note, noteFrom: 'session', noteEdited: false});
     else row.noteError = got.error || got.why || '';
-    const had = document.activeElement?.matches?.(`#review [data-row="${row.id}"] [data-ld-note]`);
-    renderReview();
-    if (had) { const n = $(`#review [data-row="${row.id}"] [data-ld-note]`); n?.focus(); n?.setSelectionRange(n.value.length, n.value.length); }
+    renderReview();  // keeps the field the person is in (ldFocus)
+    if (ldDlg.open && LD.confirmed?.some(x => x.id === row.id)) openConfirm();  // what the dialog shows is what is sent
     return;
   }
   // typed meanwhile: only the hint changes, so the field keeps its focus

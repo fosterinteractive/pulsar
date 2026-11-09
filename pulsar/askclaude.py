@@ -653,6 +653,23 @@ def note(date: str, row: dict, t0: float, history: list = (), run=subprocess.run
     return answer
 
 
+def kept_note(date: str, project: str, s: float, e: float) -> str:
+    """A note Claude already drafted that day for this repository's work (the log dialog on a Likely block, an earlier
+    row of Log the day), so the same work is not drafted again: the one whose stretch shares the most of s to e, and at
+    least half of it; else ""."""
+    best, most = "", 0.0
+    for key, got in _stash_read(date, "notes").items():
+        try:
+            ks, ke, kp = json.loads(key)[:3]
+            o = min(e, float(ke)) - max(s, float(ks))
+        except (ValueError, TypeError):
+            continue
+        note = ((got or {}).get("answer") or {}).get("note") if isinstance(got, dict) else None
+        if kp == project and isinstance(note, str) and note.strip() and o > most:
+            best, most = note.strip(), o
+    return best if most >= 0.5 * (e - s) else ""
+
+
 def _person() -> str:
     """The person's name as Productive gave it (Settings), for foreign_name; "" when it cannot be read."""
     try:

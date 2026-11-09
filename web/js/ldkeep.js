@@ -12,6 +12,8 @@ const LD_KEEP_FIELDS = ['checked', 'opened', 'edited', 'taskId', 'title', 'proje
   'billable', 'budget', 's', 'e', 'minutes', 'note', 'noteFrom', 'noteEdited', 'noteTried', 'noteError', 'flags',
   'source', 'why', 'confidence', 'confidenceWords', 'ticket', 'alts', 'claudeNone', 'serviceProblem', 'choice'];
 
+const LD_NOTE_FIELDS = ['note', 'noteFrom', 'noteEdited', 'noteTried', 'noteError'];
+
 /* A shared row: a client's agent ran on a request the person typed while internal work was in front, so the client got
    the stretch first (pulsar/dayplan.py). The person decides who it goes to, at its real time: Client (as proposed),
    Half each (the first half the client's, the second the internal work's: two rows), Internal (all of it the
@@ -63,7 +65,9 @@ function ldSnapshot(rows, open, deleted) {
   for (const r of rows) {
     if (!r.key || r.status === 'logged' || r.status === 'writing' || r.status === 'unknown') continue;
     if (!(r.edited || r.opened || r.noteTried)) continue;
-    kept[r.key] = Object.fromEntries(LD_KEEP_FIELDS.filter(k => k in r).map(k => [k, JSON.parse(JSON.stringify(r[k] ?? null))]));
+    // a row only Claude drafted a note for (logday.js ldDraftAll, every row) keeps its note, not the plan's other fields
+    const fields = r.edited || r.opened ? LD_KEEP_FIELDS : LD_NOTE_FIELDS;
+    kept[r.key] = Object.fromEntries(fields.filter(k => k in r).map(k => [k, JSON.parse(JSON.stringify(r[k] ?? null))]));
   }
   return {rows: kept, deleted: [...(deleted || [])], open: rows.find(r => r.id === open)?.key || null};
 }

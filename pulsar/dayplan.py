@@ -700,10 +700,11 @@ def _rows(d: _Day) -> None:
         for t in r.get("learned") or []:
             known(str(t["taskId"]), t.get("title"), t.get("project"))
         ch = choose(r, ctx, hit, sameday, assigned, pick)
-        note = (pick or {}).get("note") or ""
-        claude_note = bool(note and ch["task"] and str(pick["tasks"][0]["taskId"]) == ch["task"])
-        # else the row's own commits (commits.py): they say what was done whatever the task
-        note, note_from = (note, "claude") if claude_note else (git_commits.note(r.get("commits") or []), "commits")
+        # Claude's note, as the Likely column shows it, whatever task the row has (it says what was done; flagged, so
+        # the row is never ticked at the start); else the row's own commits (commits.py), which say what was done
+        # whatever the task. Before 1.6.11 Claude's note went only with Claude's own task.
+        note = ((pick or {}).get("note") or "").strip()
+        note, note_from = (note, "claude") if note else (git_commits.note(r.get("commits") or []), "commits")
         if not bg and ch["task"] and ch["source"] in ("rule", "link", "session") and ch["conf"] == "high":
             for k in _keys(r):
                 sameday.setdefault(k, ch["task"])

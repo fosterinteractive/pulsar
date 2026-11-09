@@ -85,6 +85,16 @@ class KeptAnswersTest(unittest.TestCase):
         askclaude._notes.clear()
         self.addCleanup(askclaude._notes.clear)
 
+    def test_a_note_drafted_in_likely_is_found_for_the_same_work(self):
+        key = lambda s, e, p: json.dumps([s, e, p, 3, 1, "Done", "haiku"])  # noqa: E731  as askclaude.note keeps it
+        askclaude.stash("2026-11-05", "notes", key(600, 660, "site"), {"note": "Hero video fixed."})
+        askclaude.stash("2026-11-05", "notes", key(700, 720, "site"), {"note": ""})            # nothing was drafted
+        askclaude.stash("2026-11-05", "notes", key(600, 660, "tool"), {"note": "Tool note."})   # another repository
+        self.assertEqual(askclaude.kept_note("2026-11-05", "site", 610, 670), "Hero video fixed.")
+        self.assertEqual(askclaude.kept_note("2026-11-05", "site", 640, 760), "")   # under half of the stretch
+        self.assertEqual(askclaude.kept_note("2026-11-05", "site", 700, 720), "")
+        self.assertEqual(askclaude.kept_note("2026-11-06", "site", 610, 670), "")
+
     def test_kept_by_day_and_key_owner_only_and_old_days_go(self):
         askclaude.stash("2026-11-05", "notes", "a", {"note": "Search keeps every letter."})
         self.assertEqual(askclaude.stashed("2026-11-05", "notes", "a"), {"note": "Search keeps every letter."})
@@ -264,6 +274,18 @@ class LogTheDayKeepsWorkTest(unittest.TestCase):
         """)
         self.assertEqual(got["rows"], [["r0", False, None], ["r1", False, "logged"], ["r2", True, None]])
         self.assertEqual(len(got["dropped"]), 2)  # 00:00 (logged since) and the Pulsar row (gone)
+
+    def test_a_row_claude_only_drafted_a_note_for_keeps_its_note_not_the_plans_fields(self):
+        got = self.js(self.PLAN + """
+          const before = plan([]);
+          Object.assign(before[3], {noteTried: true, note: 'Settings section added.', noteFrom: 'session', checked: true,
+                                    why: 'old why'});
+          const kept = ldSnapshot(before, null, []);
+          const fresh = plan([]); fresh[3].why = 'new why';
+          const r = ldReapply(fresh, kept, []).rows[3];
+          return [r.note, r.noteFrom, r.noteTried, r.checked, r.why];
+        """)
+        self.assertEqual(got, ["Settings section added.", "session", True, False, "new why"])
 
     def test_a_shared_row_goes_to_the_client_half_each_or_the_internal_work_at_its_real_time(self):
         got = self.js("""

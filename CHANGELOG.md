@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## 1.6.11 (2026-11-09)
+- Log the day fills in the notes by itself: the note Claude already wrote for that work in the Likely column, whatever task the row has, else a draft Claude writes for each row of a Claude session in turn (a note from the commits is replaced, one you typed never). Before, a note came only after a click in it.
 - Settings > Time and activity > Advanced, closed by default: how far apart pieces of one task still join, how long work outside Claude must be to get its own entry, how fast older logging fades in learning, the daily meeting cards (Usual, Strict or Off), when a selected stretch is offered as a split, and the "No estimate" flag. The usual values are what Pulsar did before.
 - Working days in Settings > Time and activity > Time: Earlier days, the week line and the end-of-day reminder follow them, not Monday to Friday (the reminder still never comes on a Saturday or Sunday: Pulsar's window decides that).
 - The git branch of the work's repository counts as words of the work ("campaign-guides-cta"), and a ticket key in it as a ticket.

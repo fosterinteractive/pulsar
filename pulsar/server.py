@@ -611,9 +611,10 @@ def api_ask_claude(body: dict) -> dict:
 
 
 def api_likely_note(body: dict) -> dict:
-    """The log dialog's note for a Likely block, or for a stretch picked another way (the yellow rail, a drag): from
-    the sessions and commits of the project's Likely rows that overlap s to e, whole rows (askclaude.note, the model
-    chosen for "note", Haiku by default).
+    """The log dialog's note for a Likely block, or for a stretch picked another way (the yellow rail, a drag), or for a
+    row of Log the day: from the sessions and commits of the project's Likely rows that overlap s to e, whole rows (the
+    background ones when no session of it was in front), with askclaude.note and the model chosen for "note", Haiku by
+    default.
     Only when the Claude Code switch is on; a POST, because it runs Claude."""
     s = current_settings()
     date, project = str(body.get("date") or ""), str(body.get("project") or "")
@@ -629,10 +630,17 @@ def api_likely_note(body: dict) -> dict:
     t0 = day_bounds(date, tz)[0]
     proposal = likely.proposal(date, config.timezone_name(s), today(tz), False, s)
     # s and e are the page's: by the clock on a day the clocks change, so the rows are compared as the page drew them
-    rows = [dict(r) for r in proposal.get("entries") or [] if r.get("project") == project
-            and min(page_span(r, t0, tz)[1], b) - max(page_span(r, t0, tz)[0], a) > 0]
+    def over(key):
+        return [dict(r) for r in proposal.get(key) or [] if r.get("project") == project
+                and min(page_span(r, t0, tz)[1], b) - max(page_span(r, t0, tz)[0], a) > 0]
+    # a session in front first; else one whose agent ran in the background (Log the day's shared rows)
+    rows = over("entries") or over("background")
     if not rows:
         return {"note": "", "why": "no Likely work at that time"}
+    if body.get("reuse"):  # Log the day: a note already drafted for this work, as the Likely column has it
+        kept = askclaude.kept_note(date, project, min(r["s"] for r in rows), max(r["e"] for r in rows))
+        if kept:
+            return {"note": kept, "why": "", "cost": 0, "kept": True}
     before, problem = history_rows(date, s, days=learn.LEARN_DAYS)
     if not problem:
         learn.annotate({**proposal, "entries": rows}, date, s, before, [], tz, new_task_source(date, s))
