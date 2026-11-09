@@ -28,7 +28,8 @@ USES = {
         "name": "Check my day: task picks",
         "does": "A task and a note for each row Log the day is unsure of, before the review.",
         "sends": "Sends each block's time, repository and session titles, what you typed and Claude's replies, your "
-                 "commit subjects and a few of your notes, and your tasks of the last 30 days. May search Productive, "
+                 "commit subjects, the tasks Pulsar would pick for it and a few of your notes, and your tasks of the "
+                 "last 30 days. May search Productive, "
                  "read only. A day's answers are kept on this Mac for 60 days.",
         "model": "sonnet", "cap": 0.25,
     },

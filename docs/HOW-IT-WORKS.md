@@ -883,7 +883,9 @@ picks when the day has none yet and rows are unsure, then runs the review, 5.4c;
 most a run may cost, `sgCheck` in `ldreview.js`; and from **Ask Claude** in the Likely column's header again since
 1.6.8, picks only, shown on the blocks and first in the log dialog; nothing runs on opening; the same blocks asked
 about again, also after a restart, give the kept answer and Claude is not run, `askclaude.kept` with the blocks it was
-asked about): the review shows the plan at once, then sends the day to Claude
+asked about; each block also carries Pulsar's own guesses, its first three learned tasks with why, `pulsar_guess`,
+which Claude weighs before its 30 days of tasks and before searching Productive: on 9 November, without them, it took
+the first task with the site's name in it for two blocks of other work): the review shows the plan at once, then sends the day to Claude
 (every row of ten minutes or more) and fills in the answer as it arrives. Claude's pick replaces only rows the planner
 is not sure of (medium, low), with the planner's guess kept as the first alternative; a row Claude found no task for
 keeps the planner's guess and says so. Claude's pick starts ticked only when it is one of the tasks you logged to in

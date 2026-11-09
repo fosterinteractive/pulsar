@@ -580,7 +580,7 @@ def api_ask_claude(body: dict) -> dict:
     # each row's likely tasks (learned from the days before, never from this day's own entries): whose notes Claude
     # sees as examples of how this person writes them. A copy, so the cached proposal stays as it is.
     rows = [dict(e) for e in proposal.get("entries") or []]
-    learn.annotate({**proposal, "entries": rows}, date, s, before, [], tz)
+    learn.annotate({**proposal, "entries": rows}, date, s, before, [], tz, new_task_source(date, s))  # as Likely does
     t0, t1 = day_bounds(date, tz)
     try:
         answer = askclaude.ask(date, rows, t0, [r for r in before if r.get("date", "") >= d0],
@@ -616,7 +616,7 @@ def api_likely_note(body: dict) -> dict:
         return {"note": "", "why": "no Likely work at that time"}
     before, problem = history_rows(date, s, days=learn.LEARN_DAYS)
     if not problem:
-        learn.annotate({**proposal, "entries": rows}, date, s, before, [], tz)
+        learn.annotate({**proposal, "entries": rows}, date, s, before, [], tz, new_task_source(date, s))
     lead = max(rows, key=lambda r: r["e"] - r["s"])
     row = {"s": min(r["s"] for r in rows), "e": max(r["e"] for r in rows), "project": project,
            "titles": sorted({t for r in rows for t in r.get("titles") or []}),

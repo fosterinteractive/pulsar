@@ -991,6 +991,27 @@ class AskClaudeTest(unittest.TestCase):
         askclaude._cache.clear()  # each test asks afresh: no answer kept by another (askclaude.kept)
         __import__("shutil").rmtree(askclaude.PICKS_DIR, ignore_errors=True)
 
+    def test_each_block_carries_pulsars_own_guesses(self):
+        """2026-11-09: with no guesses Claude searched Productive and took the first task with the site's name in it;
+        given the task the typed words named, it took that one."""
+        import json as _json
+        from pulsar import askclaude
+        seen = {}
+
+        def fake_run(cmd, **kw):
+            seen["input"] = kw["input"]
+            return mock.Mock(stdout=_json.dumps({"result": '{"picks": []}', "total_cost_usd": 0.01}), stderr="", returncode=0)
+
+        rows = [{"s": 600, "e": 660, "project": "acme-site", "titles": [], "minutes": 60,
+                 "learned": [{"taskId": "9", "title": "D11 Upgrades - Dev work", "project": "Acme",
+                              "why": "what you typed names it: d11, upgrade (no entry of yours yet)"}]}]
+        with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/bin/claude"), \
+                mock.patch.object(askclaude.config, "load", lambda: {}):
+            askclaude.ask("2026-10-02", rows, 0, [], run=fake_run)
+        self.assertIn('"pulsar_guess"', seen["input"])
+        self.assertIn("D11 Upgrades - Dev work", seen["input"])
+        self.assertIn("what you typed names it", seen["input"])
+
     def test_the_same_blocks_are_never_asked_again_also_after_a_restart(self):
         """The Likely column's Ask Claude and Check my day: the same blocks give the kept answer at no cost; blocks
         that changed ask again."""
