@@ -45,7 +45,7 @@ USES = {
         "does": "Drafts the title and description of a task you create.",
         "sends": "Sends that work's time, repository and session titles, what you typed and Claude's replies, your "
                  "commit subjects and the names of your recent tasks.",
-        "model": "haiku", "cap": 0.1,
+        "model": "sonnet", "cap": 0.1,  # Sonnet by default since 1.6.12
     },
     "review": {
         "name": "Check my day: review",
@@ -53,7 +53,7 @@ USES = {
         "sends": "Sends a digest of the day: the plan, what you typed and Claude's replies (cut short), session titles, "
                  "commit subjects, meeting titles (not private or declined ones), app names by hour, the notes of entries already logged, and your "
                  "tasks of the last 30 days. Never window titles, sites or addresses. May search Productive, read only.",
-        "model": "haiku", "cap": 0.25,
+        "model": "sonnet", "cap": 0.25,  # since 1.6.12: on the replay a little righter than Haiku, and faster
     },
     "session": {
         "name": "Pulsar in Claude Code",

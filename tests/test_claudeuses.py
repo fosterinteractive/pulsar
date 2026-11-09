@@ -34,9 +34,10 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual(claudeuses.MODELS, ("haiku", "sonnet", "opus"))  # aliases only: never a pinned model id
         self.assertFalse(claudeuses.runs_claude("session"))  # Pulsar in Claude Code: the session's own model
 
-    def test_the_defaults_are_what_pulsar_ran_before(self):
-        self.assertEqual({u: (claudeuses.USES[u]["model"], claudeuses.cap(u)) for u in ("ask", "note", "task")},
-                         {"ask": ("sonnet", 0.75), "note": ("haiku", 0.1), "task": ("haiku", 0.1)})
+    def test_the_defaults(self):  # since 1.6.12 the review and a new task are Sonnet's too; the note stays Haiku's
+        self.assertEqual({u: (claudeuses.USES[u]["model"], claudeuses.cap(u)) for u in ("ask", "note", "task", "review")},
+                         {"ask": ("sonnet", 0.75), "note": ("haiku", 0.1), "task": ("sonnet", 0.3),
+                          "review": ("sonnet", 0.75)})
         self.assertEqual({m: claudeuses.cap("ask", m) for m in claudeuses.MODELS},
                          {"haiku": 0.25, "sonnet": 0.75, "opus": 2.0})
 
@@ -63,10 +64,10 @@ class RegistryTest(unittest.TestCase):
             claudeuses.clean(["ask", "haiku"])
 
     def test_the_list_for_settings(self):
-        rows = claudeuses.public({"claude_models": {"task": "sonnet"}})
+        rows = claudeuses.public({"claude_models": {"task": "haiku"}})
         self.assertEqual([r["id"] for r in rows], list(claudeuses.USES))
         by = {r["id"]: r for r in rows}
-        self.assertEqual((by["task"]["model"], by["task"]["default"], by["task"]["caps"]["sonnet"]), ("sonnet", "haiku", 0.3))
+        self.assertEqual((by["task"]["model"], by["task"]["default"], by["task"]["caps"]["sonnet"]), ("haiku", "sonnet", 0.3))
         self.assertEqual((by["session"]["model"], by["session"]["default"]), (None, None))
         self.assertNotIn("caps", by["session"])
 
@@ -82,7 +83,7 @@ class RegistryTest(unittest.TestCase):
 class SettingsTest(unittest.TestCase):
 
     def test_the_server_keeps_one_key_and_ask_claudes_old_one_in_step(self):
-        got = server.validate({"claude_models": {"ask": "haiku", "note": "opus", "task": "haiku", "nope": "opus"}})
+        got = server.validate({"claude_models": {"ask": "haiku", "note": "opus", "task": "sonnet", "nope": "opus"}})
         self.assertEqual(got, {"claude_models": {"ask": "haiku", "note": "opus"}, "ask_claude_model": "haiku"})
         got = server.validate({"claude_models": {"ask": "sonnet", "note": "gpt"}})
         self.assertEqual(got, {"claude_models": {}, "ask_claude_model": "sonnet"})  # back to the defaults
@@ -103,7 +104,7 @@ class SettingsTest(unittest.TestCase):
         with mock.patch.object(server.productive, "connection", lambda s: {"kind": None}):
             c = server.public_config(s)
         by = {r["id"]: r for r in c["claude"]["uses"]}
-        self.assertEqual((by["ask"]["model"], by["note"]["model"], by["task"]["model"]), ("haiku", "sonnet", "haiku"))
+        self.assertEqual((by["ask"]["model"], by["note"]["model"], by["task"]["model"]), ("haiku", "sonnet", "sonnet"))
         self.assertEqual(c["likely"]["askClaudeModel"], "haiku")  # Log the day names it
 
 
@@ -161,10 +162,10 @@ class CallSiteTest(unittest.TestCase):
     def test_the_new_task(self):
         run = self.run_claude({"structured_output": {"title": "Menu: phones", "description": ""}})
         newtask._cache.clear()
-        for model, cap in ((None, "0.1"), ("sonnet", "0.3"), ("opus", "0.8")):
+        for model, cap in ((None, "0.3"), ("haiku", "0.1"), ("opus", "0.8")):
             newtask.claude_draft("2026-10-03", ROWS, 0, [], "P", run=run, model=model)
             argv, kw = self.runs[-1]
-            self.assertEqual((flag(argv, "--model"), flag(argv, "--max-budget-usd")), (model or "haiku", cap))
+            self.assertEqual((flag(argv, "--model"), flag(argv, "--max-budget-usd")), (model or "sonnet", cap))
             self.isolated(argv, kw)
             self.assertNotIn("--mcp-config", argv)
         self.assertEqual(len(self.runs), 3)  # a model of its own is a draft of its own, not the cached one
@@ -172,10 +173,10 @@ class CallSiteTest(unittest.TestCase):
 
     def test_the_day_review(self):
         run = self.run_claude({"structured_output": {"suggestions": []}})
-        for model, cap in ((None, "0.25"), ("sonnet", "0.75"), ("opus", "2.0")):
+        for model, cap in ((None, "0.75"), ("haiku", "0.25"), ("opus", "2.0")):
             dayreview.review("2026-10-03", {}, [], run=run, model=model)
             argv, kw = self.runs[-1]
-            self.assertEqual((flag(argv, "--model"), flag(argv, "--max-budget-usd")), (model or "haiku", cap))
+            self.assertEqual((flag(argv, "--model"), flag(argv, "--max-budget-usd")), (model or "sonnet", cap))
             self.isolated(argv, kw)
         self.assertEqual(claudeuses._spent["review"][0], 3)
 

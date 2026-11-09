@@ -153,7 +153,7 @@ organization or person, Settings asks: the **Organization ID** is the number at 
 | Rules | none (words in a window, page or site that mean a task: that time is coloured by project, and the task comes first when you log it) |
 | Likely column | shown when there are Claude Code sessions on this computer (`~/.claude/projects`) |
 | Use Claude Code with Pulsar | off ([Claude Code](#claude-code)) |
-| Claude's models | task picks: Sonnet; the review, notes and a new task's draft: Haiku. **Settings → Claude** lists each use, what it sends, and a model to pick for it (Haiku, Sonnet or Opus) |
+| Claude's models | task picks, the review and a new task's draft: Sonnet; notes: Haiku. **Settings → Claude** lists each use, what it sends, and a model to pick for it (Haiku, Sonnet or Opus) |
 | Google Calendar | not connected |
 
 Settings are saved in `~/.config/pulsar/settings.json`. Delete `~/.config/pulsar` or `~/.cache/pulsar` to start again.

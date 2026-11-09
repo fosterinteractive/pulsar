@@ -114,7 +114,7 @@ async function openNewTask(from = null) {
   fillProjects(r);
   if (f.project.value) loadPlaces();
   if (!CONFIG?.likely?.askClaude || !draft.repo || draft.from === 'meeting' || s == null) return;
-  // with the Claude Code switch on: Claude (Haiku unless chosen) drafts from the session (typed, Claude's replies), commits.
+  // with the Claude Code switch on: Claude (Sonnet unless chosen) drafts from the session (typed, Claude's replies), commits.
   // Create waits for it: a draft that came in while the button could be clicked would put text nobody read into
   // Productive with that click. After a change, the button stays off a second more.
   const save = $('#task-save');

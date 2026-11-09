@@ -647,7 +647,7 @@ whether one fits is the person's call. It opens a small form over the dialog:
 - **Title and description**, drafted from the Likely rows of the project with most minutes in the dialog's time, whole
   rows, as the session note takes them. At once, on this Mac (`local_draft`): the first commit subject made then is
   the title, and all of them a list. With the Claude Code switch on, Claude then drafts both (`claude_draft`, with the
-  model chosen for "New task", Haiku by default: 5.7) from the same rows' steps (what was typed, Claude's replies,
+  model chosen for "New task", Sonnet by default since 1.6.12, Haiku before: 5.7) from the same rows' steps (what was typed, Claude's replies,
   `askclaude.steps`), commits and session titles, with up to 8 titles of the person's own tasks of the last 30 days
   (their own time entries; the same project's first) as examples of the style: a task's name is anyone's words in
   Productive, so no other task's title goes to Claude. It runs as the session note
@@ -707,7 +707,9 @@ wrong one for 2); Haiku for 7 (3 right, 4 close enough to edit; nothing for 2, v
 words found in the draft: 11% and 21%. Cut at the moment the task was created: 2 and 6 usable. In 4 ranges the work
 in that time was not the task's work, so no draft could be right. The session's title as a fallback named the task
 in none of 10 tries (a long session's first topic, or in another language), so it is never used. Haiku: $0.0008 to
-$0.0032 a draft, 6 to 8 seconds. Hence the local draft at once and Haiku's after it, only with the switch on.
+$0.0032 a draft, 6 to 8 seconds. Hence the local draft at once and Claude's after it, only with the switch on. Since
+1.6.12 Claude's is Sonnet's by default (the maintainer's choice: a draft is rare and its words are kept; not measured
+against Haiku).
 
 ### 5.2 Writing (`POST /api/log`)
 
@@ -1073,8 +1075,8 @@ window's title, a site or an address.
 **The review** (`review`, `POST /api/dayplan/review`, the page's session only; the key alone is refused). It runs
 the person's own Claude Code with Ask Claude's isolation (5.5): `claude -p --no-session-persistence --tools ""
 --permission-mode dontAsk --strict-mcp-config --setting-sources "" --json-schema`, Productive's read tools only,
-auto memory off, its own model and cap in Settings > Claude (`review`, Haiku by default: nearly as good as Sonnet
-on the replay below, at an eighth of the cost). The prompt is FI's rules (from the
+auto memory off, its own model and cap in Settings > Claude (`review`, Sonnet by default since 1.6.12: on the replay
+below a little righter than Haiku and two to three times faster, at about eight times the cost; Haiku before). The prompt is FI's rules (from the
 fi-productive-process and fi-time-from-activity skills, written without names), what each kind of suggestion means
 and the digest, which it is told is data. Kinds: another task, another service (by name, from the row's list),
 minutes, a split (up to four parts that add up to the row), a task to create (title, project, parent, one-line
@@ -1426,9 +1428,9 @@ sends"), and a model to choose (Haiku, Sonnet or Opus, the default marked) where
 | Use (id) | What it does | What it sends | Model by default | Most one run may cost (Haiku, Sonnet, Opus) |
 |---|---|---|---|---|
 | Check my day: task picks (`ask`) | A task and a note for each row Log the day is unsure of, before the review; also shown on the Likely cards (5.4, 5.5) | Each block's time, repository, session titles, steps (typed and Claude's replies), commit subjects, up to 5 of your notes; your tasks of the last 30 days. May search Productive, read only | Sonnet | $0.25, $0.75, $2 |
-| Note (`note`) | The note for a block or a stretch (below), and for a row of Log the day whose empty note is clicked | That work's time, repository, steps, commit subjects, up to 5 of your notes | Haiku | $0.10, $0.30, $0.80 |
-| New task (`task`) | A new task's title and description, from the log dialog or a row of Log the day (5.1) | That work's time, repository, session titles, steps, commit subjects, up to 8 titles of your recent tasks | Haiku | $0.10, $0.30, $0.80 |
-| Check my day: review (`review`) | Reviews the day's plan with FI's rules: suggestions to accept or reject (5.4c) | The day's digest (5.4c): the plan, steps, session titles, commit subjects, meeting titles, app names by hour, notes of logged entries, your tasks of the last 30 days; may search Productive, read only | Haiku | $0.25, $0.75, $2 |
+| Note (`note`) | The note for a block or a stretch (below), and for each row of Log the day from a session, by itself | That work's time, repository, steps, commit subjects, up to 5 of your notes | Haiku | $0.10, $0.30, $0.80 |
+| New task (`task`) | A new task's title and description, from the log dialog or a row of Log the day (5.1) | That work's time, repository, session titles, steps, commit subjects, up to 8 titles of your recent tasks | Sonnet | $0.10, $0.30, $0.80 |
+| Check my day: review (`review`) | Reviews the day's plan with FI's rules: suggestions to accept or reject (5.4c) | The day's digest (5.4c): the plan, steps, session titles, commit subjects, meeting titles, app names by hour, notes of logged entries, your tasks of the last 30 days; may search Productive, read only | Sonnet | $0.25, $0.75, $2 |
 | Pulsar in Claude Code (`session`) | A session reads the day and logs through Pulsar (5.6) | What the session reads from Pulsar, as part of that session | the session's own | none of Pulsar's |
 
 Each `claude -p` call takes its model and cap from there and nothing else changes: its isolation (`--tools ""`,

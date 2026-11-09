@@ -466,8 +466,8 @@ class DraftTest(unittest.TestCase):
         self.assertIn("description had a file path", got["why"])
         [(argv, kw)] = runs
         self.assertEqual(argv[:3], ["/bin/claude-fake", "-p", "--model"])
-        for flag in (["--model", "haiku"], ["--tools", ""], ["--permission-mode", "dontAsk"], ["--setting-sources", ""],
-                     ["--max-budget-usd", "0.1"]):
+        for flag in (["--model", "sonnet"], ["--tools", ""], ["--permission-mode", "dontAsk"], ["--setting-sources", ""],
+                     ["--max-budget-usd", "0.3"]):  # Sonnet by default since 1.6.12
             i = argv.index(flag[0])
             self.assertEqual(argv[i:i + 2], flag)
         self.assertIn("--strict-mcp-config", argv)
