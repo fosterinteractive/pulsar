@@ -452,6 +452,14 @@ class SharedTest(unittest.TestCase):
         self.assertEqual(len(shared), 1, p["entries"])  # one stretch, not one entry per piece between the flips
         self.check_no_overlap(p)
 
+    def test_internal_work_in_short_turns_with_the_clients_own_is_shared_under_its_agent(self):
+        # 2026-11-09: a few minutes of each by turns; the client's agent ran over the internal turns, none 10 minutes
+        rows = [front(600, 606, "house-tool"), front(606, 610, "client-web"), front(610, 616, "house-tool"),
+                front(616, 620, "client-web"), front(620, 626, "house-tool"), front(626, 630, "client-web")]
+        p = plan([work(600, 630)], rows, [back(600, 630, "client-web")], ctx=self.ctx)
+        self.assertEqual(sum(e["e"] - e["s"] for e in p["entries"] if e.get("shared")), 20)  # 18 seen, on the 5-minute grid
+        self.check_no_overlap(p)
+
     def check_no_overlap(self, p):
         spans = sorted((e["s"], e["e"]) for e in p["entries"])
         for (a0, a1), (b0, b1) in zip(spans, spans[1:]):

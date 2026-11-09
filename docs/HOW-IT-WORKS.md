@@ -806,7 +806,9 @@ the repository's name points to; else unknown. Internal is a non-billable servic
 billable minute needs evidence: the person there (a work window, not away, not personal, not logging) and either its
 own work in front, or its agent attended (above) with internal work in front: then the client gets the minute first,
 as a shared row, when the agent's task is a known client's task and the stretch runs 10 minutes or more (a shorter one
-stays with the work in front). Mixed and unknown work gets no priority, and a client's work in front is never given to
+stays with the work in front; the client's own work in front between internal turns does not cut the stretch, so
+internal work in short turns with it adds up; internal means the repository's class, or the task picked for a row of a
+"mixed" repository). Mixed and unknown work gets no priority, and a client's work in front is never given to
 another client's agent. Priority never adds a minute, never makes a task or service billable, never touches away
 time. A shared row stays at its real time: it never joins other pieces, and nothing joins across it. Under the cap,
 internal work is cut first, then mixed and unknown, a client's last. The **evidence cap**: a task that may be billable
@@ -820,7 +822,12 @@ named as the fi-time-from-activity script names it (4.4). With Pulsar's own weig
 turns that run commands in clients' checkouts read as those clients' work. Shared rows were rare (45 minutes in the 52
 days): most work in front had no settled class yet, or the client's agent was not attended.
 
-Pieces of one task in one sitting (it ends after Away after with no activity) join, pieces under 10 minutes join a
+Pieces of one task in one sitting (it ends after Away after with no activity) join, also across another task's pieces
+when every one of them is under 10 minutes (two works by turns, a few minutes of each: one entry each, one after the
+other, each its own minutes, within the time they took; before 1.6.8 the short turns folded into one entry that the
+evidence cap cut, and on 9 November 65 of 114 minutes showed as not logged; on 19 past days 145 more minutes had a
+task, the minutes per task were right for 42.6% instead of 41.3%, and the right task at the right minute 48.1%
+instead of 49.3%, as turns laid one after the other move their minutes), pieces under 10 minutes join a
 neighbour within 30 minutes in the same sitting
 (never one hours away, which would move it there, never across an entry already logged; a meeting someone attended
 keeps its own time, so nothing before it joins it), boundaries go on a 5-minute grid except right against an entry

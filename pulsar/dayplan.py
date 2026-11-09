@@ -734,9 +734,17 @@ def _rows(d: _Day) -> None:
         # only a client's task, a known one: priority never makes a task billable, and never adds a minute
         if c["class"] != CLIENT or not c["task"] or attribution.class_of_task(c["task"], ctx) == INTERNAL:
             continue
-        free = [x for x in range(int(r["s"]), min(N, int(math.ceil(r["e"]))))
-                if present(x, False) and owner[x] is None and in_front[x] is not None and in_front[x]["class"] == INTERNAL]
-        for a, b in _runs(free, 3):  # a glance elsewhere of up to two minutes does not cut the stretch
+        span = range(int(r["s"]), min(N, int(math.ceil(r["e"]))))
+        # internal work in front: its repository's class, or the task picked for it (a repository logged both ways,
+        # "mixed", whose row went to an internal task: 2026-11-09, the tool's own repository)
+        free = [x for x in span if present(x, False) and owner[x] is None and in_front[x] is not None
+                and (in_front[x]["class"] == INTERNAL or (in_front[x].get("task") and
+                                                         attribution.class_of_task(in_front[x]["task"], ctx) == INTERNAL))]
+        # the client's own work in front between them does not cut the stretch either: internal work in short turns
+        # with the client's (2026-11-09, a few minutes of each by turns for two hours) counts as one stretch
+        own = {x for x in span if owner[x] is not None and d.claims[owner[x]].get("class") == CLIENT
+               and repo_key(d.claims[owner[x]].get("project")) == repo_key(r.get("project"))}
+        for a, b in _runs(sorted(set(free) | own), 3):  # a glance elsewhere of up to two minutes does not cut it
             minutes = [x for x in free if a <= x <= b]
             if len(minutes) < CONTEST_MIN:
                 continue  # a short one stays with the work in front
@@ -862,7 +870,17 @@ def _merge(d: _Day, pieces: list) -> list:
     o, sitting = d.o, d.sitting
     merged: list = []
     for p in pieces:
-        m = merged[-1] if merged else None
+        # the last entry of this piece's task: two tasks worked in turn (a few minutes of each) are one entry each,
+        # laid out one after the other, each its own minutes, within the time they took (never past a meeting
+        # attended); before, only the entry just before could take a piece, and the short pieces folded into one entry
+        # that the evidence cap then cut, leaving the rest unlogged (2026-11-09: 65 of 114 minutes)
+        k = next((i for i in range(len(merged) - 1, -1, -1) if p.get("task") and merged[i].get("task") == p["task"]
+                  and merged[i]["kind"] not in ("skip", "shared")), None)
+        # only across turns: every piece of other work between them shorter than an entry (a block of its own there
+        # would be pushed out of its time), and no meeting attended
+        between = [x for q in merged[k + 1:] for x in q["parts"] if x["s"] > merged[k]["last"]] if k is not None else []
+        m = merged[k] if k is not None and not any(q.get("attended") for q in merged[k + 1:]) \
+            and all(x["minutes"] < (o["min_entry"] or MIN_ENTRY) for x in between) else None
         # one shared stretch is one entry, whatever minutes in it went to something else (its run allows two at a
         # time); it never joins anything else
         same = next((q for q in reversed(merged[-6:]) if p["kind"] == q["kind"] == "shared" and q["claim"] == p["claim"]),

@@ -394,6 +394,21 @@ class PlannerTest(unittest.TestCase):
         [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, project="initech")]), ctx)["entries"]
         self.assertEqual((e["taskId"], e["source"]), ("P", "repo"))
 
+    def test_two_tasks_worked_in_turns_are_two_entries_one_after_the_other(self):
+        # 2026-11-09: a few minutes of each by turns for two hours; the short pieces folded into one entry that the
+        # evidence cap cut, and 65 of 114 minutes showed as not logged. Each task: one entry, its own minutes
+        ctx = {**self.ctx, "names": {"A": {"task": "Site work", "project": "Initech"}, "B": {"task": "Tool", "project": "FI-AI"}}}
+        rows = []
+        for i in range(8):  # 5 minutes of A, 4 of B, by turns
+            s = 540 + 9 * i
+            rows += [{**row(s, s + 5, project="site", titles=["Site work"]), "tasks": ["A"]},
+                     {**row(s + 5, s + 9, project="tool", titles=["Tool"]), "tasks": ["B"]}]
+        p = dayplan.plan(day(items=[work(540, 612)], rows=rows), ctx)
+        got = [(e["taskId"], e["s"], e["e"]) for e in p["entries"]]
+        self.assertEqual([t for t, _, _ in got], ["A", "B"])                      # one entry each, in the order begun
+        self.assertEqual((got[0][1], got[0][2], got[1][1], got[1][2]), (540, 580, 580, 610))  # 40 and 32 seen, on the grid
+        self.assertEqual(p["unplaced"], [])
+
     def test_a_sessions_task_does_not_carry_over_to_another_clients_repository(self):
         # replay, 3 Nov: a session that did one client's database upgrade the day before gave that task to the next
         # day's work for other clients
