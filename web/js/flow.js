@@ -193,11 +193,11 @@ async function loadWeek(mon) {
   Object.assign(week, {key: mon, at: Date.now(), busy: false, days: x.error ? null : x.days, today: x.today || ''});
   renderWeek();
 }
-/* Monday to Friday up to today; the day on screen counts what its Logged column shows now, so an entry just logged
+/* the working days (Settings > Time) up to today; the day on screen counts what its Logged column shows now, so an entry just logged
    counts at once */
 function weekDays() {
   const live = state.logged && !state.logged.error ? state.logged.entries.reduce((s, x) => s + x.minutes, 0) : null;
-  return (week.days || []).filter(d => d.weekday < 5 && d.date <= week.today)
+  return (week.days || []).filter(d => workingDay(d.date) && d.date <= week.today)
     .map(d => (d.date === state.date && live != null ? {...d, logged: live} : d));
 }
 function renderWeek() {

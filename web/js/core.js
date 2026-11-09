@@ -1,6 +1,8 @@
 /* Shared by every view: settings from the server, state, formatting, theme, toast */
 /* from /api/config, set by main.js before the first render: the time zone (undefined = this browser's), the daily target */
 let TARGET = 480, TZ, CONFIG = null;
+/* Settings > Time > Working days (Monday 0 ... Sunday 6): Earlier days, the week line and the reminder */
+const workingDay = d => (CONFIG?.workingDays || [0, 1, 2, 3, 4]).includes((new Date(d + 'T12:00:00Z').getUTCDay() + 6) % 7);
 /* row height per zoom: 1 and 5 min rows are lower, or a day at 1 min would be 58 000 px tall */
 const SLOT_PX = {1: 24, 5: 28, 15: 40, 30: 40, 60: 40};
 const LABEL_EVERY = {1: 5, 5: 15, 15: 30, 30: 30, 60: 60};

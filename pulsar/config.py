@@ -57,6 +57,7 @@ DEFAULTS = {
     "claude_ask_productive": False,  # "Ask before any Claude Code session changes Productive": adds ask rules for it
     "round_to": 5,               # 5 | 10 | 15 minutes: Log the day's grid and shortest entry, the log dialog's minutes
     "away_after": 15,            # 10 | 15 | 20 | 30 minutes without input that are time away (away_after)
+    "working_days": [0, 1, 2, 3, 4],  # Monday 0 ... Sunday 6: Earlier days, the week line and the reminder
 }
 
 ROUNDING = (5, 10, 15)
@@ -163,6 +164,9 @@ def _fits(key: str, value) -> bool:
         return not isinstance(value, bool) and value in ROUNDING
     if key == "away_after":
         return not isinstance(value, bool) and value in AWAY_AFTER
+    if key == "working_days":
+        return isinstance(value, list) and bool(value) and all(isinstance(d, int) and not isinstance(d, bool)
+                                                                 and 0 <= d <= 6 for d in value)
     if key == "claude_models":  # any use and name: claudeuses.model() takes an unknown one as no choice
         return isinstance(value, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in value.items())
     if key in ("personal_patterns", "claude_rules_added", "claude_denies_added"):

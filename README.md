@@ -141,6 +141,7 @@ organization or person, Settings asks: the **Organization ID** is the number at 
 | Connect with | Automatic: your API token, else Claude Code's connection |
 | Time zone | this computer's |
 | Daily target | your organization's working day in Productive (read through Claude Code's connection only), else 8 h |
+| Working days | Monday to Friday: the days Earlier days offers, the week line counts and the reminder comes on |
 | Round entries to | 5 minutes (or 10 or 15): Log the day's entries start and end on this step (or against an entry already logged), a block you click to log is rounded to it (a drag or typed minutes are not), and shorter active time is not marked as unlogged |
 | Away after | 15 minutes (or 10, 20 or 30) without typing or moving the mouse: time away, and the end of a sitting (Likely, Log the day) |
 | Appearance | Theme: same as the Mac (or Light, or Dark); ◐ at the top and View > Appearance set it too |

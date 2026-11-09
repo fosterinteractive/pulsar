@@ -344,6 +344,8 @@
     };
   }
   async function todayUnlogged() {
+    // the window's end-of-day reminder asks this: none on a day that is not a working day (Settings > Time)
+    if (typeof workingDay === 'function' && !workingDay(todayLocal())) return null;
     if (lastGap && Date.now() - lastGap.at < 10 * 60 * 1000 && state.date === todayLocal()) return lastGap.minutes;
     const d = todayLocal(), r = await getJSON(`/api/report?from=${d}&to=${d}`);
     const day = r && !r.error && r.days ? r.days[0] : null;

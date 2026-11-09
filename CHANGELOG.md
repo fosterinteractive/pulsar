@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## 1.6.11 (2026-11-09)
+- Working days in Settings > Time and activity > Time: Earlier days, the week line and the end-of-day reminder follow them, not Monday to Friday (the reminder still never comes on a Saturday or Sunday: Pulsar's window decides that).
 - The git branch of the work's repository counts as words of the work ("campaign-guides-cta"), and a ticket key in it as a ticket.
 - "Check my day with Claude" no longer sends meetings you declined, and sends "private event" instead of the title of a meeting marked private in Google Calendar or holding a word of Settings' personal windows.
 - A meeting's title finds its task by word stems ("upgrades" is "upgrade") and prefers the project of the work logged within the hour around it: a meeting about one client's D11 upgrade no longer goes to another client's.

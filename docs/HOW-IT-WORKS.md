@@ -979,7 +979,7 @@ time logged when the tracker saw nothing (8%).
 ### 5.4b Catching up on earlier days (`web/js/catchup.js`)
 
 **Earlier days…** in Log the day's title row lists the last 7 workdays before today that are not done (6: marked
-done, or their logged time reached the target and nobody said not done), less the time marked "not work" (Monday to Friday; **Show 7
+done, or their logged time reached the target and nobody said not done), less the time marked "not work" (the working days of Settings > Time, Monday to Friday unless changed, `workingDay` in core.js; **Show 7
 earlier days** gives 14), each with the active time no entry covers, and its logged and active time, from
 `/api/report` (the Report's own numbers). Time logged with no start time is on no timeline, so it counts against the
 active time not covered (as Log the day caps a day): a day logged in full from Productive's timesheet reads "nothing
@@ -1482,7 +1482,7 @@ and the whole day every hour while the page shows. The app's window sends `pulsa
   says in a sentence what quitting would lose (Settings not saved, a note typed in the log dialog, Log the day
   writing), for the window to ask before ⌘Q. The zoom menu keeps hidden `#zoom button[data-v]` for the window's
   View menu.
-- **The week** (under the day's name): "This week: X h logged of Y h active", Monday to Friday up to today, from
+- **The week** (under the day's name): "This week: X h logged of Y h active", the working days up to today, from
   `/api/report` for that week (kept 15 minutes) with the day on screen as its Logged column shows it now. A click
   lists each day; a day opens it. Where the header is narrow it reads "Week: X h of Y h".
 - **The next step**: while active time is not logged, **Log the day** is the Logged column's main (filled) button,

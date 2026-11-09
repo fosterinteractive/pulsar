@@ -10,11 +10,11 @@ const CU_MAX = 14;           // workdays offered at most
 const CU_TICK = 30;          // days with this many minutes not logged start ticked
 const cuActive = () => CU.queue.length > 0 && LD.on && LD.date === CU.queue[CU.i];
 
-/* the last CU_MAX workdays (Monday to Friday) before today, oldest first, read once per opening */
+/* the last CU_MAX working days (Settings > Time) before today, oldest first, read once per opening */
 async function cuLoad() {
   const today = todayLocal(), want = [];
   for (let d = shiftDate(today, -1); want.length < CU_MAX; d = shiftDate(d, -1))
-    if ((new Date(d + 'T12:00:00Z').getUTCDay() + 6) % 7 < 5) want.unshift(d);
+    if (workingDay(d)) want.unshift(d);
   Object.assign(CU, {loading: true, error: '', days: null});
   renderReview();
   const [r, marks] = await Promise.all([getJSON(`/api/report?from=${want[0]}&to=${want[want.length - 1]}`),

@@ -140,6 +140,15 @@ try {
   applyTheme(themeWas);
   check('Settings > Appearance sets the theme', set && sel.value === themeWas, `${themeWas} → ${other} → ${sel.value}`);
 
+  // Working days: Settings shows the saved ones (Monday to Friday unless changed), and Earlier days and the week line
+  // count only those
+  const boxes = [...document.querySelectorAll('#working-days input')];
+  const ticked = boxes.filter(x => x.checked).map(x => +x.value);
+  check('Settings shows the working days', boxes.length === 7 && ticked.join() === (CONFIG.workingDays || [0, 1, 2, 3, 4]).join(),
+    ticked.join(','));
+  check('a day outside the working days is not one', typeof workingDay === 'function'
+    && workingDay('2026-11-09') === (CONFIG.workingDays || [0, 1, 2, 3, 4]).includes(0), `Mon ${workingDay('2026-11-09')}, Sun ${workingDay('2026-11-08')}`);
+
   // the day's entries come from the kept copy first
   const copy = await getJSON(`/api/entries?date=${state.date}&copy=1`);
   check('the server gives the day\'s kept copy', typeof copy.copy === 'boolean', JSON.stringify({copy: copy.copy, n: copy.entries?.length}));

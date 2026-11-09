@@ -188,7 +188,7 @@ def public_config(s: dict) -> dict:
         "timezone": config.timezone_name(s), "timezoneSystem": config.system_timezone(), "timezoneSetting": s["timezone"],
         "targetMinutes": config.target_minutes(s), "targetHours": s["target_hours"], "personDayHours": s["person_day_hours"],
         "personalPatterns": s["personal_patterns"], "activitywatchUrl": s["activitywatch_url"], "rules": s["rules"],
-        "roundTo": s["round_to"], "awayAfter": config.away_after(s),
+        "roundTo": s["round_to"], "awayAfter": config.away_after(s), "workingDays": s["working_days"],
         "activitywatch": awsetup.status(config.away_after(s)),  # its AFK timeout, read from its file; no program started
         "update": {**UPDATER.public(), "skip": s["update_skip"], "asked": s["update_asked"]},
         "errors24h": logbook.unseen(s.get("logs_seen") or 0),
@@ -273,6 +273,12 @@ def validate(body: dict) -> dict:
         out["round_to"] = v
     if "away_after" in body:
         out["away_after"] = away_minutes(body["away_after"])
+    if "working_days" in body:
+        v = body["working_days"]
+        days = sorted({int(d) for d in v if str(d).isdigit() and 0 <= int(d) <= 6}) if isinstance(v, list) else []
+        if not days:
+            raise ValueError("Pick at least one working day.")
+        out["working_days"] = days
     if "productive_source" in body:
         if body["productive_source"] not in ("auto", "token", "claude-code"):
             raise ValueError("The Productive source is auto, token or claude-code")

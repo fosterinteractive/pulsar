@@ -148,6 +148,11 @@
           <label class="field"><span>Time zone</span><input name="timezone" list="zones" autocomplete="off"></label>
           <datalist id="zones"></datalist>
           <label class="field"><span>Daily target, hours</span><input name="target_hours" type="number" min="0.5" max="24" step="0.25"></label>
+          <fieldset class="field days" id="working-days"><legend>Working days</legend>
+            <label><input type="checkbox" value="0">Mon</label><label><input type="checkbox" value="1">Tue</label>
+            <label><input type="checkbox" value="2">Wed</label><label><input type="checkbox" value="3">Thu</label>
+            <label><input type="checkbox" value="4">Fri</label><label><input type="checkbox" value="5">Sat</label>
+            <label><input type="checkbox" value="6">Sun</label></fieldset>
           <label class="field"><span>Round entries to</span>
             <select name="round_to"><option value="5">5 minutes</option><option value="10">10 minutes</option><option value="15">15 minutes</option></select></label>
           <p class="hint">Log the day starts and ends entries on this step. A block you click to log is rounded to it, or runs up

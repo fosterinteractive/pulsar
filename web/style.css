@@ -672,3 +672,8 @@ html.in-app header .brand h1 { display: none; }
 html.in-app button, html.in-app .btn, html.in-app summary, html.in-app .card, html.in-app .gaprail, html.in-app .awayband, html.in-app .nwrail { cursor: default; }
 html.in-app .btn.primary { background: var(--accent); color: #fff; }
 html.in-app .btn.primary:hover { background: var(--accent); }
+
+/* Settings > Time > Working days: seven boxes on one line */
+fieldset.field.days { border: 0; padding: 0; margin: 0; min-width: 0; }
+fieldset.field.days legend { padding: 0; margin-bottom: 4px; color: var(--muted); font-size: inherit; }
+fieldset.field.days label { display: inline-flex; align-items: center; gap: 4px; margin: 0 12px 4px 0; }

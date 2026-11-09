@@ -19,6 +19,8 @@ function fillSettings(c) {
   f.target_hours.value = c.targetHours ?? '';
   f.target_hours.placeholder = c.personDayHours ? `${c.personDayHours}, from Productive` : '8';
   f.round_to.value = String(c.roundTo || 5);
+  const days = new Set(c.workingDays || [0, 1, 2, 3, 4]);
+  document.querySelectorAll('#working-days input').forEach(x => { /** @type {HTMLInputElement} */ (x).checked = days.has(+/** @type {HTMLInputElement} */ (x).value); });
   f.away_after.value = String(c.awayAfter || 15);
   paintAw(c.activitywatch);
   f.personal_patterns.value = (c.personalPatterns || []).join('\n');
@@ -358,6 +360,7 @@ async function saveSettings(extra = {}) {
     productive_source: f.productive_source.value, org_id: f.org_id.value.trim(), person_id: f.person_id.value.trim(),
     timezone: f.timezone.value.trim(), target_hours: f.target_hours.value.trim(), round_to: +f.round_to.value,
     away_after: +f.away_after.value,
+    working_days: [...document.querySelectorAll('#working-days input:checked')].map(x => +/** @type {HTMLInputElement} */ (x).value),
     personal_patterns: f.personal_patterns.value,
     activitywatch_url: f.activitywatch_url.value.trim(), likely: f.likely.value, ask_claude: f.ask_claude.checked,
     claude_models: Object.fromEntries([...document.querySelectorAll('#claude-uses select')].map(x => [x.dataset.use, x.value])),

@@ -3195,6 +3195,11 @@ class LogsSeenTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             server.validate({"logs_seen": "yesterday"})
         self.assertEqual(server.validate({"logs_seen": 1700000000}), {"logs_seen": 1700000000})
+        # Working days: the days picked, as numbers Monday 0 ... Sunday 6, in order; none at all is refused
+        self.assertEqual(server.validate({"working_days": [4, "0", 2, 9]}), {"working_days": [0, 2, 4]})
+        with self.assertRaises(ValueError):
+            server.validate({"working_days": []})
+        self.assertTrue(config._fits("working_days", [0, 6]) and not config._fits("working_days", [7]))
 
 
 class ClaudeCodeTokenShapeTest(unittest.TestCase):
