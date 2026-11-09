@@ -153,7 +153,7 @@ organization or person, Settings asks: the **Organization ID** is the number at 
 | Rules | none (words in a window, page or site that mean a task: that time is coloured by project, and the task comes first when you log it) |
 | Likely column | shown when there are Claude Code sessions on this computer (`~/.claude/projects`) |
 | Use Claude Code with Pulsar | off ([Claude Code](#claude-code)) |
-| Claude's models | task picks, the review and a new task's draft: Sonnet; notes: Haiku. **Settings → Claude** lists each use, what it sends, and a model to pick for it (Haiku, Sonnet or Opus) |
+| Claude's models | Sonnet for every use (task picks, the review, notes, a new task's draft). **Settings → Claude** lists each use, what it sends, and a model to pick for it (Haiku, Sonnet or Opus) |
 | Google Calendar | not connected |
 
 Settings are saved in `~/.config/pulsar/settings.json`. Delete `~/.config/pulsar` or `~/.cache/pulsar` to start again.
@@ -325,8 +325,8 @@ Your Claude usage, not money to Pulsar. Each run stops at its limit:
 | A note, a new task's draft | $0.10 | $0.30 | $0.80 |
 
 When Claude answers with no picks, Pulsar asks once more, so one round of picks may cost up to twice its limit; the cost
-shown is what both runs cost together. Task picks with Sonnet have cost about $0.10 to $0.25 a day; a note with Haiku
-usually costs under half a cent.
+shown is what both runs cost together. Task picks with Sonnet have cost about $0.10 to $0.25 a day; a note with Sonnet
+about 1.6 cents (with Haiku about a tenth of a cent), so a day's 15 notes about $0.25 of usage.
 
 ### What is kept
 

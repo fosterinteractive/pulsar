@@ -613,7 +613,7 @@ def api_ask_claude(body: dict) -> dict:
 def api_likely_note(body: dict) -> dict:
     """The log dialog's note for a Likely block, or for a stretch picked another way (the yellow rail, a drag), or for a
     row of Log the day: from the sessions and commits of the project's Likely rows that overlap s to e, whole rows (the
-    background ones when no session of it was in front), with askclaude.note and the model chosen for "note", Haiku by
+    background ones when no session of it was in front), with askclaude.note and the model chosen for "note", Sonnet by
     default.
     Only when the Claude Code switch is on; a POST, because it runs Claude."""
     s = current_settings()

@@ -4,7 +4,7 @@ only after a click in the page (server.api_task_create).
 
 The draft (`local_draft`) is made on this Mac from the commits made then (their subjects, already checked by
 commits.clean), or is a meeting's title when the time was a meeting. With the Claude Code switch on, `claude_draft`
-asks Claude (the model chosen in Settings for "task", claudeuses.py; Haiku by default) for a better one from the same
+asks Claude (the model chosen in Settings for "task", claudeuses.py; Sonnet by default) for a better one from the same
 work plus what was typed and Claude's replies (askclaude.steps), with the same isolation as the session note
 (askclaude.note): no tools, no MCP server, none of the person's settings, auto memory off, a JSON schema, and the
 draft checked on this Mac before the page sees it. Measured in HOW-IT-WORKS 5.1.
@@ -165,7 +165,7 @@ def examples(history: list, project: str = "", limit: int = 8, since: str = "") 
 
 def claude_draft(date: str, rows: list, t0: float, history: list = (), project: str = "", run=subprocess.run,
                  tz=None, model: str = None) -> dict:
-    """A title and description by Claude (`model`, chosen in Settings for "task"; Haiku by default) from the rows'
+    """A title and description by Claude (`model`, chosen in Settings for "task"; Sonnet by default) from the rows'
     sessions (steps with Claude's replies), commits and session titles: {"title", "description", "why", "cost"}.
     Either may be "" when the guard refused it (why says which). Raises askclaude.AskError with a sentence for the
     page when Claude Code fails."""

@@ -34,9 +34,9 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual(claudeuses.MODELS, ("haiku", "sonnet", "opus"))  # aliases only: never a pinned model id
         self.assertFalse(claudeuses.runs_claude("session"))  # Pulsar in Claude Code: the session's own model
 
-    def test_the_defaults(self):  # since 1.6.12 the review and a new task are Sonnet's too; the note stays Haiku's
+    def test_the_defaults(self):  # Sonnet for every use since 1.6.12 (only the task picks before)
         self.assertEqual({u: (claudeuses.USES[u]["model"], claudeuses.cap(u)) for u in ("ask", "note", "task", "review")},
-                         {"ask": ("sonnet", 0.75), "note": ("haiku", 0.1), "task": ("sonnet", 0.3),
+                         {"ask": ("sonnet", 0.75), "note": ("sonnet", 0.3), "task": ("sonnet", 0.3),
                           "review": ("sonnet", 0.75)})
         self.assertEqual({m: claudeuses.cap("ask", m) for m in claudeuses.MODELS},
                          {"haiku": 0.25, "sonnet": 0.75, "opus": 2.0})
@@ -45,20 +45,20 @@ class RegistryTest(unittest.TestCase):
         for use in ("ask", "note", "task"):
             caps = [claudeuses.cap(use, m) for m in claudeuses.MODELS]
             self.assertEqual(caps, sorted(set(caps)), use)
-        self.assertEqual(claudeuses.cap("note", "unknown"), claudeuses.cap("note", "haiku"))  # unknown: the default
+        self.assertEqual(claudeuses.cap("note", "unknown"), claudeuses.cap("note", "sonnet"))  # unknown: the default
 
     def test_the_chosen_model_else_the_old_ask_setting_else_the_default(self):
         model = claudeuses.model
         self.assertEqual(model("note", {"claude_models": {"note": "opus"}}), "opus")
-        self.assertEqual(model("note", {"claude_models": {"note": "claude-opus-4-1"}}), "haiku")  # not an alias
-        self.assertEqual(model("note", {"claude_models": "opus"}), "haiku")
+        self.assertEqual(model("note", {"claude_models": {"note": "claude-opus-4-1"}}), "sonnet")  # not an alias
+        self.assertEqual(model("note", {"claude_models": "opus"}), "sonnet")
         self.assertEqual(model("ask", {"ask_claude_model": "haiku"}), "haiku")  # chosen before 1.5
         self.assertEqual(model("ask", {"ask_claude_model": "haiku", "claude_models": {"ask": "opus"}}), "opus")
-        self.assertEqual(model("note", {"ask_claude_model": "opus"}), "haiku")  # Ask Claude's only
+        self.assertEqual(model("note", {"ask_claude_model": "opus"}), "sonnet")  # Ask Claude's only
         self.assertEqual(model("ask", config.DEFAULTS), "sonnet")
 
     def test_choices_are_kept_only_when_they_are_real_and_not_the_default(self):
-        got = claudeuses.clean({"ask": "haiku", "note": "haiku", "task": "fable", "session": "opus", "other": "opus"})
+        got = claudeuses.clean({"ask": "haiku", "note": "sonnet", "task": "fable", "session": "opus", "other": "opus"})
         self.assertEqual(got, {"ask": "haiku"})
         with self.assertRaises(ValueError):
             claudeuses.clean(["ask", "haiku"])
@@ -96,7 +96,7 @@ class SettingsTest(unittest.TestCase):
             json.dump({"claude_models": {"note": "fable", "ask": "opus"}}, fh)
         with mock.patch.object(config, "SETTINGS_FILE", path):
             s = config.load()
-        self.assertEqual((claudeuses.model("note", s), claudeuses.model("ask", s)), ("haiku", "opus"))
+        self.assertEqual((claudeuses.model("note", s), claudeuses.model("ask", s)), ("sonnet", "opus"))
         self.assertIn("claude_models", config.SEED_SKIP)  # Preview starts with its own choices, as with the switch
 
     def test_the_page_gets_every_use_with_its_model(self):
@@ -150,11 +150,11 @@ class CallSiteTest(unittest.TestCase):
 
     def test_the_note(self):
         run = self.run_claude({"structured_output": {"note": "The menu works on phones again."}})
-        for s, model, cap in ((600, None, "0.1"), (601, "sonnet", "0.3"), (602, "opus", "0.8")):
+        for s, model, cap in ((600, None, "0.3"), (601, "haiku", "0.1"), (602, "opus", "0.8")):
             got = askclaude.note("2026-10-03", dict(ROWS[0], s=s), 0, [], run=run, model=model)
             self.assertEqual(got["note"], "The menu works on phones again.")
             argv, kw = self.runs[-1]
-            self.assertEqual((flag(argv, "--model"), flag(argv, "--max-budget-usd")), (model or "haiku", cap))
+            self.assertEqual((flag(argv, "--model"), flag(argv, "--max-budget-usd")), (model or "sonnet", cap))
             self.isolated(argv, kw)
             self.assertEqual(flag(argv, "--disallowedTools"), "mcp__*")
         self.assertEqual(claudeuses._spent["note"][0], 3)

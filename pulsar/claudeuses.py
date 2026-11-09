@@ -38,7 +38,7 @@ USES = {
         "does": "Drafts the note for time you log, in the log dialog or a row of Log the day.",
         "sends": "Sends that work's time and repository, what you typed and Claude's replies, your commit subjects "
                  "and a few of your notes.",
-        "model": "haiku", "cap": 0.1,
+        "model": "sonnet", "cap": 0.1,  # since 1.6.12: as fast as Haiku on one day's 15 notes, fewer left empty
     },
     "task": {
         "name": "New task",

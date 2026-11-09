@@ -1428,7 +1428,7 @@ sends"), and a model to choose (Haiku, Sonnet or Opus, the default marked) where
 | Use (id) | What it does | What it sends | Model by default | Most one run may cost (Haiku, Sonnet, Opus) |
 |---|---|---|---|---|
 | Check my day: task picks (`ask`) | A task and a note for each row Log the day is unsure of, before the review; also shown on the Likely cards (5.4, 5.5) | Each block's time, repository, session titles, steps (typed and Claude's replies), commit subjects, up to 5 of your notes; your tasks of the last 30 days. May search Productive, read only | Sonnet | $0.25, $0.75, $2 |
-| Note (`note`) | The note for a block or a stretch (below), and for each row of Log the day from a session, by itself | That work's time, repository, steps, commit subjects, up to 5 of your notes | Haiku | $0.10, $0.30, $0.80 |
+| Note (`note`) | The note for a block or a stretch (below), and for each row of Log the day from a session, by itself | That work's time, repository, steps, commit subjects, up to 5 of your notes | Sonnet | $0.10, $0.30, $0.80 |
 | New task (`task`) | A new task's title and description, from the log dialog or a row of Log the day (5.1) | That work's time, repository, session titles, steps, commit subjects, up to 8 titles of your recent tasks | Sonnet | $0.10, $0.30, $0.80 |
 | Check my day: review (`review`) | Reviews the day's plan with FI's rules: suggestions to accept or reject (5.4c) | The day's digest (5.4c): the plan, steps, session titles, commit subjects, meeting titles, app names by hour, notes of logged entries, your tasks of the last 30 days; may search Productive, read only | Sonnet | $0.25, $0.75, $2 |
 | Pulsar in Claude Code (`session`) | A session reads the day and logs through Pulsar (5.6) | What the session reads from Pulsar, as part of that session | the session's own | none of Pulsar's |
@@ -1481,11 +1481,14 @@ with its start, end and project (for a stretch, the project with most minutes in
 project's Likely rows that overlap the time, whole rows. `askclaude.steps()` reads their sessions (matched by title)
 for each step's typed message and Claude's last words before the next message (its summary of what it did; no side
 chains, tool calls or tool output; at most 15 steps, 400 and 900 characters), with the commits and up to five of the
-person's own notes as examples. `claude -p --model <haiku unless chosen> --tools "" --strict-mcp-config --setting-sources "" --disallowedTools "mcp__*" --json-schema`, with the environment of section 3, drafts the note
+person's own notes as examples. `claude -p --model <sonnet unless chosen> --tools "" --strict-mcp-config --setting-sources "" --disallowedTools "mcp__*" --json-schema`, with the environment of section 3, drafts the note
 (English unless their notes are in another language); `guard_note` checks it. It replaces the note only while the
 person has not typed in it, and only in the dialog that asked, with "Drafted by Claude from this session and your
 commits"; for a stretch "from the fi-drupal-qa session", adding "(the most minutes here; also pulsar)" when other
-projects worked in it too. Measured: 6 to 11 seconds, $0.001 to $0.004 a note. Asking a copy of the session itself
+projects worked in it too. Measured: 6 to 11 seconds, $0.001 to $0.004 a note. **Haiku or Sonnet** (2026-11-09, one
+day's 15 rows of Log the day, each drafted fresh by both): the same speed (97 and 92 seconds for all 15, 3 to 11 a
+note), $0.015 and $0.24 for the day; Haiku left 2 empty (its draft said how the time was spent, or ran over two
+sentences), Sonnet 1 (a tool's name), and Sonnet's were a little more exact. Sonnet is the default since 1.6.12. Asking a copy of the session itself
 (`claude -p --resume <id> --fork-session`) also works but reads the whole session each time ($0.16 to $0.55 a
 question) and cannot tell when inside it the work happened.
 
@@ -1769,11 +1772,11 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `GET /api/range?date=&s=&e=[&source=]` | What a stretch of the day (minutes `s` to `e`) holds, by Log the day's minutes: parts, task groups, the one that leads, `mixed` and the `split` (5.1). Nothing is written. `ignore_logged=1` as for `/api/dayplan`. |
 | `POST /api/entry/update`, `/api/entry/delete` | Change or delete one of your entries. Delete with `run`: only what that Log the day run created. |
 | `POST /api/likely/ask` | Ask Claude (only when switched on). |
-| `POST /api/likely/note` | `{date, s, e, project[, reuse]}`: the note for a Likely block, a stretch or a row of Log the day, from its session and commits (the background session's when none was in front), Haiku unless another model is chosen; only with the Claude Code switch on, 5.7. `reuse` (Log the day): a note already drafted that day for the same work (`askclaude.kept_note`), with no new run. |
+| `POST /api/likely/note` | `{date, s, e, project[, reuse]}`: the note for a Likely block, a stretch or a row of Log the day, from its session and commits (the background session's when none was in front), Sonnet unless another model is chosen; only with the Claude Code switch on, 5.7. `reuse` (Log the day): a note already drafted that day for the same work (`askclaude.kept_note`), with no new run. |
 | `GET /api/task/projects?date=[&hint=][&repo=]` | Active projects for a new task, those logged to lately first, and the likeliest (5.1). |
 | `GET /api/task/places?project=&date=` | Where in a project a new task can go, and which first (4.2). |
 | `GET /api/task/fields?project=&date=&place=[&title=]` | For a new task at `place` (`parent:<id>`, `list:<id>` or `none`): the project's open statuses and the services that take time on the date, and the status, estimate and service proposed, each with why (5.1). Read only. |
-| `POST /api/task/draft` | `{date, s, e[, meeting]}`: a new task's title and description from the work in that time; with `claude` and `projectName`, Claude's (Haiku unless another model is chosen; the switch on, 5.1). |
+| `POST /api/task/draft` | `{date, s, e[, meeting]}`: a new task's title and description from the work in that time; with `claude` and `projectName`, Claude's (Sonnet unless another model is chosen; the switch on, 5.1). |
 | `POST /api/task/create` | `{projectId, parentId or taskListId, title, description[, statusId][, estimate]}`: one task, assigned to you, never with a service (the page only). |
 | `POST /api/calendar/connect`, `/disconnect` | Google Calendar. |
 | `POST /api/update/check`, `/install`, `/apply` | Updates. |

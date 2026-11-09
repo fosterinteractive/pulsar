@@ -351,7 +351,7 @@ class SessionNote(unittest.TestCase):
                                {"typed": "and the quiz", "reply": "Quiz results save again."}])
         self.assertEqual(askclaude.steps(T0, ["Another session"], 595, 730, projects_dir=self.projects), [])
 
-    def test_note_runs_haiku_with_nothing_else_and_guards_the_draft(self):
+    def test_note_runs_its_model_with_nothing_else_and_guards_the_draft(self):
         seen = {}
 
         def run(cmd, **kw):
@@ -365,7 +365,7 @@ class SessionNote(unittest.TestCase):
         self.assertEqual(got["note"], "Event pages show the right time zone again.")
         for flag in ("--strict-mcp-config", "--no-session-persistence", "dontAsk"):
             self.assertIn(flag, seen["cmd"])
-        self.assertEqual(seen["cmd"][seen["cmd"].index("--model") + 1], "haiku")
+        self.assertEqual(seen["cmd"][seen["cmd"].index("--model") + 1], "sonnet")  # the default since 1.6.12
         self.assertEqual(seen["cmd"][seen["cmd"].index("--setting-sources") + 1], "")  # no CLAUDE.md
         self.assertEqual(seen["env"].get("CLAUDE_CODE_DISABLE_AUTO_MEMORY"), "1")  # and no MEMORY.md
         self.assertEqual(seen["cmd"][seen["cmd"].index("--disallowedTools") + 1], "mcp__*")  # no MCP tool at all

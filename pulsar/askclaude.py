@@ -598,7 +598,7 @@ _notes: dict = {}  # (date, start, end, repository, what was seen) -> the answer
 
 def note(date: str, row: dict, t0: float, history: list = (), run=subprocess.run, tz=None, model: str = None) -> dict:
     """A note for one block of work, from its session (steps with Claude's replies) and commits, by the model chosen
-    in Settings for "note" (Haiku by default: a few seconds, about a fifth of a cent). {"note", "why"}: the note is ""
+    in Settings for "note" (Sonnet by default since 1.6.12: a few seconds, about 1.6 cents; Haiku about a tenth of that). {"note", "why"}: the note is ""
     when there was nothing to go on or the guard refused the draft (why says which). Raises AskError with a sentence
     for the page when Claude Code fails."""
     model = claudeuses.chosen("note", model)
