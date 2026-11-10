@@ -1203,6 +1203,9 @@ def class_of(task, d: "_Day") -> str | None:
     return (d.ctx.get("project_class") or {}).get(project)
 
 
+_CYRILLIC = re.compile(r"[\u0400-\u052F]")  # notes in English only (askclaude.english)
+
+
 def _client_task(m: dict, d: _Day) -> bool:
     """A piece or entry of a task that may be billable: a client's by its own class, or its task's."""
     t = str(m.get("task") or "")
@@ -1272,7 +1275,7 @@ def _caps(d: _Day, out: list, unplaced: list, evidence: dict) -> tuple:
     """(entries, totals so far). The cap: proposed plus logged never more than active time plus attended meetings,
     the rest shown, not placed; then the evidence cap: a task that may be billable never gets more minutes than the
     person was seen at work on it. Entries whose task has time logged with no start are flagged."""
-    N, g, o, ctx = DAY_MIN, d.o["grid"] or 1, d.o, d.ctx
+    N, g, o = DAY_MIN, d.o["grid"] or 1, d.o
     att = bytearray(N)
     for a, b, _ in d.attended:
         for x in range(max(0, int(a)), min(N, int(math.ceil(b)))):
@@ -1402,8 +1405,9 @@ def _entry(m: dict, s: int, e: int, names: dict) -> dict:
     # a note only from a part of this task (a meeting's title, a repeat's usual note, Claude's draft for this task,
     # its commits);
     # an entry with no task keeps the note only when that part is most of it
+    # notes in English only: a meeting titled in Ukrainian, or an old note in it, gives none
     noted = [q for q in sorted(m["parts"], key=lambda q: -q["minutes"]) if q.get("note")
-             and (q.get("task") == task if task else q is lead)]
+             and not _CYRILLIC.search(q["note"]) and (q.get("task") == task if task else q is lead)]
     note, note_from = (noted[0]["note"], noted[0].get("noteFrom") or "") if noted else ("", "")
     # Claude's pick of a task not logged to in the last 30 days (found by searching Productive), and a note Claude
     # drafted: never ticked at the start, so a prompt injection in the work cannot log through one click

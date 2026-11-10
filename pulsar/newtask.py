@@ -134,7 +134,7 @@ notes themselves (what the steps show or leave out).
 Never put in either: file names or paths, web addresses, code, error messages or log lines, passwords, keys or \
 tokens, the tools that helped (no Claude, Pulsar, agents or AI tools), anyone's private matters, how long it took, \
 or that the time was logged or is billable.
-Write in English unless their task titles are in another language. Both are empty when the work does not show what \
+Write in English, always. Both are empty when the work does not show what \
 it was.
 
 WORK:

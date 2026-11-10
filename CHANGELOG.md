@@ -8,6 +8,7 @@ What each Pulsar release changed, newest first.
 
 ## Unreleased
 - What is left before going over: the log dialog always shows a task's estimate ("8 h 30 min of 10 h with this entry, 1 h 30 min left"), amber from 80%, and a Log the day row says it from 80%; the Tasks box's bar turns amber at 80%. The service's time budget the same way, red past it, where Productive lets you read budgets (not for a Staff role).
+- Notes are English only, since clients see them on invoices: Claude always drafts in English, and Pulsar never offers a note with Cyrillic letters (an old usual note, a meeting's title, a commit subject). What you type yourself is left as you typed it.
 
 ## 1.6.12 (2026-11-10)
 - The window is new in this release (Pause in the Dock icon's menu, the panel when you come back): Settings > Updates offers Reinstall Pulsar to every older one.

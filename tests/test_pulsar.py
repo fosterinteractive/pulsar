@@ -648,6 +648,20 @@ class RepeatsTest(unittest.TestCase):
         self.assertEqual(got[0]["weekdays"], [0, 1, 3, 4])            # the day at 15:25 is not one of them
         self.assertEqual(got[0]["minutes"], 54)
 
+    def test_the_usual_note_is_english_only(self):
+        """Notes go to clients' invoices: an old note in Ukrainian is never offered again, the most common English one
+        is, and with none the note is empty."""
+        rows = self.history()
+        for r in rows:
+            if r["taskId"] == "7" and r["minutes"] > 50:
+                r["note"] = "Щоденна зустріч"
+        got = server.repeating(rows, self.TZ, "2026-11-11")
+        self.assertEqual(got[0]["note"], "Daily meeting")             # the one day still in English
+        for r in rows:
+            if r["taskId"] == "7":
+                r["note"] = "Щоденна зустріч"
+        self.assertEqual(server.repeating(rows, self.TZ, "2026-11-11")[0]["note"], "")
+
     def test_a_repeat_not_seen_for_ten_days_has_stopped(self):
         self.assertEqual(server.repeating(self.history(), self.TZ, "2026-11-25"), [])
 
@@ -1477,8 +1491,19 @@ class NoteGuardTest(unittest.TestCase):
             for note in notes:
                 self.assertEqual(askclaude.guard_note(note), ("", why), note)
         for note in ("Café menu pages fixed.", "Removed two dollar signs from the prices.", "TASK_ID set on [ACME-1].",
-                     "Сторінки подій показують правильний час.", "Pages load in ½ the time…", "Agenda for the launch."):
+                     "Pages load in ½ the time…", "Agenda for the launch."):
             self.assertEqual(askclaude.guard_note(note), (note, None), note)
+
+    def test_notes_are_english_only(self):
+        """Notes go to clients' invoices, so they are English: a note with a Cyrillic letter is never offered, and both
+        prompts say so."""
+        from pulsar import askclaude
+        for note in ("Сторінки подій показують правильний час.", "Fixed the база upgrade", "Оновлено DB"):
+            self.assertEqual(askclaude.guard_note(note), ("", "not in English"), note)
+        self.assertTrue(askclaude.english("Database upgrade released."))
+        self.assertFalse(askclaude.english("Database upgrade, реліз"))
+        for prompt in (askclaude.PROMPT, askclaude.NOTE_PROMPT):
+            self.assertIn("Write it in English, always", prompt)
 
 
 class HistoryReadTest(unittest.TestCase):

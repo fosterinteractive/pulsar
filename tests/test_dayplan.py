@@ -172,6 +172,17 @@ class PlannerTest(unittest.TestCase):
             [e] = p["entries"]
             self.assertEqual((e["note"], e["noteFrom"], e["checked"]), ("", "", False), title)
 
+    def test_a_repeats_note_in_ukrainian_is_never_the_entrys(self):
+        """Notes go to clients' invoices, so they are English: a repeat's usual note with a Cyrillic letter (an old one,
+        from before) gives the entry no note; an English one stays."""
+        for note, want in (("Щоденна зустріч", ""), ("Daily meeting", "Daily meeting")):
+            rep = {"s": 600, "e": 630, "minutes": 30, "at": 600, "taskId": "77", "title": "Scrum", "project": "PM",
+                   "serviceId": "s77", "service": "Admin", "note": note, "days": 12}
+            p = dayplan.plan(day(items=[work(600, 630, app="zoom.us", title="Zoom Meeting")], calls=[{"s": 601, "e": 629}],
+                                 repeats=[rep]), self.ctx)
+            [e] = p["entries"]
+            self.assertEqual((e["taskId"], e["note"]), ("77", want), note)
+
     def call_with(self, **meet):
         meet = {"s": 600, "e": 630, "title": "Design sync", "uid": "series-1", "declined": False, "all_day": False,
                 "tasks": [{"taskId": "33", "title": "Reviews", "project": "C", "n": 5, "of": 5, "lastTitle": "Design sync"}],

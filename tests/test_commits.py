@@ -37,6 +37,8 @@ class Note(unittest.TestCase):
         self.assertEqual(commits.note(["probe: mirror hint"]), "Probe: mirror hint")
         self.assertEqual(commits.note(["qa:full: release sweep"]), "qa:full: release sweep")
         self.assertEqual(commits.note([]), "")
+        self.assertEqual(commits.note(["Оновлено базу", "Database upgrade"]), "Database upgrade")  # English only
+        self.assertEqual(commits.note(["Оновлено базу"]), "")
 
     def test_clean_drops_what_a_note_cannot_carry(self):
         found = [(3, "Merge branch 'qa' into dev"), (1, "Fix the event time zone."), (2, "Pulsar 1.2.1"),

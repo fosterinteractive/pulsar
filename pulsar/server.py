@@ -962,7 +962,7 @@ def repeating(rows: list, tz, date: str, strict: bool = False) -> list:
         notes: dict = {}
         for d in sorted(per_day):
             n = (per_day[d][2].get("note") or "").strip()
-            if n:
+            if n and askclaude.english(n):  # notes in English only: an old note in Ukrainian is not offered again
                 notes[n] = notes.get(n, 0) + 1
         latest = per_day[last][2]
         out.append({"taskId": task_id, "title": latest.get("task") or "", "project": latest.get("project") or "",

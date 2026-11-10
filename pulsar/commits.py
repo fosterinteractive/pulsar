@@ -160,6 +160,7 @@ def note(subjects: list) -> str:
     """A note from commit subjects: the first few, joined, as short as they allow. Subjects that start the same way
     ("Reports: a; Reports: b") say it once ("Reports: a; b")."""
     out, last = "", None
+    subjects = [s for s in subjects if not re.search(r"[\u0400-\u052F]", s or "")]  # notes in English only
     for s in subjects[:NOTE_MOST]:
         head, sep, rest = s.partition(": ")
         part = rest if sep and head == last and rest else s
