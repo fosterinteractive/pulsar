@@ -573,7 +573,10 @@ class SharedTest(unittest.TestCase):
         self.ctx = history()[0]
 
     def test_the_client_gets_the_minutes_as_a_shared_row_ticked_with_its_choice(self):
-        p = plan([work(600, 700)], [front(600, 700, "house-tool")], [back(620, 660, "client-web")], ctx=self.ctx)
+        agent = dayplan.title_key("Client agent")  # the client's agent logged to C1 before: a sure answer, so ticked
+        ctx = {**self.ctx, "sess": {**self.ctx["sess"], agent: {"C1": 120.0}},
+               "sr": {**self.ctx["sr"], (agent, "client-web"): {"C1": 120.0}}}
+        p = plan([work(600, 700)], [front(600, 700, "house-tool")], [back(620, 660, "client-web")], ctx=ctx)
         by = [(e["s"], e["e"], e["taskId"], e.get("shared", False)) for e in p["entries"]]
         self.assertEqual(by, [(600, 620, "T1", False), (620, 660, "C1", True), (660, 700, "T1", False)])
         shared = p["entries"][1]
@@ -582,6 +585,13 @@ class SharedTest(unittest.TestCase):
         self.assertEqual((shared["choice"], shared["sharedWith"]["taskId"]), ("client", "T1"))
         self.assertEqual(p["totals"]["shared"], 40)
         self.assertEqual(p["totals"]["parallel"], 40)
+
+    def test_the_last_days_task_alone_leaves_the_shared_row_unticked(self):
+        """Without a sure answer the client's row takes the task logged last in its project, unticked: billable time on
+        a guess is the person's call."""
+        p = plan([work(600, 700)], [front(600, 700, "house-tool")], [back(620, 660, "client-web")], ctx=self.ctx)
+        shared = [e for e in p["entries"] if e.get("shared")]
+        self.assertEqual([(e["taskId"], e["source"], e["checked"]) for e in shared], [("C1", "lastday", False)])
 
     @mock.patch("pulsar.sessions.LOGGING_IS_WORK", False)  # the rule before 1.6.9, kept behind its switch
     def test_a_shared_stretch_with_a_gap_in_it_is_one_entry(self):

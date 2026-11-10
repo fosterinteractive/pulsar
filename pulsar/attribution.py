@@ -204,6 +204,20 @@ def fits(votes: dict, project_of, task) -> bool | None:
     return mine / total >= FIT_SHARE
 
 
+def projects_of(votes: dict, project_of) -> set:
+    """The projects a repository is logged to (FIT_SHARE of its votes, {task: weight}); none with too little history
+    (FIT_MIN)."""
+    total = sum(votes.values()) if votes else 0
+    if total < FIT_MIN:
+        return set()
+    by: dict = defaultdict(float)
+    for t, w in votes.items():
+        p = project_of(t)
+        if p:
+            by[p] += w
+    return {p for p, w in by.items() if w / total >= FIT_SHARE}
+
+
 def one_project(votes: dict, project_of) -> bool:
     """Whether a session's votes ({task: weight}) are mostly (ONE_PROJECT) one project's. 2026-11-09: one session
     upgraded the database of four clients' sites in turn; on the fifth site, which had no history yet, it offered the

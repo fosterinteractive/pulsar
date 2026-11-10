@@ -103,6 +103,18 @@ def fits(ctx: dict, repo: str, task) -> bool | None:
                             lambda t: (names.get(str(t)) or {}).get("project"), task)
 
 
+def places(ctx: dict, repo: str) -> set:
+    """The projects a repository's work goes to: those it is logged to (attribution.projects_of); with too little
+    history, the projects of tasks whose names name it ("… - acme - Maintenance"), as learn.work_projects does."""
+    names = ctx.get("names") or {}
+    got = attribution.projects_of((ctx.get("repo") or {}).get(repo_key(repo)) or {},
+                                  lambda t: (names.get(str(t)) or {}).get("project"))
+    name = (repo_key(repo) or "").lower()
+    if got or len(name) < 3:
+        return got
+    return {n["project"] for n in names.values() if n.get("project") and name in words(n.get("task") or "")}
+
+
 def same_client(ctx: dict, repo: str, task) -> bool:
     """A task of the client this repository works for: its project is logged to the repository, or shares a word of
     four letters or more with the repository's name."""
@@ -198,8 +210,18 @@ def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_L
     recent = [t for t, d in sorted(last.items(), key=lambda kv: kv[1], reverse=True) if d >= lo30]
     never = {p for p in seen if p and seen[p] >= 60 and logged[p] / seen[p] < 0.1}
     task_class, project_class = attribution.task_classes(before)
+    # each project's task of its latest earlier day (the most minutes that day): the work of a repository logged to
+    # that project most often goes on with it (replay, 43 days: right on 62% of the minutes it covers)
+    per_day: dict = defaultdict(lambda: defaultdict(float))
+    for r in before:
+        if r.get("project") and not r.get("meeting"):
+            per_day[(r["project"], r["date"])][str(r["taskId"])] += r.get("minutes") or 0
+    lastday: dict = {}
+    for (p, d), tasks in per_day.items():
+        if p not in lastday or d > lastday[p][0]:
+            lastday[p] = (d, max(tasks.items(), key=lambda kv: kv[1])[0])
     return {"sess": sess, "repo": repo, "sr": sr, "service": service, "project_service": project_service,
-            "names": names, "recent": recent, "never_logged": never,
+            "names": names, "recent": recent, "never_logged": never, "lastday": lastday,
             "skip": set(WORD.findall((person or "").lower())),
             "task_class": task_class, "project_class": project_class,
             "classes": attribution.repo_classes(credited, task_class)}
@@ -257,6 +279,7 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
         return n.get("task") or a.get("title") or "", n.get("project") or a.get("project") or ""
 
     keys = _keys(row)
+    session_share = 0.0
     for src in ORDER:
         if src == "rule" and rule_hit:
             out.append((str(rule_hit["taskId"]), "rule", "high", f"your rule “{rule_hit['match']}”"))
@@ -287,6 +310,7 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
             if v:
                 t, m, _ = _ranked(v)[0]
                 share = m / tot
+                session_share = share
                 # 40-60% was "medium" and was right no more often than "low" (replay, 34 days): it starts unticked
                 conf = "high" if share >= 0.6 and m >= 30 else "low"
                 out.append((t, "session", conf, f"you logged it while in this Claude session ({round(share * 100)}%)"))
@@ -316,6 +340,17 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
                     best = (tid, len(shared), shared)
             if best:
                 out.append((best[0], "words", "low", "name matches: " + ", ".join(sorted(best[2]))))
+    # the task you logged last in a project the repository's work goes to (places): after a sure session vote, before
+    # the weaker answers (replay, 43 days: +2.6 points of minutes on the right task)
+    last = None
+    for p in sorted(places(ctx, row.get("project"))):
+        got = (ctx.get("lastday") or {}).get(p)
+        if got and got[1] and (last is None or got[0] > last[0]):
+            last = (got[0], got[1], p)
+    if last:
+        weak = lambda c: c[1] in ("repo", "sameday", "words", "work") or (c[1] == "session" and session_share < 0.6)  # noqa: E731
+        at = next((i for i, c in enumerate(out) if weak(c)), len(out))
+        out.insert(at, (last[1], "lastday", "low", f"the task you logged last in {last[2]} ({last[0]})"))
     return out
 
 
@@ -339,9 +374,12 @@ def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, ass
     sure (medium or low): on the hardest days it helped most there. A task the row's class does not admit (admissible)
     is never the pick; it stays among the alternatives."""
     every = candidates(row, ctx, rule_hit, sameday or {}, assigned or [])
-    found = [f for f in every if admissible(row, ctx, f[0], f[1])]
-    found += [(t, s_, "low", w) for t, s_, c, w in every if not admissible(row, ctx, t, s_)]
-    if found and admissible(row, ctx, found[0][0], found[0][1]):
+    # where you usually log in a repository is never the pick, only an alternative: as the pick it was right on 5% of
+    # its minutes (replay, 43 days), and without it the right task gained 1.2 points and over-billing fell
+    pickable = lambda t, s_: s_ != "repo" and admissible(row, ctx, t, s_)  # noqa: E731
+    found = [f for f in every if pickable(f[0], f[1])]
+    found += [(t, s_, "low", w) for t, s_, c, w in every if not pickable(t, s_)]
+    if found and pickable(found[0][0], found[0][1]):
         task, src, conf, why = found[0]
     else:
         task, src, conf, why = None, "none", "low", "no match: pick the task"
