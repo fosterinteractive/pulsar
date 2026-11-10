@@ -219,6 +219,7 @@ class RunTest(unittest.TestCase):
                         mock.patch.object(server, "productive_rows", rows),
                         mock.patch.object(server, "new_task_source", lambda d, s: []),
                         mock.patch.object(server, "api_activity", lambda q: {"items": [work(540, 600)], "problems": {}}),
+                        mock.patch.object(dayplan, "past_items", lambda d, url: [work(540, 600)]),
                         mock.patch.object(dayplan, "gather", gather),
                         mock.patch.object(dayplan, "runs_for", lambda d: []),
                         mock.patch.object(config, "tz", lambda s: timezone.utc)]
@@ -330,7 +331,7 @@ class RunTest(unittest.TestCase):
         for f in os.listdir(os.path.join(self.dir, "context-days")):
             os.remove(os.path.join(self.dir, "context-days", f))
         read = []
-        with mock.patch.object(server, "api_activity", lambda q: read.append(q["date"]) or {"items": [work(1, 2)]}):
+        with mock.patch.object(dayplan, "past_items", lambda d, url: read.append(d) or [work(1, 2)]):
             self.assertEqual(selfcheck.run_once(self.s, TODAY), selfcheck.SOON)
         self.assertEqual(len(read), selfcheck.READS)  # never 60 days at once
         self.assertEqual(read[0], "2026-11-09")
@@ -344,6 +345,26 @@ class RunTest(unittest.TestCase):
         self.assertNotIn("logged", doc)
         sm = selfcheck.summary(self.s, TODAY)
         self.assertEqual((sm["days"], sm["noActivity"]), (0, len(self.planned)))
+
+
+class OwnProblemsTest(unittest.TestCase):
+    def test_reading_past_days_never_touches_todays_tracker_warning(self):
+        """A past day's tracker read in the self-check has its own problems: the Activity header's warning for today
+        is neither set nor cleared by it."""
+        from pulsar import selfcheck, trackers
+        trackers.PROBLEMS.clear()
+        trackers.PROBLEMS["aw"] = "today's warning"
+
+        def reads(*a, **k):  # what a failing past-day read would do
+            trackers.PROBLEMS.pop("aw", None)
+            trackers.PROBLEMS["memtime"] = "a past day's problem"
+            return {"wait": 60, "worked": 0, "left": 0, "note": ""}
+        try:
+            with mock.patch.object(selfcheck, "_run_days", reads):
+                selfcheck._run({})
+            self.assertEqual(dict(trackers.PROBLEMS), {"aw": "today's warning"})
+        finally:
+            trackers.PROBLEMS.clear()
 
 
 class NudgeTest(unittest.TestCase):

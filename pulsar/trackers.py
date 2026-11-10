@@ -258,17 +258,23 @@ class _Problems(MutableMapping):
 
 _shared: dict = {}
 _own = threading.local()
+_NONE = object()
 PROBLEMS = _Problems()
 
 
 @contextmanager
 def own_problems():
-    """The problems of the reads made inside, in this thread only ({tracker: why}), apart from PROBLEMS."""
+    """The problems of the reads made inside, in this thread only ({tracker: why}), apart from PROBLEMS. Nests: an
+    inner one keeps its own and gives the outer one back."""
+    outer = getattr(_own, "problems", _NONE)
     _own.problems = {}
     try:
         yield _own.problems
     finally:
-        del _own.problems
+        if outer is _NONE:
+            del _own.problems
+        else:
+            _own.problems = outer
 
 
 def activitywatch_raw(base: str, t0: float, t1: float) -> dict | None:

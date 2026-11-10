@@ -253,8 +253,14 @@ def _run(s: dict, today: str | None = None, reads: int = READS, most: int | None
     """{"wait": seconds to the next run, "worked": days worked out and kept, "left": days still to work out (None
     before Productive answered), "note": why it stopped, or ""}. reads: the windows of the days before (context.py) a
     run may read; most: the days it may work out (else what the reads leave, two reads a day); until: no day is started
-    after this time.time()."""
-    from . import learn, productive, server
+    after this time.time(). The tracker problems of its reads are its own (trackers.own_problems): reading past days
+    never sets or clears the Activity header's warning for today."""
+    with trackers.own_problems():
+        return _run_days(s, today, reads, most, until)
+
+
+def _run_days(s: dict, today: str | None, reads: int, most: int | None, until: float | None) -> dict:
+    from . import dayplan, learn, productive, server
     out = {"wait": IDLE, "worked": 0, "left": None, "note": ""}
 
     def stop(wait: int, note: str = "") -> dict:
@@ -298,9 +304,8 @@ def _run(s: dict, today: str | None = None, reads: int = READS, most: int | None
         return out
     url = s.get("activitywatch_url") or config.DEFAULTS["activitywatch_url"]
 
-    def read_day(d):  # None while no tracker answers: never kept empty (as Log the day's own, dayplan.gather)
-        got = server.api_activity({"date": d})
-        return got.get("items") if got.get("items") or trackers.answering(url) else None
+    def read_day(d):  # None unless a tracker read it whole: never kept empty, never logged (dayplan.past_items)
+        return dayplan.past_items(d, url)
     # the windows of the days before (context.py), as Log the day keeps them: a plan for a day learns from them
     missing = [d for d in (_shift(today, -i) for i in range(1, context_mod.LEARN_DAYS + 1))
                if context_mod.stored(d) is None]
