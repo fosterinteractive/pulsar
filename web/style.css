@@ -541,6 +541,10 @@ header { flex-wrap: wrap; row-gap: 8px; }
   table.inv thead th { font-size: 7pt; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #8e8e93;
     border-bottom: 1pt solid #1d1d1f; padding-bottom: 5px; }
   table.inv tbody.inv-group { break-inside: avoid; }
+  table.inv tbody.inv-section th, table.inv tbody.inv-section td { padding: 22px 0 0; font-size: 7pt; font-weight: 600;
+    letter-spacing: .06em; text-transform: uppercase; color: #6e6e73; break-after: avoid; }
+  table.inv tbody.inv-section td { padding-left: 12px; }
+  table.inv thead + tbody.inv-section th, table.inv thead + tbody.inv-section td { padding-top: 12px; }
   table.inv tr.inv-proj th, table.inv tr.inv-proj td { font-weight: 600; padding: 16px 0 5px; border-bottom: 0.5pt solid #d2d2d7; }
   table.inv tr.inv-proj td { padding-left: 12px; }
   table.inv tbody.inv-group tr:nth-child(2) td { padding-top: 6px; }

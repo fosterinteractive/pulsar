@@ -371,6 +371,14 @@ function billOf(t, share = false) {
   return parts.filter(Boolean).join(', ') || '–';
 }
 const hoursOf = m => `${hours(m)} h`;
+/* the projects in sections, the most time first in each: billable, then of unknown billing (Productive does not show
+   it), then not billable. The document and the spreadsheet list them in this order. */
+function invoiceSections(inv) {
+  const most = list => [...list].sort((a, b) => b.minutes - a.minutes);
+  return [{label: 'Billable', ps: most(inv.projects.filter(p => p.billable > 0))},
+          {label: 'Billing unknown', ps: most(inv.projects.filter(p => !(p.billable > 0) && p.unknown > 0))},
+          {label: 'Not billable', ps: most(inv.projects.filter(p => !(p.billable > 0) && !(p.unknown > 0)))}].filter(x => x.ps.length);
+}
 /* the invoice summary as a document: who and when, the totals first, then one table where each project opens with its
    subtotal and lists its tasks; numbers right-aligned, what is not billable quieter (style.css, @media print) */
 function renderInvoice(x) {
@@ -395,12 +403,16 @@ function renderInvoice(x) {
       inv.unknown ? stat('Billing unknown', dur(inv.unknown), 'not shown in Productive') : ''}</section>
     <table class="inv"><colgroup><col><col class="c-share"><col class="c-time"><col class="c-bill"></colgroup>
       <thead><tr><th scope="col">Task</th><th scope="col" class="inv-sh">Share</th><th scope="col">Time</th><th scope="col">Billable</th></tr></thead>`
-    + inv.projects.map(p => {
+    + invoiceSections(inv).map(({label, ps}) => {
+      const sum = k => ps.reduce((n, p) => n + (p[k] || 0), 0);
+      return `<tbody class="inv-section"><tr><th scope="rowgroup" colspan="2">${esc(label)}</th><td>${esc(dur(sum('minutes')))}</td>`
+        + `<td>${sum('billable') ? esc(dur(sum('billable'))) : ''}</td></tr></tbody>` + ps.map(p => {
       const share = inv.minutes ? Math.round(100 * p.minutes / inv.minutes) : 0;
       return `<tbody class="inv-group"><tr class="inv-proj"><th scope="rowgroup">${esc(p.project)}</th>`
         + `<td class="inv-sh"><i style="--w:${Math.max(2, share)}%"></i>${share}%</td><td>${esc(dur(p.minutes))}</td>${projBill(p)}</tr>`
         + p.tasks.map(t => `<tr><td>${esc(t.task)}${t.noTask ? ' <small>no task</small>' : ''}</td><td></td><td>${esc(dur(t.minutes))}</td>${bill(t)}</tr>`).join('')
         + '</tbody>';
+    }).join('');
     }).join('')
     + `</table><div class="inv-foot"><span>From ${who ? 'the' : 'your'} Productive time entries, ${esc(range)}. Share: each project's part of the time.</span><span class="inv-mark">Pulsar</span></div>`;
 }
@@ -409,7 +421,7 @@ function invoiceRows(inv) {
   const row = (project, task, x) => [project, task, hours(x.minutes), x.minutes, hours(x.billable), x.billable, x.nonBillable, x.unknown,
     'billablePct' in x ? x.billablePct ?? '' : ''];
   return [['Project', 'Task', 'Hours', 'Minutes', 'Billable (h)', 'Billable (min)', 'Not billable (min)', 'Billing unknown (min)', 'Billable %'],
-    ...inv.projects.flatMap(p => [...p.tasks.map(t => row(p.project, t.task, t)), row(p.project, 'Subtotal', p)]),
+    ...invoiceSections(inv).flatMap(x => x.ps).flatMap(p => [...p.tasks.map(t => row(p.project, t.task, t)), row(p.project, 'Subtotal', p)]),
     row('Total', '', inv)];
 }
 
