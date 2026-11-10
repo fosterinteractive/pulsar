@@ -1010,25 +1010,12 @@ class LearnWordsTest(unittest.TestCase):
         self.assertEqual(ids(learn.first_offers([{"taskId": "b"}, {"taskId": "L"}], last, None)), ["L", "b"])  # moved up
         self.assertEqual(ids(learn.first_offers([], last, fresh)), ["L", "N"])
         self.assertEqual(learn.first_offers(unsure), unsure)
-        # a session never logged (new work): the task assigned to you first, the last task second; a sure offer stays
-        self.assertEqual(ids(learn.first_offers(unsure, last, fresh, new=True)), ["N", "L", "a", "b"])
-        self.assertEqual(ids(learn.first_offers(unsure, last, None, new=True)), ["a", "L", "b"])
-        self.assertEqual(ids(learn.first_offers(named, last, fresh, new=True)), ["w", "N"])
-        # new: no vote for the session's keys, unless your new sessions mostly went on with the last task
-        self.assertTrue(learn.new_work(["k"], {}, None))
-        self.assertFalse(learn.new_work(["k"], {"k": {"1": [3.0, 10]}}, None))
-        self.assertFalse(learn.new_work([], {}, None))
-        self.assertFalse(learn.new_work(["k"], {}, (0.6, 200.0)))
-        self.assertTrue(learn.new_work(["k"], {}, (0.6, 50.0)))   # too few minutes to say
-        self.assertTrue(learn.new_work(["k"], {}, (0.2, 900.0)))
         # a task assigned to you that the work names: first, as the plan picks it; second after a sure vote
         asked = {"taskId": "A", "named": True}
         self.assertEqual(ids(learn.first_offers(unsure, last, fresh, asked)), ["A", "N", "L", "a", "b"])
         self.assertEqual(ids(learn.first_offers(unsure, last, asked, asked)), ["A", "L", "a", "b"])
         self.assertEqual(ids(learn.first_offers(sure, last, fresh, asked)), ["a", "N", "A", "b"])
-        # a never-logged session whose work names a task assigned to you: that task first, marked for the plan
-        self.assertEqual(ids(learn.first_offers(unsure, last, fresh, asked, new=True)), ["A", "N", "L", "a", "b"])
-        got = learn.first_offers(unsure, last, asked, asked, new=True)
+        got = learn.first_offers(unsure, last, asked, asked)  # the assigned task first, marked for the plan
         self.assertEqual(ids(got), ["A", "L", "a", "b"])
         self.assertTrue(got[0].get("named"))
 
@@ -1117,11 +1104,11 @@ class LearnWordsTest(unittest.TestCase):
             learn.annotate(proposal, "2026-11-04", {"person_name": "Nick Example", "person_id": "77"}, self.ENTRIES, [],
                            ZoneInfo("UTC"), pool=pool)
         got = proposal["entries"][0]["learned"]
-        # a session never logged (no votes: new work): the task assigned to you first, the last task second
-        self.assertEqual([x["taskId"] for x in got[:2]], ["9", "2"])
-        self.assertTrue(got[0]["assigned"] and "assigned to you on 2026-11-02" in got[0]["why"])
-        self.assertNotIn("new", got[0])  # an offer only: the plan never picks it for being new
-        self.assertEqual(got[1]["why"], "the task you logged last in Law Faculty (2026-11-03)")
+        # any session, logged before or not (one logic for everyone): the last task first, the assigned one second
+        self.assertEqual([x["taskId"] for x in got[:2]], ["2", "9"])
+        self.assertTrue(got[1]["assigned"] and "assigned to you on 2026-11-02" in got[1]["why"])
+        self.assertNotIn("new", got[1])  # an offer only: the plan never picks it for being new
+        self.assertEqual(got[0]["why"], "the task you logged last in Law Faculty (2026-11-03)")
         # third, the task you logged in that project before the last one
         self.assertEqual((got[2]["taskId"], got[2]["why"]), ("3", "you logged it in Law Faculty on 2026-10-06"))
         # a session logged before: the last task first, the assigned one second

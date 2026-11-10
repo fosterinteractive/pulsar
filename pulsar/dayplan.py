@@ -250,11 +250,8 @@ def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_L
     # each project's task of its latest earlier day: the work of a repository logged to that project most often goes
     # on with it (replay, 43 days: right on 62% of the minutes it covers)
     lastday = attribution.last_day_tasks(before, date)
-    # whether your sessions never logged before went on with their project's last task (new_session)
-    habit_from = (day0 - timedelta(days=learn_days - attribution.HABIT_SKIP)).strftime("%Y-%m-%d")
-    habit = attribution.new_session_habit(credited, before, project_of.get, habit_from)
     return {"sess": sess, "repo": repo, "sr": sr, "service": service, "project_service": project_service,
-            "names": names, "recent": recent, "never_logged": never, "lastday": lastday, "new_habit": habit,
+            "names": names, "recent": recent, "never_logged": never, "lastday": lastday,
             "latest": attribution.latest_tasks(before, date),
             "skip": set(WORD.findall((person or "").lower())),
             "task_class": task_class, "project_class": project_class,
@@ -400,13 +397,12 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
                 out.append((best[0], "words", "low", "name matches: " + ", ".join(sorted(best[2]))))
     weak = lambda c: c[1] in ("repo", "sameday", "words", "work") or (c[1] == "session" and session_share < SURE_SHARE)  # noqa: E731
     # the task you logged last in a project the repository's work goes to (places): after a sure session vote, before
-    # the weaker answers (replay, 43 days: +2.6 points of minutes on the right task). A session you never logged
-    # (no votes anywhere: new work) seldom goes on with it, so there it is the last alternative, after what the work
-    # names (replay, 43 days: right on 3% of such sessions' minutes, 60% of the others'; last for them, the right task
-    # +1.1 points of the clean minutes, the right billable minutes per task and day +1.6, over-billing -30 minutes)
+    # the weaker answers (replay, 43 days: +2.6 points of minutes on the right task). The same for every session: a
+    # rule for sessions never logged before, switched by each person's habit, was left out (2026-11-10: one logic for
+    # everyone, so a colleague's case can be reproduced)
     last = attribution.last_of(ctx.get("lastday") or {}, places(ctx, row.get("project")))
     if last:
-        at = len(out) if new_session(keys, ctx) else next((i for i, c in enumerate(out) if weak(c)), len(out))
+        at = next((i for i, c in enumerate(out) if weak(c)), len(out))
         out.insert(at, (last[1], "lastday", "low", f"the task you logged last in {last[4]} ({last[0]})"))
     # a task assigned to you in the last days in the repository's project, no entry of yours yet, whose name the work
     # names (learn.assigned_named): above the last day's task, never above a sure vote. New work is mostly a new
@@ -417,15 +413,6 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
         at = next((i for i, c in enumerate(out) if weak(c) or c[1] == "lastday"), len(out))
         out.insert(at, (str(named["taskId"]), "assigned", "low", named.get("why") or "assigned to you lately"))
     return out
-
-
-def new_session(keys: list, ctx: dict) -> bool:
-    """Whether a row's session was never logged (none of its title keys has a vote, in any repository) and so is new
-    work. False when the row has no title (nothing says it is new), and for a person whose sessions never logged before
-    mostly went on with their project's last task (ctx["new_habit"], attribution.new_session_habit: a new window each
-    morning for yesterday's work; the replay's person: 11 to 28% of those minutes, against 60 to 75% for the others)."""
-    from .learn import new_work
-    return new_work(keys, ctx.get("sess") or {}, ctx.get("new_habit"))
 
 
 def admissible(row: dict, ctx: dict, task, source: str, assigned: list | None = None) -> bool:

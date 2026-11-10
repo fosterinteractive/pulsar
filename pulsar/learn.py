@@ -172,23 +172,6 @@ def _credited(days: dict, entries: list, t0_of) -> tuple:
     return attribution.credits(days, task_of, project.get), project
 
 
-def new_habit(days: dict, entries: list, t0_of, date: str) -> tuple:
-    """attribution.new_session_habit of the days before `date`, as dayplan.learn keeps it (new_session)."""
-    credited, project = _credited({d: rows for d, rows in days.items() if d < date}, entries, t0_of)
-    start = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=LEARN_DAYS - attribution.HABIT_SKIP)).strftime("%Y-%m-%d")
-    return attribution.new_session_habit(credited, [r for r in entries if str(r.get("date") or "") < date],
-                                         project.get, start)
-
-
-def new_work(keys, sess: dict, habit: tuple | None) -> bool:
-    """Whether a row's session was never logged (no title key with a vote in `sess`) and so is new work, unless your
-    habit (new_habit) says new sessions go on with the last task: dayplan.new_session."""
-    share, minutes = habit or (None, 0)
-    if share is not None and minutes >= attribution.HABIT_MIN and share >= attribution.HABIT_GOES_ON:
-        return False
-    return bool(keys) and not any(sess.get(k) for k in keys)
-
-
 def suggest(row: dict, sess: dict, repo: dict, names: dict, limit: int = 5, text: dict | None = None,
             sr: dict | None = None) -> list:
     """The tasks for one row, the session's first (its votes in this repository, else the ones that may carry over:
@@ -576,7 +559,7 @@ def assigned_named(tasks: list, text: str, skip: frozenset = frozenset()) -> dic
 
 
 def first_offers(learned: list, last: dict | None = None, fresh: dict | None = None,
-                 named: dict | None = None, previous: dict | None = None, new: bool = False) -> list:
+                 named: dict | None = None, previous: dict | None = None) -> list:
     """The offers with more: the task you logged last in the repository's project first, unless the first offer is
     sure (a session's vote of SURE_SHARE, or the work naming a task you logged by WORK_WORDS words); the newest task
     assigned to you in that project second (half of the work on tasks new to you was on one assigned to you within
@@ -587,11 +570,7 @@ def first_offers(learned: list, last: dict | None = None, fresh: dict | None = N
     named: a task assigned to you that the work names (assigned_named) goes above the last day's task, as the plan
     picks it, or second after a sure offer (replay, 2026-11-10: the first offer right on 50.3% of rows instead of
     48.8%, 59.5% of the minutes instead of 57.7%; the first three unchanged).
-
-    new: the session was never logged (no votes: new work), and then the last task goes after the task assigned to you,
-    or after the first offer when there is no such task (replay, 43 days: on such rows the first offer was right on 12%
-    of them, with the swap 22%; on all rows 50.6% instead of 48.8%, 59.1% of the minutes instead of 57.7%, the first
-    three as before)."""
+"""
     def put(lst: list, x: dict | None, at: int) -> list:
         if not x or x["taskId"] in [y["taskId"] for y in lst[:at + 1]]:
             return lst
@@ -602,9 +581,6 @@ def first_offers(learned: list, last: dict | None = None, fresh: dict | None = N
         or (bool(top.get("work")) and top.get("words", 0) >= WORK_WORDS and not top.get("neverLogged"))
     if sure:
         out = put(learned, named, 1)
-    elif new:
-        # the assigned task first, as an object of its own (the plan reads "named" from it), the last task second
-        out = put(put(learned, last, 0), named or fresh, 0) if named or fresh else put(learned, last, 1)
     else:
         out = put(put(learned, last, 0), named, 0)
     return put(put(out, fresh, 1), previous, 2)
@@ -626,7 +602,6 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
                    if r.get("taskId") and str(r.get("id") or "") not in not_example]
         half_life = config.advanced(settings)["memory"]  # Settings > Time and activity > Advanced
         sess, repo, sr = votes(days, entries, t0_of, date, half_life)
-        habit = new_habit(days, entries, t0_of, date)
         names = {r["taskId"]: r for r in sorted(entries, key=lambda r: r.get("date") or "")}
         skip = frozenset(w for _, w in words(settings.get("person_name") or ""))
         index = note_index(entries, skip)
@@ -718,9 +693,8 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
             except (OSError, ValueError) as exc:  # the votes alone, as before
                 logbook.record("learn", f"Words of the work: {type(exc).__name__}: {exc}", kind="warning")
                 text = {}
-            new = new_work(row.get("k"), sess, habit)  # a session never logged: new work (dayplan.new_session)
             e["learned"] = first_offers(with_work(with_new(suggest(row, sess, repo, names, text=text, sr=sr), found),
-                                                  work), *offers(places, said), new=new)
+                                                  work), *offers(places, said))
         # rows under five minutes are not read for words (work by turns makes many): they go on with the task their
         # session's work named before them in the same repository; nothing else is added to them
         for e in (proposal.get("entries") or []) + (proposal.get("background") or []):

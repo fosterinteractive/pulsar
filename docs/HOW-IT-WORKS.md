@@ -928,9 +928,8 @@ repository
 names that share words with the work (your own name and common words such as "not" and "the" do not count; one word
 in common counts only when it is part of the repository's name: a single "page" or "editor" named another client's
 task on all its minutes). Where no answer is sure, the task you logged last in the repository's project comes before
-the weaker ones, except for a session never logged before (no votes for its titles anywhere: new work), where it is
-the last alternative (it was right on 3% of such sessions' minutes, 60% of the others'), unless your own history
-shows your new sessions mostly going on with it (`attribution.new_session_habit`). A task assigned to you in the
+the weaker ones, for every session alike (a rule for sessions never logged before, switched by each person's own
+habit, was left out: one logic for everyone, so a colleague's case can be reproduced). A task assigned to you in the
 last three days in the repository's project, with no entry of yours yet, whose name the work names
 (`learn.assigned_named`, your project's own name words left out) goes above that last task, never above a sure
 session vote, a rule, a link or a ticket key (right on 52% of the minutes it took, where the last task was right on

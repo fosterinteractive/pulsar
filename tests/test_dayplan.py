@@ -516,37 +516,22 @@ class PlannerTest(unittest.TestCase):
         [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, project="initech")]), ctx)["entries"]
         self.assertEqual((e["taskId"], e["source"], e["confidence"]), ("P", "lastday", "low"))
 
-    def test_a_session_never_logged_puts_the_last_days_task_after_what_the_work_names(self):
-        # replay, 43 days: in a session with no votes anywhere (new work) the project's last task was right on 3% of
-        # the minutes, in the others on 60%. A session with history keeps it first among the weaker answers
+    def test_the_last_days_task_comes_first_among_weak_answers_for_every_session(self):
+        """One logic for everyone (2026-11-10): a session never logged and one logged before both put the project's
+        last task before what the work names only weakly; no rule switched by a person's own habit."""
         names = {"P": {"task": "Initech support", "project": "Initech"}, "M": {"task": "Old work", "project": "Globex"}}
         work_hit = [{"taskId": "W", "why": "what you typed names it: search", "work": True}]
-        ctx = {**self.ctx, "repo": {"initech": {"P": 300.0}}, "names": names,
+        ctx = {**self.ctx, "repo": {"initech": {"P": 300.0}}, "names": names, "sess": {}, "sr": {},
                "lastday": {"Initech": ("2026-11-09", "P", 60, 0.0)}}
         new = {**row(540, 600, project="initech", titles=["Brand new thing"]), "learned": work_hit}
         [e] = dayplan.plan(day(items=[work(540, 600)], rows=[new]), ctx)["entries"]
-        self.assertEqual((e["taskId"], e["source"], e["confidence"]), ("W", "work", "low"))
-        self.assertIn("P", [a["taskId"] for a in e["alts"]])  # still offered
-        # the same work in a session logged before (to another client's task, which says nothing here): the last
-        # day's task first
+        self.assertEqual((e["taskId"], e["source"], e["confidence"]), ("P", "lastday", "low"))
+        self.assertIn("W", [a["taskId"] for a in e["alts"]])  # what the work names is still offered
         key = dayplan.title_key("Brand new thing")
-        ctx = {**ctx, "sess": {**ctx["sess"], key: {"M": 20.0}}}
-        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[new]), ctx)["entries"]
+        known = {**ctx, "sess": {key: {"M": 20.0}}}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[new]), known)["entries"]
         self.assertEqual((e["taskId"], e["source"]), ("P", "lastday"))
-        # nothing else to go on: the last day's task is still the pick of a new session
-        ctx = {**ctx, "sess": {}}
-        bare = row(540, 600, project="initech", titles=["Brand new thing"])
-        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[bare]), ctx)["entries"]
-        self.assertEqual((e["taskId"], e["source"]), ("P", "lastday"))
-        self.assertFalse(dayplan.new_session([], ctx))  # no title: nothing says it is new
-        # a person whose new sessions mostly went on with the project's last task (a new window each morning for
-        # yesterday's work) keeps it first; a habit of too few minutes says nothing
-        ctx = {**ctx, "new_habit": (0.7, 300.0)}
-        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[new]), ctx)["entries"]
-        self.assertEqual((e["taskId"], e["source"]), ("P", "lastday"))
-        ctx = {**ctx, "new_habit": (0.7, 60.0)}
-        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[new]), ctx)["entries"]
-        self.assertEqual((e["taskId"], e["source"]), ("W", "work"))
+        self.assertFalse(hasattr(dayplan, "new_session"))
 
     def test_two_tasks_worked_in_turns_are_two_entries_one_after_the_other(self):
         # 2026-11-09: a few minutes of each by turns for two hours; the short pieces folded into one entry that the
