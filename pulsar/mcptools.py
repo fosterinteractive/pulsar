@@ -1401,7 +1401,7 @@ def pulsar_selfcheck(args: dict) -> dict:
     left = out["days"]["missing"]
     return {**out, "refresh": done,
             "next": ("Show the person these numbers. They are only numbers, worked out on this Mac; the person decides "
-                     "whether to send them to anyone. Pulsar's Settings, Time and activity, How well Pulsar picks for "
+                     "whether to send them to anyone. Pulsar's Settings, Self-check, How well Pulsar picks for "
                      "you, shows the same, and Save the self-check there writes them to a file.")
                     + (f" {left} {'day is' if left == 1 else 'days are'} not worked out yet: refresh: true works out up "
                        f"to {selfcheck.REFRESH_DAYS} now." if left and not refresh else "")}

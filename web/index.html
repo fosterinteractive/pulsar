@@ -113,6 +113,7 @@
         <button type="button" role="tab" id="t-day" aria-controls="p-day" aria-selected="false" tabindex="-1"><span class="ic ic-day" aria-hidden="true"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.2"/><path d="M8 5v3.2l2 1.3"/></svg></span>Time and activity</button>
         <button type="button" role="tab" id="t-claude" aria-controls="p-claude" aria-selected="false" tabindex="-1"><span class="ic ic-claude" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 2.8v3M8 10.2v3M2.8 8h3M10.2 8h3M4.3 4.3l2.1 2.1M9.6 9.6l2.1 2.1M11.7 4.3 9.6 6.4M6.4 9.6l-2.1 2.1"/></svg></span>Claude</button>
         <button type="button" role="tab" id="t-rules" aria-controls="p-rules" aria-selected="false" tabindex="-1"><span class="ic ic-rules" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M6 4.5h6.5M6 8h6.5M6 11.5h6.5M3.5 4.5h.01M3.5 8h.01M3.5 11.5h.01"/></svg></span>Rules</button>
+        <button type="button" role="tab" id="t-check" aria-controls="p-check" aria-selected="false" tabindex="-1"><span class="ic ic-check" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M3 12.5h10M4.5 10V8M7 10V5.5M9.5 10V7M12 10V4"/></svg></span>Self-check</button>
         <button type="button" role="tab" id="t-upd" aria-controls="p-upd" aria-selected="false" tabindex="-1"><span class="ic ic-upd" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 3v7M5 7.5 8 10.5l3-3M3.5 13h9"/></svg></span>Updates</button>
         </div>
       </nav>
@@ -228,21 +229,6 @@
             <label class="check"><input type="checkbox" name="adv_no_estimate"> Flag a task with no estimate when most of its project's tasks have one</label>
           </details>
         </section>
-        <section data-k="how well pulsar picks for you self check self-check accuracy right task client billable billing over under proposed numbers copy save file" id="sc-sec">
-          <h3>How well Pulsar picks for you</h3>
-          <p class="status" id="sc-status"></p>
-          <div id="sc-body"></div>
-          <p class="hint">Worked out on this Mac from your own entries: for each past day, the plan Log the day would make
-            without that day's entries, compared minute by minute with what you logged, meetings included. Never sent
-            anywhere.</p>
-          <div class="btnrow"><button type="button" class="btn bordered" id="sc-copy" hidden>Copy the numbers</button>
-            <button type="button" class="btn bordered" id="sc-save" hidden>Save the self-check</button></div>
-          <p class="hint" id="sc-save-hint" hidden>Copy and the file hold numbers only: per day, the minutes right and
-            wrong, the minutes each kind of pick placed, how your Log the day entries compare with what was proposed, the
-            two rules being tried, and Away after and Round entries to. No task, client, project, note, window or name.
-            Send them to someone only if you choose.</p>
-          <p class="msg" id="sc-msg" role="status"></p>
-        </section>
       </div>
       <div role="tabpanel" id="p-claude" aria-labelledby="t-claude" hidden>
         <section data-k="likely column ask claude sessions sonnet haiku opus model models ai suggestions mcp connect notes new task draft log from a session deny sandbox account plan cost usage productive ask rules">
@@ -270,6 +256,23 @@
           <p class="hint">A window, page or site that contains these words belongs to that task: it is coloured by project and offered first when you log.</p>
           <div id="rules-list"></div>
           <button type="button" class="btn bordered" id="rule-add">Add a rule</button>
+        </section>
+      </div>
+      <div role="tabpanel" id="p-check" aria-labelledby="t-check" hidden>
+        <section data-k="how well pulsar picks for you self check self-check accuracy right task client billable billing over under proposed numbers copy save file" id="sc-sec">
+          <h3>How well Pulsar picks for you</h3>
+          <p class="status" id="sc-status"></p>
+          <div id="sc-body"></div>
+          <p class="hint">Worked out on this Mac from your own entries: for each past day, the plan Log the day would make
+            without that day's entries, compared minute by minute with what you logged, meetings included. Never sent
+            anywhere.</p>
+          <div class="btnrow"><button type="button" class="btn bordered" id="sc-copy" hidden>Copy the numbers</button>
+            <button type="button" class="btn bordered" id="sc-save" hidden>Save the self-check</button></div>
+          <p class="hint" id="sc-save-hint" hidden>Copy and the file hold numbers only: per day, the minutes right and
+            wrong, the minutes each kind of pick placed, how your Log the day entries compare with what was proposed, the
+            two rules being tried, and Away after and Round entries to. No task, client, project, note, window or name.
+            Send them to someone only if you choose.</p>
+          <p class="msg" id="sc-msg" role="status"></p>
         </section>
       </div>
       <div role="tabpanel" id="p-upd" aria-labelledby="t-upd" hidden>

@@ -307,6 +307,7 @@ dialog#settings::backdrop { background: rgba(0,0,0,.35); }
 #settings .ic-claude { background: linear-gradient(#e48a63, #c96442); }
 #settings .ic-rules { background: linear-gradient(#4cd168, #26a843); }
 #settings .ic-upd { background: linear-gradient(#a3a9b3, #737985); }
+#settings .ic-check { background: linear-gradient(#b07cf2, #8a4fd8); }
 /* a block in the empty pane: .state is the lanes' class, absolute, which drew it over the search field */
 #settings #settings-nomatch { position: static; padding: 24px 0; }
 @media (max-width: 640px) {  /* a phone-width window: the categories become a row above the settings */

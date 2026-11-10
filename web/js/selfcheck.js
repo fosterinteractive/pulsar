@@ -1,4 +1,4 @@
-/* Settings > Time and activity > How well Pulsar picks for you (pulsar/selfcheck.py). For each past day the server
+/* Settings > Self-check > How well Pulsar picks for you (pulsar/selfcheck.py). For each past day the server
    works out, in the background, the plan Log the day would make without that day's entries, and compares it with what
    was logged. This shows the totals (GET /api/selfcheck), copies them as text and saves the file (GET
    /api/selfcheck/download): numbers only, never a task, client, project, note or window. */

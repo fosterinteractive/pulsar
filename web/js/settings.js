@@ -70,7 +70,7 @@ $('#warp-on').addEventListener('change', ev => {
   try { ev.target.checked ? localStorage.removeItem(WARP_KEY) : localStorage.setItem(WARP_KEY, 'off'); } catch (e) {}
 });
 
-/* tabs: Connections, Time and activity, Claude, Rules, Updates. The one last open opens again (a per-browser
+/* tabs: Connections, Time and activity, Claude, Rules, Self-check, Updates. The one last open opens again (a per-browser
    convenience; storage may be off, so every access is guarded). Arrow keys, Home and End move between them. */
 const TAB_KEY = 'pulsar-settings-tab';
 const settingsTabs = [...document.querySelectorAll('#settings [role="tab"]')];

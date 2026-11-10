@@ -1233,7 +1233,7 @@ and those still name its work, so such a day may read better than Log the day wo
 **Kept**: `~/.cache/pulsar/selfcheck/<date>.json`, owner-only and atomic, 62 days: the numbers, the version, how long
 it took, and a hash of the day's entries; never a task, project, client, note or window.
 
-**Settings** (Time and activity > How well Pulsar picks for you) shows the last 30 days and, from 3 days, the last
+**Settings** (Self-check > How well Pulsar picks for you) shows the last 30 days and, from 3 days, the last
 7 (`GET /api/selfcheck`; "still collecting" under 5 days), the journal's counts, and the two rules beside the plan as it
 is on the same days. **Copy the numbers** copies the totals as text; **Save the self-check** writes
 `pulsar-selfcheck-<date>.json` (`GET /api/selfcheck/download`): the version, the dates, the plan's settings that

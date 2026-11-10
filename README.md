@@ -237,7 +237,7 @@ task, service, start, length and note, or remove an entry.
 - **Earlier days…** lists your last workdays with active time no entry covers. Tick the days, and each opens in turn as
   Log the day; each is written only when you confirm it.
 
-**How well Pulsar picks for you** (Settings → Time and activity). For each of your last 30 days with entries, Pulsar
+**How well Pulsar picks for you** (Settings → Self-check). For each of your last 30 days with entries, Pulsar
 works out, in the background on your Mac, the plan Log the day would have made without that day's entries, and
 compares it minute by minute with what you logged: the right task, the right client, minutes with no task, and billable
 time on another client, over and under. It also counts how many of your Log the day entries went in as proposed, and
@@ -309,7 +309,7 @@ on this Mac and turns on:
   asks you before each write, showing Pulsar's own summary of it. One write may hold up to 40 entries, so one yes can
   log a whole day: read the summary. Pulsar must be open. These entries say "from Claude Code" in the Logged column.
 - **The self-check from a session**: ask "how well does Pulsar pick for me?" or "run Pulsar's self-check", and the
-  session shows the same numbers as Settings → Time and activity → **How well Pulsar picks for you** (the
+  session shows the same numbers as Settings → Self-check → **How well Pulsar picks for you** (the
   `pulsar_selfcheck` tool, read only): totals, each day, the minutes each kind of pick placed and how many were right,
   and the two rules being tried. Numbers only, never a task, client or note. Days not worked out yet are listed;
   "refresh" works out up to 10 of them in the call. You choose what to send, and to whom.
