@@ -361,28 +361,6 @@ TOOLS = [
      # Claude Code asks the person before every call, even in auto or bypass mode; allow rules cannot skip it, and
      # without a person to ask (dontAsk, -p) the call is denied. Other apps ignore the mark: pulsar_log refuses them.
      "_meta": {"anthropic/requiresUserInteraction": True}},
-    {"name": "pulsar_selfcheck", "title": "Pulsar: how well it picks",
-     "description": ("Pulsar's self-check of its own picks for this person: for each of their past days (up to 30), the "
-                     "plan Log the day would make without that day's entries, compared minute by minute with what they "
-                     "logged, meetings included. Percents for the last 30 and 7 days: the right task, the right client, "
-                     "no task, billable time on another client, over and under; how often their Log the day rows were "
-                     "logged as proposed; two rules being tried that no plan uses; and 'share', one line of percents "
-                     "to pass on. Only percents, never a minute, task, client, note or name; worked out on this Mac. "
-                     "detail: true adds per-day numbers (still no names). Days are worked out in the background; "
-                     "days.missing says how many are not yet, and refresh: true works out up to 10 of them now (up to "
-                     "about a minute). Use it for 'how well does Pulsar pick for me' or 'run the self-check'. Show "
-                     "the person the result: they choose whether to send the share line to anyone. Read only."),
-     "inputSchema": {"type": "object", "additionalProperties": False,
-                     "properties": {"days": {"type": "integer", "minimum": 1, "maximum": 30,
-                                             "description": "The last this many finished days. Default: 30"},
-                                    "refresh": {"type": "boolean",
-                                                "description": "Work out the days not done yet now, in this call, "
-                                                               "instead of waiting for Pulsar's background run. "
-                                                               "Default: false"},
-                                    "detail": {"type": "boolean",
-                                               "description": "Also the numbers of each day and of each kind of pick "
-                                                              "(still no names). Default: false: percents only"}}},
-     "annotations": {"title": "Pulsar: how well it picks", **READ}},
     {"name": "pulsar_status", "title": "Pulsar: status",
      "description": ("Never fails. Whether Pulsar is open on this Mac (every other tool needs it), its version, whether "
                      "writes to Productive are blocked and why (a read-only test run, Pulsar Preview), whether "
@@ -392,12 +370,11 @@ TOOLS = [
      "annotations": {"title": "Pulsar: status", **READ}},
 ]
 HANDLERS = {name: _forward(name) for name in ("pulsar_day", "pulsar_propose", "pulsar_session", "pulsar_suggest",
-                                              "pulsar_tasks", "pulsar_preview", "pulsar_selfcheck")}
+                                              "pulsar_tasks", "pulsar_preview")}
 HANDLERS.update({"pulsar_status": pulsar_status, "pulsar_log": pulsar_log})
 INSTRUCTIONS = ("Pulsar shows the person's working day on this Mac against their Productive time entries. Every tool "
                 "needs Pulsar open; pulsar_status says whether it is, and the date and time. To answer what is not "
-                "logged, or to propose entries: pulsar_propose. For the calling session: pulsar_session. For how well Pulsar's "
-                "picks match what the person logged (numbers only): pulsar_selfcheck. To log: "
+                "logged, or to propose entries: pulsar_propose. For the calling session: pulsar_session. To log: "
                 "pulsar_preview (it writes nothing), show the person its summary as it is, ask, and stop. Call "
                 "pulsar_log, with the code and that summary unchanged, only after the person says yes in a new message; "
                 "never in the same turn as the preview. Claude Code also asks the person before every write. Never write a note the person would not; clients may see "

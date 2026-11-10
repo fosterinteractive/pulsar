@@ -9,10 +9,8 @@ import os
 import re
 import socket
 import sys
-import tempfile
 import threading
 import unittest
-from datetime import datetime, timedelta
 from http.server import ThreadingHTTPServer
 from unittest import mock
 
@@ -695,8 +693,7 @@ class McpTest(unittest.TestCase):
             mcp._state.update({"port": dead})
             for name, args in (("pulsar_day", {}), ("pulsar_propose", {}), ("pulsar_session", {}),
                                ("pulsar_suggest", {"start": "09:00", "minutes": 30}), ("pulsar_tasks", {"query": "x"}),
-                               ("pulsar_preview", self.ARGS), ("pulsar_selfcheck", {}),
-                               ("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})):
+                               ("pulsar_preview", self.ARGS), ("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})):
                 got, err = self.call(name, args)
                 self.assertTrue(err, name)
                 self.assertIn("Open Pulsar", got["error"], name)
@@ -711,61 +708,6 @@ class McpTest(unittest.TestCase):
             done, err = self.call("pulsar_log", {"code": dry["code"], "summary": dry["summary"]})
         self.assertFalse(err, done)
         self.assertEqual(done["written"], 2)
-
-    # ---- the self-check --------------------------------------------------------------------------------------
-
-    def test_selfcheck_gives_numbers_only_and_says_what_is_missing(self):
-        from pulsar import selfcheck
-        cache = tempfile.mkdtemp()
-        with mock.patch.object(config, "CACHE_DIR", cache):
-            doc = {"format": 1, "date": DATE, "version": __version__, "sig": "x", "logged": 120, "rightTask": 60,
-                   "rightClient": 100, "noTask": 10, "over": 15, "entries": 3, "byHand": 1, "viaLogTheDay": 2,
-                   "asProposed": 1, "taskChanged": 1, "bySource": {"session": [100, 60, 90]},
-                   "shadow": {"activity": None, "clients": {"logged": 120, "rightTask": 70}}}
-            selfcheck.store(DATE, doc, TODAY)
-            day_before = (datetime.strptime(DATE, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
-            server.write_json(server._copy_path(day_before, {"person_id": "1"}),
-                              {"fetched": "x", "rows": [{**e, "date": day_before} for e in self.day.entries]})
-            with mock.patch.object(selfcheck, "refresh", lambda s, today=None: self.fail("refreshed unasked")):
-                got, err = self.call("pulsar_selfcheck", {})
-            self.assertFalse(err, got)
-            # by default percents only: no minutes, no single days, and a line to share
-            self.assertEqual((got["pulsar"], got["days"]["asked"], got["days"]["workedOut"]), (__version__, 30, 1))
-            self.assertEqual(got["days"]["missing"], 1)
-            self.assertEqual(got["last30"]["rightTask"], 50)                      # 60 of 120 minutes
-            self.assertEqual(got["logTheDay"]["asProposed"], 50)                  # 1 of 2 rows
-            self.assertEqual(got["rulesBeingTried"]["clients"]["withRule"]["rightTask"], 58)  # 70 of 120
-            self.assertNotIn("perDay", got)
-            self.assertNotIn("missingDates", got["days"])
-            self.assertIn("right task 50%", got["share"])
-            self.assertNotRegex(got["share"], r"\bmin\b|\d{4}-\d{2}-\d{2}")       # never minutes or a day's date
-            self.assertIn("refresh: true", got["next"])
-            text = json.dumps(got, ensure_ascii=False)
-            for w in SECRET_WORDS + ["Acme", "Build"]:  # the day's entries are only counted, never shown
-                self.assertNotIn(w, text)
-            # detail: true adds each day's numbers, still no names
-            got, err = self.call("pulsar_selfcheck", {"detail": True})
-            self.assertFalse(err, got)
-            self.assertEqual((got["days"]["missing"], got["days"]["missingDates"]), (1, [day_before]))
-            self.assertEqual((got["totals"]["rightTask"], got["perDay"][0]["bySource"], got["logTheDay"]["byHand"]),
-                             (60, {"session": [100, 60, 90]}, 1))
-            text = json.dumps(got, ensure_ascii=False)
-            for w in SECRET_WORDS + ["Acme", "Build"]:
-                self.assertNotIn(w, text)
-            with mock.patch.object(selfcheck, "refresh", lambda s, today=None: {"worked": 1, "left": 0, "note": ""}):
-                got, err = self.call("pulsar_selfcheck", {"days": 7, "refresh": True})
-            self.assertFalse(err, got)
-            self.assertEqual((got["refresh"]["worked"], got["days"]["asked"]), (1, 7))
-            self.assertIsNone(got["last7"])  # seven days asked: no second "last 7"
-
-    def test_selfcheck_checks_its_arguments_and_the_connection(self):
-        for args in ({"days": 0}, {"days": 31}, {"days": True}, {"days": "7"}, {"refresh": "yes"}, {"date": DATE}):
-            got, err = self.call("pulsar_selfcheck", args)
-            self.assertTrue(err, args)
-        with mock.patch.object(server, "current_settings", lambda: {"timezone": "UTC"}):
-            got, err = self.call("pulsar_selfcheck", {})
-        self.assertTrue(err)
-        self.assertIn("not connected to Productive", got["error"])
 
     def test_status(self):
         status, err = self.call("pulsar_status", {})
