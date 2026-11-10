@@ -61,6 +61,10 @@ READS = frozenset({"Read", "Grep", "Glob", "LS", "NotebookRead"})
 W_EDIT, W_RUN, W_READ, W_TYPED = 3, 2, 1, 1
 HARD = W_RUN  # from this weight up a call did work in the repository (Edit, Write, a command in it)
 SILENCE = 600  # seconds an agent may stay silent while its stretch still counts as attended work
+# ... and while a call it made is still running: the longest a command runs in the foreground (10 minutes) and a margin.
+# 2026-11-10: a deploy waited on with a 600-second timeout came back after 602 seconds, the chain ended there, and the
+# client's 16 minutes after it went to the session in front instead of being shared
+WAITING = 720
 CD = re.compile(r"(?:^|[\s;&|(])(?:cd|pushd)\s+['\"]?(" + PATH + ")")
 GIT_C = re.compile(r"\bgit\s+-C\s+['\"]?(" + PATH + ")")
 # where the walk up stops: these are never a project themselves
@@ -264,6 +268,20 @@ def norm_title(s: str) -> str:
     return re.sub(r"(…|\.\.\.)\s*$", "", s).strip().lower()
 
 
+def tool_use_ids(r: dict) -> list:
+    """The ids of the calls an agent message makes."""
+    content = _obj(r.get("message")).get("content")
+    return [str(x["id"]) for x in content if isinstance(x, dict) and x.get("type") == "tool_use" and x.get("id")] \
+        if isinstance(content, list) else []
+
+
+def tool_result_ids(r: dict) -> list:
+    """The ids of the calls a tool's answer answers."""
+    content = _obj(r.get("message")).get("content")
+    return [str(x["tool_use_id"]) for x in content if isinstance(x, dict) and x.get("type") == "tool_result"
+            and x.get("tool_use_id")] if isinstance(content, list) else []
+
+
 def tool_result(r: dict) -> bool:
     """A tool's answer coming back to the agent: the agent is still at work."""
     if r.get("type") != "user":
@@ -298,6 +316,8 @@ def read_session(path: str, t0: float, t1: float, subagents: bool = False, strin
     strings a naming of turns counts (likely.skill_turns), kept per agent message as "strings"."""
     prompts, triggers, notified, assistant, titles, cwd, title, custom = [], [], [], [], set(), None, "", False
     calls, events, strings, seen_tasks, branches = [], [], [], [], []
+    opened: dict = {}  # call id -> when the agent made it
+    waits: list = []   # (made, answered): a call running, the agent waiting on it (chains)
     lo, hi = t0 - 6 * 3600, t1 + 3600
     lo_s, hi_s = _bounds(lo, hi)
     with open(path, encoding="utf-8", errors="replace") as fh:
@@ -332,6 +352,8 @@ def read_session(path: str, t0: float, t1: float, subagents: bool = False, strin
             elif r.get("type") == "assistant":
                 assistant.append((t, tool_paths(r)))
                 events.append(t)
+                for cid in tool_use_ids(r):
+                    opened[cid] = t
                 seen_tasks += [(t, tid) for tid in tasks_seen(r)]
                 found = tool_calls(r)
                 if found:
@@ -343,6 +365,9 @@ def read_session(path: str, t0: float, t1: float, subagents: bool = False, strin
                         pass
             elif tool_result(r):
                 events.append(t)
+                for cid in tool_result_ids(r):
+                    if cid in opened:
+                        waits.append((opened.pop(cid), t))
     if not any(t0 <= t < t1 for t, _ in prompts):
         return None
     if subagents:
@@ -359,7 +384,8 @@ def read_session(path: str, t0: float, t1: float, subagents: bool = False, strin
     events.sort()
     return {"id": os.path.basename(path)[:8], "cwd": cwd, "title": title, "titles": {x for x in titles if len(x) >= 5},
             "prompts": dedup, "triggers": triggers, "notified": sorted(notified), "assistant": assistant,
-            "calls": calls, "events": events, "seen_tasks": sorted(seen_tasks), "branches": sorted(branches),
+            "calls": calls, "events": events, "waits": sorted(waits), "seen_tasks": sorted(seen_tasks),
+            "branches": sorted(branches),
             **({"strings": sorted(strings, key=lambda x: x[0])} if strings_of else {})}
 
 
@@ -451,7 +477,7 @@ def analyse(s: dict, namer=None, turns=None) -> None:
         if ends and ends[-1] > tk:
             running.append((tk, ends[-1]))
     s["running"] = running
-    s["chains"] = chains(trig, set(s.get("notified") or ()), events)
+    s["chains"] = chains(trig, set(s.get("notified") or ()), events, s.get("waits") or ())
 
 
 def _named_turns(s: dict, turns: dict):
@@ -480,10 +506,15 @@ def _named_turns(s: dict, turns: dict):
     return projects, title, folder, "unknown"
 
 
-def chains(triggers: list, notified: set, events: list) -> list:
+def chains(triggers: list, notified: set, events: list, waits=()) -> list:
     """[(start, end)]: the stretches an agent worked on a chain started by a message the person typed. A background
     task reporting back (a notification) carries the chain on; a silence of more than SILENCE seconds ends it, and
-    only the next typed message starts another. Silences up to SILENCE inside a stretch are part of it."""
+    only the next typed message starts another. Silences up to SILENCE inside a stretch are part of it, and up to
+    WAITING while a call the agent made runs (waits: [(made, answered)])."""
+    def quiet(a: float, b: float) -> bool:  # a silence from a to b that ends the chain
+        if b - a <= SILENCE:
+            return False
+        return not (b - a <= WAITING and any(m <= a and b <= w for m, w in waits))
     out, cur, last, live = [], None, None, False
     for k, tk in enumerate(triggers):
         nxt = triggers[k + 1] if k + 1 < len(triggers) else float("inf")
@@ -491,13 +522,13 @@ def chains(triggers: list, notified: set, events: list) -> list:
             if cur:
                 out.append(tuple(cur))
             cur, last, live = [tk, tk], tk, True
-        elif live and tk - last > SILENCE:
+        elif live and quiet(last, tk):
             out.append(tuple(cur))
             cur, live = None, False
         for t in events[bisect.bisect_left(events, tk):bisect.bisect_left(events, nxt)]:
             if not live:
                 break
-            if t - last > SILENCE:
+            if quiet(last, t):
                 out.append(tuple(cur))
                 cur, live = None, False
                 break

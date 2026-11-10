@@ -217,6 +217,27 @@ class ChainTest(Fixture):
         [s] = self.load()
         self.assertEqual([(round((a - T0) / 60), round((b - T0) / 60)) for a, b in s["chains"]], [(0, 12)])
 
+    def test_a_call_still_running_keeps_the_chain_up_to_twelve_minutes(self):
+        """2026-11-10: a deploy waited on with a 600-second timeout answered after 602 seconds; the agent was at work
+        all along. A call the agent made and is waiting on keeps the chain up to WAITING; a longer wait (a question
+        nobody answered) still ends it."""
+        def made(minute, cid):
+            return {"type": "assistant", "timestamp": at(minute),
+                    "message": {"content": [{"type": "tool_use", "id": cid, "name": "Bash", "input": {"command": "x"}}]}}
+
+        def answered(minute, cid):
+            return {"type": "user", "timestamp": at(minute), "toolUseResult": {},
+                    "message": {"content": [{"type": "tool_result", "tool_use_id": cid, "content": "done"}]}}
+        self.write("bbbb0004", [typed(0, "deploy", self.acme), made(1, "c1"), answered(11.05, "c1"), said(12)])
+        [s] = self.load()
+        self.assertEqual([(round((a - T0) / 60), round((b - T0) / 60)) for a, b in s["chains"]], [(0, 12)])
+        self.write("bbbb0005", [typed(0, "deploy", self.acme), made(1, "c2"), answered(14, "c2"), said(15)])
+        [s] = [x for x in self.load() if x["id"] == "bbbb0005"]
+        self.assertEqual([(round((a - T0) / 60), round((b - T0) / 60)) for a, b in s["chains"]], [(0, 1)])
+        self.write("bbbb0006", [typed(0, "go", self.acme), made(1, "c3"), answered(2, "c3"), said(12.05)])
+        [s] = [x for x in self.load() if x["id"] == "bbbb0006"]  # silence with no call running: 10 minutes at most
+        self.assertEqual([(round((a - T0) / 60), round((b - T0) / 60)) for a, b in s["chains"]], [(0, 2)])
+
     def test_a_notification_carries_a_live_chain_on(self):
         self.write("bbbb0002", [typed(0, "go", self.acme), call(1, "Edit", file_path=os.path.join(self.acme, "a")),
                                 said(5), note(9), said(14)])
