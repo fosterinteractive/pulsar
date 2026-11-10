@@ -280,8 +280,9 @@
     const t = ev.target;
     if (!(t instanceof Element) || t.closest('input, textarea, select, dialog, .pop, .pkp')) return null;
     if (state.view !== 'day') return null;
-    const Z = state.zoom, rail = t.closest('#dayview .gaprail, #dayview .awayband');
+    const Z = state.zoom, rail = t.closest('#dayview .gaprail'), away = t.closest('#dayview .awayband');
     if (rail) return [{title: 'Log This Time…', run: () => rail.click()}];
+    if (away) return [{title: 'Log This Time…', run: () => logAway(+away.dataset.a, +away.dataset.b)}];  // day.js
     const card = t.closest('#dayview .card[data-k]');
     if (!card) return null;
     const i = +card.dataset.i, k = card.dataset.k;

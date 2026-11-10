@@ -182,6 +182,20 @@ function logStretch(a, b, exact = false) {
            drafted: draft, range: true, exact, stretch: {a, b}});
 }
 
+/* time away logged after all (its popover's button, or the window's right-click menu): the log dialog on the stretch,
+   leading with the task of the work just before you left, a call about the same thing being the usual case: the entry
+   that ended within the hour before, else what the 30 minutes before held (leadFor) */
+function logAway(a, b) {
+  const end = x => x.e ?? x.s + x.minutes;
+  const before = (state.logged?.entries || []).filter(x => x.s != null && x.taskId && end(x) <= a + 5 && end(x) >= a - 60)
+    .sort((p, q) => end(q) - end(p))[0];
+  const from = Math.max(0, a - 30), held = before ? null : leadFor(from, a, rulesInRange(from, a));
+  openLog({start: a, minutes: realMinutes(state.date, a, b),
+           lead: before ? {label: 'Before you left', tasks: [{taskId: before.taskId, title: before.task, project: before.project,
+                                                               why: `logged ${hm(before.s)}–${hm(end(before))}`}]}
+                : held ? {...held, label: `Before you left · ${held.label}`} : null});
+}
+
 /* the active minutes inside [a, b): from the first active minute, as long as the activity was (not the slot) */
 function activeSpan(a, b) {
   let first = null, total = 0;
@@ -612,12 +626,15 @@ function openPop(html, ev) {
 }
 document.addEventListener('click', ev => {
   const band = ev.target.closest('.awayband');
-  if (band) {  // a pause or time away: what it is, and no offer to log it
+  if (band) {  // a pause or time away: what it is; logged only from its own button (a call, a whiteboard)
     const a = +band.dataset.a, b = +band.dataset.b, word = AWAY_WORD[band.dataset.kind] || 'Away';
-    openPop(`<div class="ph"><div><h3>${word}</h3><div class="sub">${hm(a)}–${hm(b)} · ${dur(b - a)} without input</div></div></div>
-      <p>Not counted as work, and never proposed for logging. To log it anyway, add an entry by hand.</p>`, ev);
+    openPop(`<div class="ph"><div><h3>${word}</h3><div class="sub">${hm(a)}–${hm(b)} · ${dur(b - a)} without input</div></div>
+      <button class="btn bordered sm" data-away-a="${a}" data-away-b="${b}">Log this time…</button></div>
+      <p>Not counted as work, and never proposed for logging. If it was work away from the keyboard (a call, a whiteboard), log it here.</p>`, ev);
     return;
   }
+  const awayBtn = ev.target.closest('[data-away-a]');
+  if (awayBtn) { pop.classList.remove('on'); logAway(+awayBtn.dataset.awayA, +awayBtn.dataset.awayB); return; }
   const logBtn = ev.target.closest('[data-log-a], .gaprail');
   if (logBtn) {
     let a = +(logBtn.dataset.logA ?? logBtn.dataset.a), b = +(logBtn.dataset.logB ?? logBtn.dataset.b);

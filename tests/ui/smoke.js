@@ -61,7 +61,7 @@ try {
     `errors24h ${CONFIG.errors24h}, button ${q('#logs-seen').hidden ? 'hidden' : 'shown'}`);
   q('#logsdlg').close();
 
-  // a pause or time away: named, and a click only says what it is
+  // a pause or time away: named; a click says what it is, and only its own button logs it (from where it began)
   const band = q('.awayband');
   if (band) {
     const label = [...document.querySelectorAll('.awaylabel')].map(x => x.textContent);
@@ -69,10 +69,17 @@ try {
     const b = band.getBoundingClientRect();
     band.dispatchEvent(new MouseEvent('click', {bubbles: true, clientX: b.left + 2, clientY: b.top + 4}));
     await wait(200);
-    const pop = q('#pop'), word = pop.querySelector('h3')?.textContent || '';
-    const shown = pop.classList.contains('on'), offers = !!pop.querySelector('[data-log-a]'), dialog = q('#logdlg').open;
-    check('a break offers no logging', shown && /^(Pause|Away|Off)$/.test(word) && !offers && !dialog,
-      `${word || 'no title'}${shown ? '' : ', popover not shown'}${offers ? ', offers logging' : ''}${dialog ? ', log dialog open' : ''}`);
+    const pop = q('#pop'), word = pop.querySelector('h3')?.textContent || '', btn = pop.querySelector('[data-away-a]');
+    const shown = pop.classList.contains('on'), dialog = q('#logdlg').open;
+    check('a break is logged only from its button', shown && /^(Pause|Away|Off)$/.test(word) && !!btn && !pop.querySelector('[data-log-a]') && !dialog,
+      `${word || 'no title'}${shown ? '' : ', popover not shown'}${btn ? ', Log this time…' : ', no button'}${dialog ? ', log dialog open' : ''}`);
+    if (btn) {
+      btn.click();
+      const opened = await until(() => q('#logdlg').open, 3000), start = logForm.elements.start?.value || '';
+      check('Log this time… opens the log dialog where the break began', opened && start === hm24(+band.dataset.a),
+        `${opened ? 'open' : 'not open'} at ${start}, the break from ${hm24(+band.dataset.a)}`);
+      q('#logdlg').close();
+    }
     closePop();
   } else check('breaks are named', true, 'skipped: no break on this day');
 
