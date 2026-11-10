@@ -115,6 +115,16 @@ class ConfigTest(unittest.TestCase):
 
 
 class TrackersTest(unittest.TestCase):
+
+    def test_auto_takes_memtime_when_activitywatch_missed_most_of_the_day(self):
+        """2026-11-03: ActivityWatch saw 2 minutes and MemTime 691; the day showed no work at all."""
+        from pulsar import trackers
+        span = lambda a, b: {"s": a, "e": b}  # noqa: E731
+        self.assertEqual(trackers.pick({"aw": [span(29, 31)], "memtime": [span(540, 1231)]}, "auto"), "memtime")
+        self.assertEqual(trackers.pick({"aw": [span(540, 1043)], "memtime": [span(540, 1057)]}, "auto"), "aw")  # close
+        self.assertEqual(trackers.pick({"aw": [span(540, 600)]}, "auto"), "aw")                 # all there is
+        self.assertEqual(trackers.pick({"aw": [], "memtime": [span(540, 600)]}, "auto"), "memtime")
+        self.assertEqual(trackers.pick({"aw": [span(29, 31)], "memtime": [span(540, 1231)]}, "aw"), "aw")  # asked for
     def test_activitywatch_with_a_watcher_missing_says_which(self):
         cases = ((["aw-watcher-afk_mac"], "window watcher"), (["aw-watcher-window_mac"], "AFK watcher"))
         for buckets, words in cases:

@@ -412,11 +412,19 @@ def both(t0: float, t1: float, aw_url: str, classify: Classifier, away: float | 
     return {"aw": activity_aw(aw_url, t0, t1, classify, minutes, raw=raw), "memtime": cut_out(mem, aw_away(raw, t0, minutes))}
 
 
+# ActivityWatch saw less than this share of MemTime's minutes: it was down most of the day. Not more: MemTime counts a
+# window in front with nobody at the keys too, so a day away from the desk can show ActivityWatch at a third of it
+AW_SHORT = 0.2
+
+
 def pick(found: dict, source: str) -> str:
-    """The tracker asked for, or (auto) ActivityWatch, the main tracker: it knows when someone is at the keys. MemTime
-    only for a day ActivityWatch saw nothing of (it was not running), or when it is all there is."""
+    """The tracker asked for, or (auto) ActivityWatch, the main tracker: it knows when someone is at the keys, even
+    when MemTime saw more. MemTime for a day ActivityWatch saw nothing of, or a sliver of (AW_SHORT: it was down most
+    of the day; 2026-11-03 it saw 2 minutes and MemTime 691, and the whole day showed no work), or when it is all
+    there is. On an ordinary day the two are close (517 minutes against 503)."""
     if source in found:
         return source
-    if found.get("aw"):
+    total = lambda k: sum(x["e"] - x["s"] for x in found.get(k) or [])  # noqa: E731
+    if found.get("aw") and not (found.get("memtime") and total("aw") < AW_SHORT * total("memtime")):
         return "aw"
-    return max(found, key=lambda k: sum(x["e"] - x["s"] for x in found[k]))
+    return max(found, key=total)
