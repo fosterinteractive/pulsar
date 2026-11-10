@@ -847,6 +847,20 @@ named as the fi-time-from-activity script names it (4.4). With Pulsar's own weig
 turns that run commands in clients' checkouts read as those clients' work. Shared rows were rare (45 minutes in the 52
 days): most work in front had no settled class yet, or the client's agent was not attended.
 
+**Refill** (`_refill`, after the caps). A short turn of one task between longer turns of another joins its neighbour,
+and the evidence cap cuts that neighbour back to its own minutes: the turn's minutes were left as holes (10 November:
+Pulsar work, 24 minutes in front in 1 to 8 minute turns between turns of a client's tasks of 10 minutes or more,
+went nowhere, and the proposal showed three holes of 15 minutes). Each hole of a grid step or more now goes, in time
+order, to the tasks seen in front (focused or outside work; a shared stretch says nothing of who was owed) and not
+yet given that time: first those with minutes in the hole, then those within 30 minutes of it in the same sitting. A
+task that may be billable takes from what its project was seen and not given, rounded down, so a client is never
+given more than its work was seen, while one session's work split over a few of its tasks (7, 37 and 6 minutes) is
+not lost for being short; internal work takes what it is owed to the nearest step, and what is left of a hole where
+it was in front. A new entry is never shorter than an entry (10 minutes); an entry of the same task against the hole
+grows instead. Never past the active-time cap. On 19 past days: 365 more minutes proposed (16 of the 19 days, 10 to
+55 a day), the minutes per task right for 45.2% instead of 44.3%, the right task at the right minute 47.4% instead
+of 48.2% (a hole is filled where it is, not at the turn's own minute), the log dialog's picks unchanged.
+
 Pieces of one task in one sitting (it ends after Away after with no activity) join, also across another task's pieces
 when every one of them is under 10 minutes (two works by turns, a few minutes of each: one entry each, one after the
 other, each its own minutes, within the time they took; but a turn of internal work under 10 minutes between two turns

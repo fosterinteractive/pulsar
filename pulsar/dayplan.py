@@ -520,7 +520,9 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
                     gone=[(int(math.ceil(w["s"])), int(w["e"])) for w in day.get("gone") or []])
     entries = _merge(d, pieces)
     out, unplaced = _layout(d, entries)
-    out, totals = _caps(d, out, unplaced, _evidence(d, pieces))
+    evidence = _evidence(d, pieces)
+    out, totals = _caps(d, out, unplaced, evidence)
+    out = _refill(d, out, pieces, totals["cap"] - totals["logged"])
     return _result(d, out, unplaced, totals)
 
 
@@ -992,6 +994,114 @@ def _evidence(d: _Day, pieces: list) -> dict:
             evidence[str(p["task"])] += sum(1 for x in range(p["s"], p["last"] + 1)
                                             if d.owner[x] == p["claim"] and d.work[x] and not d.away[x])
     return evidence
+
+
+def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
+    """The minutes the evidence cap took back, given to the work that was in front then. A short piece of one task
+    between pieces of another joins its neighbour (_merge), and the cap then cuts that neighbour back to its own
+    minutes: the piece's minutes were left as holes in the proposal (2026-11-10: three holes of 15 minutes while
+    Pulsar work, 24 minutes in front in 1 to 8 minute turns, went nowhere). Each hole of a step or more, in time
+    order, goes to the tasks seen at work and not yet given that time (evidence less what they have): first those
+    with minutes in the hole, then those within MERGE_GAP of it in the same sitting. A task that may be billable
+    takes from what its project is owed, rounded down: a client is never given more than its work was seen (as the
+    cap), while one session's work split over a few of its tasks (7, 37 and 6 minutes) is not lost for being short;
+    internal work takes what it is owed to the nearest step, and what rounding leaves in the hole when it was in
+    front there. A new entry is never shorter than an entry
+    (min_entry); an entry of the same task right against the hole grows instead. Never past `allowed` in all: what the
+    active-time cap (_caps) cut stays cut."""
+    N, g, gap = DAY_MIN, d.o["grid"] or 1, d.o["merge_gap"]
+    least = max(g, d.o["min_entry"] or MIN_ENTRY)
+    # in front only: a shared stretch's minutes are its agent's too, so they say nothing of what was owed
+    mine: dict = defaultdict(list)  # task -> its pieces seen at work
+    for p in pieces:
+        if p.get("task") and p["kind"] in ("focused", "outside"):
+            mine[str(p["task"])].append(p)
+    seen = {t: sum(1 for p in ps for x in range(p["s"], p["last"] + 1)
+                   if d.owner[x] == p["claim"] and d.work[x] and not d.away[x]) for t, ps in mine.items()}
+    given: dict = defaultdict(int)
+    for e in out:
+        if e.get("taskId"):
+            given[str(e["taskId"])] += e["minutes"]
+    owed = {t: m - given[t] for t, m in seen.items()}
+    budget = allowed - sum(e["minutes"] for e in out)
+    if not mine or budget < g:
+        return out
+    billable = {t: any(p.get("class") == CLIENT for p in ps) or attribution.class_of_task(t, d.ctx) != INTERNAL
+                for t, ps in mine.items()}
+    proj = {t: (d.names.get(t) or ("", ""))[1] or t for t in mine}  # a billable task's minutes come from its project's
+    pool: dict = defaultdict(int)
+    for t in mine:
+        if billable[t] and owed[t] > 0:
+            pool[proj[t]] += owed[t]
+    claim_task = {p["claim"]: t for t, ps in mine.items() for p in ps}
+    covered = bytearray(N)
+    for a, b in d.busy + [(e["s"], e["e"]) for e in out]:
+        for x in range(max(0, int(a)), min(N, int(math.ceil(b)))):
+            covered[x] = 1
+    holes, start = [], None
+    for x in range(N + 1):
+        hole = x < N and d.work[x] and not covered[x] and not d.away[x]
+        if hole and start is None:
+            start = x
+        if not hole and start is not None:
+            a, b = int(math.ceil(start / g) * g), x // g * g  # on the grid, as every entry
+            if b - a >= g:
+                holes.append((a, b))
+            start = None
+    for a, b in holes:
+        inside: dict = defaultdict(int)
+        for x in range(a, b):
+            if claim_task.get(d.owner[x]):
+                inside[claim_task[d.owner[x]]] += 1
+
+        def near(t):
+            if not any(d.sitting[p["s"]] is None or d.sitting[a] is None or d.sitting[p["s"]] == d.sitting[a] for p in mine[t]):
+                return None
+            return min(0 if p["s"] < b and a <= p["last"] else min(abs(p["s"] - b), abs(a - p["last"])) for p in mine[t])
+
+        def touches(t):  # its own entry right before or after the hole: -1, 1, or 0
+            return next((-1 if x["e"] == a else 1 for x in out if str(x.get("taskId") or "") == t and (x["e"] == a or x["s"] == b)), 0)
+
+        def takes(t, room):
+            if billable[t]:
+                m = pool[proj[t]] // g * g
+            else:
+                m = max(g, int(round(owed[t] / g)) * g) if owed[t] >= 3 else 0
+            m = min(room, m)
+            return m if m >= g and (m >= least or touches(t)) else 0
+
+        close = [t for t in mine if inside[t] or (near(t) is not None and near(t) <= gap)]
+        close.sort(key=lambda t: (-inside[t], near(t) if near(t) is not None else gap, -owed[t]))
+        taken, room = {}, min(b - a, budget // g * g)
+        for t in close:
+            m = takes(t, room)
+            if m:
+                taken[t] = taken.get(t, 0) + m
+                room -= m
+                owed[t] -= m
+                if billable[t]:
+                    pool[proj[t]] -= m
+        if room >= g:  # what is left of the hole: internal work in front there, or already taking part of it
+            spare = [t for t in close if not billable[t] and (inside[t] or t in taken)]
+            if spare and (taken.get(spare[0], 0) + room >= least or touches(spare[0])):
+                taken[spare[0]] = taken.get(spare[0], 0) + room
+                owed[spare[0]] -= room
+                room = 0
+        budget -= sum(taken.values())
+        cursor = a
+        # its own entry before the hole: first; after it: last; the rest in the order they were seen
+        for t, take in sorted(taken.items(), key=lambda x: (1 + touches(x[0]), min(p["s"] for p in mine[x[0]]))):
+            s, e = cursor, cursor + take
+            cursor = e
+            nb = next((x for x in out if str(x.get("taskId") or "") == t and (x["e"] == s or x["s"] == e)), None)
+            if nb is not None:  # right against an entry of its own: that entry grows
+                nb["s"], nb["e"] = min(nb["s"], s), max(nb["e"], e)
+                nb["minutes"] = nb["e"] - nb["s"]
+                continue
+            parts = [{**p} for p in mine[t]]
+            out.append(_entry({**parts[0], "parts": parts, "minutes": sum(p["minutes"] for p in parts)}, s, e, d.names))
+    out.sort(key=lambda e: e["s"])
+    return out
 
 
 def _layout(d: _Day, entries: list) -> tuple:

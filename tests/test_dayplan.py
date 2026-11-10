@@ -411,6 +411,27 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual((got[0][1], got[0][2], got[1][1], got[1][2]), (540, 580, 580, 610))  # 40 and 32 seen, on the grid
         self.assertEqual(p["unplaced"], [])
 
+    def test_short_turns_of_other_work_between_long_ones_leave_no_holes(self):
+        # 2026-11-10: Pulsar work in 1 to 8 minute turns between turns of a client's work of 10 minutes or more: each
+        # short turn joined the client's entry, the evidence cap cut it back, and three holes of 15 minutes showed as
+        # not logged while 24 minutes of Pulsar work went nowhere. The cut minutes go to the work seen then. (Here the
+        # other work is another client's: an internal turn between two turns of one client is that client's, 3b'.)
+        ctx = {**self.ctx, "names": {"A": {"task": "Site work", "project": "Initech"}, "B": {"task": "Tool", "project": "Globex"}},
+               "task_class": {"A": "client", "B": "client"}}
+        ctx["names"]["C"] = {"task": "Site upgrade", "project": "Initech"}
+        ctx["task_class"]["C"] = "client"
+        site = lambda s, e, t: {**row(s, e, project="site", titles=["Site work" if t == "A" else "Site upgrade"]), "tasks": [t]}  # noqa: E731
+        tool = lambda s, e: {**row(s, e, project="tool", titles=["Tool"]), "tasks": ["B"]}  # noqa: E731
+        rows = [site(540, 552, "A"), tool(552, 556), site(556, 568, "C"), tool(568, 576), site(576, 588, "A"),
+                tool(588, 591), site(591, 603, "C"), tool(603, 609)]
+        p = dayplan.plan(day(items=[work(540, 609)], rows=rows), ctx)
+        mins = {t: sum(e["minutes"] for e in p["entries"] if e["taskId"] == t) for t in ("A", "C", "B")}
+        self.assertEqual(p["uncovered"], [], p["entries"])     # no hole of a step or more (before: 34 minutes)
+        self.assertLessEqual(abs(mins["A"] + mins["C"] - 48), 5, mins)         # the client's: about what it was seen
+        self.assertTrue(15 <= mins["B"] <= 21, mins)                             # the other work: its turns, at most
+        spans = sorted((e["s"], e["e"]) for e in p["entries"])
+        self.assertTrue(all(b <= c for (_, b), (c, _) in zip(spans, spans[1:])), spans)  # never two at once
+
     def test_a_short_internal_turn_inside_a_clients_work_is_the_clients(self):
         # 2026-11-09: a few minutes at a time in the tool's own window while deploying a client's site made a separate
         # internal entry; the Likely column showed the whole stretch as the client's
