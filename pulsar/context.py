@@ -12,10 +12,12 @@ window was in front and a hash of each of its keys, never the titles, the pages 
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import re
 import threading
+import time
 from datetime import datetime, timedelta
 
 from . import config, logbook
@@ -26,16 +28,53 @@ SHARE = 0.6    # the share of a key's votes its task needs
 LEAST = 5.0    # the faded minutes a key needs before it says anything
 RUN = 5        # minutes at least, in a row, for a stretch to take a task this way
 GAP = 2        # minutes between two of a stretch's minutes at most
+SPREAD = 30    # minutes its task reaches into the work outside Claude around it, in its sitting (as dayplan.MERGE_GAP)
 HALF_LIFE = 7  # days: a day's votes count half as much this many days later (as learn.py)
 LEARN_DAYS = 60
 KEEP_DAYS = 62
-FORMAT = 1
+RETRY = 3600   # seconds before the past days are read again after a tracker did not answer
+FORMAT = 2     # 2: keys salted (SALT)
 DIR = os.path.join(config.CACHE_DIR, "context-days")
+SALT = os.path.join(config.CACHE_DIR, "context-salt")  # this Mac's own, owner-only: the keys cannot be guessed
 SPLIT = re.compile(r" - | \| | · | – | — ")
 
 
+_salt = None
+_salt_lock = threading.Lock()
+
+
+def salt() -> bytes:
+    """This Mac's salt for the keys, made once (owner-only): a file kept cannot be checked against guessed names (a
+    site, a channel). Missing or unreadable, a new one is made, and the days kept under the old one are read again."""
+    global _salt
+    with _salt_lock:
+        if _salt is None:
+            try:
+                with open(SALT, "rb") as fh:
+                    got = fh.read()
+                if len(got) < 16:
+                    raise ValueError("short")
+            except (OSError, ValueError):
+                got = os.urandom(32)
+                try:
+                    os.makedirs(os.path.dirname(SALT), exist_ok=True)
+                    fd = os.open(SALT + ".new", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                    with os.fdopen(fd, "wb") as fh:
+                        fh.write(got)
+                    os.replace(SALT + ".new", SALT)
+                except OSError:
+                    pass  # kept for this run only: nothing kept under it is read again later
+            _salt = got
+        return _salt
+
+
+def salt_id() -> str:
+    """Which salt a kept day was made with (a hash of it: the salt itself never goes in a day's file)."""
+    return hashlib.sha256(b"id|" + salt()).hexdigest()[:12]
+
+
 def _hash(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return hmac.new(salt(), text.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
 
 
 def _norm(text: str) -> str:
@@ -172,6 +211,7 @@ def pick(ks: list, learned: dict):
 # ---- kept on this Mac ----------------------------------------------------------------------------------------------
 
 _warming = threading.Lock()
+_failed_at = 0.0  # when a past day could last not be read (no tracker answering): none is read for RETRY seconds
 
 
 def _path(date: str) -> str:
@@ -182,7 +222,8 @@ def stored(date: str):
     try:
         with open(_path(date), encoding="utf-8") as fh:
             doc = json.load(fh)
-        return doc if isinstance(doc, dict) and doc.get("format") == FORMAT and sound(doc) else None
+        return doc if isinstance(doc, dict) and doc.get("format") == FORMAT and doc.get("salt") == salt_id() \
+            and sound(doc) else None
     except (OSError, ValueError):
         return None
 
@@ -192,7 +233,8 @@ def store(date: str, items: list) -> None:
     keeps nothing: the tasks outside Claude come from fewer days, and Log the day goes on."""
     try:
         os.makedirs(DIR, mode=0o700, exist_ok=True)
-        config.write_atomic(_path(date), json.dumps({"format": FORMAT, **day_rows(items)}, separators=(",", ":")))
+        config.write_atomic(_path(date), json.dumps({"format": FORMAT, "salt": salt_id(), **day_rows(items)},
+                                                          separators=(",", ":")))
     except OSError as exc:
         logbook.record("learn", f"Past windows could not be kept: {type(exc).__name__}: {exc}", kind="warning",
                        once_per=3600)
@@ -219,20 +261,27 @@ def days_before(date: str) -> dict:
 
 def warm(date: str, today: str, read_items) -> None:
     """Keep, in the background, the past days not kept yet: read_items(date) -> the day's activity items (the tracker,
-    read only). One run at a time; a second call returns at once."""
-    if not _warming.acquire(blocking=False):
+    read only), None when no tracker read it. One run at a time; a second call returns at once. The first day not
+    read ends the run, and none is read for RETRY seconds: no pass of 60 reads each time Log the day opens while the
+    tracker is down."""
+    global _failed_at
+    if time.time() - _failed_at < RETRY or not _warming.acquire(blocking=False):
         return
 
     def run():
+        global _failed_at
         try:
             d0 = datetime.strptime(date, "%Y-%m-%d")
             for i in range(1, LEARN_DAYS + 1):
                 d = (d0 - timedelta(days=i)).strftime("%Y-%m-%d")
                 if d < today and stored(d) is None:
                     items = read_items(d)
-                    if items is not None:
-                        store(d, items)
+                    if items is None:
+                        _failed_at = time.time()
+                        break
+                    store(d, items)
         except Exception as exc:  # a hint: the tasks outside Claude just come from fewer days
+            _failed_at = time.time()
             logbook.record("learn", f"Learning from past windows: {type(exc).__name__}: {exc}", kind="warning")
         finally:
             _warming.release()

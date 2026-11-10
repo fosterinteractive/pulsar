@@ -73,6 +73,12 @@ class KeysTest(unittest.TestCase):
         self.assertEqual(len(context.keys(slack(0, 1))), 1)  # a Slack conversation is one key
         self.assertNotEqual(context.keys(slack(0, 1)), context.keys(slack(0, 1, "#other")))
 
+    def test_keys_are_salted_on_this_mac(self):
+        import hashlib
+        guessed = hashlib.sha256("s|#team-ops".encode("utf-8")).hexdigest()[:16]
+        self.assertNotEqual(context.keys(slack(0, 1)), [guessed])  # a file cannot be checked against guessed names
+        self.assertEqual(os.stat(context.SALT).st_mode & 0o777, 0o600)
+
     def test_a_day_keeps_hashes_only(self):
         kept = context.day_rows([doc(0, 30, "Secret plan"), slack(30, 40)])
         self.assertEqual([r[:2] for r in kept["runs"]], [[0, 30], [30, 40]])
@@ -160,6 +166,14 @@ class WithoutClaudeTest(unittest.TestCase):
         self.assertEqual({e["taskId"] for e in p["entries"]}, {"7"})
         self.assertEqual(sum(e["minutes"] for e in p["entries"]), 60)
 
+    def test_a_windows_task_reaches_only_the_work_close_to_it(self):
+        # replay, no sessions: the minutes a named stretch's task spread to over the rest of its sitting were the task
+        # logged on 40%, in entries of up to 5 hours; within SPREAD minutes of it, 62%
+        hist, kept = history({"7": doc})
+        p = plan([doc(600, 640), page(640, 900, "/somewhere/new")], hist, kept)
+        self.assertEqual(sum(e["minutes"] for e in p["entries"] if e["taskId"] == "7"), 40 + context.SPREAD)
+        self.assertEqual(sum(e["minutes"] for e in p["entries"]), 300)
+
     def test_a_clients_task_is_never_named_this_way(self):
         hist, kept = history({"7": doc}, billable=True)
         p = plan([doc(600, 640)], hist, kept)
@@ -189,6 +203,19 @@ class WithClaudeTest(unittest.TestCase):
 
 
 class KeptTest(unittest.TestCase):
+    def test_a_new_salt_leaves_the_old_days_out(self):
+        folder = tempfile.mkdtemp(dir=os.path.dirname(context.DIR))
+        moved = mock.patch.object(context, "DIR", folder)
+        moved.start()
+        self.addCleanup(moved.stop)
+        context.store("2026-11-03", [doc(0, 30)])
+        self.assertIsNotNone(context.stored("2026-11-03"))
+        before = context.keys(doc(0, 1))
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(context, "SALT", os.path.join(tmp, "salt")), \
+                mock.patch.object(context, "_salt", None):
+            self.assertNotEqual(context.keys(doc(0, 1)), before)
+            self.assertIsNone(context.stored("2026-11-03"))  # kept under the old salt: read again, never mixed
+
     def test_store_and_read_back_and_old_days_fall_out(self):
         context.store("2026-08-01", [doc(0, 30)])
         context.store(DATE, [doc(0, 30)])
@@ -199,8 +226,9 @@ class KeptTest(unittest.TestCase):
     def test_a_damaged_day_kept_is_left_out(self):
         hist, kept = history({"7": doc})
         folder = tempfile.mkdtemp(dir=os.path.dirname(context.DIR))
-        self.addCleanup(mock.patch.object(context, "DIR", folder).stop)
-        mock.patch.object(context, "DIR", folder).start()
+        moved = mock.patch.object(context, "DIR", folder)
+        moved.start()
+        self.addCleanup(moved.stop)
         bad = {"2026-11-03": '{"format":1,"keys":[],"runs":[[1,2]]}', "2026-11-02": '{"format":1,"keys":[["k"]],"runs":[["a","b",0]]}',
                "2026-11-01": '{"format":1,"keys":{"0":["k"]},"runs":[[0,10,0]]}', "2026-10-31": '{"format":1,"ru'}
         for d, text in bad.items():
@@ -216,30 +244,67 @@ class KeptTest(unittest.TestCase):
             self.assertIsNone(context.stored("2026-11-03"))
 
     def test_a_past_day_no_tracker_read_whole_is_never_kept_empty(self):
-        cases = [({"items": [], "problems": {"aw": "ActivityWatch is not answering"}}, True, None),  # MemTime's file is there
-                 ({"items": [], "problems": {"aw": "ActivityWatch did not return its events: timed out"}}, True, None),
-                 ({"items": [], "problems": {}}, False, None),
-                 ({"items": [], "problems": {}}, True, []),  # a day off: kept, empty
-                 ({"items": [slack(600, 610)], "problems": {"aw": "x"}}, True, [slack(600, 610)])]
-        from pulsar import server, trackers
-        for got, answering, want in cases:
-            with mock.patch.object(server, "api_activity", return_value=got), \
+        from pulsar import trackers
+        cases = [({"aw": "ActivityWatch is not answering"}, [], True, None),  # MemTime's file is there: it answers
+                 ({"aw": "ActivityWatch did not return its events: timed out"}, [], True, None),
+                 ({}, [], False, None),
+                 ({}, [], True, []),  # a day off: kept, empty
+                 ({"aw": "x"}, [slack(600, 610)], True, [slack(600, 610)])]
+        for problems, items, answering, want in cases:
+            def both(*_a, problems=problems, items=items, **_k):
+                trackers.PROBLEMS.update(problems)
+                return {"aw": items, "memtime": []}
+            with mock.patch.object(trackers, "both", side_effect=both), \
                     mock.patch.object(trackers, "answering", return_value=answering):
-                self.assertEqual(dayplan.past_items("2026-11-03", "http://localhost:5600"), want, (got, answering))
+                got = dayplan.past_items("2026-11-03", "http://localhost:5600")
+                self.assertEqual(None if got is None else [(i["s"], i["e"]) for i in got],
+                                 None if want is None else [(i["s"], i["e"]) for i in want], problems)
 
-    def test_warm_keeps_the_days_a_tracker_gave_and_reads_the_others_again_later(self):
+    def test_a_past_day_read_in_the_background_leaves_todays_tracker_state_alone(self):
+        from pulsar import trackers
+
+        def both(*_a, **_k):  # as a read does: ActivityWatch's problem cleared first, MemTime's said
+            trackers.PROBLEMS.pop("aw", None)
+            trackers.PROBLEMS["memtime"] = "MemTime's database could not be read: locked"
+            return {"aw": [], "memtime": []}
+        with mock.patch.dict(trackers.PROBLEMS, {"aw": "ActivityWatch is not answering"}, clear=True), \
+                mock.patch.object(trackers, "both", side_effect=both), \
+                mock.patch.object(trackers, "answering", return_value=True):
+            self.assertIsNone(dayplan.past_items("2026-11-03", "http://localhost:5600"))
+            self.assertEqual(dict(trackers.PROBLEMS), {"aw": "ActivityWatch is not answering"})
+    def test_warm_keeps_the_days_a_tracker_gave_and_stops_at_the_first_it_did_not(self):
+        folder = tempfile.mkdtemp(dir=os.path.dirname(context.DIR))
         asked = []
 
         def read(d):
             asked.append(d)
-            return None if d == "2026-11-02" else [slack(600, 610)]  # no tracker answered that day
-        context.warm("2026-11-04", "2026-11-04", read)
-        with context._warming:  # the run is over once its lock is free
-            pass
-        self.assertIn("2026-11-02", asked)
-        self.assertIsNone(context.stored("2026-11-02"))
-        self.assertEqual(context.stored("2026-11-01")["runs"], [[600, 610, 0]])
-        self.assertNotIn(DATE, asked)  # the day itself is not over
+            return None if d == "2026-11-01" else [slack(600, 610)]  # no tracker answered that day
+        with mock.patch.object(context, "DIR", folder), mock.patch.object(context, "_failed_at", 0.0):
+            context.warm("2026-11-04", "2026-11-04", read)
+            with context._warming:  # the run is over once its lock is free
+                pass
+            self.assertEqual(asked, ["2026-11-03", "2026-11-02", "2026-11-01"])  # not the day itself, not past a failure
+            self.assertEqual(context.stored("2026-11-02")["runs"], [[600, 610, 0]])
+            self.assertIsNone(context.stored("2026-11-01"))
+
+    def test_warm_waits_an_hour_after_a_tracker_did_not_answer(self):
+        folder = tempfile.mkdtemp(dir=os.path.dirname(context.DIR))
+        asked = []
+
+        def read(d):
+            asked.append(d)
+            return None
+        with mock.patch.object(context, "DIR", folder), mock.patch.object(context, "_failed_at", 0.0):
+            for _ in range(2):  # the second Log the day within the hour reads nothing
+                context.warm("2026-11-04", "2026-11-04", read)
+                with context._warming:
+                    pass
+            self.assertEqual(asked, ["2026-11-03"])
+            context._failed_at -= context.RETRY + 1
+            context.warm("2026-11-04", "2026-11-04", read)
+            with context._warming:
+                pass
+            self.assertEqual(asked, ["2026-11-03", "2026-11-03"])
 
 
 if __name__ == "__main__":
