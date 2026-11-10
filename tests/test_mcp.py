@@ -284,6 +284,29 @@ class McpTest(unittest.TestCase):
         dry, _ = self.call("pulsar_preview", self.ARGS)
         self.assertNotIn("warnings", dry)
 
+    def test_a_task_not_logged_lately_takes_the_service_used_last_in_its_project(self):
+        """As the log dialog and Log the day: with no service of its own, a task you have not logged to lately takes
+        the service you used last in its project, before "pick a service"."""
+        sug = {"recent": [{"taskId": "11", "title": "Build", "project": "Acme", "serviceId": "22", "service": "QA",
+                           "count": 1, "last": DATE, "minutes": 30}], "assigned": []}
+        services = [{"id": "21", "name": "Dev", "budget": "B", "billable": True},
+                    {"id": "22", "name": "QA", "budget": "B", "billable": True}]
+
+        def bookable(project):
+            return lambda t, d, s: {"task": {"title": "New", "project": project, "projectId": "5", "serviceId": ""},
+                                    "services": services}
+        args = {"date": DATE, "entries": [{"start": "09:00", "minutes": 30, "taskId": "13"}]}
+        with mock.patch.object(server, "api_suggest", lambda q: sug):
+            with mock.patch.object(productive, "bookable_services", bookable("Acme")):
+                dry, err = self.call("pulsar_preview", args)
+            self.assertFalse(err, dry)
+            self.assertEqual([e["serviceId"] for e in dry["entries"]], ["22"])
+            with mock.patch.object(productive, "bookable_services", bookable("Globex")):  # nothing logged there
+                dry, _ = self.call("pulsar_preview", args)
+            self.assertEqual([e["serviceId"] for e in dry["entries"]], [None])
+            self.assertTrue(dry["entries"][0]["problem"].startswith("pick a service"), dry)
+            self.assertIsNone(dry["code"])
+
     def test_time_logged_with_no_start_is_never_offered_again_as_ready(self):
         """2 h of the session's task logged by duration only: no overlap check sees them, so the session's stretch on
         that task waits for a yes, and the summary the person approves names them."""

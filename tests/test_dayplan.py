@@ -67,6 +67,21 @@ class ProjectServiceTest(unittest.TestCase):
         self.assertEqual(dayplan.pick_service(self.S, "1", "AI Research", None, ("2", "Meetings"))["id"], "1")
         self.assertEqual(dayplan.pick_service(self.S, task_service="1", project_last=("2", "Meetings"))["id"], "1")
 
+    def test_the_service_remembered_is_the_one_logged_last(self):
+        """By date, then start, whatever order the rows come in; an entry with no start comes first in its day."""
+        service, project = {}, {}
+        rows = [{"date": "2026-11-03", "start": T0 - 3600, "taskId": "7", "serviceId": "2", "service": "Meetings",
+                 "project": "P"},
+                {"date": "2026-11-03", "start": T0 - 7200, "taskId": "7", "serviceId": "1", "service": "AI Research",
+                 "project": "P"},
+                {"date": "2026-11-03", "start": None, "taskId": "8", "serviceId": "1", "service": "AI Research",
+                 "project": "P"},
+                {"date": "2026-11-02", "start": T0, "taskId": "9", "serviceId": "3", "service": "Build", "project": "Q"},
+                {"date": "2026-11-03", "start": T0, "taskId": None, "serviceId": "4", "service": "x", "project": "Q"}]
+        dayplan.remember_services(service, project, rows)
+        self.assertEqual(service, {"7": ("2", "Meetings"), "8": ("1", "AI Research"), "9": ("3", "Build")})
+        self.assertEqual(project, {"P": ("2", "Meetings"), "Q": ("3", "Build")})
+
 
 class PlannerTest(unittest.TestCase):
     def setUp(self):
@@ -1250,6 +1265,41 @@ class DayplanAPITest(unittest.TestCase):
                     mock.patch("pulsar.calendar.history", lambda f, n, s: []):
                 dayplan.gather(DATE)
             self.assertEqual(seen["picks"], picks if on else {}, on)
+
+    def test_the_days_own_entries_are_the_newest_use_of_a_service(self):
+        """A task logged this morning to another service than before, and a task never logged in a project logged to
+        this morning, take this morning's service; the test view that hides the day's entries learns nothing from
+        them."""
+        history = [{"date": "2026-11-02", "start": T0 - 86400, "minutes": 60, "taskId": "7", "serviceId": "1",
+                    "service": "AI Research", "task": "R&D", "project": "P"}]
+        today = [{"id": "e1", "date": DATE, "start": T0 + 9 * 3600, "minutes": 30, "taskId": "7", "serviceId": "2",
+                  "service": "Meetings", "task": "R&D", "project": "P"},
+                 {"id": "e2", "date": DATE, "start": T0 + 10 * 3600, "minutes": 30, "taskId": "8", "serviceId": "3",
+                  "service": "Build", "task": "Site", "project": "Q"}]
+        s = {"timezone": "UTC", "person_id": "1", "rules": [], "person_name": ""}
+        for ignore in (False, True):
+            seen = {}
+            with mock.patch.object(server, "current_settings", lambda: s), \
+                    mock.patch.object(server.config, "tz", lambda s: timezone.utc), \
+                    mock.patch.object(server, "api_activity", lambda q: {"items": [], "away": []}), \
+                    mock.patch.object(server, "productive_rows", lambda d0, d1, s: (today, None, "token", False)), \
+                    mock.patch.object(server, "history_rows", lambda d, s, days=28: (history, None)), \
+                    mock.patch.object(server, "api_repeats", lambda q: {"repeats": []}), \
+                    mock.patch.object(server, "api_suggest", lambda q: {"recent": [], "assigned": []}), \
+                    mock.patch.object(dayplan.config, "tz", lambda s: timezone.utc), \
+                    mock.patch.object(dayplan, "plan", lambda day, ctx, opts, **kw: seen.update(ctx) or {"entries": []}), \
+                    mock.patch("pulsar.likely.enabled", lambda s: False), \
+                    mock.patch("pulsar.calendar.day", lambda d, s, fresh=False: {"events": [], "connected": False}), \
+                    mock.patch("pulsar.calendar.history", lambda f, n, s: []):
+                dayplan.gather(DATE, ignore_logged=ignore)
+            if ignore:
+                self.assertEqual((seen["service"], seen["project_service"]),
+                                 ({"7": ("1", "AI Research")}, {"P": ("1", "AI Research")}))
+            else:
+                self.assertEqual(seen["service"], {"7": ("2", "Meetings"), "8": ("3", "Build")})
+                self.assertEqual(seen["project_service"], {"P": ("2", "Meetings"), "Q": ("3", "Build")})
+                svc = [{"id": "3", "name": "Build"}, {"id": "4", "name": "Support"}]
+                self.assertEqual(dayplan.pick_service(svc, None, "", None, seen["project_service"]["Q"])["id"], "3")
 
     def test_no_proposal_when_the_days_entries_cannot_be_read(self):
         s = {"timezone": "UTC", "person_id": "1", "rules": [], "person_name": ""}

@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- The service picked for a task follows what you logged today: Log the day counts the day's own entries as the newest use of a service, as the log dialog does, and `pulsar_preview` gives a task you have not logged to lately the service you used last in its project, as the dialog and Log the day do. With the right task, the service was right on 90.7% of minutes instead of 86.3% (Log the day, with the day's earlier entries logged) and 90.3% instead of 87.8% (`pulsar_preview`), on 43 replayed days.
 - The log dialog offers the task you logged last in the repository's project first when nothing surer names the work, and a task assigned to you in the last three days second: the right task is among the first three offers on 65% of rows instead of 61% (43 replayed days).
 - Log the day picks the right task more often (39% of minutes on the exact task instead of 35%, on 43 replayed days): work with no sure answer takes the task you logged last in the repository's project, and where you usually log in a repository is only offered as an alternative, never picked. Less time lands on the wrong client.
 - Report, Tasks against estimates: the row under the pointer is lit end to end, and a task's name opens it in Productive.
