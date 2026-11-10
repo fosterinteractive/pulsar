@@ -368,6 +368,8 @@ def fix(minutes: int, base: str, path: str | None = None, run=None, fetch=None, 
         edit = set_timeout(path, minutes * 60)
     except OSError as exc:  # no permission to write next to it, a full disk: nothing changed (set_timeout)
         return {"ok": False, "changed": False, "message": f"Pulsar could not change {path}: {exc.strerror or exc}."}
+    except ValueError as exc:  # no file yet (ActivityWatch makes it on its first start): never created here
+        return {"ok": False, "changed": False, "message": f"Pulsar did not change {path}: {exc}"}
     try:
         done = restart(base, run, fetch, sleep, clock)
     except (OSError, subprocess.SubprocessError) as exc:

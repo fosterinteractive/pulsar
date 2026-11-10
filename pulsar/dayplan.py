@@ -524,7 +524,13 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     out, unplaced = _layout(d, entries)
     evidence = _evidence(d, pieces)
     out, totals = _caps(d, out, unplaced, evidence)
-    out = _refill(d, out, pieces, totals["cap"] - totals["logged"])
+    out, given_back = _refill(d, out, pieces, totals["cap"] - totals["logged"])
+    for u in unplaced:  # minutes the refill gave back are placed after all: no longer "not placed"
+        back_ = min(u["minutes"], given_back.get(str(u.get("task") or ""), 0))
+        if back_:
+            u["minutes"] -= back_
+            given_back[str(u["task"])] -= back_
+    unplaced[:] = [u for u in unplaced if u["minutes"] > 0]
     return _result(d, out, unplaced, totals)
 
 
@@ -818,10 +824,13 @@ def _rows(d: _Day) -> None:
                 continue  # its own work in front, internal work (shared, 3b), or no client in front
             key = (str(c["task"]), d.sitting[x])
             beside.setdefault(key, (c, set()))[1].add(x)
+    least = max(d.o["grid"] or 1, d.o["min_entry"] or MIN_ENTRY)
     for (_, _), (c, xs) in beside.items():
         if len(xs) < PARALLEL_MIN:
             continue
-        half = sorted(xs)[1::2]  # every other minute: the two are laid one after the other (_merge)
+        # its half, at least an entry (15 to 19 minutes beside: 10), as one block from its first minute: laid in its own
+        # time, before the rest of the work in front (every other minute was laid past its own time and lost)
+        half = sorted(xs)[:min(len(xs), max(len(xs) // 2, least))]
         for x in half:
             owner[x] = None
         claim({**c, "kind": "focused", "parallel": True,
@@ -1059,11 +1068,13 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
             given[str(e["taskId"])] += e["minutes"]
     owed = {t: m - given[t] for t, m in seen.items()}
     budget = allowed - sum(e["minutes"] for e in out)
+    given_back: dict = {}  # task -> minutes the refill gave it
     if not mine or budget < g:
-        return out
+        return out, given_back
     billable = {t: any(p.get("class") == CLIENT for p in ps) or attribution.class_of_task(t, d.ctx) != INTERNAL
                 for t, ps in mine.items()}
     proj = {t: (d.names.get(t) or ("", ""))[1] or t for t in mine}  # a billable task's minutes come from its project's
+    proj_of = lambda e: (d.names.get(str(e.get("taskId") or "")) or ("", ""))[1] or str(e.get("taskId") or "")  # noqa: E731
     pool: dict = defaultdict(int)
     for t in mine:
         if billable[t] and owed[t] > 0:
@@ -1121,10 +1132,23 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
                 owed[t] -= m
                 if billable[t]:
                     pool[proj[t]] -= m
-        if room >= g and beside and 2 * sum(inside.values()) >= b - a:  # what is left of a hole in a client's work,
-            # when it is mostly work seen in front (not an agent alone, not time logging): that client's entry grows
-            t = max(beside, key=lambda x: (inside.get(str(x["taskId"]), 0), x["e"] == a))["taskId"]
-            t = str(t)
+        # what is left of a hole between two entries of one client: the client's, when it is mostly that client's work or
+        # internal turns (a turn of internal work between two turns of one client is the client's, 3b'), never another
+        # client's work, a repository never logged, an agent alone or time logging (2026-11-10 review)
+        before = next((x for x in beside if x["e"] == a), None)
+        after = next((x for x in beside if x["s"] == b), None)
+        same = before is not None and after is not None and proj_of(before) == proj_of(after)
+        ours = 0
+        if same:
+            for x in range(a, b):
+                w = d.owner[x]
+                if w in (None, BLOCKED) or not d.claims[w].get("task"):
+                    continue
+                wt = str(d.claims[w]["task"])
+                if proj_of({"taskId": wt}) == proj_of(before) or attribution.class_of_task(wt, d.ctx) == INTERNAL:
+                    ours += 1
+        if room >= g and same and 2 * ours >= b - a:
+            t = str(before["taskId"])
             if t not in mine:
                 mine[t] = [p for p in pieces if str(p.get("task") or "") == t] or [{"s": a, "last": b - 1, "minutes": room,
                                                                                     "task": t, "kind": "focused", "parts": []}]
@@ -1137,11 +1161,18 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
                 owed[spare[0]] -= room
                 room = 0
         budget -= sum(taken.values())
-        cursor = a
-        # its own entry before the hole: first; after it: last; the rest in the order they were seen
-        for t, take in sorted(taken.items(), key=lambda x: (1 + touches(x[0]), min(p["s"] for p in mine[x[0]]))):
-            s, e = cursor, cursor + take
-            cursor = e
+        # its own entry before the hole: first, from the hole's start; after it: last, against it (laid from the hole's end,
+        # so a short budget never leaves it a crumb away from its entry); the rest in the order they were seen
+        order = sorted(taken.items(), key=lambda x: (1 + touches(x[0]), min(p["s"] for p in mine[x[0]])))
+        cursor, tail = a, b - sum(take for t, take in order if touches(t) > 0)
+        for t, take in order:
+            if touches(t) > 0:
+                s, e = tail, tail + take
+                tail = e
+            else:
+                s, e = cursor, cursor + take
+                cursor = e
+            given_back[t] = given_back.get(t, 0) + take
             nb = next((x for x in out if str(x.get("taskId") or "") == t and (x["e"] == s or x["s"] == e)), None)
             if nb is not None:  # right against an entry of its own: that entry grows
                 nb["s"], nb["e"] = min(nb["s"], s), max(nb["e"], e)
@@ -1150,7 +1181,7 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
             parts = [{**p} for p in mine[t]]
             out.append(_entry({**parts[0], "parts": parts, "minutes": sum(p["minutes"] for p in parts)}, s, e, d.names))
     out.sort(key=lambda e: e["s"])
-    return out
+    return out, given_back
 
 
 def _layout(d: _Day, entries: list) -> tuple:

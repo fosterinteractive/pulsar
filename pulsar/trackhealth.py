@@ -87,9 +87,9 @@ def health(aw_url: str, tz, now: float | None = None, fetch=None, running=None) 
                        "text": "ActivityWatch runs but records no windows: its window watcher is off. Turn it on in its "
                                "menu-bar icon (Modules), and give it Accessibility access in System Settings."})
     elif aw_up and window < now - STALE_WINDOW:
-        since = datetime.fromtimestamp(window, timezone.utc).astimezone(tz).strftime("%H:%M") if window else "a while"
+        since = f" since {datetime.fromtimestamp(window, timezone.utc).astimezone(tz).strftime('%H:%M')}" if window else ""
         issues.append({"key": "aw-stale", "tracker": "aw", "action": "restart",
-                       "text": f"ActivityWatch runs, but has recorded no window since {since}: its window watcher has "
+                       "text": f"ActivityWatch runs, but has recorded no window{since}: its window watcher has "
                                "stopped. Restarting ActivityWatch usually brings it back."})
     if memtime["used"] and mem_up is False:
         side = " Pulsar reads ActivityWatch, so your day is still recorded." if aw_up else ""

@@ -453,8 +453,9 @@ class PlannerTest(unittest.TestCase):
                                      "B": {"task": "Tool", "project": "FI-AI"}},
                "task_class": {"A": "client", "C": "client", "B": "internal"}, "classes": {"site": "mixed", "tool": "mixed"}}
         # the tasks are Claude's picks, not links in the work, so a row's class is its repository's: "mixed"
+        # (each tool turn between two of the client's; one after the last would be the tool's own: switching, not inside)
         spans = [(540, 552, "site", "A"), (552, 556, "tool", "B"), (556, 568, "site", "C"), (568, 576, "tool", "B"),
-                 (576, 588, "site", "A"), (588, 591, "tool", "B"), (591, 603, "site", "C"), (603, 605, "tool", "B")]
+                 (576, 588, "site", "A"), (588, 591, "tool", "B"), (591, 605, "site", "C")]
         rows = [row(s, e, project=pr, titles=["Work"]) for s, e, pr, _ in spans]
         picks = {f"{s}|{pr}": {"tasks": [{"taskId": t}], "why": "Claude", "note": ""} for s, _, pr, t in spans}
         p = dayplan.plan(day(items=[work(540, 605)], rows=rows, picks=picks), ctx)

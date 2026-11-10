@@ -413,8 +413,9 @@ def api_pause_change(body: dict) -> dict:
         until = body.get("until")
         if until is not None and (isinstance(until, bool) or not isinstance(until, (int, float))):
             raise ValueError("until: a time in seconds")
-        got = pause.stop(config.tz(s), until=until)
-        marked, extra = got["marked"], {"was": got["was"], "resumedSince": got["resumedSince"]}
+        got = pause.stop(config.tz(s), until=until)  # not paused (a second click, another window): nothing to undo
+        marked = got["marked"]
+        extra = {"was": got["was"], "resumedSince": got["resumedSince"]} if "resumedSince" in got else {}
     else:
         raise ValueError("on: true or false, stay: true, or undo")
     return {**api_pause({}), "marked": marked, **extra}
@@ -826,8 +827,9 @@ def sync_activitywatch(s: dict):
     real Pulsar's too; not in a test or read-only run. None when nothing was to change."""
     minutes = config.away_after(s)
     st = awsetup.status(minutes)
-    if not st["installed"] or st["problem"] or not st["differs"] or config.is_preview() or awsetup.blocked():
-        return None
+    if not st["installed"] or st["problem"] or not st["fromFile"] or not st["differs"] or config.is_preview() \
+            or awsetup.blocked():
+        return None  # no file yet: ActivityWatch's default stands, and Pulsar never makes its file
     res = awsetup.fix(minutes, s["activitywatch_url"])
     if res["changed"] and not res["ok"]:
         logbook.record("activitywatch", res["message"], kind="warning", once_per=0)
