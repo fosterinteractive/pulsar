@@ -200,6 +200,18 @@ try {
     tp.join() === 'ActivityWatch and MemTime stopped recording,Open ActivityWatch and MemTime,true,true'
     && tn.join() === 'No activity tracker is recording,true,true', `${tp.join(' | ')} / ${tn.join(' | ')}`);
 
+  // Pause at the top: painted from a pause made up here (the server's is never started or ended by this script), and
+  // the paused stretch on today
+  const st = await getJSON('/api/pause'), pWas = PAUSE;
+  PAUSE = {paused: true, since: Date.now() / 1000 - 3600, sinceText: '12:00', minutes: 60};
+  paintPause();
+  const pb = q('#pause-btn'), pOn = [pb.classList.contains('on'), q('#pause-label').textContent, pb.getAttribute('aria-pressed')];
+  const sp = state.date === todayLocal() ? pausedSpans() : null;
+  PAUSE = pWas; paintPause();
+  check('Pause shows when Pulsar is paused', typeof st.paused === 'boolean' && pOn.join() === 'true,Paused since 12:00,true'
+    && pb.classList.contains('on') === !!pWas.paused && (sp === null || (sp.length === 1 && Math.abs(sp[0][1] - sp[0][0] - Math.min(60, nowMin())) <= 1)),
+    `${pOn.join(' | ')}; today ${JSON.stringify(sp)}; server paused ${st.paused}`);
+
   check('no page errors during the run', !errors.length, errors.join(' | ') || 'none');
 } catch (e) {
   check('the script ran to the end', false, `${e.name}: ${e.message}`);

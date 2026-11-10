@@ -7,6 +7,8 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Pause, at the top and in the Dock icon's and menu-bar item's menus: from the click until Resume nothing counts as work (the day, Log the day, the Report, the reminder, Pulsar in Claude Code). The button turns amber with the time it began, and the tracker goes on recording. Resume makes the paused time "not work" on the day, which a click undoes. Paused for an hour or more while the tracker sees you working, Pulsar asks when you open it: resume from when you came back, now, or stay paused (Settings > Time and activity > Away > Ask about a long pause).
+- Earlier days and the Report leave time marked "not work" out of "not logged" by the minute, the reminder and the Dock badge too.
 - When a tracker you use stops recording (ActivityWatch or MemTime not running, ActivityWatch's window watcher silent, or no tracker at all), a notice like the update's says so within a minute and offers to open it, or restart ActivityWatch, and to add ActivityWatch to Login Items in Settings. A tracker whose data has not changed for 30 days counts as one you left, and says nothing. Later quiets it for an hour.
 - Every use of Claude is Sonnet's by default, as the task picks were: Check my day's review (on the replay a little righter and two to three times faster than with Haiku), the notes (as fast as Haiku on a day's 15, fewer left empty) and a new task's draft. A model chosen in Settings > Claude stays as chosen.
 - Beside ↻, how long ago the view was read from Productive ("3 min ago"; the time in its tooltip): the day's entries in the Day view, the range in the Report.

@@ -560,7 +560,7 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
         NSApp.helpMenu = help
     }
 
-    /// The Dock icon's menu: what can be done without the window in front.
+    /// The Dock icon's menu: what can be done without the window in front, and Pause or Resume (the page's pause.js).
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
         let menu = NSMenu()
         for (title, run) in [("New Entry…", "newEntry"), ("Log the Day…", "logDay")] {
@@ -569,12 +569,24 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
             it.representedObject = ["run": run, "arg": NSNull()]
             menu.addItem(it)
         }
+        menu.addItem(.separator())
+        menu.addItem(pauseItem())
         return menu
+    }
+
+    /// Pause Pulsar, or Resume (paused since 13:10): runs in the page without bringing the window to the front.
+    private func pauseItem() -> NSMenuItem {
+        let paused = page["paused"] as? Bool == true, since = page["pausedSince"] as? String ?? ""
+        let it = NSMenuItem(title: paused ? (since.isEmpty ? "Resume" : "Resume (Paused Since \(since))") : "Pause",
+                            action: #selector(pageCommand(_:)), keyEquivalent: "")
+        it.target = self
+        it.representedObject = ["run": paused ? "resume" : "pause", "arg": NSNull()]
+        return it
     }
 
     @objc private func pageCommand(_ sender: NSMenuItem) {
         guard let spec = sender.representedObject as? [String: Any], let run = spec["run"] as? String else { return }
-        if !["theme", "rows"].contains(run) { showWindow() }
+        if !["theme", "rows", "pause", "resume"].contains(run) { showWindow() }
         runPage(run, spec["arg"] is NSNull ? nil : spec["arg"])
     }
 
@@ -754,8 +766,10 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
         let hours = { (m: Int) in String(format: "%.1f", Double(m) / 60) }   // decimal hours, as timesheets count them
         let words = { (m: Int) in m >= 60 ? "\(m / 60) h" + (m % 60 > 0 ? " \(m % 60) min" : "") : "\(m) min" }
         statusItem?.button?.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
-        statusItem?.button?.title = " \(hours(t.active))h  ✓ \(hours(t.logged))h"   // the clock: active; the tick: logged
-        statusItem?.button?.toolTip = "Today: \(hours(t.active)) h active (the clock), \(hours(t.logged)) h logged (the tick)"
+        let paused = page["paused"] as? Bool == true   // the page's pause: ⏸ first, and said in the tooltip
+        statusItem?.button?.title = (paused ? " ⏸" : "") + " \(hours(t.active))h  ✓ \(hours(t.logged))h"   // the clock: active; the tick: logged
+        statusItem?.button?.toolTip = (paused ? "Pulsar is paused: nothing counts as work. " : "")
+            + "Today: \(hours(t.active)) h active (the clock), \(hours(t.logged)) h logged (the tick)"
         let menu = NSMenu()
         for line in ["Active today: \(hours(t.active)) h (\(words(t.active)))", "Logged: \(hours(t.logged)) h (\(words(t.logged)))",
                      "Not logged: \(hours(t.notLogged)) h (\(words(t.notLogged)))"] {
@@ -767,6 +781,7 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
         let open = NSMenuItem(title: "Open Pulsar", action: #selector(bringBack), keyEquivalent: "")
         open.target = self
         menu.addItem(open)
+        menu.addItem(pauseItem())
         for (title, run) in [("Log the Day…", "logDay"), ("New Entry…", "newEntry")] {
             let it = NSMenuItem(title: title, action: #selector(pageCommand(_:)), keyEquivalent: "")
             it.target = self
@@ -978,7 +993,9 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
         case "signin", "start": start(quiet: isPulsar(web.url))   // a new one-time code, from the launcher
         case "reload": start(quiet: true)   // the page saw a new version: in again through the launcher (main.js)
         case "state":   // what the page shows (native.js): for the menus, the title and the title bar
+            let pauseWas = page["paused"] as? Bool, sinceWas = page["pausedSince"] as? String
             page = body
+            if pauseWas != body["paused"] as? Bool || sinceWas != body["pausedSince"] as? String { paintStatusItem() }
             if let title = body["title"] as? String, !title.isEmpty { window.title = String(title.prefix(120)) }
             applyTheme(body["theme"] as? String ?? "system", background: body["bg"] as? String)
         case "badge": badge((body["minutes"] as? NSNumber)?.intValue ?? 0)

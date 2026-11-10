@@ -250,6 +250,8 @@ def pulsar_status(args: dict, client: str = "") -> dict:
         out.update({"version": got.get("version"), "serverBlocked": bool(got.get("serverBlocked"))})
         blocked += [str(w) for w in got.get("why") or []]
         when = {k: got.get(k) for k in ("date", "day", "time", "timezone")}
+        if got.get("pausedSince"):  # the person paused Pulsar: the time since then is not work and in no proposal
+            out["pausedSince"] = str(got["pausedSince"])[:16]
     except ToolError as exc:
         out.update({"pulsar": "not answering", "problem": str(exc), "next": "Ask the person to open Pulsar."})
     except Exception as exc:  # never fails: say what went wrong, without any data
@@ -362,7 +364,8 @@ TOOLS = [
     {"name": "pulsar_status", "title": "Pulsar: status",
      "description": ("Never fails. Whether Pulsar is open on this Mac (every other tool needs it), its version, whether "
                      "writes to Productive are blocked and why (a read-only test run, Pulsar Preview), whether "
-                     "pulsar_log works from this app, and today's date, time and time zone in Pulsar. Read only."),
+                     "pulsar_log works from this app, and today's date, time and time zone in Pulsar. pausedSince: the person "
+                     "paused Pulsar then; the time since is not work and in no proposal. Read only."),
      "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
      "annotations": {"title": "Pulsar: status", **READ}},
 ]

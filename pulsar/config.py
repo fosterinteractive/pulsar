@@ -72,6 +72,7 @@ ADVANCED = {
     "meeting_cards": ("usual", "strict", "off"),  # the daily meeting cards: as now, only steadier repeats, never
     "split_hint": (0.75, 0.6, 0.9),  # a stretch is offered as a split when its main task has less than this share
     "no_estimate": (True, False),    # the "No estimate" flag (flags.py)
+    "pause_ask": (60, 30, 120, 240, 0),  # minutes paused, with work seen, before Pulsar asks if the pause is still on; 0 never
 }
 
 

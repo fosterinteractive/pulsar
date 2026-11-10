@@ -1537,6 +1537,21 @@ and the whole day every hour while the page shows. The app's window sends `pulsa
   click on it, or Undo in the note at the bottom, counts it as work again. `GET /api/daymarks?date=` (or `from=&to=`),
   `POST /api/daymarks` `{date, done | undone | add: [a, b] | remove: [a, b] | nolearn: id | learn: id}`, the page's
   session only.
+- **Pause** (`pulsar/pause.py`, `web/js/pause.js`, `~/.cache/pulsar/pause.json` `{since, asked}`). Pause at the top
+  (or the Dock icon's menu and the menu-bar item: `pause` and `resume` in native.js, the window's `pauseItem`) starts
+  a stretch of not work that is still open. While it is, `pause.not_work(date)` (the day's marks and the open pause)
+  is what the server leaves out: Log the day's plan (`dayplan.gather` cuts the activity there and drops meetings and
+  usual meetings wholly inside), the Report's `notLogged` (so the reminder, the Dock badge and Earlier days too),
+  and `pulsar_day`'s active-not-logged time (with `notWork` listed; `pulsar_status` says `pausedSince`). The page
+  draws it as an amber hatched rail up to now and gives it no "Active, not logged" rail; Log the day's rows inside it
+  are left out (`ldNotWork`). Resume writes `[since, until)` to each day's `notWork` marks, split at midnight, and
+  forgets the pause: `until` is now, or the time the person came back. **The question**: when the window comes to the
+  front (at most once a minute, and every 10 minutes while it stays there), `GET /api/pause?ask=1` asks when the
+  pause is at least Settings' **Ask about a long pause** old (Away; Advanced's `pause_ask`: 60 minutes unless
+  changed, 0 never), the tracker saw 10 minutes of work or more since it began, and the person has not said **Stay
+  paused** within that stretch. `back` is where the last stretch of that work begins (pieces closer than Away after
+  join): **Resume from** it, **Resume now**, or **Stay paused** (also ✕ and Escape, `{stay: true}`). The Pause button
+  while paused asks the same from when, without the wait (`ask=2`), and resumes at once when there was no work since.
 - **Not an example** (the same file, `noLearn`: entry ids per day): a logged entry's popover marks it so Pulsar never
   learns from it, for time moved by hand (internal work put on billable hours, or the other way) or logged to the
   right task at the wrong time. `server.history_rows` leaves such entries out, so the repeats, the meetings' tasks,
@@ -1776,6 +1791,8 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `POST /api/session` | Trade a sign-in code for a session token. `POST /api/session/end` signs out. |
 | `POST /api/settings` | Save settings (each field checked; `advanced` is merged with what is saved, and only choices other than the usual are kept, 5.4). |
 | `POST /api/activitywatch/fix` | `{minutes}`: ActivityWatch's AFK timeout set to Away after (saved too), with a copy of its file, then ActivityWatch restarted (4.1). The page's session only; refused read-only and in tests. |
+| `GET /api/pause?ask=` | The pause: `{paused, since, sinceText, minutes}`; `ask=1` adds whether to ask if it is still on and `back`, `ask=2` without the wait (Pause). |
+| `POST /api/pause` | `{on: true}` pause, `{on: false, until}` resume (the pause written to the days' not-work marks), `{stay: true}` keep it on. The page's session only. |
 | `GET /api/trackers` | Whether each tracker records now, and the notice's issues (4.1). Starts nothing. |
 | `POST /api/trackers/open` | `{tracker, restart}`: the notice's button opens ActivityWatch or MemTime, or restarts ActivityWatch (4.1). The page's session only; refused read-only and in tests. |
 | `POST /api/activitywatch/login` | `{add}`: whether ActivityWatch is in Login Items, or adding it, through System Events (4.1). The page's session only; refused read-only and in tests. |

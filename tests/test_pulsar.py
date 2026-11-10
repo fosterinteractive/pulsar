@@ -3230,7 +3230,7 @@ class AdvancedSettingsTest(unittest.TestCase):
     def test_the_usual_values_unless_a_choice_is_saved(self):
         a = config.advanced({})
         self.assertEqual(a, {"join_gap": 30, "outside_min": 10, "memory": 7, "meeting_cards": "usual",
-                             "split_hint": 0.75, "no_estimate": True})
+                             "split_hint": 0.75, "no_estimate": True, "pause_ask": 60})
         self.assertEqual(a["join_gap"], dayplan.MERGE_GAP)
         self.assertEqual(a["outside_min"], dayplan.OUT_MIN)
         self.assertEqual(a["memory"], learn.HALF_LIFE)

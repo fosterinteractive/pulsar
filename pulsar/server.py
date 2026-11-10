@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, appupdate, askclaude, awsetup, calendar, claudelink, claudeuses, config, daymarks, dayplan, dayreview, flags, learn, likely, logbook, mcptools, newtask, productive, ranges, report, sessions, trackers, trackhealth, updater, names
+from . import __version__, appupdate, askclaude, awsetup, calendar, claudelink, claudeuses, config, daymarks, dayplan, dayreview, flags, learn, likely, logbook, mcptools, newtask, productive, pause, ranges, report, sessions, trackers, trackhealth, updater, names
 from .mcp import whoami_proof
 
 UPDATER = updater.Updater()
@@ -351,6 +351,67 @@ def api_aw_fix(body: dict) -> dict:
     if res["changed"] and not res["ok"]:  # the file changed, the restart did not finish: worth a line in Logs
         logbook.record("activitywatch", res["message"], kind="warning", once_per=0)
     return {"result": res, "awayAfter": config.away_after(s), "activitywatch": awsetup.status(config.away_after(s))}
+
+
+def _when(t: float, tz, now: float) -> str:
+    """A moment as the page says it: "13:10" on the day of `now`, "Mon 17:40" on another day."""
+    local = datetime.fromtimestamp(t, tz)
+    return local.strftime("%H:%M") if local.date() == datetime.fromtimestamp(now, tz).date() else local.strftime("%a %H:%M")
+
+
+def api_pause(q: dict) -> dict:
+    """The pause (pause.py) as the page shows it. With `ask`, also whether to ask if it is still on: paused for
+    Settings' "Ask about a pause after" or longer, with pause.ASK_ACTIVE minutes of work seen since it began, and not
+    asked within that stretch; `ask=2` (Resume clicked) skips those two and asks only from when. `back`: when the person came back, the start of the last stretch of work the tracker saw
+    (pieces closer than Away after are one stretch)."""
+    s = config.load()
+    tz, st, now = config.tz(s), pause.state(), time.time()
+    if not st["paused"]:
+        return {"paused": False}
+    since = st["since"]
+    out = {"paused": True, "since": since, "sinceText": _when(since, tz, now), "minutes": round((now - since) / 60)}
+    if not q.get("ask"):
+        return out
+    after = config.advanced(s)["pause_ask"]
+    out["ask"] = False
+    if q.get("ask") != "2" and (not after or now - since < after * 60 or (st["asked"] and now - st["asked"] < after * 60)):
+        return out  # ask=2: Resume was clicked, so the question is only from when
+    found = trackers.both(since, now, s["activitywatch_url"], trackers.classifier(s["personal_patterns"]),
+                          config.away_after(s))
+    items = sorted((x for x in found[trackers.pick(found, "auto")] if x.get("cat") != "personal"), key=lambda x: x["s"])
+    work = sum(x["e"] - x["s"] for x in items)
+    out["workMinutes"] = round(work)
+    if work < pause.ASK_ACTIVE:
+        return out
+    back, end = None, None
+    for x in items:
+        if back is None or x["s"] - end > config.away_after(s):
+            back = x["s"]
+        end = x["e"] if end is None else max(end, x["e"])
+    out["ask"] = True
+    if back is not None and back >= 1:
+        out["back"] = since + back * 60
+        out["backText"] = _when(out["back"], tz, now)
+    return out
+
+
+def api_pause_change(body: dict) -> dict:
+    """{on: true}: pause from now. {on: false, until}: resume, the pause marked not work up to `until` (an epoch; now
+    when not given). {stay: true}: the pause goes on, asked again after another stretch."""
+    s = config.load()
+    marked = {}
+    if body.get("stay") is True:
+        pause.stay()
+    elif body.get("on") is True:
+        pause.start()
+    elif body.get("on") is False:
+        until = body.get("until")
+        if until is not None and (isinstance(until, bool) or not isinstance(until, (int, float))):
+            raise ValueError("until: a time in seconds")
+        marked = pause.stop(config.tz(s), until=until)["marked"]
+    else:
+        raise ValueError("on: true or false, or stay: true")
+    return {**api_pause({}), "marked": marked}
 
 
 def api_trackers_open(body: dict) -> dict:
@@ -699,7 +760,8 @@ def api_report(q: dict) -> dict:
         sources = trackers.both(bounds[0][0], bounds[-1][1], s["activitywatch_url"], trackers.classifier(s["personal_patterns"]),
                                 config.away_after(s))
         rows, problem, source, from_copy = rows_job.result()
-    data = report.build(dates, bounds, sources, rows, today(tz), tz=tz)
+    not_work = {d: pause.elapsed(d, nw, tz, bounds[i][0]) for i, d in enumerate(dates) if (nw := pause.not_work(d, tz))}
+    data = report.build(dates, bounds, sources, rows, today(tz), tz=tz, not_work=not_work)
     data["warning"], data["fromCopy"], data["needsSetup"] = problem, from_copy, bool(problem) and source is None
     # no activity at all in the range: say why, if a tracker said (otherwise every day just reads "Active 0")
     if not any(sources.values()):
@@ -1966,6 +2028,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not (DATE.match(q.get("from") or "") and DATE.match(q.get("to") or "")):
                     raise ValueError("from=YYYY-MM-DD&to=YYYY-MM-DD")
                 return self.send_json({"days": daymarks.between(q["from"], q["to"])})
+            if url.path == "/api/pause":  # the pause, and (ask=1) whether to ask if it is still on
+                return self.send_json(api_pause(q))
             if url.path == "/api/trackers":  # polled by the page: whether the trackers record (its notice)
                 s = config.load()
                 return self.send_json(trackhealth.health(s["activitywatch_url"], config.tz(s)))
@@ -2078,6 +2142,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(api_aw_fix(body))
             if urlparse(self.path).path == "/api/activitywatch/login":  # Settings: ActivityWatch in Login Items
                 return self.send_json(api_aw_login(body))
+            if urlparse(self.path).path == "/api/pause":  # pause, resume, or keep the pause on
+                return self.send_json(api_pause_change(body))
             if urlparse(self.path).path == "/api/trackers/open":  # the trackers notice: open or restart one
                 return self.send_json(api_trackers_open(body))
             if urlparse(self.path).path == "/api/calendar/connect":

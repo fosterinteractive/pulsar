@@ -35,7 +35,7 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 
-from . import askclaude, config, logbook, productive
+from . import askclaude, config, logbook, pause, productive
 
 DATE = re.compile(r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
 HHMM = re.compile(r"^([01][0-9]|2[0-3]):([0-5][0-9])$")
@@ -564,6 +564,10 @@ def pulsar_day(args: dict) -> dict:
     work = sum(float(x["e"]) - float(x["s"]) for x in items if x.get("cat") != "personal")
     personal = sum(float(x["e"]) - float(x["s"]) for x in items if x.get("cat") == "personal")
     active, covered = active_minutes(items), covered_minutes(entries)
+    not_work = pause.not_work(date, config.tz(config.load()))  # said not to be work (the day's marks, a pause)
+    for a, b in not_work:
+        for m in range(a, min(b, 1440)):
+            covered[m] = True
     gap = sum(min(1.0, active[m]) for m in range(1440) if not covered[m])
 
     def likely_projects(a, b):
@@ -618,7 +622,9 @@ def pulsar_day(args: dict) -> dict:
                    "billingUnknownMinutes": logged - billable - not_billable, "activeWorkMinutes": mins(work),
                    "personalMinutes": mins(personal), "activeNotLoggedMinutes": mins(gap),
                    "awayMinutes": mins(sum(float(x["e"]) - float(x["s"]) for x in act.get("away") or [] if not x.get("off"))),
-                   "targetMinutes": cfg.get("targetMinutes")},
+                   "targetMinutes": cfg.get("targetMinutes"),
+                   "notWorkMinutes": sum(b - a for a, b in not_work)},
+        "notWork": [{"start": hm(a), "end": hm(b)} for a, b in not_work],
         "logged": [entry_out(x) for x in sorted(entries, key=lambda x: x.get("s") or 0)],
         "loggedWithoutStart": sum(1 for x in entries if x.get("s") is None),
         "unlogged": unlogged,
@@ -1353,10 +1359,13 @@ def pulsar_status(args: dict) -> dict:
     except Exception:
         now = datetime.now()
     blocked = cfg.get("writesBlocked")
+    since = pause.state()["since"]
     return {"pulsar": "open", "version": str(cfg.get("version") or ""), "serverBlocked": bool(blocked),
             "why": [error_out(blocked)] if blocked else [],
             "date": now.strftime("%Y-%m-%d"), "day": DAYS[now.weekday()], "time": now.strftime("%H:%M"),
-            "timezone": tz_name or None}
+            "timezone": tz_name or None,
+            # paused: the person said the time since then is not work (pause.py); it is in no proposal
+            "pausedSince": datetime.fromtimestamp(since, now.tzinfo).strftime("%Y-%m-%d %H:%M") if since else None}
 
 
 HANDLERS = {"pulsar_status": pulsar_status, "pulsar_day": pulsar_day, "pulsar_propose": pulsar_propose,

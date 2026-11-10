@@ -21,12 +21,11 @@ async function cuLoad() {
                                         getJSON(`/api/daymarks?from=${want[0]}&to=${want[want.length - 1]}`)]);
   CU.loading = false;
   if (r.error) { CU.error = r.error; renderReview(); return; }
-  // a day done (said, or its logged time reached the target and nobody said "not done") is not offered; time marked
-  // "not work" is not counted (daymarks.py)
+  // a day done (said, or its logged time reached the target and nobody said "not done") is not offered; the Report
+  // already leaves time marked "not work" or paused out of notLogged (server.api_report)
   const m = marks.days || {};
   CU.days = (r.days || []).filter(d => want.includes(d.date))
-    .filter(d => !(m[d.date]?.done === true || (m[d.date]?.done !== false && d.logged >= TARGET)))
-    .map(d => ({...d, notLogged: Math.max(0, d.notLogged - (m[d.date]?.notWork || []).reduce((s, [a, b]) => s + b - a, 0))}));
+    .filter(d => !(m[d.date]?.done === true || (m[d.date]?.done !== false && d.logged >= TARGET)));
   CU.ticked = new Set(CU.days.slice(-CU.shown).filter(d => d.notLogged >= CU_TICK).map(d => d.date));
   // no activity read for the range (ActivityWatch down, say): said, or every day would read "nothing left"
   CU.warning = [r.warning, r.trackerWarning].filter(Boolean).join(' ');

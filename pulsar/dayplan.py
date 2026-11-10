@@ -38,7 +38,7 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from . import attribution, commits as git_commits, config, sessions as sessions_mod
+from . import attribution, commits as git_commits, config, pause, sessions as sessions_mod, trackers
 from .attribution import CLIENT, INTERNAL, repo_key
 
 GRID = 5             # entry boundaries on this grid, in minutes (Settings: "Round entries to", opts_for)
@@ -1380,8 +1380,14 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
             end = None if x.get("start") is None else round(server.clock(x["start"] + x["minutes"] * 60, t0, tz), 2)
             logged.append({"s": start, "e": end, "minutes": x["minutes"], "taskId": x.get("taskId"), "id": x.get("id")})
     act = got["act"]
+    # time said not to be work (the day's marks, a pause) is placed nowhere: no activity there, and no meeting or usual
+    # meeting that lies wholly inside it (the page leaves such rows out too: logday.js ldNotWork)
+    not_work = pause.not_work(date, tz)
+    inside = lambda x: any(a <= float(x["s"]) and float(x["e"]) <= b for a, b in not_work)  # noqa: E731
+    if not_work:
+        act = {**act, "items": trackers.cut_out(act.get("items") or [], [(a, b) for a, b in not_work])}
     calls = [{"s": it["s"], "e": it["e"]} for it in act.get("items") or [] if it.get("cat") == "work" and server.is_call(it)]
-    meetings = [m for m in (got["cal"].get("events") or []) if not m.get("all_day")]
+    meetings = [m for m in (got["cal"].get("events") or []) if not m.get("all_day") and not inside(m)]
     skip = set(server.WORD.findall(str(s.get("person_name") or "").lower()))
     offered = []
     if meetings:
@@ -1405,7 +1411,7 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
     answer = askclaude.latest(date) if s.get("ask_claude") else None
     day = {"items": act.get("items") or [], "away": act.get("away") or [], "rows": likely_rows, "background": bg_rows,
            "logged": logged,
-           "meetings": meetings, "repeats": got["repeats"].get("repeats") or [], "calls": calls,
+           "meetings": meetings, "repeats": [x for x in got["repeats"].get("repeats") or [] if not inside(x)], "calls": calls,
            "rules": s.get("rules") or [], "assigned": got["assigned"], "picks": (answer or {}).get("picks") or {},
            "gone": server.missing_hour(t0, t1, tz)}
     opts = opts_for(s)

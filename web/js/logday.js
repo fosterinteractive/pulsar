@@ -209,8 +209,8 @@ function ldTotals() {
 const ldNeedsLook = r => r.confidence === 'low' || !r.taskId || !r.serviceId || r.claudeNone
   || r.flags.includes('claudefound') || (r.flags.includes('claudenote') && r.noteFrom === 'claude' && !r.noteEdited);
 const ldCheck = r => ldPending(r) && ldNeedsLook(r) && !(r.opened && r.checked);
-/* a row or a stretch inside time marked "not work" (day.js notWorkSpans) */
-const ldNotWork = x => notWorkSpans().some(([a, b]) => a <= x.s && (x.e ?? x.s + x.minutes) <= b);
+/* a row or a stretch inside time marked "not work" (day.js notWorkSpans) or paused (pause.js pausedSpans) */
+const ldNotWork = x => [...notWorkSpans(), ...pausedSpans()].some(([a, b]) => a <= x.s && (x.e ?? x.s + x.minutes) <= b);
 /* "Tick all with a task": every row that has a task and a service and is not ticked yet, except a task Claude found by
    searching Productive (not one you logged to lately) that nobody opened: what Claude read could have steered it
    there, so it waits for the person, as it always has */

@@ -239,6 +239,15 @@ day done** under Work time): its yellow rails turn grey and it leaves Earlier da
 in the log dialog or on a Log the day row, says a stretch was not work: it is no longer marked or proposed (click its
 grey hatched rail to undo). These marks, and Not an example, stay on this Mac and are never sent to Productive.
 
+**Pause.** Stepping away for something that is not work? Click **Pause** at the top (or in the Dock icon's menu, or
+Pulsar's menu-bar item): from then on nothing counts as work. The button turns amber with the time it began, the day
+shows the paused time hatched in amber, and Log the day, the Report, the end-of-day reminder and Pulsar in Claude Code
+leave it out. Your tracker goes on recording. Click it again (or **Resume** in the Dock menu) when you are back: the
+paused time becomes "not work" on the day, which a click on it undoes. If you forget, Pulsar asks when you open its
+window: paused for an hour or more (Settings → Time and activity → Away → **Ask about a long pause**: 30 minutes to 4
+hours, or Never) while the tracker saw you working, it offers **Resume from** the time you came back, **Resume now**
+or **Stay paused**.
+
 ### Meetings
 
 - **Google Calendar**: **Settings → Connections → Connect Google Calendar** opens Google's sign-in; after **Allow**, the
@@ -468,6 +477,7 @@ pulsar/
   dayplan.py           Log the day: the whole day proposed, the journal of what each run wrote, Undo
   dayreview.py         Log the day with Claude: FI's rules and Claude's review of the plan
   daymarks.py          day done, not work, not an example (this Mac only)
+  pause.py             Pause and Resume: the paused time counts nowhere, then becomes not work
   ranges.py            what a stretch picked in the Day view holds, and its split into entries
   newtask.py           a new task from the log dialog: its draft and where it can go
   flags.py             ticket flags: closed, no budget, no estimate (read only)

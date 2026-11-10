@@ -549,17 +549,18 @@ html.loading #logo .p-beam { animation-name: p-beam; }
 @keyframes p-beam { 0% { opacity: .75; } 7% { opacity: 1; } 45%, 100% { opacity: .75; } }
 @media (prefers-reduced-motion: reduce) { #logo .p-glow, #logo .p-beam { animation: none; } }
 
-/* the reminder to update, after several releases were left out; the notice that a tracker stopped (trackcheck.js) */
-dialog:is(#updprompt, #trackprompt) { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--text);
+/* the reminder to update, after several releases were left out; the notice that a tracker stopped (trackcheck.js);
+   the question whether a long pause is still on (pause.js) */
+dialog:is(#updprompt, #trackprompt, #pauseprompt) { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--text);
   padding: 18px 20px 14px; width: min(460px, calc(100vw - 32px)); box-shadow: var(--shadow); }
-dialog:is(#updprompt, #trackprompt)::backdrop { background: rgba(0,0,0,.35); }
-:is(#updprompt, #trackprompt) h2 { margin: 0 0 8px; font-size: 15px; }
-:is(#updprompt, #trackprompt) .dh { display: flex; align-items: flex-start; gap: 8px; }
-:is(#updprompt, #trackprompt) .dh h2 { flex: 1; }
-:is(#updprompt, #trackprompt) .dh .btn.icon { margin: -6px -10px 0 0; }
-:is(#updprompt, #trackprompt) p { margin: 0 0 8px; font-size: 13px; line-height: 1.5; }
-:is(#updprompt, #trackprompt) .notes { color: var(--muted); }
-:is(#updprompt, #trackprompt) .df { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
+dialog:is(#updprompt, #trackprompt, #pauseprompt)::backdrop { background: rgba(0,0,0,.35); }
+:is(#updprompt, #trackprompt, #pauseprompt) h2 { margin: 0 0 8px; font-size: 15px; }
+:is(#updprompt, #trackprompt, #pauseprompt) .dh { display: flex; align-items: flex-start; gap: 8px; }
+:is(#updprompt, #trackprompt, #pauseprompt) .dh h2 { flex: 1; }
+:is(#updprompt, #trackprompt, #pauseprompt) .dh .btn.icon { margin: -6px -10px 0 0; }
+:is(#updprompt, #trackprompt, #pauseprompt) p { margin: 0 0 8px; font-size: 13px; line-height: 1.5; }
+:is(#updprompt, #trackprompt, #pauseprompt) .notes { color: var(--muted); }
+:is(#updprompt, #trackprompt, #pauseprompt) .df { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
 
 /* the log dialog's task notes: overdue, due today, blocked stand out (the words say it, the colour helps) */
 .pk .pk-warn { color: var(--gap-text); font-weight: 600; }
@@ -654,6 +655,14 @@ kbd { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px
   background: repeating-linear-gradient(135deg, var(--faint) 0 2px, transparent 2px 5px); opacity: .8; }
 .nwrail:hover { opacity: 1; }
 .nwrail:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* the pause still on (pause.js): the not-work hatching in the amber of the paused button; a click resumes */
+.nwrail.pauserail { background: repeating-linear-gradient(135deg, var(--gap) 0 2px, transparent 2px 5px); }
+/* Pause at the top: two bars; while paused, amber with the time it began, and a click resumes */
+.pause-btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.pause-btn svg { fill: currentColor; flex: none; }
+.pause-btn .i-play, .pause-btn.on .i-pause { display: none; }
+.pause-btn.on .i-play { display: inline; }
+.pause-btn.on { color: var(--gap-text); border-color: var(--gap); background: color-mix(in srgb, var(--gap) 14%, transparent); font-weight: 600; }
 .app-time { font: inherit; font-size: 12.5px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px; margin-left: 2px; }
 .app-time:disabled { opacity: .5; }
 

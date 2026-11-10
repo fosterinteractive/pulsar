@@ -43,6 +43,7 @@
     <option value="1">1 min rows</option><option value="5">5 min rows</option><option value="15">15 min rows</option><option value="30">30 min rows</option><option value="60">1 h rows</option>
   </select><!-- the window's View menu clicks these (native.js) --><button type="button" data-v="1" hidden tabindex="-1"></button><button type="button" data-v="5" hidden tabindex="-1"></button><button type="button" data-v="15" hidden tabindex="-1"></button><button type="button" data-v="30" hidden tabindex="-1"></button><button type="button" data-v="60" hidden tabindex="-1"></button></span>
   <button class="btn icon bordered" id="theme-btn" aria-label="Theme"></button>
+  <button type="button" class="btn bordered pause-btn" id="pause-btn" aria-pressed="false" title="Pause: from now Pulsar counts nothing as work, until you resume"><svg class="i-pause" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><rect x="3.5" y="3" width="3" height="10" rx="1"/><rect x="9.5" y="3" width="3" height="10" rx="1"/></svg><svg class="i-play" viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4.5 2.8v10.4a.7.7 0 0 0 1.06.6l8.3-5.2a.7.7 0 0 0 0-1.2l-8.3-5.2a.7.7 0 0 0-1.06.6Z"/></svg><span id="pause-label">Pause</span></button>
   <span class="updated" id="updated"></span><button class="btn icon" id="refresh" title="Refresh everything" aria-label="Refresh everything">↻</button>
   <button class="btn icon bordered logs-btn" id="open-logs" hidden aria-label="Error log">!</button>
   <button class="btn bordered settings-btn" id="open-settings" title="Settings" aria-label="Settings">
@@ -182,11 +183,14 @@
           <p class="hint">One word per line. A window that contains one counts as personal, not work.</p>
           <label class="field"><span>ActivityWatch address</span><input name="activitywatch_url" placeholder="http://localhost:5600"></label>
         </section>
-        <section data-k="away after afk timeout break breaks pause idle sitting activitywatch login items open at login autostart restart" id="away-sec">
+        <section data-k="away after afk timeout break breaks pause paused resume idle sitting activitywatch login items open at login autostart restart" id="away-sec">
           <h3>Away</h3>
           <label class="field"><span>Away after</span>
             <select name="away_after"><option value="10">10 minutes</option><option value="15">15 minutes</option><option value="20">20 minutes</option><option value="30">30 minutes</option></select></label>
           <p class="hint">This long without typing or moving the mouse is time away, and it ends a sitting. A shorter pause between two stretches of work counts as work.</p>
+          <label class="field"><span>Ask about a long pause</span>
+            <select name="adv_pause_ask"><option value="60">After 1 hour</option><option value="30">After 30 minutes</option><option value="120">After 2 hours</option><option value="240">After 4 hours</option><option value="0">Never</option></select></label>
+          <p class="hint">While Pulsar is paused (Pause at the top, or the Dock icon's menu), nothing counts as work. If it has been paused this long and the tracker sees you working, Pulsar asks whether the pause is still on.</p>
           <div id="aw-setup" hidden>
             <p class="status" id="aw-timeout"></p>
             <p class="hint" id="aw-fix-hint" hidden>Fix changes that one line in ActivityWatch's file and keeps a copy of the file next to it, then restarts ActivityWatch. Days already recorded keep their breaks: the new timeout applies to new data only.</p>
@@ -371,6 +375,15 @@
     <button type="button" class="btn bordered" id="updprompt-later">Not now</button>
     <button type="button" class="btn primary" id="updprompt-go" autofocus>Update</button></div>
 </dialog>
+<dialog id="pauseprompt" aria-labelledby="pauseprompt-title" aria-describedby="pauseprompt-text">
+  <div class="dh"><h2 id="pauseprompt-title">Pulsar is paused</h2>
+    <button type="button" class="btn icon" id="pauseprompt-x" aria-label="Close">✕</button></div>
+  <p id="pauseprompt-text"></p>
+  <p class="notes" id="pauseprompt-notes"></p>
+  <div class="df"><button type="button" class="btn bordered" id="pauseprompt-stay">Stay paused</button>
+    <button type="button" class="btn bordered" id="pauseprompt-now">Resume now</button>
+    <button type="button" class="btn primary" id="pauseprompt-back" autofocus></button></div>
+</dialog>
 <dialog id="trackprompt" aria-labelledby="trackprompt-title" aria-describedby="trackprompt-text">
   <div class="dh"><h2 id="trackprompt-title">A tracker stopped recording</h2>
     <button type="button" class="btn icon" id="trackprompt-x" aria-label="Close">✕</button></div>
@@ -427,6 +440,7 @@
 <script src="/static/js/ask.js"></script>
 <script src="/static/js/logs.js"></script>
 <script src="/static/js/trackcheck.js"></script>
+<script src="/static/js/pause.js"></script>
 <script src="/static/js/native.js"></script>
 <script src="/static/js/main.js"></script>
 </body>

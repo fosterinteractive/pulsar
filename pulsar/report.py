@@ -20,7 +20,8 @@ def split_by_day(items: list, offsets: list, lengths: list) -> list:
     return days
 
 
-def build(dates: list, bounds: list, sources: dict, entries: list, today: str, source: str = "auto", tz=None) -> dict:
+def build(dates: list, bounds: list, sources: dict, entries: list, today: str, source: str = "auto", tz=None,
+          not_work: dict | None = None) -> dict:
     """dates: YYYY-MM-DD; bounds: (start, end) epoch per date; sources: tracker name -> items, minutes from
     bounds[0][0]; entries: Productive rows (date, start epoch, minutes, approved, ...)."""
     t0 = bounds[0][0]
@@ -71,6 +72,11 @@ def build(dates: list, bounds: list, sources: dict, entries: list, today: str, s
                 cs = int((x["start"] - a) / 60)
                 for m in range(max(0, cs), min(length, cs + int(x["minutes"]))):
                     covered[m] = 1
+        # time the person said was not work (day marks, a pause: pause.not_work, in minutes from the day's start) is
+        # not "not logged"
+        for s, e in (not_work or {}).get(date, []):
+            for m in range(max(0, int(s)), min(length, int(e + 0.999))):
+                covered[m] = 1
         # time logged with no start is on no timeline: it may be any of the active time, so it counts against it (as
         # Log the day caps a day), and a day logged in full by duration does not read as not logged
         no_start = sum(x["minutes"] for x in day_entries if x.get("start") is None)

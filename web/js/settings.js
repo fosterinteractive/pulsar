@@ -1,7 +1,7 @@
 /* Settings: the Productive connection, time zone, daily target, personal windows, the Likely column */
 const dlg = $('#settings'), form = $('#settings-form');
 // Settings > Time and activity > Advanced: the selects named adv_<key> (config.ADVANCED); no_estimate is a checkbox
-const ADV_KEYS = ['join_gap', 'outside_min', 'memory', 'meeting_cards', 'split_hint'];
+const ADV_KEYS = ['join_gap', 'outside_min', 'memory', 'meeting_cards', 'split_hint', 'pause_ask'];  // pause_ask: in Away
 
 function connectionText(p) {
   if (!p.active) return p.problem || 'Productive is not connected.';

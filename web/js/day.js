@@ -471,6 +471,12 @@ function render() {
           title="Not work (you said so): ${hm(a)}–${hm(b)}. Click to count it as work again." tabindex="0" role="button"
           aria-label="Not work, ${hm(a)}–${hm(b)}: count it as work again"></div>`;
       }
+      for (const [a, b] of pausedSpans()) {  // the pause still on (pause.js): counted nowhere, and a click resumes
+        for (let m = a; m < b && m < end; m++) covered[m] = 1;
+        html += `<div class="nwrail pauserail" style="top:${a * ppm}px;height:${(b - a) * ppm}px"
+          title="Paused since ${esc(PAUSE.sinceText || '')}: not work. Click to resume." tabindex="0" role="button"
+          aria-label="Paused since ${esc(PAUSE.sinceText || '')}: resume"></div>`;
+      }
       const doneDay = !!dayDone();
       let runStart = -1;
       const shortest = Math.max(3, CONFIG?.roundTo || 5);
@@ -879,6 +885,7 @@ async function markDay(change, said = '', undo = null) {
   return true;
 }
 document.addEventListener('click', ev => {
+  if (ev.target.closest('.pauserail')) { $('#pause-btn').click(); return; }  // pause.js: resume, or ask from when
   const nw = ev.target.closest('.nwrail');
   if (nw) { const a = +nw.dataset.nwA, b = +nw.dataset.nwB; markDay({remove: [a, b]}, `${hm(a)}–${hm(b)} counts as work again.`); return; }
   const dm = ev.target.closest('[data-day-mark]');

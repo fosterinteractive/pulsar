@@ -163,6 +163,7 @@
   new MutationObserver(report).observe(document.documentElement, {attributes: true, attributeFilter: ['data-theme']});
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', report);
   document.addEventListener('input', ev => { if (ev.target.closest?.('dialog')) report(); }, true);
+  addEventListener('pulsar:pause', report);  // pause.js: Pause or Resume in the Dock icon's menu, ⏸ in the menu bar
   if (fn(window.syncURL)) {  // every change of view, day, rows or range goes through it
     const sync = window.syncURL;
     window.syncURL = function () { const out = sync.apply(this, arguments); report(); return out; };
@@ -196,7 +197,8 @@
     return {action: 'state', ready: true, view: state.view, date: state.date, zoom: state.zoom, today: todayLocal(),
             theme: document.documentElement.dataset.theme || 'system', bg: getComputedStyle(document.body).backgroundColor,
             title: title(), modal: dialogs.length > 0, dialogs, pop: !!q('#pop')?.classList.contains('on'),
-            logDay: ldOn(), unsaved: unsaved(), signedIn: signed, report: reportReady};
+            logDay: ldOn(), unsaved: unsaved(), signedIn: signed, report: reportReady,
+            paused: typeof PAUSE === 'object' && !!PAUSE.paused, pausedSince: typeof PAUSE === 'object' ? PAUSE.sinceText || '' : ''};
   }
   function report() {
     clearTimeout(timer);
@@ -253,6 +255,8 @@
     exportEntries: () => { if (state.view === 'report') click('#report-dl [data-dl="entries"]'); },
     theme: t => { if (fn(window.applyTheme)) applyTheme(t); report(); },
     settings: () => { if (fn(window.openSettings)) openSettings(); },
+    pause: () => { if (typeof PAUSE === 'object' && !PAUSE.paused) startPause(); },   // the Dock icon's menu, the menu bar
+    resume: () => { if (typeof PAUSE === 'object' && PAUSE.paused) resumePause(); },
     checkUpdates: () => { if (fn(window.openSettings)) openSettings('t-upd'); click('#update-check'); },
     logs: () => click('#open-logs'),
   };
