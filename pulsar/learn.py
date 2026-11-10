@@ -526,11 +526,16 @@ SURE_SHARE = 0.6  # a session's vote with this share of its votes is sure: nothi
 FRESH_DAYS = 3    # a task assigned to you this many days before the work at most is offered second
 
 
-def first_offers(learned: list, last: dict | None = None, fresh: dict | None = None) -> list:
+def first_offers(learned: list, last: dict | None = None, fresh: dict | None = None, new: bool = False) -> list:
     """The offers with two more (replay, 43 days: the right task among the first three on 65% of rows instead of
     61%): the task you logged last in the repository's project first, unless the first offer is sure (a session's vote
     of SURE_SHARE, or the work naming a task you logged by WORK_WORDS words); and the newest task assigned to you in
-    that project second (half of the work on tasks new to you was on one assigned to you within FRESH_DAYS days)."""
+    that project second (half of the work on tasks new to you was on one assigned to you within FRESH_DAYS days).
+
+    new: the session was never logged (no votes: new work), and then the two swap: the task assigned to you first, the
+    last task second, after the first offer when there is no such task (replay, 43 days: on such rows the first offer
+    was right on 12% of them, with the swap 22%; on all rows 50.6% instead of 48.8%, 59.1% of the minutes instead of
+    57.7%, the first three as before)."""
     def put(lst: list, x: dict | None, at: int) -> list:
         if not x or x["taskId"] in [y["taskId"] for y in lst[:at + 1]]:
             return lst
@@ -539,6 +544,8 @@ def first_offers(learned: list, last: dict | None = None, fresh: dict | None = N
     top = learned[0] if learned else {}
     sure = top.get("share", 0) >= SURE_SHARE \
         or (bool(top.get("work")) and top.get("words", 0) >= WORK_WORDS and not top.get("neverLogged"))
+    if new and not sure:
+        return put(put(learned, fresh, 0), last, 1)
     return put(learned if sure else put(learned, last, 0), fresh, 1)
 
 
@@ -640,8 +647,10 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
             except (OSError, ValueError) as exc:  # the votes alone, as before
                 logbook.record("learn", f"Words of the work: {type(exc).__name__}: {exc}", kind="warning")
                 text = {}
+            # a session with no votes in any repository was never logged: new work (dayplan.new_session)
+            new = bool(row.get("k")) and not any(sess.get(k) for k in row["k"])
             e["learned"] = first_offers(with_work(with_new(suggest(row, sess, repo, names, text=text, sr=sr), found),
-                                                  work), *offers(places))
+                                                  work), *offers(places), new=new)
         # rows under five minutes are not read for words (work by turns makes many): they go on with the task their
         # session's work named before them in the same repository; nothing else is added to them
         for e in (proposal.get("entries") or []) + (proposal.get("background") or []):

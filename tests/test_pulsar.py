@@ -1010,6 +1010,10 @@ class LearnWordsTest(unittest.TestCase):
         self.assertEqual(ids(learn.first_offers([{"taskId": "b"}, {"taskId": "L"}], last, None)), ["L", "b"])  # moved up
         self.assertEqual(ids(learn.first_offers([], last, fresh)), ["L", "N"])
         self.assertEqual(learn.first_offers(unsure), unsure)
+        # a session never logged (new work): the task assigned to you first, the last task second; a sure offer stays
+        self.assertEqual(ids(learn.first_offers(unsure, last, fresh, new=True)), ["N", "L", "a", "b"])
+        self.assertEqual(ids(learn.first_offers(unsure, last, None, new=True)), ["a", "L", "b"])
+        self.assertEqual(ids(learn.first_offers(named, last, fresh, new=True)), ["w", "N"])
 
     def test_each_projects_last_day_task_never_depends_on_reading_order(self):
         from pulsar import attribution
@@ -1045,10 +1049,20 @@ class LearnWordsTest(unittest.TestCase):
             learn.annotate(proposal, "2026-11-04", {"person_name": "Nick Example", "person_id": "77"}, self.ENTRIES, [],
                            ZoneInfo("UTC"), pool=pool)
         got = proposal["entries"][0]["learned"]
-        self.assertEqual([x["taskId"] for x in got[:2]], ["2", "9"])
-        self.assertEqual(got[0]["why"], "the task you logged last in Law Faculty (2026-11-03)")
-        self.assertTrue(got[1]["assigned"] and "assigned to you on 2026-11-02" in got[1]["why"])
-        self.assertNotIn("new", got[1])  # an offer only: the plan never picks it for being new
+        # a session never logged (no votes: new work): the task assigned to you first, the last task second
+        self.assertEqual([x["taskId"] for x in got[:2]], ["9", "2"])
+        self.assertTrue(got[0]["assigned"] and "assigned to you on 2026-11-02" in got[0]["why"])
+        self.assertNotIn("new", got[0])  # an offer only: the plan never picks it for being new
+        self.assertEqual(got[1]["why"], "the task you logged last in Law Faculty (2026-11-03)")
+        # a session logged before: the last task first, the assigned one second
+        proposal = {"entries": [{"s": 600, "e": 660, "project": "law-site", "titles": ["Morning work session"]}]}
+        voted = ({learn.key("Morning work session"): {"3": [5.0, 30]}}, {}, {})
+        with mock.patch.object(learn, "warm", lambda *a: None), mock.patch.object(learn, "_stored", lambda d: None), \
+             mock.patch.object(sessions, "PROJECTS_DIR", empty), mock.patch.object(learn, "votes", lambda *a: voted), \
+             mock.patch.object(learn, "work_projects", lambda at, *a: {"Law Faculty"} if at == "law-site" else set()):
+            learn.annotate(proposal, "2026-11-04", {"person_name": "Nick Example", "person_id": "77"}, self.ENTRIES, [],
+                           ZoneInfo("UTC"), pool=pool)
+        self.assertEqual([x["taskId"] for x in proposal["entries"][0]["learned"][:2]], ["2", "9"])
 
     def test_a_later_stretch_of_the_same_session_goes_on_with_the_task_its_work_named(self):
         """2026-11-09: "D11 db upgrade" named the task at 13:21; at 14:00 only "go on, I back up live myself" was typed,
