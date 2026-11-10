@@ -1523,20 +1523,26 @@ def _layout(d: _Day, entries: list) -> tuple:
         s = max(int(round(m["s"] / g) * g), end)
         e = int(round((s + m["minutes"]) / g) * g)
         cut, why = 0, "no room before an entry already logged"  # minutes an entry already logged left no room for
+        behind = False  # pushed past an entry already logged (or a shared one), not only past the proposed ones before
         for a, b, kind in fixed:  # an entry already logged: start right after it, or stop right before it
             if a <= s < b:
                 length = e - s
                 s = int(math.ceil(b))
                 e = int(math.ceil((s + length) / g) * g)  # the end back on the grid, the length kept at least
+                behind = True
             elif s < a < e:
                 stop = max(s, int(a))
                 cut += e - stop
                 e = stop
                 if kind == "shared":
                     why = "no room beside a shared entry"
-        if s > m["last"]:  # moved past entries already logged beyond its own work: listed, never placed elsewhere
+        # laid after its own work: past an entry already logged it is listed, never placed elsewhere; behind the entries
+        # proposed before it, up to merge_gap after its last minute (the same stretch of work, laid out in order). 2026-11-10:
+        # 12 minutes of work by turns came 6 minutes after their last minute behind a 70-minute entry laid out from its
+        # first; they were listed as "no room" and left a 15-minute hole further on
+        if s > m["last"] and (behind or s > m["last"] + d.o["merge_gap"]):
             unplaced.append({"minutes": m["minutes"], "task": m.get("task"), "project": m.get("project") or "",
-                             "why": why})
+                             "why": why if behind else "no room beside the entries before it"})
             continue
         e = min(e, N)
         room = {"task": m.get("task"), "project": m.get("project") or "", "why": why}
@@ -1674,8 +1680,10 @@ def _entry(m: dict, s: int, e: int, names: dict) -> dict:
     task = m.get("task")
     minutes = e - s
     conf = _worst(m["parts"], m["minutes"])
-    # the part with most minutes says why
-    lead = max(m["parts"], key=lambda q: q["minutes"])
+    # the part with most minutes says why: of the entry's own task when it has one, never a crumb of other work joined to
+    # it (2026-11-10: a Pulsar entry said "the task you logged last in" a client's project, from such a crumb)
+    own = [q for q in m["parts"] if task and str(q.get("task")) == str(task)]
+    lead = max(own or m["parts"], key=lambda q: q["minutes"])
     kinds: dict = defaultdict(int)
     for q in m["parts"]:
         kinds[q["kind"]] += q["minutes"]

@@ -6,6 +6,9 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- Log the day leaves fewer holes with work by turns: an entry pushed behind the entries proposed before it is laid out up to 30 minutes after its own work instead of being listed as not placed (12 minutes had been dropped as "no room" and left a 15-minute hole). An entry's reason comes from its own task, never from a crumb of other work joined to it.
+
 ## 1.6.14 (2026-11-10)
 - The invoice summary reads as a document: Pulsar's small mark, whose it is (your name and organization), the period and the day it was prepared; the totals first; then the billable projects, the most time first, and apart the ones not billable, each opening with its subtotal and a bar of its share of the time, its tasks under it; numbers right-aligned, what is not billable quieter. The invoice CSV lists them in the same order.
 - A day ActivityWatch missed most of is read from MemTime: it took ActivityWatch whenever it saw anything, and on a day it recorded 2 minutes (MemTime 691) the whole day showed no work. ActivityWatch stays the main tracker whenever it saw a fifth of MemTime's time or more.

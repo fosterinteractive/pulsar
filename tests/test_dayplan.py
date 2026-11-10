@@ -1197,6 +1197,38 @@ class SplitTest(unittest.TestCase):
         got = server.api_log(self.body())
         self.assertEqual((got["pieces"], got["tooShort"]), ([], 10))
 
+    def test_an_entrys_reason_comes_from_its_own_task_never_a_crumb_joined_to_it(self):
+        """2026-11-10: a crumb of other work, larger than each piece of the entry's own task, gave the entry its reason."""
+        parts = [{"s": 600, "last": 605, "minutes": 6, "kind": "focused", "task": "U", "why": "the task you logged last in Client",
+                  "source": "lastday", "conf": "low", "project": "client-site"},
+                 {"s": 606, "last": 610, "minutes": 5, "kind": "focused", "task": "P", "why": "you logged it in this session",
+                  "source": "session", "conf": "high", "project": "house-tool"},
+                 {"s": 611, "last": 614, "minutes": 4, "kind": "focused", "task": "P", "why": "you logged it in this session",
+                  "source": "session", "conf": "high", "project": "house-tool"}]
+        e = dayplan._entry({**parts[1], "task": "P", "parts": parts, "minutes": 15}, 600, 615, {})
+        self.assertEqual((e["taskId"], e["why"], e["source"], e["repo"]), ("P", "you logged it in this session", "session", "house-tool"))
+
+    def test_an_entry_pushed_by_the_entries_before_it_lands_just_after_its_own_work(self):
+        """2026-11-10: work by turns. A 70-minute entry laid out from its first minute pushed a 12-minute one 6 minutes past
+        its last minute: it was listed as not placed and left a hole further on. Up to merge_gap after its work it is
+        laid out; further, or past an entry already logged, never."""
+        from types import SimpleNamespace
+
+        def m(s, last, minutes, task):
+            part = {"s": s, "last": last, "minutes": minutes, "kind": "focused", "task": task, "why": "", "conf": "high"}
+            return {**part, "parts": [part]}
+        d = SimpleNamespace(o={"grid": 5, "merge_gap": 30}, busy=[], names={})
+        laid, unplaced = dayplan._layout(d, [m(1136, 1222, 70, "QA"), m(1178, 1199, 12, "P"), m(1200, 1237, 19, "C")])
+        self.assertEqual([(e["s"], e["e"], e["taskId"]) for e in laid], [(1135, 1205, "QA"), (1205, 1215, "P"), (1215, 1235, "C")])
+        self.assertEqual(unplaced, [])
+        # pushed further than merge_gap past its own work: listed, not placed far from it
+        laid, unplaced = dayplan._layout(d, [m(1136, 1222, 70, "QA"), m(1140, 1150, 12, "P")])
+        self.assertEqual([(u["minutes"], u["why"]) for u in unplaced], [(12, "no room beside the entries before it")])
+        # past an entry already logged: never
+        d.busy = [(1200, 1230)]
+        laid, unplaced = dayplan._layout(d, [m(1180, 1199, 12, "P"), m(1175, 1178, 3, "X")][:1] + [m(1160, 1185, 25, "Q")])
+        self.assertTrue(all(not (e["s"] < 1230 and 1200 < e["e"]) for e in laid))
+
     def test_the_pieces_are_logged_as_entries_with_the_same_task_service_and_note(self):
         self.logged("01:00", 30)
         pieces = server.api_log(self.body())["pieces"]
