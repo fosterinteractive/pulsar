@@ -1014,7 +1014,11 @@ def _merge(d: _Day, pieces: list) -> list:
                                              (merged[k + 1] if k + 1 < len(merged) else None, False))
                           if joins(p, q, first)]
                     if nb:
-                        q = max(nb, key=lambda q: q["minutes"])
+                        # a client's crumb goes to a neighbour of its own client first, never into internal work when
+                        # one is there (2026-11-10: 7 minutes of a Trent session joined a longer Pulsar entry and
+                        # went to the internal task); otherwise the larger neighbour, as before
+                        mine_ = [q for q in nb if _client_task(p, d) and project_of(q, d) == project_of(p, d)]
+                        q = max(mine_ or nb, key=lambda q: q["minutes"])
                         if q["minutes"] < p["minutes"] and not q.get("attended") and q["kind"] == p["kind"] \
                                 and not by_its_entry(q):
                             p, q = q, p  # the smaller joins the larger: its task stays, the crumb's goes with it
@@ -1182,6 +1186,18 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
             out.append(_entry({**parts[0], "parts": parts, "minutes": sum(p["minutes"] for p in parts)}, s, e, d.names))
     out.sort(key=lambda e: e["s"])
     return out, given_back
+
+
+def _client_task(m: dict, d: _Day) -> bool:
+    """A piece or entry of a task that may be billable: a client's by its own class, or its task's."""
+    t = str(m.get("task") or "")
+    return m.get("class") == CLIENT or bool(t) and attribution.class_of_task(t, d.ctx) == CLIENT
+
+
+def project_of(m: dict, d: _Day) -> str:
+    """The Productive project of a piece's task (its name as the plan knows it), else the task itself."""
+    t = str(m.get("task") or m.get("taskId") or "")
+    return (d.names.get(t) or ("", ""))[1] or t
 
 
 def _layout(d: _Day, entries: list) -> tuple:

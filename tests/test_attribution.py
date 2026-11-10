@@ -453,6 +453,16 @@ class ParallelClientsTest(unittest.TestCase):
                      logged=logged, meetings=meetings, calls=[{"s": 640, "e": 650}])
             self.assertTrue(p["entries"], fr)
 
+    def test_a_clients_crumb_joins_its_own_clients_work_not_a_longer_internal_entry(self):
+        # 2026-11-10: 7 minutes of a Trent session between 20 minutes of Pulsar and 16 of another Trent task joined the
+        # longer Pulsar entry, so a client's minutes went to the internal task
+        rows = [front(600, 620, "house-tool"), front(620, 627, "client-web", tasks=["C2"]), front(627, 643, "client-web", tasks=["C1"])]
+        p = plan([work(600, 643)], rows, ctx=self.ctx)
+        internal = sum(e["minutes"] for e in p["entries"] if e["taskId"] == "T1")
+        client = sum(e["minutes"] for e in p["entries"] if e["taskId"] in ("C1", "C2"))
+        self.assertLessEqual(internal, 20, p["entries"])
+        self.assertGreaterEqual(client, 20, p["entries"])
+
     def test_internal_work_in_front_is_still_the_clients_shared_stretch(self):
         # an internal tool in front with a client's agent beside it: the client's, all of it (shared, 3b), not half
         p = plan([work(600, 660)], [front(600, 660, "house-tool")], [back(600, 660, "globex-site", tasks=["G1"])], ctx=self.ctx)
