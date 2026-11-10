@@ -133,6 +133,8 @@ class WithoutClaudeTest(unittest.TestCase):
         p = plan([doc(600, 640), slack(640, 680)], hist, kept)
         got = [(e["s"], e["e"], e["taskId"], e["source"], e["checked"]) for e in p["entries"]]
         self.assertEqual(got, [(600, 640, "7", "context", False), (640, 680, "8", "context", False)])
+        # the share of your time there, never faded minutes read as minutes (6 days of 60 minutes read "258 min")
+        self.assertEqual(p["entries"][0]["why"], "you logged it before while this window was in front (100% of the time)")
 
     def test_the_task_of_the_days_meeting_is_never_named_by_a_window(self):
         # the daily meeting's channel read before the meeting named the desk work around it the meeting's task, then

@@ -1129,15 +1129,14 @@ def _context(d: _Day) -> None:
             cur[2] = max(cur[2], p[1:])
         else:
             runs.append([p[0], [x], p[1:]])
-    for task, xs, (share, total) in runs:
+    for task, xs, (share, _total) in runs:
         if len(xs) < context_mod.RUN:
             continue
         o0 = owner[xs[0]]
         mins = [x for x in range(xs[0], xs[-1] + 1) if owner[x] == o0 or (owner[x] not in (None, BLOCKED)
                 and claims[owner[x]]["kind"] == "outside" and not claims[owner[x]].get("task"))]
         d.claims.append({"kind": "outside", "task": task, "source": "context", "conf": "low", "titles": [],
-                         "why": f"you logged it before while this window was in front ({share:.0%} of "
-                                f"{total:.0f} min)"})
+                         "why": f"you logged it before while this window was in front ({share:.0%} of the time)"})
         for x in mins:
             owner[x] = len(d.claims) - 1
 
