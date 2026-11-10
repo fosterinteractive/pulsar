@@ -1659,6 +1659,17 @@ def _result(d: _Day, out: list, unplaced: list, totals: dict) -> dict:
                        "leftOut": sum(n["minutes"] for n in noted)}}
 
 
+def _own_spans(parts: list) -> list:
+    """[[start, end)] of the minutes the parts were seen at, joined where they touch."""
+    out: list = []
+    for a, b in sorted((int(q["s"]), int(q.get("last", q["s"])) + 1) for q in parts if q.get("s") is not None):
+        if out and a <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], b)
+        else:
+            out.append([a, b])
+    return out
+
+
 def _entry(m: dict, s: int, e: int, names: dict) -> dict:
     task = m.get("task")
     minutes = e - s
@@ -1713,6 +1724,9 @@ def _entry(m: dict, s: int, e: int, names: dict) -> dict:
            "confidence": conf, "confidenceWords": CONF_WORDS[conf], "why": lead.get("why") or "",
            "source": lead.get("source") or "", "kind": kind, "checked": not [f for f in flags if f != "shared"],
            "flags": flags, "alts": alts[:3], "parts": len(m["parts"]),
+           # the minutes of work it counts, where they were: Log the day lays a task's minutes out together from where
+           # it began, so with work by turns an entry stands at other times than its work (pulsar_session reads this)
+           "own": _own_spans(m["parts"]),
            "class": max(by_class, key=by_class.get) or None,
            "sessions": sorted({x for q in m["parts"] for x in q.get("sessions") or []}),
            # Ask Claude looked at the work that carries this entry and found no task: the guess stays, flagged

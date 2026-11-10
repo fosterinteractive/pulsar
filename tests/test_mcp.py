@@ -781,6 +781,24 @@ class McpTest(unittest.TestCase):
 
     # ---- a session title standing in for a repository never leaves --------------------------------------
 
+    def test_a_stretch_counted_in_an_entry_laid_out_elsewhere_names_that_entry(self):
+        """2026-11-10: work by turns. Log the day laid the client's minutes out together from where its task began, so
+        the entry over a stretch's time was another task's; the session's answer said "for other work" although the
+        minutes were counted. Its own minutes find the entry that counts them, and the answer says where it stands."""
+        places = mcptools.Places([{"project": "acme-site"}, {"project": "house-tool"}])
+        plan = [{"s": 600, "e": 660, "minutes": 60, "taskId": "Q", "title": "Internal QA", "project": "Agency", "repo": "house-tool",
+                 "own": [[600, 640], [660, 690]], "confidence": "high"},
+                {"s": 660, "e": 680, "minutes": 20, "taskId": "C", "title": "Client work", "project": "Acme", "repo": "acme-site",
+                 "own": [[640, 660]], "confidence": "high", "why": "a task link"}]
+        row = {"project": "acme-site"}
+        got = mcptools._session_task(row, 640, 660, plan, places)
+        self.assertEqual((got["taskId"], got["countedIn"]), ("C", "11:00-11:20"))
+        self.assertIn("counted in this task's entry at 11:00-11:20", got["why"])
+        self.assertNotIn("for other work", got["why"])
+        # the same minutes inside the entry that counts them: no note
+        got = mcptools._session_task(row, 660, 670, plan + [{**plan[1], "own": [[660, 670]]}], places)
+        self.assertNotIn("countedIn", got)
+
     def test_session_titles_never_leave_as_repositories(self):
         title1, title2 = "Globex home page carousel", "IMPORTANT! Pricing talk with Bob about the Acme renewal plan"
         cut2 = "Pricing talk with Bob about the Acme ren"  # the skill script's fallback: no IMPORTANT!, 40 characters

@@ -410,7 +410,15 @@ function noteHint(r) {
   return 'Clients may see notes: the outcome, in a sentence.';
 }
 const altName = a => a.title || 'task ' + a.taskId;
-const whyLine = r => `${whyIcon(r)}<span>${esc(r.why)}${r.parts > 1 ? ` (${r.parts} stretches joined)` : ''}</span>`;
+/* where an entry's minutes were seen, when it stands mostly elsewhere: with work by turns Log the day lays a task's
+   minutes out together, from where it began (dayplan._entry "own") */
+function ldSeenAt(r) {
+  const own = r.own || [], total = own.reduce((n, [a, b]) => n + b - a, 0);
+  const inside = own.reduce((n, [a, b]) => n + Math.max(0, Math.min(b, r.e) - Math.max(a, r.s)), 0);
+  if (!total || inside >= total / 2) return '';
+  return ` · seen at ${own.slice(0, 3).map(([a, b]) => `${hm(a)}–${hm(b)}`).join(', ')}${own.length > 3 ? ', …' : ''}`;
+}
+const whyLine = r => `${whyIcon(r)}<span>${esc(r.why)}${r.parts > 1 ? ` (${r.parts} stretches joined)` : ''}${esc(ldSeenAt(r))}</span>`;
 function editorHTML(r) {
   const svcs = r.services || [];
   return `<div class="ed" role="group" aria-label="Change this entry">

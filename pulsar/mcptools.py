@@ -810,12 +810,26 @@ def _session_title(full_id: str) -> str:
 
 
 def _session_task(row: dict, a: int, b: int, plan: list, places: Places):
-    """The task for one of the session's stretches: Log the day's entry over it in the same repository; else the task
-    learned for the row (logged before in this session or repository); else the entry over it, whatever its work."""
-    with_task = [e for e in plan if e.get("taskId") and overlap(a, b, e["s"], e["e"]) > 0]
-    same = [e for e in with_task if (e.get("repo") or "") == (row.get("project") or "")]
+    """The task for one of the session's stretches: the entry of Log the day that counts its minutes (its "own"
+    minutes, wherever the entry stands: with work by turns, Log the day lays a task's minutes out together from where
+    it began); else the entry over it in the same repository; else the task learned for the row (logged before in this
+    session or repository); else the entry over it, whatever its work."""
     keys = ("taskId", "task", "project", "serviceId", "service", "billable", "confidence", "pulsarWouldTick", "why",
             "noteDraft", "noteFrom")
+    repo = row.get("project") or ""
+    own = lambda e: sum(overlap(a, b, x, y) for x, y in e.get("own") or [])  # noqa: E731
+    counting = [e for e in plan if e.get("taskId") and (e.get("repo") or "") == repo and own(e) > 0]
+    if counting:
+        e = max(counting, key=own)
+        p = plan_entry(e, places)
+        out = {k: p.get(k) for k in keys if p.get(k) not in (None, "")}
+        if overlap(a, b, e["s"], e["e"]) <= 0:  # counted, laid out elsewhere: say where, never "other work"
+            out["countedIn"] = f"{hm(e['s'])}-{hm(e['e'])}"
+            out["why"] = (f"{out.get('why') or 'its task'}; counted in this task's entry at {hm(e['s'])}-{hm(e['e'])}"
+                          " (Log the day lays a task's minutes out together, from where it began)")
+        return out
+    with_task = [e for e in plan if e.get("taskId") and overlap(a, b, e["s"], e["e"]) > 0]
+    same = [e for e in with_task if (e.get("repo") or "") == repo]
     if same:
         p = plan_entry(max(same, key=lambda e: overlap(a, b, e["s"], e["e"])), places)
         return {k: p.get(k) for k in keys if p.get(k) not in (None, "")}
