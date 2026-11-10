@@ -20,7 +20,7 @@ function pausedSpans() {
   if (!PAUSE.paused || !PAUSE.since) return [];
   const from = tzMoment(PAUSE.since), today = todayLocal(), d = state.date;
   if (d < from.date || d > today) return [];
-  const a = d === from.date ? from.min : 0, b = d === today ? nowMin() : 1440;
+  const a = d === from.date ? from.min : 0, b = d === today ? Math.max(a + 1, nowMin()) : 1440;  // shown from its first minute
   return b > a ? [[a, b]] : [];
 }
 
@@ -70,8 +70,8 @@ async function resumePause(until) {
   const r = await postJSON('/api/pause', until ? {on: false, until} : {on: false});
   if (r.error) { toast(r.error, true); return; }
   await afterPause(r);
-  const end = until ? tzMoment(until) : null;
-  toast(`Resumed. ${since}–${end ? hm(end.min) : 'now'} is not work: a click on it counts it again.`);
+  const days = Object.values(r.marked || {});  // under a minute marks nothing
+  toast(days.length ? `Resumed. ${since}–${hm(days[days.length - 1][1])} is not work: a click on it counts it as work again.` : 'Resumed.');
 }
 
 /* the question: paused since, working since, and the choices */
