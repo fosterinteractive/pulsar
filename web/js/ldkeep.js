@@ -7,10 +7,10 @@
    proposed. An edit goes back on the row with the same key; it is dropped when that row is gone, or when the time it
    covers (as edited) is logged in Productive now. A row a run already wrote stays as the journal says. */
 
-/* the fields the person can change, and the marks of having looked */
+/* the fields the person can change, the marks of having looked, and the row as first planned (orig, logday.js) */
 const LD_KEEP_FIELDS = ['checked', 'opened', 'edited', 'taskId', 'title', 'project', 'serviceId', 'service', 'services',
   'billable', 'budget', 's', 'e', 'minutes', 'note', 'noteFrom', 'noteEdited', 'noteTried', 'noteError', 'flags',
-  'source', 'why', 'confidence', 'confidenceWords', 'ticket', 'alts', 'claudeNone', 'serviceProblem', 'choice'];
+  'source', 'why', 'confidence', 'confidenceWords', 'ticket', 'alts', 'claudeNone', 'serviceProblem', 'choice', 'orig'];
 
 const LD_NOTE_FIELDS = ['note', 'noteFrom', 'noteEdited', 'noteTried', 'noteError'];
 

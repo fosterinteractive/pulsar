@@ -74,6 +74,13 @@ FIT_MIN = attribution.FIT_MIN      # minutes of a repository's (fading) votes be
 CONTEST_MIN = 10     # a client's agent takes internal work's minutes (shared) only for this long at a stretch
 PARALLEL_MIN = 15    # a client's agent beside another client's work in front gets half that time from this long a
                      # sitting (shorter: ignored; Nick, 2026-11-10)
+# A rule tried only in the self-check (selfcheck.py), never in a plan anyone sees: ctx["touched"] is set there alone.
+# Your own Productive activity (a comment, a to-do, a file, a status change: productive.my_activity) near a row: a
+# guess gives way to the alternative you updated there (choose). Minutes either side of the row; a moment you touched
+# TOUCH_BULK tasks within TOUCH_GAP minutes is triage or a bulk edit, which says nothing about the work on each
+TOUCH_WINDOW = 240
+TOUCH_BULK, TOUCH_GAP = 3, 5
+TOUCH_WEAK = ("lastday", "sameday", "words", "work", "assigned")  # picks that are guesses: never a vote or a link
 CLASS_ORDER = {INTERNAL: 0, "mixed": 1, "unknown": 1, CLIENT: 2}  # what the cap cuts first
 SURE_SHARE = 0.6     # a session's vote with this share (and 30 minutes) is sure: "high", ticked
 SURE_CLIENT = 0.8    # on a client's work, from this share only (doubt): a client's tasks are its tickets, and a session
@@ -475,6 +482,19 @@ def previous(row: dict, ctx: dict) -> tuple | None:
     return attribution.latest_in(ctx.get("latest") or {}, where, {str(last[1])} if last else set())
 
 
+def touches(points) -> list:
+    """[(minute, task)] of your own Productive activity on tasks (productive.my_activity, minutes of the day), without
+    the moments you touched TOUCH_BULK or more tasks within TOUCH_GAP minutes (creating tasks, a bulk status change)."""
+    pts = [(float(m), str(t)) for m, t in points or [] if t]
+    return [(m, t) for m, t in pts if len({u for n, u in pts if abs(n - m) <= TOUCH_GAP}) < TOUCH_BULK]
+
+
+def touched_near(row: dict, ctx: dict) -> dict:
+    """{task: minute} of the tasks you updated in Productive within TOUCH_WINDOW minutes of the row (ctx["touched"])."""
+    lo, hi = float(row.get("s") or 0) - TOUCH_WINDOW, float(row.get("e") or 0) + TOUCH_WINDOW
+    return {t: m for m, t in ctx.get("touched") or [] if lo <= m <= hi}
+
+
 def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, assigned: list | None = None,
            pick: dict | None = None) -> dict:
     """{task, source, conf, why, alts} for one Likely row. Claude's pick (Ask Claude) replaces an answer that is not
@@ -530,6 +550,17 @@ def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, ass
     if prev and prev[1] != task and prev[1] not in [x[0] for x in out[:2]]:
         out = [x for x in out if x[0] != prev[1]]
         out.insert(min(1, len(out)), (prev[1], "previous", "low", f"you logged it in {prev[2]} on {prev[0]}"))
+    # the self-check's "Productive activity" (ctx["touched"], set by selfcheck.py only): a guess gives way to one of
+    # its alternatives you commented on or changed in Productive around the row, unticked; never to a task of another
+    # class (admissible), never when you touched the guess too
+    near = touched_near(row, ctx) if task and src in TOUCH_WEAK and ctx.get("touched") else {}
+    if near and task not in near:
+        alt = next((x for x in out[:3] if x[0] in near and admissible(row, ctx, x[0], "touched", assigned)), None)
+        if alt:
+            at = near[alt[0]]
+            out = [(task, src, conf, why)] + [x for x in out if x[0] != alt[0]]
+            task, src, conf = alt[0], "touched", "low"
+            why = f"you updated it in Productive at {int(at) // 60 % 24:02d}:{int(at) % 60:02d}"
     return {"task": task, "source": src, "conf": conf, "why": why, "claudeNone": claude_none,
             "alts": [{"taskId": t, "source": s, "why": w} for t, s, c, w in out][:3]}
 
@@ -1062,7 +1093,8 @@ def _outside(d: _Day) -> None:
                     owner[x] = pick_i
 
 
-CONTEXT_CLIENTS = False  # a client's task named by its window too (_context): off, see below
+CONTEXT_CLIENTS = False  # a client's task named by its window too (_context): off, see below; the self-check alone
+                         # tries it (ctx["context_clients"], selfcheck.py), on its own copy of a plan nobody sees
 
 
 def _context(d: _Day) -> None:
@@ -1107,7 +1139,8 @@ def _context(d: _Day) -> None:
             continue
         if fr[x] not in said:
             got = context_mod.pick(context_mod.keys(d.items[fr[x]]), learned)
-            said[fr[x]] = got if got and got[0] not in meetings and (CONTEXT_CLIENTS or internal(got[0])) else None
+            said[fr[x]] = got if got and got[0] not in meetings \
+                and (CONTEXT_CLIENTS or d.ctx.get("context_clients") or internal(got[0])) else None
         picked[x] = said[fr[x]]
     runs: list = []  # [task, [minutes picked], best (share, total)]
     for x in range(N):
@@ -1808,12 +1841,23 @@ def past_items(date: str, url: str):
 
 
 def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: dict | None = None,
-           inputs: dict | None = None) -> dict:
+           inputs: dict | None = None, blind: dict | None = None) -> dict:
     """The proposal for `date` from Pulsar's live data. ignore_logged (test servers only) plans as if nothing were
     logged that day, to show a whole proposal on a day already logged. keep: as for plan(). inputs: a dict to fill
-    with what the day was planned from, for Log the day with Claude's digest (dayreview.digest)."""
+    with what the day was planned from, for Log the day with Claude's digest (dayreview.digest).
+
+    blind (the self-check, selfcheck.py): a past day planned as Pulsar would plan it without anything of that day's
+    own entries, from what the self-check read once for several days: {"day": the day's entries, "history": your
+    entries of the days before it (more is fine: only the LEARN_DAYS before the day are used), "assigned": your
+    assigned tasks (None: not read), "fresh": productive.recent_tasks (None: not read), "activity": your Productive
+    activity around the day (productive.my_activity; None: not read)}. Nothing of the day's own entries votes or
+    blocks: none is logged, no service is learned from them, the tasks you logged lately are those of the 30 days
+    before, and Ask Claude's picks (it saw the day's entries) are left out. Nothing is read from Productive here, and
+    nothing learned in the background: the services are the ones last used (history), never asked. The answer is
+    {"entries", "noActivity", "blindProblem" (why it is not a whole plan, or None), "shadow": the same day planned with
+    each rule the self-check tries and nobody else sees (ctx "touched", "context_clients")}."""
     from concurrent.futures import ThreadPoolExecutor
-    from . import askclaude, calendar, learn as learning, likely, logbook, server
+    from . import askclaude, calendar, daymarks, learn as learning, likely, logbook, server
     s = server.current_settings()
     tz = config.tz(s)
     t0, t1 = server.day_bounds(date, tz)
@@ -1824,6 +1868,17 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
     except JournalBroken as exc:
         return {"error": str(exc), "entries": []}
     first28 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=server.REPEAT_DAYS)).strftime("%Y-%m-%d")
+    if blind is not None:
+        ignore_logged = True
+        lo = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=learning.LEARN_DAYS)).strftime("%Y-%m-%d")
+        no_learn = daymarks.no_learn()  # as server.history_rows: entries marked not an example teach nothing
+        before = [r for r in blind.get("history") or [] if lo <= str(r.get("date") or "") < date
+                  and str(r.get("id") or "") not in no_learn]
+        lo30 = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=30)).strftime("%Y-%m-%d")
+        # what the log dialog offered that morning: the tasks of the 30 days before, and your assigned tasks (as they
+        # are now: Productive keeps no history of them) less those
+        blind_offers = server.suggest_lists([r for r in before if str(r.get("date") or "") >= lo30],
+                                            blind.get("assigned") or [], date)
 
     def proposal():
         if not likely.enabled(s):
@@ -1844,6 +1899,8 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
         return {**got, "entries": copied(got.get("entries")), "background": copied(got.get("background"))}
 
     def suggest():
+        if blind is not None:
+            return blind_offers["assigned"]
         try:
             return server.api_suggest({"date": date}).get("assigned") or []
         except Exception as exc:  # a hint only: the plan goes on without your assigned tasks, and Logs says why
@@ -1851,17 +1908,24 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
                            kind="warning", once_per=600)
             return []
 
+    calls = {"act": lambda: server.api_activity({"date": date, "source": source}),
+             "logged": lambda: server.productive_rows(date, date, s),
+             "history": lambda: server.history_rows(date, s, learning.LEARN_DAYS),
+             "likely": proposal,
+             "repeats": lambda: server.api_repeats({"date": date, "source": source}),
+             "cal": lambda: calendar.day(date, s),
+             "past": lambda: calendar.history(first28, server.REPEAT_DAYS, s),
+             "assigned": suggest,
+             "fresh": lambda: server.new_task_source(date, s)}
+    if blind is not None:  # what the self-check read once for its days; the repeats from the day's windows, below
+        calls.update(logged=lambda: (list(blind.get("day") or []), None, None, False), history=lambda: (before, None),
+                     repeats=lambda: {"repeats": []}, fresh=lambda: blind.get("fresh"))
     with ThreadPoolExecutor(8) as pool:
-        jobs = {"act": pool.submit(server.api_activity, {"date": date, "source": source}),
-                "logged": pool.submit(server.productive_rows, date, date, s),
-                "history": pool.submit(server.history_rows, date, s, learning.LEARN_DAYS),
-                "likely": pool.submit(proposal),
-                "repeats": pool.submit(server.api_repeats, {"date": date, "source": source}),
-                "cal": pool.submit(calendar.day, date, s),
-                "past": pool.submit(calendar.history, first28, server.REPEAT_DAYS, s),
-                "assigned": pool.submit(suggest),
-                "fresh": pool.submit(server.new_task_source, date, s)}
+        jobs = {k: pool.submit(f) for k, f in calls.items()}
         got = {k: j.result() for k, j in jobs.items()}
+    if blind is not None:  # the repeats seen in the day's own windows (one tracker read, not two), learned from before
+        got["repeats"] = {"repeats": server.day_repeats([r for r in before if str(r.get("date") or "") >= first28],
+                                                        got["act"].get("items") or [], date, s)}
     rows, problem, _, from_copy = got["logged"]
     if problem and not ignore_logged:
         # without the day's entries a proposal could log time twice: none, and say why
@@ -1886,7 +1950,7 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
     offered = []
     if meetings:
         try:
-            sug = server.api_suggest({"date": date})
+            sug = blind_offers if blind is not None else server.api_suggest({"date": date})
             offered = (sug.get("recent") or []) + (sug.get("assigned") or [])
         except Exception:
             offered = []
@@ -1896,7 +1960,8 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
     likely_rows = got["likely"].get("entries") or []
     bg_rows = got["likely"].get("background") or []
     if (likely_rows or bg_rows) and not hproblem:  # learned tasks per row, from the days before only
-        learning.annotate({"entries": likely_rows, "background": bg_rows}, date, s, history, [], tz, got["fresh"])
+        learning.annotate({"entries": likely_rows, "background": bg_rows}, date, s, history, [], tz, got["fresh"],
+                          warm_days=blind is None)
     t0_of = lambda d: server.day_bounds(d, tz)[0]  # noqa: E731
     days = {d: learning._stored(d) for d in learning._days_before(date)}
     # the windows in front on the days before (context.py, hashed, on this Mac only): the tasks of work outside Claude
@@ -1906,7 +1971,7 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
         context_mod.store(date, act["items"])
 
     url = s.get("activitywatch_url") or config.DEFAULTS["activitywatch_url"]
-    if not config.tests_offline():  # the tests' own trackers are made up: none to read in the background
+    if not config.tests_offline() and blind is None:  # the tests' trackers are made up: none to read in the background
         context_mod.warm(date, today, lambda d: past_items(d, url))
     ctx = learn(date, [] if hproblem else history, {d: r for d, r in days.items() if r}, t0_of,
                 half_life=config.advanced(s)["memory"], person=str(s.get("person_name") or ""),
@@ -1918,7 +1983,7 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
         # of the minutes instead of 86.3%, 70.7% instead of 54.5% on tasks not logged in the 60 days before
         remember_services(ctx["service"], ctx["project_service"], rows)
     # Ask Claude's kept answer (askclaude.keep: on disk, 60 days) steers the plan only while the Claude Code switch is on
-    answer = askclaude.latest(date) if s.get("ask_claude") else None
+    answer = askclaude.latest(date) if s.get("ask_claude") and blind is None else None
     day = {"items": act.get("items") or [], "away": act.get("away") or [], "rows": likely_rows, "background": bg_rows,
            "logged": logged,
            "meetings": meetings, "repeats": [x for x in got["repeats"].get("repeats") or [] if not inside(x)], "calls": calls,
@@ -1927,6 +1992,8 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
     opts = opts_for(s)
     result = plan(day, ctx, opts) if keep is None else plan(day, ctx, opts, keep=keep)
     result["roundTo"] = opts["grid"]
+    if blind is not None:
+        return _blind_answer(date, s, result, day, ctx, opts, got, blind, before, blind_offers, t0, tz)
 
     # the service of each task, checked against what takes time on that date (and of the work a shared row was over)
     tasks = sorted({e["taskId"] for e in result["entries"] if e["taskId"]}
@@ -2025,6 +2092,75 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
             "learning": got["likely"].get("learning")}
 
 
+def blind_billing(before: list, ctx: dict, projects: dict):
+    """For the self-check: a function that gives each entry of a blind plan its project and billing as your history
+    says, without asking Productive: the service it carries (a repeat's, a meeting's), else the one you used last on
+    its task, else in its project (pick_service's order), billable as your latest entry on that service was; an
+    internal project's never. projects: task -> project, for tasks the plan does not name. Mutates and returns the
+    entries."""
+    billable: dict = {}
+    for r in sorted(before, key=lambda r: (str(r.get("date") or ""), r.get("start") or 0)):
+        if r.get("serviceId"):
+            billable[str(r["serviceId"])] = r.get("billable")
+
+    def give(entries: list) -> list:
+        for e in entries:
+            task = str(e.get("taskId") or "")
+            e["project"] = e.get("project") or projects.get(task, "")
+            if not task:
+                e["billable"] = None
+                continue
+            svc = e.get("serviceId") or (ctx.get("service") or {}).get(task, (None, ""))[0] \
+                or ((ctx.get("project_service") or {}).get(e["project"]) or (None, ""))[0]
+            e["serviceId"] = str(svc) if svc else None
+            b = billable.get(str(svc)) if svc else None
+            e["billable"] = False if attribution.internal_project(e["project"]) else b
+        return entries
+    return give
+
+
+def _blind_answer(date: str, s: dict, result: dict, day: dict, ctx: dict, opts: dict, got: dict, blind: dict,
+                  before: list, offers: dict, t0: float, tz) -> dict:
+    """gather's answer to the self-check (blind): the plan's entries with their project and billing (blind_billing),
+    whether the day is whole (a tracker, Claude Code's sessions, the calendar each answered), and the day planned again
+    with each rule the self-check tries ("shadow"; a plan nobody sees, from the same data, never a read more). A rule
+    that cannot change the day (nothing it acts on) is not planned again: its entries are the plan's."""
+    from . import server
+    problems = []
+    if got["likely"].get("error"):
+        problems.append(f"Claude Code sessions: {got['likely']['error']}")
+    if got["cal"].get("connected") and got["cal"].get("problem"):
+        problems.append(f"Google Calendar: {got['cal']['problem']}")
+    items = got["act"].get("items") or []
+    if not items and (got["act"].get("problems") or not trackers.answering(
+            s.get("activitywatch_url") or config.DEFAULTS["activitywatch_url"])):
+        problems.append("no tracker answered")
+    projects: dict = {}
+    for t in list(offers.get("assigned") or []) + list(blind.get("fresh") or []) + list(offers.get("recent") or []):
+        if t.get("taskId") and t.get("project"):
+            projects[str(t["taskId"])] = t["project"]
+    for r in (day.get("rows") or []) + (day.get("background") or []):
+        for x in r.get("learned") or []:
+            if x.get("taskId") and x.get("project"):
+                projects.setdefault(str(x["taskId"]), x["project"])
+    for r in before:
+        if r.get("taskId") and r.get("project"):
+            projects[str(r["taskId"])] = r["project"]
+    give = blind_billing(before, ctx, projects)
+    main = give(result["entries"])
+    touched = None
+    if blind.get("activity") is not None:
+        touched = touches([(server.clock(x["at"], t0, tz), x["task"]) for x in blind["activity"]
+                           if x.get("at") is not None and x.get("task")])
+    shadow = {"activity": None if touched is None
+              else give(plan(day, {**ctx, "touched": touched}, opts)["entries"]) if touched and day.get("rows")
+              else [dict(e) for e in main],
+              "clients": give(plan(day, {**ctx, "context_clients": True}, opts)["entries"]) if ctx.get("context")
+              else [dict(e) for e in main]}
+    return {"entries": main, "date": date, "noActivity": not items and not problems,
+            "blindProblem": "; ".join(problems) or None, "shadow": shadow}
+
+
 _shared_kept = config.Newest(32)  # date -> (when, [(s, e, task)]): the shared rows of the plan worked out last
 SHARED_FOR = 900  # seconds pulsar_preview takes them as the day's
 
@@ -2076,6 +2212,31 @@ def journal() -> dict:
            f"nothing from Log the day or Claude Code. Check the Logged column, then move {path} away to start a new one.")
     logbook.record("log the day", msg, kind="error", once_per=600)
     raise JournalBroken(msg)
+
+
+HHMM = re.compile(r"([01][0-9]|2[0-3]):[0-5][0-9]")
+SOURCE = re.compile(r"[a-z]{1,16}")
+
+
+def proposed_fields(p) -> dict | None:
+    """What Log the day proposed for a row before the person changed anything (logday.js sends it with the row, as first
+    planned), as the journal keeps it beside what was sent: the task, the service, the start, the minutes, why (the
+    pick's source), how sure, and whether it came ticked. Checked and cut to these, never a name or a note; None when
+    the page sent none (an older page, Pulsar in Claude Code)."""
+    if not isinstance(p, dict):
+        return None
+
+    def ident(v):
+        v = str(v or "")
+        return v if v.isascii() and v.isdigit() and len(v) <= 15 else None
+    m = p.get("minutes")
+    start, source = str(p.get("start") or ""), str(p.get("source") or "")
+    return {"taskId": ident(p.get("taskId")), "serviceId": ident(p.get("serviceId")),
+            "start": start if HHMM.fullmatch(start) else None,
+            "minutes": m if isinstance(m, int) and not isinstance(m, bool) and 0 <= m <= 1440 else None,
+            "source": source if SOURCE.fullmatch(source) else "",
+            "confidence": p.get("confidence") if p.get("confidence") in RANK else None,
+            "ticked": p.get("ticked") is True}
 
 
 def sig(date, start, minutes, task, service) -> str:
