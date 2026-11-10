@@ -30,6 +30,32 @@ def task(tid, title, project="Internal"):
             "status": "", "blocked": False}
 
 
+class PageScriptsTest(unittest.TestCase):
+    """The page's scripts share one global scope, so a name declared in two of them is one name: the later file's
+    replaces the earlier's everywhere. 1.6.12 shipped askPause in ask.js (the Ask Claude button) and in pause.js (the
+    pause dialog), and Ask Claude stuck on "Asking…" from the first click."""
+
+    def test_no_two_scripts_declare_the_same_global(self):
+        import glob
+        import re
+        top = re.compile(r"(?:async\s+)?function\s+(\w+)\s*\(|(?:const|let|var|class)\s+(\w+)")
+        seen = {}
+        for path in sorted(glob.glob(os.path.join(WEB, "js", "*.js"))):
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+            if re.search(r"^\((?:\(\) =>|function)", text, re.M):
+                continue  # wrapped in a function of its own: nothing it declares is global
+            for line in text.splitlines():
+                m = top.match(line)  # a declaration at column 0 is the script's own
+                if m:
+                    name, here = m.group(1) or m.group(2), os.path.basename(path)
+                    if name in seen:
+                        self.fail(f"{name} is declared in {seen[name]} and {here}")
+                    seen[name] = here
+        self.assertIn("askPause", seen)
+        self.assertIn("pauseQuestion", seen)
+
+
 class SearchRankTest(unittest.TestCase):
     """A search for "Scrum" in a company where everyone has a Scrum task: yours first, closed ones last."""
 

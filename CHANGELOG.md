@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Ask Claude no longer sticks on "Asking…": in 1.6.12 the pause dialog's code took the name of the button's, so the button stopped at its first step.
 - What is left before going over: the log dialog always shows a task's estimate ("8 h 30 min of 10 h with this entry, 1 h 30 min left"), amber from 80%, and a Log the day row says it from 80%; the Tasks box's bar turns amber at 80%. The service's time budget the same way, red past it, where Productive lets you read budgets (not for a Staff role).
 - Notes are English only, since clients see them on invoices: Claude always drafts in English, and Pulsar never offers a note with Cyrillic letters (an old usual note, a meeting's title, a commit subject). What you type yourself is left as you typed it.
 

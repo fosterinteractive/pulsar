@@ -94,7 +94,7 @@ async function resumePause(until) {
 
 /* the question: paused since, working since, and the choices. safe (a click on the paused stretch): Stay paused has
    the focus, so a stray click or Return changes nothing */
-function askPause(r, safe = false) {
+function pauseQuestion(r, safe = false) {
   const worked = r.backText ? `, and you have been working since ${r.backText}`
     : r.workMinutes ? `, and the tracker saw ${dur(r.workMinutes)} of work since` : '';
   $('#pauseprompt-text').textContent = `Paused since ${r.sinceText} (${dur(r.minutes)})${worked}.`;
@@ -116,13 +116,13 @@ async function maybeAskPause() {
   if (!CONFIG || signedOut || Date.now() - pauseAskAt < 60 * 1000 || document.visibilityState !== 'visible') return;
   pauseAskAt = Date.now();
   const r = await readPause(1);
-  if (r?.ask && !document.querySelector('dialog[open]')) askPause(r);
+  if (r?.ask && !document.querySelector('dialog[open]')) pauseQuestion(r);
 }
 
 $('#pause-btn').onclick = async () => {
   if (!PAUSE.paused) return startPause();
   const r = await readPause(2);  // working since the pause began: ask from when; otherwise resume now
-  if (r?.ask && r.backText) askPause(r);
+  if (r?.ask && r.backText) pauseQuestion(r);
   else if (r?.paused) resumePause();
 };
 const pauseAnswer = how => {
