@@ -39,7 +39,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 from . import attribution, commits as git_commits, config, pause, sessions as sessions_mod, trackers
-from .attribution import CLIENT, INTERNAL, repo_key
+from .attribution import CLIENT, INTERNAL, MIXED, repo_key
 
 GRID = 5             # entry boundaries on this grid, in minutes (Settings: "Round entries to", opts_for)
 MIN_ENTRY = 10       # shorter pieces join a neighbour (never shorter than the grid)
@@ -75,6 +75,9 @@ CONTEST_MIN = 10     # a client's agent takes internal work's minutes (shared) o
 PARALLEL_MIN = 15    # a client's agent beside another client's work in front gets half that time from this long a
                      # sitting (shorter: ignored; Nick, 2026-11-10)
 CLASS_ORDER = {INTERNAL: 0, "mixed": 1, "unknown": 1, CLIENT: 2}  # what the cap cuts first
+# answers from the history or from words alone, not from the work naming the task (a rule, a link, a ticket key, a task
+# Claude opened): on a repository whose client the history knows, they never pick another client's task (admissible)
+WEAK_SOURCES = ("session", "sameday", "words", "new")
 
 
 def opts_for(settings: dict) -> dict:
@@ -114,13 +117,47 @@ def places(ctx: dict, repo: str) -> set:
     return {n["project"] for n in names.values() if n.get("project") and name in words(n.get("task") or "")}
 
 
-def same_client(ctx: dict, repo: str, task) -> bool:
+def same_client(ctx: dict, repo: str, task, project: str = "") -> bool:
     """A task of the client this repository works for: its project is logged to the repository, or shares a word of
-    four letters or more with the repository's name."""
-    if fits(ctx, repo, task) is True:
+    four letters or more with the repository's name. project: the task's project when the history does not name it
+    (a task you never logged to: task_project)."""
+    names = ctx.get("names") or {}
+    project = (names.get(str(task)) or {}).get("project") or project or ""
+    project_of = lambda t: (names.get(str(t)) or {}).get("project") or (project if str(t) == str(task) else None)  # noqa: E731
+    if attribution.fits((ctx.get("repo") or {}).get(repo_key(repo)) or {}, project_of, task) is True:
         return True
-    project = ((ctx.get("names") or {}).get(str(task)) or {}).get("project") or ""
     return bool(attribution.name_words(repo_key(repo)) & attribution.name_words(project))
+
+
+def voted_here(row: dict, ctx: dict, task) -> bool:
+    """The session's own votes in this repository name the task (attribution.session_votes' first answer), and the
+    repository has too little history to weigh its projects (fits: None): what little history it has says this task."""
+    key = repo_key(row.get("project"))
+    if fits(ctx, row.get("project"), task) is not None:
+        return False
+    return any(str(task) in {str(t) for t in ((ctx.get("sr") or {}).get((k, key)) or {})} for k in _keys(row))
+
+
+def task_project(task, ctx: dict, row: dict | None = None, assigned: list | None = None) -> str:
+    """A task's Productive project: as your entries name it, else as the work found it (a task you never logged to, in
+    row["learned"]), else as your assigned tasks name it; "" when nothing does."""
+    task = str(task or "")
+    got = ((ctx.get("names") or {}).get(task) or {}).get("project")
+    if got or not task:
+        return got or ""
+    for x in list((row or {}).get("learned") or []) + list(assigned or []):
+        if str(x.get("taskId")) == task and x.get("project"):
+            return x["project"]
+    return ""
+
+
+def project_class(project: str, ctx: dict) -> str | None:
+    """A project's class: the agency's own by name, else as your entries in it say (attribution.task_classes)."""
+    if not project:
+        return None
+    if attribution.internal_project(project):
+        return INTERNAL
+    return (ctx.get("project_class") or {}).get(project)
 
 
 def title_key(title: str) -> str:
@@ -371,16 +408,30 @@ def new_session(keys: list, ctx: dict) -> bool:
     return new_work(keys, ctx.get("sess") or {}, ctx.get("new_habit"))
 
 
-def admissible(row: dict, ctx: dict, task, source: str) -> bool:
+def admissible(row: dict, ctx: dict, task, source: str, assigned: list | None = None) -> bool:
     """Whether a task may be the pick for a row of this class (row["class"], attribution.segment_class): on internal
-    work a client's task only from what the work itself names (a rule, a task link, a ticket key); on a client's
-    repository never another client's task from the session's history. No pick is better than a wrong billable one."""
+    work a client's task only from what the work itself names (a rule, a task link, a ticket key); on a repository
+    whose client the history knows (client or mixed), a task that may be billable from a weak answer (WEAK_SOURCES)
+    only when it is that client's (same_client). A task you never logged to is judged by its project (task_project),
+    as one you logged to. The session's own votes in this repository still pick when the repository has too little
+    history to weigh its projects (voted_here). No pick is better than a wrong billable one.
+
+    Replay of 43 days (2026-11-10): on a mixed or client repository, a weak answer of another client's task was right
+    on almost none of its minutes; without them clean minutes on the right task 50.5% -> 50.9%, over-billed 3746 ->
+    3526 minutes, a wrong client billed 2755 -> 2500, billable with no evidence 49 -> 40, client-day billable 68.2% ->
+    68.5%, task-day billable 35.6% -> 35.5%. On a repository with no history (unknown) there is no client to check
+    against: testing title words there too lost 1.1 points of client-day billable and 0.4 of task-day billable, so it
+    is left alone."""
     if not task:
         return False
-    cls, tc = row.get("class"), attribution.class_of_task(task, ctx)
+    project = task_project(task, ctx, row, assigned)
+    cls = row.get("class")
+    tc = attribution.class_of_task(task, ctx) or project_class(project, ctx)
     if cls == INTERNAL and tc == CLIENT and source not in ("rule", "link", "ticket"):
         return False
-    if cls == CLIENT and source in ("session", "sameday") and tc == CLIENT and not same_client(ctx, row.get("project"), task):
+    if cls in (CLIENT, MIXED) and source in WEAK_SOURCES and tc != INTERNAL \
+            and not same_client(ctx, row.get("project"), task, project) \
+            and not (source == "session" and voted_here(row, ctx, task)):
         return False
     return True
 
@@ -393,7 +444,7 @@ def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, ass
     every = candidates(row, ctx, rule_hit, sameday or {}, assigned or [])
     # where you usually log in a repository is never the pick, only an alternative: as the pick it was right on 5% of
     # its minutes (replay, 43 days), and without it the right task gained 1.2 points and over-billing fell
-    pickable = lambda t, s_: s_ != "repo" and admissible(row, ctx, t, s_)  # noqa: E731
+    pickable = lambda t, s_: s_ != "repo" and admissible(row, ctx, t, s_, assigned)  # noqa: E731
     found = [f for f in every if pickable(f[0], f[1])]
     found += [(t, s_, "low", w) for t, s_, c, w in every if not pickable(t, s_)]
     if found and pickable(found[0][0], found[0][1]):
@@ -410,13 +461,14 @@ def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, ass
     fresh = [x for x in row.get("learned") or [] if x.get("new")]
     new_alt = [(str(fresh[0]["taskId"]), "new", "low", fresh[0].get("why") or "")] if fresh else []
     weak = conf == "low" and src not in ("rule", "link", "ticket", "work")  # what the work names stays
-    if fresh and weak and fresh[0].get("key") and admissible(row, ctx, str(fresh[0]["taskId"]), "ticket"):
+    if fresh and weak and fresh[0].get("key") and admissible(row, ctx, str(fresh[0]["taskId"]), "ticket", assigned):
         if task:
             new_alt = [(task, src, conf, why)]
         task, src, conf, why = str(fresh[0]["taskId"]), "new", "low", fresh[0].get("why") or ""
     alts = []
     claude_none = bool(pick) and not pick.get("tasks") and conf != "high"  # Claude found no task: keep ours, say so
-    if pick and pick.get("tasks") and conf != "high" and admissible(row, ctx, str(pick["tasks"][0]["taskId"]), "claude"):
+    if pick and pick.get("tasks") and conf != "high" \
+            and admissible(row, ctx, str(pick["tasks"][0]["taskId"]), "claude", assigned):
         first = pick["tasks"][0]
         alts = [(task, src, conf, why)] if task else []
         alts = [(t, s, c, f"Pulsar's guess: {w}") for t, s, c, w in alts]
@@ -1253,12 +1305,7 @@ def class_of(task, d: "_Day") -> str | None:
     c = attribution.class_of_task(task, d.ctx)
     if c or not task:
         return c
-    project = (d.names.get(str(task)) or ("", ""))[1]
-    if not project:
-        return None
-    if attribution.internal_project(project):
-        return INTERNAL
-    return (d.ctx.get("project_class") or {}).get(project)
+    return project_class((d.names.get(str(task)) or ("", ""))[1], d.ctx)
 
 
 _CYRILLIC = re.compile(r"[\u0400-\u052F]")  # notes in English only (askclaude.english)

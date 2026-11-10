@@ -582,6 +582,58 @@ class FailureCaseTest(unittest.TestCase):
         self.assertFalse(e["checked"])
 
 
+class ClientGateTest(unittest.TestCase):
+    """On a repository whose client the history knows, a weak answer (the session's history, the same session today,
+    title words, a new task's words) never picks another client's task; a task you never logged to is judged by its
+    project, as one you logged to (dayplan.admissible)."""
+
+    def setUp(self):
+        extra = {f"2026-10-{d:02d}": ([{"k": [KEY], "p": "globex-site", "s": 800, "e": 860}], [entry(f"2026-10-{d:02d}", 800, 60, "G1")])
+                 for d in (14, 15, 16)}
+        self.ctx = {**history(extra=extra)[0], "lastday": {}}
+
+    def test_title_words_never_pick_another_clients_task_on_a_clients_repository(self):
+        # two words in common (one word that is not the repository's own name never counts: candidates "words")
+        names = self.ctx["names"]
+        ctx = {**self.ctx, "names": {**names, "G1": {**names["G1"], "task": "Globex banner rollout"}}}
+        self.assertEqual(ctx["classes"].get("client-web"), "client")
+        r = front(600, 660, "client-web", titles=["Globex banner follow-up"])
+        [e] = plan([work(600, 660)], [r], ctx=ctx)["entries"]
+        self.assertIsNone(e["taskId"])                              # no pick rather than another client's
+        self.assertIn("G1", [a["taskId"] for a in e["alts"]])       # still offered
+        # on a repository with no history there is no client to check against: the words still pick
+        [e] = plan([work(600, 660)], [{**r, "project": "somewhere-new"}], ctx=ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("G1", "words"))
+        # the client's own task by its words is picked on its repository
+        [e] = plan([work(600, 660)], [front(600, 660, "client-web", titles=["Clientco QA fixes again"])], ctx=ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("C2", "words"))
+
+    def test_a_new_task_is_judged_by_its_project(self):
+        ctx = self.ctx
+        fresh = {"taskId": "77", "title": "Clientco hero autoplay", "project": "Clientco - Ongoing Support",
+                 "why": "named in this work: hero, autoplay (no entry of yours yet)", "key": False, "score": 0.8, "new": True}
+        self.assertEqual(dayplan.task_project("77", ctx, {"learned": [fresh]}), "Clientco - Ongoing Support")
+        self.assertEqual(dayplan.task_project("78", ctx, {}, [{"taskId": "78", "project": "FI-AI Tools"}]), "FI-AI Tools")
+        r = {**front(600, 660, "house-tool", titles=["Hero autoplay"]), "learned": [fresh]}
+        # internal work: the client's new task named only by words is offered, never picked
+        [e] = plan([work(600, 660)], [r], ctx=ctx)["entries"]
+        self.assertNotEqual(e["taskId"], "77")
+        self.assertIn("77", [a["taskId"] for a in e["alts"]])
+        # its ticket key named in the work decides it
+        [e] = plan([work(600, 660)], [{**r, "learned": [{**fresh, "key": True}]}], ctx=ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("77", "new"))
+        # on the client's own repository too its words alone only offer it (a task you never logged to is picked by
+        # its ticket key), and the key picks it there
+        [e] = plan([work(600, 660)], [{**r, "project": "client-web"}], ctx=ctx)["entries"]
+        self.assertNotEqual(e["taskId"], "77")
+        self.assertIn("77", [a["taskId"] for a in e["alts"]])
+        [e] = plan([work(600, 660)], [{**r, "project": "client-web", "learned": [{**fresh, "key": True}]}], ctx=ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("77", "new"))
+        # it is judged as the client's: the same client on the client's repository, not on another client's
+        self.assertTrue(dayplan.same_client(ctx, "client-web", "77", "Clientco - Ongoing Support"))
+        self.assertFalse(dayplan.same_client(ctx, "globex-site", "77", "Clientco - Ongoing Support"))
+
+
 class SharedTest(unittest.TestCase):
     """A client's agent, attended, while internal work is in front: the client goes first, as a shared row."""
 
