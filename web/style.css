@@ -526,27 +526,34 @@ header { flex-wrap: wrap; row-gap: 8px; }
   .inv-who { margin: 5px 0 0; font-size: 11pt; }
   .inv-meta { text-align: right; color: #6e6e73; font-size: 9pt; }
   .inv-meta p { margin: 0; }
-  .inv-stats { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; margin: 0 0 24px; break-inside: avoid; }
-  .inv-stat { background: #f5f5f7; border-radius: 9px; padding: 9px 12px 10px; display: flex; flex-direction: column; gap: 1px; }
+  .inv-stats { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; margin: 0 0 26px; break-inside: avoid;
+    background: #f5f5f7; border-radius: 12px; }
+  .inv-stat { padding: 11px 16px 12px; display: flex; flex-direction: column; gap: 1px; }
+  .inv-stat + .inv-stat { border-left: 1px solid #e3e3e8; }
   .inv-stat .l, .inv-stat .s { font-size: 8pt; color: #6e6e73; }
   .inv-stat .v { font-size: 15pt; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
   table.inv { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   table.inv col.c-time { width: 17%; }
   table.inv col.c-bill { width: 26%; }
-  table.inv th, table.inv td { padding: 4px 0; text-align: left; vertical-align: baseline; font-weight: 400;
-    border-bottom: 0.5pt solid #e5e5ea; }
+  table.inv th, table.inv td { padding: 3px 0; text-align: left; vertical-align: baseline; font-weight: 400; }
   table.inv th:not(:first-child), table.inv td:not(:first-child) { text-align: right; padding-left: 12px; white-space: nowrap; }
-  table.inv thead th { font-size: 8pt; font-weight: 500; color: #6e6e73; border-bottom: 1pt solid #1d1d1f; padding-bottom: 5px; }
+  table.inv thead th { font-size: 7pt; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #8e8e93;
+    border-bottom: 1pt solid #1d1d1f; padding-bottom: 5px; }
   table.inv tbody.inv-group { break-inside: avoid; }
-  table.inv tr.inv-proj th, table.inv tr.inv-proj td { font-weight: 600; padding-top: 14px; border-bottom: 0.75pt solid #c7c7cc; }
-  table.inv tbody.inv-group tr:not(.inv-proj) td:first-child { padding-left: 10px; }
-  table.inv tbody.inv-group tr:last-child td { border-bottom: 0; padding-bottom: 6px; }
+  table.inv tr.inv-proj th, table.inv tr.inv-proj td { font-weight: 600; padding: 16px 0 5px; border-bottom: 0.5pt solid #d2d2d7; }
+  table.inv tr.inv-proj td { padding-left: 12px; }
+  table.inv tbody.inv-group tr:nth-child(2) td { padding-top: 6px; }
+  table.inv tbody.inv-group tr:not(.inv-proj) td:first-child { padding-left: 10px; color: #3a3a3c; }
   table.inv td.mut { color: #8e8e93; }
-  table.inv .inv-share { font-weight: 400; color: #6e6e73; font-size: 8.5pt; margin-left: 6px; white-space: nowrap; }
-  table.inv .inv-pct { font-weight: 400; color: #6e6e73; font-size: 8.5pt; margin-left: 2px; }
+  table.inv .inv-share { font-weight: 400; color: #8e8e93; font-size: 8pt; margin-left: 8px; white-space: nowrap; }
+  table.inv .inv-share i { display: inline-block; width: 34px; height: 3px; margin: 0 5px 0 0; vertical-align: 2px;
+    border-radius: 2px; background: linear-gradient(90deg, #1d1d1f var(--w), #e5e5ea var(--w)); }
+  table.inv .inv-pct { font-weight: 400; color: #8e8e93; font-size: 8pt; margin-left: 3px; }
   table.inv .inv-unknown { display: block; margin: 1px 0 0; }
   table.inv small { color: #8e8e93; font-size: 8pt; margin-left: 4px; }
-  .inv-foot { margin-top: 22px; padding-top: 9px; border-top: 1px solid #d2d2d7; font-size: 8pt; color: #6e6e73; }
+  .inv-foot { margin-top: 26px; padding-top: 9px; border-top: 0.5pt solid #d2d2d7; font-size: 7.5pt; color: #8e8e93;
+    display: flex; justify-content: space-between; gap: 16px; }
+  .inv-mark { font-weight: 600; letter-spacing: .04em; color: #6e6e73; }
 }
 
 /* not signed in: one notice over everything */

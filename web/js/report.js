@@ -396,10 +396,10 @@ function renderInvoice(x) {
     <table class="inv"><colgroup><col><col class="c-time"><col class="c-bill"></colgroup>
       <thead><tr><th scope="col">Task</th><th scope="col">Time</th><th scope="col">Billable</th></tr></thead>`
     + inv.projects.map(p => `<tbody class="inv-group"><tr class="inv-proj"><th scope="rowgroup">${esc(p.project)}${
-        inv.minutes ? ` <span class="inv-share">${Math.round(100 * p.minutes / inv.minutes)}% of the time</span>` : ''}</th><td>${esc(dur(p.minutes))}</td>${projBill(p)}</tr>`
+        inv.minutes ? ` <span class="inv-share" title="share of the time"><i style="--w:${Math.max(2, Math.round(100 * p.minutes / inv.minutes))}%"></i>${Math.round(100 * p.minutes / inv.minutes)}%</span>` : ''}</th><td>${esc(dur(p.minutes))}</td>${projBill(p)}</tr>`
       + p.tasks.map(t => `<tr><td>${esc(t.task)}${t.noTask ? ' <small>no task</small>' : ''}</td><td>${esc(dur(t.minutes))}</td>${bill(t)}</tr>`).join('')
       + '</tbody>').join('')
-    + `</table><p class="inv-foot">From ${who ? 'the' : 'your'} Productive time entries, ${esc(range)}. Prepared with Pulsar.</p>`;
+    + `</table><div class="inv-foot"><span>From ${who ? 'the' : 'your'} Productive time entries, ${esc(range)}. The bars show each project's share of the time.</span><span class="inv-mark">Pulsar</span></div>`;
 }
 /* the same lines for a spreadsheet: one row per task, a subtotal per project, the total */
 function invoiceRows(inv) {
