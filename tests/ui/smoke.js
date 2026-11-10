@@ -212,6 +212,50 @@ try {
     && pb.classList.contains('on') === !!pWas.paused && (sp === null || (sp.length === 1 && Math.abs(sp[0][1] - sp[0][0] - Math.min(60, nowMin())) <= 1)),
     `${pOn.join(' | ')}; today ${JSON.stringify(sp)}; server paused ${st.paused}`);
 
+  // text contrast: every text on the day view at 4.5:1 or more (3:1 when large), in the theme shown
+  {
+    const parse = c => { const m = c.match(/[\d.]+/g); return m ? [+m[0], +m[1], +m[2], m.length > 3 ? +m[3] : 1] : null; };
+    const over = (top, bot) => [0, 1, 2].map(i => top[i] * top[3] + bot[i] * (1 - top[3]));
+    const ground = el => {
+      const layers = [];
+      for (let e = el; e; e = e.parentElement) { const c = parse(getComputedStyle(e).backgroundColor); if (c && c[3] > 0) { layers.push(c); if (c[3] >= 1) break; } }
+      let bg = parse(getComputedStyle(document.body).backgroundColor).slice(0, 3);
+      for (const l of layers.reverse()) bg = over(l, bg);
+      return bg;
+    };
+    const low = [];
+    let seen = 0;
+    for (const el of document.querySelectorAll('body *')) {
+      if (![...el.childNodes].some(x => x.nodeType === 3 && x.textContent.trim()) || el.closest('[hidden], svg, dialog:not([open])')) continue;
+      const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
+      if (!r.width || !r.height || cs.visibility === 'hidden' || el.matches(':disabled') || el.closest(':disabled')) continue;
+      let op = 1; for (let e = el; e; e = e.parentElement) op *= +getComputedStyle(e).opacity;
+      const c = parse(cs.color); c[3] *= op;
+      const bg = ground(el), ratio = contrast(over(c, bg), bg), size = parseFloat(cs.fontSize);
+      seen++;
+      if (ratio < (size >= 24 || (size >= 18.66 && +cs.fontWeight >= 700) ? 3 : 4.5)) low.push(`${el.id || el.className || el.tagName} ${ratio.toFixed(2)}:1 "${el.textContent.trim().slice(0, 20)}"`);
+    }
+    check('text reads at 4.5:1', !low.length, low.slice(0, 8).join(' | ') || `${seen} texts`);
+  }
+  // the accent under white text and as text, for the Mac's accents that fail as they are (put back afterwards)
+  {
+    const root = document.documentElement, was = root.style.getPropertyValue('--mac-accent'), theme = root.dataset.theme || 'system';
+    const bad = [];
+    for (const t of ['light', 'dark']) {
+      applyTheme(t);
+      for (const a of ['#007AFF', '#FFC600', '#F7821B', '#62BA46', '#F74F9E']) {
+        root.style.setProperty('--mac-accent', a);
+        paintAccent();
+        const fill = rgbOf('var(--accent-fill)'), text = rgbOf('var(--accent-text)');
+        const worst = Math.min(...['--bg', '--panel', '--card'].map(v => contrast(text, rgbOf(`var(${v})`))));
+        if (contrast(fill, [255, 255, 255]) < 4.5 || worst < 4.5) bad.push(`${t} ${a}: fill ${contrast(fill, [255, 255, 255]).toFixed(2)}, text ${worst.toFixed(2)}`);
+      }
+    }
+    if (was) root.style.setProperty('--mac-accent', was); else root.style.removeProperty('--mac-accent');
+    applyTheme(theme);
+    check('the accent carries text at 4.5:1 in every Mac accent', !bad.length, bad.join(' | ') || 'blue, yellow, orange, green, pink, both themes');
+  }
+
   check('no page errors during the run', !errors.length, errors.join(' | ') || 'none');
 } catch (e) {
   check('the script ran to the end', false, `${e.name}: ${e.message}`);

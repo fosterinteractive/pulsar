@@ -1569,6 +1569,11 @@ and the whole day every hour while the page shows. The app's window sends `pulsa
   accent colour (`--mac-accent`). In a browser none of this shows. Everywhere: a Delete asks with Cancel first and a
   red Delete; the logo pulses only while the day is being read (`html.loading`); ↻ plays one short warp while it reloads;
   `prefers-contrast: more` strengthens secondary text and lines; segmented controls say which is on (`aria-pressed`).
+  Text reads at 4.5:1 or more in both themes: `--faint` is for lines and marks only, text that says something is
+  `--muted`. The accent under white text and as text is `--accent-fill` and `--accent-text` (`paintAccent` in
+  `core.js`): the Mac's accent mixed with black, or with the text colour, only as far as 4.6:1 takes, again on every
+  theme or accent change (system blue under white is 4.0:1 as it is, yellow 1.6:1). A pressed button moves down a
+  pixel. The UI smoke test checks both: every text on the day view, and five Mac accents in both themes.
   The Mac's own formats, from `PULSAR_APP.prefs`: 12-hour times on screen (`hm` in `core.js`; the axis reads "10 PM"
   and "10:30"), while every request and every time field keeps 24-hour HH:MM (`hm24`), and the fields also take
   "2:30 pm" (`startHHMM`); dates in English in the order of the Mac's region (`DATE_LOCALE`: en-US writes "Friday,
