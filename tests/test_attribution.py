@@ -509,6 +509,22 @@ class LearningCreditTest(unittest.TestCase):
         ctx, _, _ = history(extra={d: (rows, [entry(d, 600, 60, "C1")])})
         self.assertIn("C1", ctx["repo"]["brand-new"])
 
+    def test_the_habit_of_new_sessions_counts_their_minutes_on_the_projects_last_task(self):
+        """Whether a session never logged before is new work or yesterday's work in a new window, from your own days."""
+        entries = [{"date": "2026-11-02", "taskId": "A", "project": "P", "minutes": 60},
+                   {"date": "2026-11-03", "taskId": "A", "project": "P", "minutes": 30},
+                   {"date": "2026-11-03", "taskId": "B", "project": "P", "minutes": 60},
+                   {"date": "2026-11-04", "taskId": "B", "project": "P", "minutes": 45}]
+        credited = [("2026-11-03", ["k1"], "site", "A", 30.0),   # a new session on the project's last task
+                    ("2026-11-03", ["k2"], "site", "B", 60.0),   # a new session on other work
+                    ("2026-11-04", ["k2"], "site", "B", 45.0),   # known by then: not counted
+                    ("2026-11-04", [], "site", "B", 10.0)]       # no title: nothing says it is new
+        habit = attribution.new_session_habit(credited, entries, lambda t: "P", "2026-11-01")
+        self.assertEqual(habit, (30 / 90, 90.0))
+        # the days before the start only make sessions known
+        self.assertEqual(attribution.new_session_habit(credited, entries, lambda t: "P", "2026-11-04"), (None, 0.0))
+        self.assertEqual(attribution.new_session_habit([], entries, lambda t: "P", "2026-11-01"), (None, 0.0))
+
     def test_pulsars_first_name_is_pulsar(self):
         self.assertEqual(attribution.repo_key("chronodeck"), "pulsar")
         self.assertEqual(attribution.repo_key("pulsar-preview"), "pulsar")

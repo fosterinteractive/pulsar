@@ -138,12 +138,6 @@ def votes(days: dict, entries: list, t0_of, date: str, half_life: float = HALF_L
     credited as attribution.credits says. The minutes are the real ones; the weight is the minutes halved every
     HALF_LIFE days before `date`, and sets the order. days: {date: rows}; t0_of(date) gives the day's midnight in
     epoch seconds."""
-    by_day: dict = {}
-    project: dict = {}
-    for r in entries:
-        by_day.setdefault(r.get("date"), []).append(r)
-        if r.get("taskId") and r.get("project"):
-            project[r["taskId"]] = r["project"]
     day0 = datetime.strptime(date, "%Y-%m-%d")
     sess: dict = {}
     repo: dict = {}
@@ -154,17 +148,45 @@ def votes(days: dict, entries: list, t0_of, date: str, half_life: float = HALF_L
         got[0] += w
         got[1] += m
 
-    def task_of(d, s, e):
-        t0 = t0_of(d)
-        return main_task(by_day.get(d, []), t0 + s * 60, t0 + e * 60)
-
-    for d, keys, at, task, m in attribution.credits(days, task_of, project.get):
+    for d, keys, at, task, m in _credited(days, entries, t0_of)[0]:
         fade = 0.5 ** (max((day0 - datetime.strptime(d, "%Y-%m-%d")).days, 0) / half_life)
         for k in keys:
             add(sess, k, task, m * fade, m)
             add(sr, (k, at), task, m * fade, m)
         add(repo, at, task, m * fade, m)
     return sess, repo, sr
+
+
+def _credited(days: dict, entries: list, t0_of) -> tuple:
+    """(attribution.credits of the days, {task: project}) with your entries, as votes reads them."""
+    by_day: dict = {}
+    project: dict = {}
+    for r in entries:
+        by_day.setdefault(r.get("date"), []).append(r)
+        if r.get("taskId") and r.get("project"):
+            project[r["taskId"]] = r["project"]
+
+    def task_of(d, s, e):
+        t0 = t0_of(d)
+        return main_task(by_day.get(d, []), t0 + s * 60, t0 + e * 60)
+    return attribution.credits(days, task_of, project.get), project
+
+
+def new_habit(days: dict, entries: list, t0_of, date: str) -> tuple:
+    """attribution.new_session_habit of the days before `date`, as dayplan.learn keeps it (new_session)."""
+    credited, project = _credited({d: rows for d, rows in days.items() if d < date}, entries, t0_of)
+    start = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=LEARN_DAYS - attribution.HABIT_SKIP)).strftime("%Y-%m-%d")
+    return attribution.new_session_habit(credited, [r for r in entries if str(r.get("date") or "") < date],
+                                         project.get, start)
+
+
+def new_work(keys, sess: dict, habit: tuple | None) -> bool:
+    """Whether a row's session was never logged (no title key with a vote in `sess`) and so is new work, unless your
+    habit (new_habit) says new sessions go on with the last task: dayplan.new_session."""
+    share, minutes = habit or (None, 0)
+    if share is not None and minutes >= attribution.HABIT_MIN and share >= attribution.HABIT_GOES_ON:
+        return False
+    return bool(keys) and not any(sess.get(k) for k in keys)
 
 
 def suggest(row: dict, sess: dict, repo: dict, names: dict, limit: int = 5, text: dict | None = None,
@@ -565,6 +587,7 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
                    if r.get("taskId") and str(r.get("id") or "") not in not_example]
         half_life = config.advanced(settings)["memory"]  # Settings > Time and activity > Advanced
         sess, repo, sr = votes(days, entries, t0_of, date, half_life)
+        habit = new_habit(days, entries, t0_of, date)
         names = {r["taskId"]: r for r in sorted(entries, key=lambda r: r.get("date") or "")}
         skip = frozenset(w for _, w in words(settings.get("person_name") or ""))
         index = note_index(entries, skip)
@@ -647,8 +670,7 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
             except (OSError, ValueError) as exc:  # the votes alone, as before
                 logbook.record("learn", f"Words of the work: {type(exc).__name__}: {exc}", kind="warning")
                 text = {}
-            # a session with no votes in any repository was never logged: new work (dayplan.new_session)
-            new = bool(row.get("k")) and not any(sess.get(k) for k in row["k"])
+            new = new_work(row.get("k"), sess, habit)  # a session never logged: new work (dayplan.new_session)
             e["learned"] = first_offers(with_work(with_new(suggest(row, sess, repo, names, text=text, sr=sr), found),
                                                   work), *offers(places), new=new)
         # rows under five minutes are not read for words (work by turns makes many): they go on with the task their

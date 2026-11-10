@@ -213,8 +213,11 @@ def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_L
     # each project's task of its latest earlier day: the work of a repository logged to that project most often goes
     # on with it (replay, 43 days: right on 62% of the minutes it covers)
     lastday = attribution.last_day_tasks(before, date)
+    # whether your sessions never logged before went on with their project's last task (new_session)
+    habit_from = (day0 - timedelta(days=learn_days - attribution.HABIT_SKIP)).strftime("%Y-%m-%d")
+    habit = attribution.new_session_habit(credited, before, project_of.get, habit_from)
     return {"sess": sess, "repo": repo, "sr": sr, "service": service, "project_service": project_service,
-            "names": names, "recent": recent, "never_logged": never, "lastday": lastday,
+            "names": names, "recent": recent, "never_logged": never, "lastday": lastday, "new_habit": habit,
             "skip": set(WORD.findall((person or "").lower())),
             "task_class": task_class, "project_class": project_class,
             "classes": attribution.repo_classes(credited, task_class)}
@@ -347,10 +350,12 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
 
 
 def new_session(keys: list, ctx: dict) -> bool:
-    """Whether a row's session was never logged: none of its title keys has a vote, in any repository. False when the
-    row has no title (nothing says it is new)."""
-    sess = ctx.get("sess") or {}
-    return bool(keys) and not any(sess.get(k) for k in keys)
+    """Whether a row's session was never logged (none of its title keys has a vote, in any repository) and so is new
+    work. False when the row has no title (nothing says it is new), and for a person whose sessions never logged before
+    mostly went on with their project's last task (ctx["new_habit"], attribution.new_session_habit: a new window each
+    morning for yesterday's work; the replay's person: 11 to 28% of those minutes, against 60 to 75% for the others)."""
+    from .learn import new_work
+    return new_work(keys, ctx.get("sess") or {}, ctx.get("new_habit"))
 
 
 def admissible(row: dict, ctx: dict, task, source: str) -> bool:

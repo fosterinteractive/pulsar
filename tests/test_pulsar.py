@@ -1014,6 +1014,13 @@ class LearnWordsTest(unittest.TestCase):
         self.assertEqual(ids(learn.first_offers(unsure, last, fresh, new=True)), ["N", "L", "a", "b"])
         self.assertEqual(ids(learn.first_offers(unsure, last, None, new=True)), ["a", "L", "b"])
         self.assertEqual(ids(learn.first_offers(named, last, fresh, new=True)), ["w", "N"])
+        # new: no vote for the session's keys, unless your new sessions mostly went on with the last task
+        self.assertTrue(learn.new_work(["k"], {}, None))
+        self.assertFalse(learn.new_work(["k"], {"k": {"1": [3.0, 10]}}, None))
+        self.assertFalse(learn.new_work([], {}, None))
+        self.assertFalse(learn.new_work(["k"], {}, (0.6, 200.0)))
+        self.assertTrue(learn.new_work(["k"], {}, (0.6, 50.0)))   # too few minutes to say
+        self.assertTrue(learn.new_work(["k"], {}, (0.2, 900.0)))
 
     def test_each_projects_last_day_task_never_depends_on_reading_order(self):
         from pulsar import attribution

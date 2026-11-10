@@ -438,6 +438,14 @@ class PlannerTest(unittest.TestCase):
         [e] = dayplan.plan(day(items=[work(540, 600)], rows=[bare]), ctx)["entries"]
         self.assertEqual((e["taskId"], e["source"]), ("P", "lastday"))
         self.assertFalse(dayplan.new_session([], ctx))  # no title: nothing says it is new
+        # a person whose new sessions mostly went on with the project's last task (a new window each morning for
+        # yesterday's work) keeps it first; a habit of too few minutes says nothing
+        ctx = {**ctx, "new_habit": (0.7, 300.0)}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[new]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("P", "lastday"))
+        ctx = {**ctx, "new_habit": (0.7, 60.0)}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[new]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("W", "work"))
 
     def test_two_tasks_worked_in_turns_are_two_entries_one_after_the_other(self):
         # 2026-11-09: a few minutes of each by turns for two hours; the short pieces folded into one entry that the
