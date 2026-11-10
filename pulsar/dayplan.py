@@ -38,7 +38,7 @@ import time
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from . import attribution, commits as git_commits, config, pause, sessions as sessions_mod, trackers
+from . import attribution, commits as git_commits, config, context as context_mod, pause, sessions as sessions_mod, trackers
 from .attribution import CLIENT, INTERNAL, repo_key
 
 GRID = 5             # entry boundaries on this grid, in minutes (Settings: "Round entries to", opts_for)
@@ -186,7 +186,7 @@ def remember_services(service: dict, project_service: dict, rows: list) -> None:
 
 
 def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_LIFE, learn_days: int = LEARN_DAYS,
-          person: str = "") -> dict:
+          person: str = "", context_days: dict | None = None) -> dict:
     """What the days before `date` say: votes session key -> task, (session key, repository) -> task and repository ->
     task (each earlier Likely row votes, with its minutes, for the task logged over most of it, credited to the
     background row under it when that one's repository is the one logged to the task's project: attribution.credits;
@@ -194,7 +194,8 @@ def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_L
     never logged (a side project), and each repository's billing class (attribution.repo_classes).
 
     history: your entries before `date` ({date, start, minutes, taskId, serviceId, service, task, project});
-    days: {date: [{"k": [title keys], "p": repository, "s", "e"}]}, as learn.py keeps them."""
+    days: {date: [{"k": [title keys], "p": repository, "s", "e"}]}, as learn.py keeps them; context_days: {date: the
+    windows in front}, as context.py keeps them (the tasks of work outside Claude, _context)."""
     day0 = datetime.strptime(date, "%Y-%m-%d")
     lo = (day0 - timedelta(days=learn_days)).strftime("%Y-%m-%d")
     before = [r for r in history if lo <= str(r.get("date") or "") < date and r.get("taskId")]
@@ -257,7 +258,8 @@ def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_L
             "latest": attribution.latest_tasks(before, date),
             "skip": set(WORD.findall((person or "").lower())),
             "task_class": task_class, "project_class": project_class,
-            "classes": attribution.repo_classes(credited, task_class)}
+            "classes": attribution.repo_classes(credited, task_class),
+            "context": context_mod.votes(context_days, before, t0_of, date, half_life, learn_days) if context_days else {}}
 
 
 # ---- a task for one Likely row -------------------------------------------------------------------------------------
@@ -686,6 +688,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
             d.owner[x] = BLOCKED
     _unattended(d)
     _outside(d)
+    _context(d)
     pieces = _pieces(d)
     if keep is not None:  # the log dialog's range (ranges.py): each minute's claim and piece, as placed here
         keep.update(owner=d.owner, claims=d.claims, pieces=pieces, work=d.work, away=d.away, logging=d.logging,
@@ -1072,6 +1075,68 @@ def _outside(d: _Day) -> None:
                     owner[x] = pick_i
 
 
+CONTEXT_CLIENTS = False  # a client's task named by its window too (_context): off, see below
+
+
+def _context(d: _Day) -> None:
+    """6. work outside Claude in a sitting with no Likely row in it (no Claude Code session in front there, or no Claude
+    Code at all): a stretch of context.RUN minutes or more takes the task you logged before while the same window was
+    in front, when that window's votes are sure (context.pick) and the task is internal; unticked ("low"). The work
+    outside Claude next to it in the same sitting then takes that task as it takes a session's (_pieces). Where a
+    session was in front in the same sitting nothing changes.
+
+    Replayed on 43 days of the owner's tracker and entries as if he had no Claude Code (no sessions, nothing they
+    teach; meetings, repeats and calls as the app has them). Before, every minute outside a meeting came with no task:
+    the right task on 0.3% of the minutes (0.4% clean), 84.5% of the proposed hours with no task. With this: 21.6%
+    (28.3% clean), in the right sitting 33.1% of the clean minutes instead of 0.7%, 45.0% of the hours with no task;
+    over-billing, wrong billable clients and the billable hours exactly as before (no client's task is named). Naming
+    a client's task too (CONTEXT_CLIENTS; at a share of 0.7 from 10 minutes) named 2.2 more points right but added
+    34 hours over-billed and 7 on a wrong billable client. A fallback to your last day's task for the rest named 7.1
+    more points but 38 more hours over-billed; a Productive task page in front
+    named the logged task on 32% of its minutes, the task you updated in Productive within an hour on 24%: both left
+    out. With the owner's sessions the replay is unchanged (it acts only where none was in front)."""
+    learned = d.ctx.get("context")
+    if not learned:
+        return
+    N, owner, claims = DAY_MIN, d.owner, d.claims
+    spoken = {d.sitting[x] for x in range(N) if owner[x] not in (None, BLOCKED)
+              and claims[owner[x]]["kind"] in ("focused", "agent", "shared")}
+    fr = context_mod.front(d.items, N)
+    said: dict = {}
+    picked: list = [None] * N
+    for x in range(N):
+        o = owner[x]
+        if o in (None, BLOCKED) or fr[x] is None or claims[o]["kind"] != "outside" or claims[o].get("task") \
+                or d.sitting[x] in spoken:
+            continue
+        if fr[x] not in said:
+            got = context_mod.pick(context_mod.keys(d.items[fr[x]]), learned)
+            said[fr[x]] = got if got and (CONTEXT_CLIENTS or class_of(got[0], d) == INTERNAL) else None
+        picked[x] = said[fr[x]]
+    runs: list = []  # [task, [minutes picked], best (share, total)]
+    for x in range(N):
+        p = picked[x]
+        if not p:
+            continue
+        cur = runs[-1] if runs else None
+        if cur and cur[0] == p[0] and x - cur[1][-1] <= context_mod.GAP + 1 and d.sitting[x] == d.sitting[cur[1][-1]]:
+            cur[1].append(x)
+            cur[2] = max(cur[2], p[1:])
+        else:
+            runs.append([p[0], [x], p[1:]])
+    for task, xs, (share, total) in runs:
+        if len(xs) < context_mod.RUN:
+            continue
+        o0 = owner[xs[0]]
+        mins = [x for x in range(xs[0], xs[-1] + 1) if owner[x] == o0 or (owner[x] not in (None, BLOCKED)
+                and claims[owner[x]]["kind"] == "outside" and not claims[owner[x]].get("task"))]
+        d.claims.append({"kind": "outside", "task": task, "source": "context", "conf": "low", "titles": [],
+                         "why": f"you logged it before while this window was in front ({share:.0%} of "
+                                f"{total:.0f} min)"})
+        for x in mins:
+            owner[x] = len(d.claims) - 1
+
+
 def _pieces(d: _Day) -> list:
     """Runs of minutes per claim, in time order, with their claim's fields; an outside stretch takes the task of the
     work right after it in the same sitting, else of the work before it, else after."""
@@ -1101,7 +1166,9 @@ def _pieces(d: _Day) -> list:
             soon = bool(after) and after[0]["s"] - p["last"] <= d.o["merge_gap"] \
                 and d.sitting[after[0]["s"]] == d.sitting[p["last"]]
             near = after + before if soon else before + after
-            nb = [q for q in near if q.get("task") and q["kind"] in ("focused", "agent")]  # never a meeting's task
+            # never a meeting's task; a stretch named by its window (_context) only in its own sitting
+            nb = [q for q in near if q.get("task") and (q["kind"] in ("focused", "agent") or (
+                q.get("source") == "context" and d.sitting[q["s"]] == d.sitting[p["s"]]))]
             if any(q["kind"] == "skip" for q in near) and not nb:
                 p["kind"], p["why"] = "skip", "next to work in a repository you never log"
             elif nb:
@@ -1812,8 +1879,21 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
         learning.annotate({"entries": likely_rows, "background": bg_rows}, date, s, history, [], tz, got["fresh"])
     t0_of = lambda d: server.day_bounds(d, tz)[0]  # noqa: E731
     days = {d: learning._stored(d) for d in learning._days_before(date)}
+    # the windows in front on the days before (context.py, hashed, on this Mac only): the tasks of work outside Claude
+    # (_context). A day over is kept once seen; the days not kept yet are read from the tracker in the background
+    today = server.today(tz)
+    if date < today and context_mod.stored(date) is None and act.get("items"):
+        context_mod.store(date, act["items"])
+
+    def read_day(d):  # None while no tracker answers: that day is read again later, never kept empty
+        got_ = server.api_activity({"date": d})
+        url = s.get("activitywatch_url") or config.DEFAULTS["activitywatch_url"]
+        return got_.get("items") if got_.get("items") or trackers.answering(url) else None
+    if not config.tests_offline():  # the tests' own trackers are made up: none to read in the background
+        context_mod.warm(date, today, read_day)
     ctx = learn(date, [] if hproblem else history, {d: r for d, r in days.items() if r}, t0_of,
-                half_life=config.advanced(s)["memory"], person=str(s.get("person_name") or ""))
+                half_life=config.advanced(s)["memory"], person=str(s.get("person_name") or ""),
+                context_days=context_mod.days_before(date))
     if not ignore_logged:
         # the day's own entries are the newest use of a service, as in the log dialog (its "logged lately" list holds the
         # day too): a task first logged this morning keeps that service in the afternoon's rows. Replayed on 43 days

@@ -834,6 +834,13 @@ claim wins:
    with no session row included (it takes the task of the work right after it in the same sitting, reading the ticket
    before the session on it, else of the work before it; never a meeting's, and it starts unticked. A glance shorter
    than an entry joins the work right after it too, except a meeting attended, which keeps its own time).
+   In a sitting with no session row in it (no Claude Code at all, or a morning spent wholly in Slack, a browser or
+   a document), a stretch of 5 minutes or more takes instead the internal task you logged before while the same
+   window was in front: the Slack conversation, the page's site and first path parts, the first and last parts of
+   the window's title, the app (`context.py`; 60% of 5 faded minutes or more, its most precise key first), unticked;
+   the rest of that sitting's work outside Claude takes it as it takes a session's. A client's task is never named
+   this way: it is left for you to pick. Replayed on 43 days as if the owner had no Claude Code: the right task on
+   28% of the clean minutes instead of 0.4%, billing unchanged; with his sessions, unchanged.
 
 **Parallel work.** Each stretch of work has a billing class (`attribution.segment_class`): from a rule, a task link or
 a ticket key in the work itself, the class of that task; else the repository's 60 days of logged minutes (75% or more
@@ -1739,6 +1746,7 @@ view and every 30 seconds; left out in a window narrower than 820 pixels.
 | `~/.cache/pulsar/days/<person>/` | The last copy of each day's entries (120 days). |
 | `~/.cache/pulsar/names.json` | Names of projects, budgets, services, tasks; billing types; how many of a project's recent tasks have an estimate (5.3); when each was read. |
 | `~/.cache/pulsar/likely-days/` | Past days' Likely rows for learning: times, repository, title hashes. |
+| `~/.cache/pulsar/context-days/` | Past days' windows in front for learning the tasks of work outside Claude: minutes and a hash of each window's keys (conversation, site and path, title parts, app), never the titles, pages or conversations; 62 days. |
 | `~/.cache/pulsar/likely-full/` | Past days' Likely columns as the page shows them (rows with session titles and first messages), so a day opened again, or after a restart, shows at once; 31 days; ↻ works a day out again. Never a day worked out while no tracker answered. |
 | `~/.cache/pulsar/claude-picks/` | Ask Claude's last answer per day (`<date>.json`: task ids, reasons, drafted notes), shown again when the day is opened, never asked again by itself; the notes Claude drafted for a stretch of work (`<date>.notes.json`, under the stretch, its repository and what its session and commits held, so the same work is never drafted twice); the day's last review (`<date>.review.json`, under the plan it reviewed, `server.review_key`, given back while the plan is the same). 60 days. |
 | (the page, while it is open) | Log the day's work per day: ticks, tasks, services, times, notes, the rows opened and deleted, the review's suggestions with their state (`ldkeep.js`). |

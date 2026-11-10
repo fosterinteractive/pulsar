@@ -190,7 +190,9 @@ itself.
 **Log this time** on a row offers first a Productive task you pasted into that session in the three hours before, then
 the tasks you logged in the same session, then in the same repository, over the last 60 days, then tasks whose words
 match the work. That history is worked out once in the background and keeps only times, repository names and a hash of
-each session title (`~/.cache/pulsar/likely-days/`). Past days' Likely columns, with session titles and first messages,
+each session title (`~/.cache/pulsar/likely-days/`). Work outside Claude Code (and every minute, for someone without
+it) learns from the windows you had in front while you logged each task: kept as minutes and hashes only
+(`~/.cache/pulsar/context-days/`), never the titles. Past days' Likely columns, with session titles and first messages,
 are kept 31 days so they open at once (`~/.cache/pulsar/likely-full/`); ↻ works a day out again.
 
 ### Logging and changing time

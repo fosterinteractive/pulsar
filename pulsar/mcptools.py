@@ -309,6 +309,7 @@ BY_SOURCE = {
     "seen": "this Claude session opened or linked this task", "recent": "you logged it lately", "claude": "Ask Claude's pick",
     "repeat": "you log this at this time on most days", "call": "a call with no calendar entry",
     "neighbour": "work outside Claude, next to other work", "none": "no match: pick the task",
+    "context": "you logged it before while the same window was in front",
 }
 BY_TEXT = [  # (the start, or a part, of Pulsar's own reason, lower case) -> the phrase
     ("logged while in this claude session", "you logged it during this Claude session before"),

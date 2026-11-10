@@ -35,7 +35,7 @@ function whyIcon(r) {
   if (r.source === 'claude') return CLAUDE_MARK.split('<span')[0];
   const k = ['agent', 'shared'].includes(r.kind) ? 'agent' : r.source === 'repeat' ? 'repeat' : ['meeting', 'call'].includes(r.source) ? 'meeting'
     : ['link', 'seen'].includes(r.source) ? 'link' : r.source === 'rule' ? 'rule' : ['session', 'repo', 'sameday', 'learned'].includes(r.source) ? 'session'
-    : ['words', 'work', 'ticket'].includes(r.source) ? 'words' : r.source === 'neighbour' ? 'outside' : 'none';
+    : ['words', 'work', 'ticket'].includes(r.source) ? 'words' : ['neighbour', 'context'].includes(r.source) ? 'outside' : 'none';
   return `<svg class="wi" viewBox="0 0 16 16" aria-hidden="true">${WI[k]}</svg>`;
 }
 function meter(c) {
