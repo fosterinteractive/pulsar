@@ -1236,7 +1236,14 @@ it took, and a hash of the day's entries; never a task, project, client, note or
 is on the same days. **Copy the numbers** copies the totals as text; **Save the self-check** writes
 `pulsar-selfcheck-<date>.json` (`GET /api/selfcheck/download`): the version, the dates, the plan's settings that
 matter (Away after, Round entries to, the Advanced choices, whether Claude Code is used), the totals and each day's
-numbers. Numbers only, so no id at all: the person chooses to send them.
+numbers, with what each number means. Numbers only, so no id at all: the person chooses to send them.
+
+**From Claude Code**: `pulsar_selfcheck(days, refresh)` (5.6, read only) answers the same as the file
+(`selfcheck.report`) for the last `days` (1 to 30), with the days still missing (from the copies of the days Pulsar
+kept at its last read, `selfcheck.pending`: no read of Productive). `refresh: true` works them out in the call
+(`selfcheck.refresh`): it waits for a background run to end (20 seconds at most), then does what a run does with no
+cap on the windows of the days before and at most 10 days, none started after 45 seconds, so the call stays under
+the proxy's two minutes; what is left is said, for another call or the background run. 6 calls a minute at most.
 
 ### 5.5 Where the suggestions come from
 
@@ -1439,6 +1446,7 @@ new session.
 | `pulsar_session` | the calling session's own minutes (Claude Code gives every MCP server `CLAUDE_CODE_SESSION_ID`; Likely rows carry their sessions' ids), by repository, with a task for each and what is not logged yet; `givenAway`: a row's minutes another session's client agent got as a shared row (never in `notLoggedYet`); a background row (`shared`) for the minutes this session's agent got that way; stretches another session also had are kept apart, and so are stretches whose task already has time logged that day with no start time (`maybeLoggedWithoutStart`, with a warning: no overlap check sees such time, and it may be this work) |
 | `pulsar_suggest` | the log dialog's task list for one stretch |
 | `pulsar_tasks` | tasks logged to lately (with the service used last), assigned ones, and a Productive search |
+| `pulsar_selfcheck` | read only: the self-check (5.4d) for the last `days` (1 to 30, default 30), as "Save the self-check" writes it: totals, the last 7 days, each day's measures, minutes per pick source, Log the day's counts, the rules being tried, what each number means, the days still missing; numbers only. `refresh: true` works out up to 10 missing days in the call |
 | `pulsar_preview` | read only: services resolved (as the log dialog picks them), notes checked (`guard_note`), every entry through `server.api_log` with `dry` (overlaps, the journal); with no problem, a code of 16 hex characters (once, 10 minutes) holding exactly those entries, and `summary`, Pulsar's own text of what would be written, one line per entry: `Wed 4 Nov 2026 09:00-10:00 (60 min): Build (Acme), Dev in B, billable. Note: "Search fixed."` (an entry over a shared row of the day's plan says so before the note: "Its agent ran while you did internal work."; when the task already has time logged that day with no start time, the line ends "This task already has 120 min logged that day with no start time: check it is not this work."; the budget after "in"; names without control, format or direction characters and without double quotation marks; a note is one line, at most 200 characters, passes `guard_note`, and has no double quotation mark of any script and no character nobody sees, so it cannot pass for the summary's own words or another entry) |
 | `pulsar_log` | `code` (exactly as given) and `summary` (word for word), and no other argument: writes the entries the code holds through `server.api_log`, one at a time, journalled as a Log the day run (Undo works), stopping at the first that is not logged. Each result is `logged`, `not logged` (refused, with the reason), `not known` (no clear answer, an HTTP 5xx or any unexpected error: it may be in Productive, and the journal never sends it again) or `not sent` (after the stop, or once a minute has passed: `mcptools.LOG_BUDGET`, so the answer always comes back in time, and the rest are previewed again); what was written before a failure is always returned |
 

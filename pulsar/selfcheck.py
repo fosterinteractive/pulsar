@@ -245,18 +245,30 @@ def compute_day(date: str, s: dict, shared: dict, sig: str) -> dict | None:
 
 def run_once(s: dict, today: str | None = None) -> int:
     """One run (see the module's text); the seconds to the next one."""
+    return _run(s, today)["wait"]
+
+
+def _run(s: dict, today: str | None = None, reads: int = READS, most: int | None = None,
+         until: float | None = None) -> dict:
+    """{"wait": seconds to the next run, "worked": days worked out and kept, "left": days still to work out (None
+    before Productive answered), "note": why it stopped, or ""}. reads: the windows of the days before (context.py) a
+    run may read; most: the days it may work out (else what the reads leave, two reads a day); until: no day is started
+    after this time.time()."""
     from . import learn, productive, server
+    out = {"wait": IDLE, "worked": 0, "left": None, "note": ""}
+
+    def stop(wait: int, note: str = "") -> dict:
+        _state["note"] = note or _state["note"]
+        return {**out, "wait": wait, "note": note}
     if not s.get("person_id") or not productive.connection(s).get("kind"):
-        _state["note"] = "Not connected to Productive."
-        return IDLE
+        return stop(IDLE, "Not connected to Productive.")
     if learn._warming.locked() or context_mod._warming.locked():  # Log the day's learning first: it is what plans learn
-        return SOON
+        return stop(SOON, "Log the day is learning from past days in the background: try again in a few minutes.")
     today = today or server.today(config.tz(s))
     first, last = _shift(today, -DAYS), _shift(today, -1)
     rows, problem, _, from_copy = server.productive_rows(first, last, s, bulk=True)
     if problem or from_copy:
-        _state["note"] = f"Productive did not answer: {problem}"
-        return LATER
+        return stop(LATER, "Productive did not answer.")
     days: dict = {}
     for r in rows:
         if first <= str(r.get("date") or "") <= last:
@@ -280,10 +292,10 @@ def run_once(s: dict, today: str | None = None) -> int:
     # rest (a tracker that never answers for it must not hold up the others)
     todo.sort(key=lambda x: x[1], reverse=True)
     todo.sort(key=lambda x: (time.time() - _failed.get(x[1], 0) < 3600, x[0]))
-    _state["todo"] = len(todo)
+    _state["todo"] = out["left"] = len(todo)
     if not todo:
         _state["note"] = ""
-        return IDLE
+        return out
     url = s.get("activitywatch_url") or config.DEFAULTS["activitywatch_url"]
 
     def read_day(d):  # None while no tracker answers: never kept empty (as Log the day's own, dayplan.gather)
@@ -292,23 +304,23 @@ def run_once(s: dict, today: str | None = None) -> int:
     # the windows of the days before (context.py), as Log the day keeps them: a plan for a day learns from them
     missing = [d for d in (_shift(today, -i) for i in range(1, context_mod.LEARN_DAYS + 1))
                if context_mod.stored(d) is None]
-    for d in missing[:READS]:
+    for d in missing[:reads]:
         items = read_day(d)
         if items is None:
-            _state["note"] = "No tracker answered."
-            return LATER
+            return stop(LATER, "No tracker answered.")
         context_mod.store(d, items)
-    budget = READS - min(len(missing), READS)
-    if len(missing) > READS or budget < 2:
-        return SOON
-    batch = [d for _, d in todo][:budget // 2]
+    if len(missing) > reads:
+        return stop(SOON, "Still keeping the windows of the days before.")
+    most = (reads - len(missing)) // 2 if most is None else most
+    if most < 1:
+        return stop(SOON)
+    batch = [d for _, d in todo][:most]
     lo = _shift(min(batch), -learn.LEARN_DAYS)
     history = list(rows)
     if lo < first:
         older, problem, _, from_copy = server.productive_rows(lo, _shift(first, -1), s, bulk=True)
         if problem or from_copy:
-            _state["note"] = f"Productive did not answer: {problem}"
-            return LATER
+            return stop(LATER, "Productive did not answer.")
         history = older + history
     try:  # hints, as in Log the day: without them the plan goes on, as Log the day's would
         assigned = productive.assigned_tasks(s)
@@ -317,6 +329,8 @@ def run_once(s: dict, today: str | None = None) -> int:
     shared = {"days": days, "history": history, "assigned": assigned, "fresh": server.new_task_source(min(batch), s)}
     failed = 0
     for d in batch:
+        if until is not None and time.time() > until:
+            break
         try:  # for the "activity" shadow only: without it that one is left out for the day, the rest stands
             activity = productive.my_activity(d, d, s)
         except Exception:
@@ -328,10 +342,12 @@ def run_once(s: dict, today: str | None = None) -> int:
             continue
         store(d, doc, today)
         _failed.pop(d, None)
-        _state["todo"] = max(0, (_state["todo"] or 1) - 1)
+        out["worked"] += 1
+        _state["todo"] = out["left"] = max(0, len(todo) - out["worked"])
     if failed:
-        return LATER
-    return SOON if len(todo) > len(batch) else IDLE
+        return stop(LATER, f"{failed} {'day' if failed == 1 else 'days'} could not be worked out now (a tracker, Claude "
+                           "Code's sessions or the calendar did not answer) and will be tried again.")
+    return {**out, "wait": SOON if out["left"] else IDLE}
 
 
 def nudge(s: dict | None = None) -> bool:
@@ -357,6 +373,56 @@ def nudge(s: dict | None = None) -> bool:
                               ran=datetime.now().isoformat(timespec="minutes"))
     threading.Thread(target=run, daemon=True, name="pulsar-selfcheck").start()
     return True
+
+
+REFRESH_DAYS = 10     # days pulsar_selfcheck(refresh) works out in the call: Claude Code waits two minutes for it
+REFRESH_SECONDS = 45  # and no day is started after this long
+REFRESH_WAIT = 20     # seconds it waits for a background run to end first
+
+
+def refresh(s: dict, today: str | None = None) -> dict:
+    """Pulsar in Claude Code's pulsar_selfcheck(refresh=true): the days not worked out yet, now, in the call, as a run
+    does them (the windows of the days before first, all of them), up to REFRESH_DAYS days and REFRESH_SECONDS seconds.
+    Waits for a background run to end, at most REFRESH_WAIT seconds. {"worked", "left", "note"}."""
+    began = time.time()
+    while True:
+        with _lock:
+            if not _state["running"]:
+                _state["running"] = True
+                break
+        if time.time() - began > REFRESH_WAIT:
+            return {"worked": 0, "left": _state["todo"], "note": "A background run is still working: ask again in a minute."}
+        time.sleep(0.25)
+    got = {"wait": LATER, "worked": 0, "left": _state["todo"], "note": ""}
+    try:
+        got = _run(s, today, reads=context_mod.LEARN_DAYS, most=REFRESH_DAYS, until=time.time() + REFRESH_SECONDS)
+    except Exception as exc:  # said, and the background run tries again
+        logbook.record("self-check", f"Refresh: {type(exc).__name__}: {exc}", kind="warning", once_per=3600)
+        got["note"] = f"{type(exc).__name__} while working out days; the background run tries again."
+    finally:
+        with _lock:
+            _state.update(running=False, next=time.time() + got["wait"])
+    if got.get("left") and not got.get("note"):
+        got["note"] = (f"{got['left']} more {'day' if got['left'] == 1 else 'days'} to work out: ask again with refresh, "
+                       f"or Pulsar does them in the background, a few every five minutes.")
+    return {k: got.get(k) for k in ("worked", "left", "note")}
+
+
+def pending(s: dict, today: str, days: int = DAYS) -> list:
+    """The days of the last `days` with entries, as Pulsar last read them (the copy of each day it keeps,
+    server.productive_rows), not worked out yet for this version and these entries. Nothing is read from Productive."""
+    from . import server
+    out = []
+    for i in range(1, days + 1):
+        d = _shift(today, -i)
+        kept = server.read_json(server._copy_path(d, s), None)
+        rows = kept.get("rows") if isinstance(kept, dict) else None
+        if not isinstance(rows, list) or not rows:
+            continue
+        doc = stored(d)
+        if doc is None or doc.get("version") != __version__ or doc.get("sig") != entries_sig(rows):
+            out.append(d)
+    return out
 
 
 # ---- what Settings shows, copies and saves -------------------------------------------------------------------------
@@ -393,31 +459,67 @@ def summary(s: dict | None = None, today: str | None = None) -> dict:
 
 
 DAY_KEYS = ("date", "version", "noActivity", "took") + MEASURES + LOG_COUNTS
+MEANING = {  # what each number is, in the file and in Pulsar in Claude Code's answer: read with them, never sent alone
+    "logged": "minutes you logged with a start time (the measures by the minute count these)",
+    "untimed": "minutes you logged with no start time, left out of the measures by the minute",
+    "rightTask": "of the logged minutes, those where Pulsar's plan had the same task",
+    "rightClient": "of the logged minutes, those where the plan had the same project, or both were internal",
+    "noTask": "of the logged minutes, those where the plan had no task (nothing proposed, or no task found)",
+    "wrongClient": "minutes the plan billed to a client while you logged them to another client or to internal work",
+    "over": "per client and day, billable minutes the plan proposed beyond what you logged billable to it",
+    "under": "per client and day, billable minutes you logged to it that the plan did not propose",
+    "billableLogged": "billable minutes you logged", "billableProposed": "billable minutes the plan proposed",
+    "proposed": "minutes the plan proposed",
+    "bySource": "per pick source, the plan's minutes: [picked, right (that task logged then), logged at all]",
+    "logTheDay": "the day's entries: logged through Log the day (as proposed, with another task, time or service, or "
+                 "with no record of what was proposed) and added another way (byHand)",
+    "shadow": "the same measures for the day planned with a rule being tried that no plan uses: activity (an unsure "
+              "pick gives way to a task you updated in Productive near it), clients (work outside Claude Code may "
+              "take a client's task by its window); base: the plan as it is, on the same days",
+    "how": "for each past day, the plan Log the day would make without that day's own entries, compared minute by "
+           "minute with what was logged, meetings included; worked out on this Mac, never sent anywhere",
+}
 
 
-def download(s: dict | None = None, today: str | None = None) -> dict:
-    """What "Save the self-check" writes: the version, the dates, the plan's settings that matter, the totals and each
-    day's numbers (per pick source, the journal's counts, the shadows). Numbers only: no task, project, client, note,
-    window, address or person; nothing to hash, so no id at all."""
+def _day_out(doc: dict) -> dict:
+    day = {k: doc[k] for k in DAY_KEYS if k in doc}
+    day["bySource"] = {str(k)[:20]: [int(n) for n in v][:3] for k, v in (doc.get("bySource") or {}).items()
+                       if isinstance(v, list)}
+    day["shadow"] = {k: ({m: int(v.get(m) or 0) for m in MEASURES} if isinstance(v, dict) else None)
+                     for k, v in (doc.get("shadow") or {}).items() if k in SHADOWS}
+    return day
+
+
+def report(s: dict | None = None, days: int = DAYS, today: str | None = None) -> dict:
+    """Everything the self-check holds for the last `days` finished days, as "Save the self-check" writes it and Pulsar
+    in Claude Code's pulsar_selfcheck answers: the version, the dates, how many days are worked out and which are
+    still missing, the plan's settings that matter, the totals (and the last 7 days'), Log the day's counts and each
+    day's numbers (per pick source, the rules being tried). Numbers only: no task, project, client, note, window,
+    address or person; nothing to hash, so no id at all."""
+    from . import dayplan, likely, server
     s = s if s is not None else config.load()
-    from . import dayplan, likely
-    sm = summary(s, today)
+    today = today or server.today(config.tz(s))
+    docs = [doc for i in range(days, 0, -1) for doc in [stored(_shift(today, -i))] if doc]
+    measured = [x for x in docs if not x.get("noActivity")]
+    week = [x for x in measured if x["date"] >= _shift(today, -WEEK)]
+    missing = pending(s, today, days)
     adv, opts = config.advanced(s), dayplan.opts_for(s)
-    days = []
-    for i in range(DAYS, 0, -1):
-        doc = stored(_shift(sm["to"], 1 - i))
-        if not doc:
-            continue
-        day = {k: doc[k] for k in DAY_KEYS if k in doc}
-        day["bySource"] = {str(k)[:20]: [int(n) for n in v][:3] for k, v in (doc.get("bySource") or {}).items()
-                           if isinstance(v, list)}
-        day["shadow"] = {k: ({m: int(v.get(m) or 0) for m in MEASURES} if isinstance(v, dict) else None)
-                         for k, v in (doc.get("shadow") or {}).items() if k in SHADOWS}
-        days.append(day)
-    return {"pulsar": __version__, "made": datetime.now().strftime("%Y-%m-%d"), "from": sm["from"], "to": sm["to"],
+    return {"pulsar": __version__, "made": datetime.now().strftime("%Y-%m-%d"), "from": _shift(today, -days),
+            "to": _shift(today, -1),
+            "days": {"asked": days, "workedOut": len(measured), "noActivity": len(docs) - len(measured),
+                     "missing": len(missing), "missingDates": missing,
+                     "olderVersion": sum(1 for x in docs if x.get("version") != __version__),
+                     "stillCollecting": len(measured) < MIN_DAYS, "enough": MIN_DAYS},
             "settings": {"awayAfter": opts["sitting_gap"], "roundTo": opts["grid"],
                          "memoryDays": adv.get("memory"), "joinGap": adv.get("join_gap"),
                          "outsideMin": adv.get("outside_min"), "meetingCards": adv.get("meeting_cards"),
                          "claudeCode": likely.enabled(s), "askClaude": bool(s.get("ask_claude"))},
-            "summary": {k: sm[k] for k in ("days", "noActivity", "older", "month", "week", "weekDays", "log")},
-            "days": days}
+            "totals": totals(measured),
+            "last7": totals(week) if days > WEEK and len(week) >= WEEK_MIN else None,
+            "logTheDay": {k: sum(int(x.get(k) or 0) for x in docs) for k in LOG_COUNTS},
+            "perDay": [_day_out(x) for x in docs], "meaning": MEANING}
+
+
+def download(s: dict | None = None, today: str | None = None) -> dict:
+    """What "Save the self-check" writes: report() for the last DAYS days."""
+    return report(s, DAYS, today)

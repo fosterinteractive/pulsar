@@ -289,6 +289,35 @@ class RunTest(unittest.TestCase):
         selfcheck.run_once(self.s, TODAY)
         self.assertEqual([d for d, _ in self.planned], ["2026-11-03", "2026-11-09"])
 
+    def test_refresh_works_out_the_missing_days_now_within_its_caps(self):
+        for f in os.listdir(os.path.join(self.dir, "context-days")):
+            os.remove(os.path.join(self.dir, "context-days", f))
+        with mock.patch.object(selfcheck, "REFRESH_SECONDS", -1), mock.patch.dict(selfcheck._state, {"running": False}):
+            got = selfcheck.refresh(self.s, TODAY)  # out of time before the first day: none started, all said
+        self.assertEqual((got["worked"], got["left"]), (0, 4))
+        self.assertIn("4 more days to work out", got["note"])
+        self.assertEqual(len(os.listdir(os.path.join(self.dir, "context-days"))), context.LEARN_DAYS)  # all, in one call
+        with mock.patch.dict(selfcheck._state, {"running": False}):
+            got = selfcheck.refresh(self.s, TODAY)
+        self.assertEqual((got["worked"], got["left"], got["note"]), (4, 0, ""))
+        self.assertFalse(selfcheck._state["running"])
+        self.assertEqual(selfcheck.report(self.s, 30, TODAY)["days"]["workedOut"], 4)
+
+    def test_refresh_waits_for_a_background_run_then_says_so(self):
+        with mock.patch.object(selfcheck, "REFRESH_WAIT", 0.2), mock.patch.dict(selfcheck._state, {"running": True}):
+            got = selfcheck.refresh(self.s, TODAY)
+            self.assertTrue(selfcheck._state["running"])  # the background run's slot is left alone
+        self.assertEqual(got["worked"], 0)
+        self.assertIn("background run", got["note"])
+        self.assertEqual(self.planned, [])
+
+    def test_the_days_still_missing_come_from_the_kept_copies_of_the_days(self):
+        for d in ("2026-11-09", "2026-11-06"):
+            server.write_json(server._copy_path(d, self.s), {"fetched": "x", "rows": [r for r in self.entries if r["date"] == d]})
+        self.assertEqual(selfcheck.pending(self.s, TODAY), ["2026-11-09", "2026-11-06"])
+        selfcheck.run_once(self.s, TODAY)
+        self.assertEqual(selfcheck.pending(self.s, TODAY), [])
+
     def test_never_without_a_connection_or_while_learning_runs(self):
         with mock.patch.object(productive, "connection", lambda s: {"kind": None}):
             self.assertEqual(selfcheck.run_once(self.s, TODAY), selfcheck.IDLE)
@@ -390,8 +419,9 @@ class SummaryTest(unittest.TestCase):
                                  TODAY)
         self.assertEqual((doc["pulsar"], doc["from"], doc["to"]), (__version__, "2026-10-11", "2026-11-09"))
         self.assertEqual((doc["settings"]["roundTo"], doc["settings"]["awayAfter"]), (10, 15))
-        [d] = doc["days"]
+        [d] = doc["perDay"]
         self.assertEqual(d["bySource"], {"session": [100, 50, 100]})
+        self.assertEqual((doc["days"]["workedOut"], doc["totals"]["rightTask"], doc["logTheDay"]["byHand"]), (1, 50, 1))
         self.assertNotIn("sig", d)
         self.assertNotIn("Ann", json.dumps(doc))
 
