@@ -19,9 +19,12 @@ program with full access to your account can get around any confirmation, as wit
   their estimates.
 - **Report**: today, this week (where it opens), last week, this or last month, the last 30 days, or any range up to 93
   days: logged against active time by day, time by project, top apps and sites, projects by day, when in the week you
-  work, tasks against their estimates, and every day in a table. **Download** gives the days or the time entries as CSV
-  (for Excel or Numbers), or a print view that saves as PDF. Coming back to it reads it again when it is more than a
-  minute old, or after you logged something.
+  work, tasks against their estimates, and every day in a table. **Download** saves the report as a PDF, an **invoice
+  summary** (your name, the period, then your tasks by project, billable projects first and the most time first, each
+  with its subtotal, its share of the time, and its tasks' time and billable time; as PDF or CSV), or the days or the
+  time entries as CSV (for Excel or Numbers); **Print…** prints the report. A Pulsar window installed before 1.6.14
+  opens the print dialog for a PDF: choose Save as PDF there. Coming back to the Report reads it again when it is more
+  than a minute old, or after you logged something.
 
 ## Install on a Mac
 
@@ -165,8 +168,8 @@ Settings are saved in `~/.config/pulsar/settings.json`. Delete `~/.config/pulsar
 ### Activity and time away
 
 - **ActivityWatch is the main tracker**: it counts input, so it knows when you are at the keys. MemTime counts the
-  window in front: the Day view uses it only for a day ActivityWatch saw nothing of, and cuts its time where
-  ActivityWatch recorded you away. The Report takes, for each day, the tracker that saw more of it. The Activity
+  window in front: the Day view uses it only for a day ActivityWatch saw nothing of, or under a fifth of what MemTime
+  saw (ActivityWatch was down most of that day), and cuts its time where ActivityWatch recorded you away. The Report takes, for each day, the tracker that saw more of it. The Activity
   column's header can switch tracker.
 - **Breaks**: reading or a call with no typing is time away once it lasts **Away after**; a shorter pause between two
   stretches of work counts as work. A gap under an hour is a pause, an hour or more is away, three hours or more is off
@@ -234,6 +237,12 @@ task, service, start, length and note, or remove an entry.
 - A call that runs over its meeting, or starts early, is that meeting: a 10:00 to 10:30 meeting whose call ended at
   10:55 is one 55-minute entry. Meetings back to back each keep their own time.
 - Your ticks, tasks, notes and deletions are kept per day while Pulsar is open; **Start over** forgets them.
+- Work outside Claude Code (Slack, a browser, a document), and for someone without Claude Code the whole day, takes
+  the task you logged before while the same window was in front: the Slack conversation, the site and the first parts
+  of its address, the document's title. Only an internal task is named this way (a client's is left for you to pick),
+  and such rows start unticked. The windows are kept on your Mac as hashed keys only.
+- When you work by turns, Log the day lays a task's minutes out together from where it began, so an entry can stand
+  at other times than its work: its row says where its minutes were seen ("seen at 20:00–20:04, 20:23–20:38").
 - **Earlier days…** lists your last workdays with active time no entry covers. Tick the days, and each opens in turn as
   Log the day; each is written only when you confirm it.
 
@@ -399,7 +408,7 @@ Finder: **Go → Go to Folder…**, paste `~/Library/Logs`).
 | The app | `/Applications/Pulsar.app` |
 | The code it runs, with its updates | `~/Library/Application Support/Pulsar/` |
 | Settings, rules and the session key | `~/.config/pulsar/` |
-| Copies of each day's entries (120 days), names, Likely's history, Claude's answers (60 days), day marks, the self-check's numbers (62 days), the error log (31 days) | `~/.cache/pulsar/` |
+| Copies of each day's entries (120 days), names, Likely's history, the windows you worked in as hashed keys (62 days), Claude's answers (60 days), day marks, the self-check's numbers (62 days), the error log (31 days) | `~/.cache/pulsar/` |
 | What the app wrote while starting | `~/Library/Logs/Pulsar.log` |
 | Your Productive API token | the login keychain, item `pulsar` (open Keychain Access to see it) |
 | Your Google Calendar access | the login keychain, item `pulsar`, account `google-calendar` |
