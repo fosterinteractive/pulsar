@@ -310,23 +310,23 @@ class RandomDaysTest(Ctx):
 
 class NewTaskAndWordsTest(unittest.TestCase):
     """2026-11-10, Nick's evening: a session titled "Оновлення бази даних Drupal 11" in a checkout on the branch
-    campaign-guides-cta went to Campaign Guides (the branch named it, the Ukrainian words named nothing), and Pulsar turns
-    between turns of Northleaf's new "Drupal 11 – DB Upgrade" task stayed Pulsar's (a task never logged had no class)."""
+    event-listings-cta went to Event Listings (the branch named it, the Ukrainian words named nothing), and Pulsar turns
+    between turns of a client's new "Drupal 11 – DB Upgrade" task stayed Pulsar's (a task never logged had no class)."""
 
     def test_ukrainian_database_words_name_the_db_task_before_the_branch(self):
         from pulsar import learn
         tasks = [{"taskId": "1", "title": "Drupal 11 – DB Upgrade", "project": "P", "mine": True},
-                 {"taskId": "2", "title": "Enhancement to Campaign Guides (set different labels per listing)", "project": "P", "mine": True}]
+                 {"taskId": "2", "title": "Enhancement to Event Listings (set different labels per listing)", "project": "P", "mine": True}]
         said = learn.english("Оновлення бази даних Drupal 11 закінчуй тренд, апдейт бази даних на тест")
         self.assertEqual(learn.work_match(said, {"P"}, tasks)[0]["taskId"], "1")
         self.assertIn("database db", said)
-        entry = {"titles": ["Оновлення бази даних Drupal 11"], "branches": ["campaign-guides-cta"], "commits": [], "github": []}
+        entry = {"titles": ["Оновлення бази даних Drupal 11"], "branches": ["event-listings-cta"], "commits": [], "github": []}
         self.assertNotIn("campaign", learn.work_text(entry, 0, steps=[], branch=False))
-        self.assertIn("campaign guides cta", learn.work_text(entry, 0, steps=[]))  # the branch, kept for a fallback
+        self.assertIn("event listings cta", learn.work_text(entry, 0, steps=[]))  # the branch, kept for a fallback
         self.assertEqual(learn.english("no Ukrainian here"), "no Ukrainian here")
 
     def test_a_task_never_logged_takes_its_projects_class(self):
-        # N1 is Claude's pick, a Clientco task with no entry yet, in a repository logged both ways ("mixed", as NLv3): a
+        # N1 is Claude's pick, a Clientco task with no entry yet, in a repository logged both ways ("mixed"): a
         # short tool turn between two of its turns is Clientco's
         extra = {f"2026-10-{d:02d}": ([{"k": [KEY], "p": "both-repo", "s": 800, "e": 860}], [entry(f"2026-10-{d:02d}", 800, 60, t)])
                  for d, t in ((11, "C1"), (12, "C1"), (13, "C1"), (14, "T1"), (15, "T1"))}

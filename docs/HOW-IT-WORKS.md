@@ -882,7 +882,7 @@ when every one of them is under 10 minutes (two works by turns, a few minutes of
 other, each its own minutes, within the time they took; but a turn of internal work under 10 minutes between two turns
 of one client's work, in one sitting and within 30 minutes, is that client's, `3b'` in `_rows`, as the Likely column
 shows the stretch; "one client's work" by the task's class when the turn has a task, so a "mixed" repository's client
-tasks count (10 November: Pulsar turns between Northleaf turns in NLv3, a repository logged to both, stayed Pulsar's) (on 19 past days 65 more minutes had a task, the minutes per task right for 44.2% instead of 44.0%,
+tasks count (10 November: Pulsar turns between a client's turns in a repository logged to both kinds stayed Pulsar's) (on 19 past days 65 more minutes had a task, the minutes per task right for 44.2% instead of 44.0%,
 the right task at the right minute 48.0% instead of 48.8%: some of those turns had been logged on their own); before 1.6.8 the short turns folded into one entry that the
 evidence cap cut, and on 9 November 65 of 114 minutes showed as not logged; on 19 past days 145 more minutes had a
 task, the minutes per task were right for 42.6% instead of 41.3%, and the right task at the right minute 48.1%

@@ -434,7 +434,7 @@ class ParallelClientsTest(unittest.TestCase):
             self.assertEqual(self.minutes(p), {"C1": 60}, (bg, p["entries"]))
 
     def test_a_clients_agent_in_a_mixed_repository_is_a_client_by_its_task(self):
-        # a repository logged to a client's task and to internal ones ("mixed", as NLv3): its agent's task is the
+        # a repository logged to a client's task and to internal ones ("mixed"): its agent's task is the
         # client's, so beside internal work in front the stretch is the client's (shared), as in any client's repository
         extra = {f"2026-10-{d:02d}": ([{"k": [KEY], "p": "both-repo", "s": 800, "e": 860}], [entry(f"2026-10-{d:02d}", 800, 60, t)])
                  for d, t in ((11, "C1"), (12, "C1"), (13, "C1"), (14, "T1"), (15, "T1"))}
@@ -454,7 +454,7 @@ class ParallelClientsTest(unittest.TestCase):
             self.assertTrue(p["entries"], fr)
 
     def test_a_clients_crumb_joins_its_own_clients_work_not_a_longer_internal_entry(self):
-        # 2026-11-10: 7 minutes of a Trent session between 20 minutes of Pulsar and 16 of another Trent task joined the
+        # 2026-11-10: 7 minutes of a client's session between 20 minutes of Pulsar and 16 of another of its tasks joined the
         # longer Pulsar entry, so a client's minutes went to the internal task
         rows = [front(600, 620, "house-tool"), front(620, 627, "client-web", tasks=["C2"]), front(627, 643, "client-web", tasks=["C1"])]
         p = plan([work(600, 643)], rows, ctx=self.ctx)

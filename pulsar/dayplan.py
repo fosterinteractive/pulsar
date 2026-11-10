@@ -746,7 +746,7 @@ def _rows(d: _Day) -> None:
         return c.get("class") == INTERNAL or bool(c.get("task")) and class_of(c["task"], d) == INTERNAL
 
     def client(c: dict) -> bool:  # by its task's class when it has one: a "mixed" repository's client task is a client's
-        # (2026-11-10: Pulsar turns between Northleaf turns in NLv3, a repository logged to both, stayed Pulsar's)
+        # (2026-11-10: Pulsar turns between a client's turns in a repository logged to both kinds stayed Pulsar's)
         return c.get("class") == CLIENT or bool(c.get("task")) and class_of(c["task"], d) == CLIENT
 
     for r, c in front:  # 3a. a client's work in front
@@ -1015,7 +1015,7 @@ def _merge(d: _Day, pieces: list) -> list:
                           if joins(p, q, first)]
                     if nb:
                         # a client's crumb goes to a neighbour of its own client first, never into internal work when
-                        # one is there (2026-11-10: 7 minutes of a Trent session joined a longer Pulsar entry and
+                        # one is there (2026-11-10: 7 minutes of a client's session joined a longer Pulsar entry and
                         # went to the internal task); otherwise the larger neighbour, as before
                         mine_ = [q for q in nb if _client_task(p, d) and project_of(q, d) == project_of(p, d)]
                         q = max(mine_ or nb, key=lambda q: q["minutes"])
@@ -1190,7 +1190,7 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
 
 def class_of(task, d: "_Day") -> str | None:
     """A task's class (attribution.class_of_task), else, for a task never logged, its Productive project's as the plan
-    knows it (2026-11-10: Northleaf's new "Drupal 11 – DB Upgrade" task had no class, so Pulsar turns between its turns
+    knows it (2026-11-10: a client's new "Drupal 11 – DB Upgrade" task had no class, so Pulsar turns between its turns
     were not the client's)."""
     c = attribution.class_of_task(task, d.ctx)
     if c or not task:

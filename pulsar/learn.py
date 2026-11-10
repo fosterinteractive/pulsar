@@ -336,7 +336,7 @@ def work_text(entry: dict, t0: float, projects_dir: str | None = None, steps: li
     with `replies` Claude's last words of each step too, and your commit subjects (commits.py)."""
     steps = work_steps(entry, t0, projects_dir) if steps is None else steps
     said = [x.get("typed") or "" for x in steps] + ([x.get("reply") or "" for x in steps] if replies else [])
-    # the git branch names the work too: "campaign-guides-cta", "feature/content-our-office-is-open"; `branch` False
+    # the git branch names the work too: "listing-labels-cta", "feature/content-our-office-is-open"; `branch` False
     # leaves it out (the checkout's branch can be another task's while a session works on something else)
     names = [re.sub(r"[/_-]+", " ", b) for b in entry.get("branches") or []] if branch else []
     # and the titles of the repository's pull requests and issues open during the work (sessions.github_of)
@@ -580,7 +580,7 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
                     found = new_tasks(fresh, work_text(e, t0, steps=steps, replies=NEW_REPLIES), skip)
                 at = attribution.repo_key(row.get("p"))
                 # what the session itself names first; the checkout's branch only when that names no task (2026-11-10:
-                # "Оновлення бази даних" in a checkout on campaign-guides-cta went to Campaign Guides)
+                # "Оновлення бази даних" in a checkout left on another task's branch went to that task)
                 places = work_projects(at, repo, project_of, work_tasks)
                 work = work_match(work_text(e, t0, steps=steps, branch=False), places, work_tasks, skip) \
                     or work_match(said, places, work_tasks, skip)
