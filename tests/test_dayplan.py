@@ -585,6 +585,17 @@ class PlannerTest(unittest.TestCase):
         self.assertIsNone(e["taskId"])
         self.assertEqual(e["alts"][0]["taskId"], "77")
 
+    def test_one_word_in_common_names_a_task_only_when_it_is_the_repositorys_name(self):
+        # replay of 43 days: a single word like "page" or "editor" named another client's task on all its minutes
+        names = {"90": {"task": "Editor permissions cleanup", "project": "X"}, "91": {"task": "Acme hero banner", "project": "Acme"}}
+        ctx = {**self.ctx, "recent": ["90", "91"], "names": names, "sess": {}, "repo": {}}
+        rows = [row(540, 600, project="z", titles=["Editor toolbar"])]
+        self.assertIsNone(dayplan.plan(day(items=[work(540, 600)], rows=rows), ctx)["entries"][0]["taskId"])
+        rows = [row(540, 600, project="z", titles=["Editor permissions for authors"])]  # two words: a name match
+        self.assertEqual(dayplan.plan(day(items=[work(540, 600)], rows=rows), ctx)["entries"][0]["taskId"], "90")
+        rows = [row(540, 600, project="acme-site", titles=["Fix the footer"])]  # the repository's own name
+        self.assertEqual(dayplan.plan(day(items=[work(540, 600)], rows=rows), ctx)["entries"][0]["taskId"], "91")
+
     def test_your_own_name_in_titles_is_no_evidence(self):
         ctx = {**self.ctx, "recent": ["90"], "names": {"90": {"task": "Estimations - Nick", "project": "X"}},
                "sess": {}, "repo": {}}

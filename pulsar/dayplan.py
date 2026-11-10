@@ -329,10 +329,16 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
                 out.append((str(hit["taskId"]), "work", WORK_CONF, hit.get("why") or "what you typed names it"))
         elif src == "words":
             w = words(" ".join([row.get("project") or ""] + list(row.get("titles") or [])), skip)
+            own = words(row.get("project") or "", skip)
             best = None
             for tid in list(ctx.get("recent") or []) + list(by_id):
                 shared = w & words(" ".join(name(tid)), skip)
-                if shared and (best is None or len(shared) > best[1]):
+                # one word in common that is not the repository's own name ("page", "editor") says too little: as the
+                # pick it was another client's task on all of its minutes (replay, 43 days: without it 253 minutes
+                # less over-billed, the right client's billable amount +0.9 points)
+                if len(shared) < 2 and not shared & own:
+                    continue
+                if best is None or len(shared) > best[1]:
                     best = (tid, len(shared), shared)
             if best:
                 out.append((best[0], "words", "low", "name matches: " + ", ".join(sorted(best[2]))))
