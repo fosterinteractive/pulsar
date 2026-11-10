@@ -90,8 +90,15 @@ class RefillTest(Ctx):
         self.assertEqual(spans(p), [(540, 550, "T1")])
         self.assertEqual(of_project(p, CLIENTCO), 0)
 
-    def test_a_hole_against_a_clients_entry_gets_no_internal_work(self):
+    def test_internal_work_after_a_clients_work_is_its_own(self):
+        # Nick, 2026-11-10: internal work goes to a client only inside that client's work (between two of its turns);
+        # after a client's work, or between two clients, internal work in front is its own (switching): here T1 and Q1,
+        # 14 minutes together after Globex and Clientco
         p = plan([work(540, 590)], rows((540, 570, "G1"), (570, 576, "C2"), (576, 582, "T1"), (582, 590, "Q1")), ctx=self.ctx)
+        self.assertLessEqual(of_project(p, CLIENTCO), 6, spans(p))     # Clientco: never the internal minutes after it
+
+    def test_a_hole_between_two_turns_of_one_client_gets_no_internal_work(self):
+        p = plan([work(540, 610)], rows((540, 565, "C1"), (565, 571, "T1"), (571, 575, "Q1"), (575, 610, "C2")), ctx=self.ctx)
         self.assertNotIn("T1", by_task(p), spans(p))
         self.assertNotIn("Q1", by_task(p), spans(p))
 
@@ -303,3 +310,34 @@ class RandomDaysTest(Ctx):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NewTaskAndWordsTest(unittest.TestCase):
+    """2026-11-10, Nick's evening: a session titled "Оновлення бази даних Drupal 11" in a checkout on the branch
+    campaign-guides-cta went to Campaign Guides (the branch named it, the Ukrainian words named nothing), and Pulsar turns
+    between turns of Northleaf's new "Drupal 11 – DB Upgrade" task stayed Pulsar's (a task never logged had no class)."""
+
+    def test_ukrainian_database_words_name_the_db_task_before_the_branch(self):
+        from pulsar import learn
+        tasks = [{"taskId": "1", "title": "Drupal 11 – DB Upgrade", "project": "P", "mine": True},
+                 {"taskId": "2", "title": "Enhancement to Campaign Guides (set different labels per listing)", "project": "P", "mine": True}]
+        said = learn.english("Оновлення бази даних Drupal 11 закінчуй тренд, апдейт бази даних на тест")
+        self.assertEqual(learn.work_match(said, {"P"}, tasks)[0]["taskId"], "1")
+        self.assertIn("database db", said)
+        entry = {"titles": ["Оновлення бази даних Drupal 11"], "branches": ["campaign-guides-cta"], "commits": [], "github": []}
+        self.assertNotIn("campaign", learn.work_text(entry, 0, steps=[], branch=False))
+        self.assertIn("campaign guides cta", learn.work_text(entry, 0, steps=[]))  # the branch, kept for a fallback
+        self.assertEqual(learn.english("no Ukrainian here"), "no Ukrainian here")
+
+    def test_a_task_never_logged_takes_its_projects_class(self):
+        # N1 is Claude's pick, a Clientco task with no entry yet, in a repository logged both ways ("mixed", as NLv3): a
+        # short tool turn between two of its turns is Clientco's
+        extra = {f"2026-10-{d:02d}": ([{"k": [KEY], "p": "both-repo", "s": 800, "e": 860}], [entry(f"2026-10-{d:02d}", 800, 60, t)])
+                 for d, t in ((11, "C1"), (12, "C1"), (13, "C1"), (14, "T1"), (15, "T1"))}
+        ctx = history(extra=extra)[0]
+        self.assertEqual(ctx["classes"].get("both-repo"), "mixed")
+        pick = {"tasks": [{"taskId": "N1", "title": "Clientco DB upgrade", "project": "Clientco - Ongoing Support"}],
+                "why": "Claude", "note": ""}
+        rows = [front(600, 625, "both-repo"), front(625, 631, "house-tool"), front(631, 660, "both-repo")]
+        p = plan([work(600, 660)], rows, ctx=ctx, picks={"600|both-repo": pick, "631|both-repo": pick})
+        self.assertNotIn("T1", [e["taskId"] for e in p["entries"]], [(e["s"], e["e"], e["taskId"]) for e in p["entries"]])

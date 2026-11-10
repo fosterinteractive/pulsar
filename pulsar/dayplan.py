@@ -743,11 +743,11 @@ def _rows(d: _Day) -> None:
         return [x for x in span if not away[x] and (own or not logging_[x]) and not (personal[x] and not work[x])]
 
     def internal(c: dict) -> bool:
-        return c.get("class") == INTERNAL or bool(c.get("task")) and attribution.class_of_task(c["task"], ctx) == INTERNAL
+        return c.get("class") == INTERNAL or bool(c.get("task")) and class_of(c["task"], d) == INTERNAL
 
     def client(c: dict) -> bool:  # by its task's class when it has one: a "mixed" repository's client task is a client's
         # (2026-11-10: Pulsar turns between Northleaf turns in NLv3, a repository logged to both, stayed Pulsar's)
-        return c.get("class") == CLIENT or bool(c.get("task")) and attribution.class_of_task(c["task"], ctx) == CLIENT
+        return c.get("class") == CLIENT or bool(c.get("task")) and class_of(c["task"], d) == CLIENT
 
     for r, c in front:  # 3a. a client's work in front
         if client(c):
@@ -758,14 +758,14 @@ def _rows(d: _Day) -> None:
             continue
         c = prepare(r, True)
         # only a client's task, a known one: priority never makes a task billable, and never adds a minute
-        if not client(c) or not c["task"] or attribution.class_of_task(c["task"], ctx) == INTERNAL:
+        if not client(c) or not c["task"] or class_of(c["task"], d) == INTERNAL:
             continue
         span = range(int(r["s"]), min(N, int(math.ceil(r["e"]))))
         # internal work in front: its repository's class, or the task picked for it (a repository logged both ways,
         # "mixed", whose row went to an internal task: 2026-11-09, the tool's own repository)
         free = [x for x in span if present(x, False) and owner[x] is None and in_front[x] is not None
                 and (in_front[x]["class"] == INTERNAL or (in_front[x].get("task") and
-                                                         attribution.class_of_task(in_front[x]["task"], ctx) == INTERNAL))]
+                                                         class_of(in_front[x]["task"], d) == INTERNAL))]
         # the client's own work in front between them does not cut the stretch either: internal work in short turns
         # with the client's (2026-11-09, a few minutes of each by turns for two hours) counts as one stretch
         own = {x for x in span if owner[x] is not None and owner[x] != BLOCKED and client(d.claims[owner[x]])
@@ -812,7 +812,7 @@ def _rows(d: _Day) -> None:
         if not r.get("qualifies") or (repo_key(r.get("project")) in never and not r.get("tasks")):
             continue
         c = prepare(r, True)
-        if not c["task"] or not client(c) or attribution.class_of_task(c["task"], ctx) == INTERNAL:
+        if not c["task"] or not client(c) or class_of(c["task"], d) == INTERNAL:
             continue
         for x in range(int(r["s"]), min(N, int(math.ceil(r["e"])))):
             who = owner[x]
@@ -936,7 +936,7 @@ def _blocked_between(d: _Day, a, b) -> bool:
 
 def _away_between(d: _Day, p, q, a, b) -> bool:
     """A client's entry is never laid over time away: a break splits it."""
-    billable_task = lambda e: e.get("class") == CLIENT or attribution.class_of_task(e.get("task"), d.ctx) == CLIENT  # noqa: E731
+    billable_task = lambda e: e.get("class") == CLIENT or class_of(e.get("task"), d) == CLIENT  # noqa: E731
     return (billable_task(p) or billable_task(q)) and any(d.away[x] for x in range(max(0, a), min(DAY_MIN, b)))
 
 
@@ -1075,7 +1075,7 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
     given_back: dict = {}  # task -> minutes the refill gave it
     if not mine or budget < g:
         return out, given_back
-    billable = {t: any(p.get("class") == CLIENT for p in ps) or attribution.class_of_task(t, d.ctx) != INTERNAL
+    billable = {t: any(p.get("class") == CLIENT for p in ps) or class_of(t, d) != INTERNAL
                 for t, ps in mine.items()}
     proj = {t: (d.names.get(t) or ("", ""))[1] or t for t in mine}  # a billable task's minutes come from its project's
     proj_of = lambda e: (d.names.get(str(e.get("taskId") or "")) or ("", ""))[1] or str(e.get("taskId") or "")  # noqa: E731
@@ -1120,12 +1120,15 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
             m = min(room, m)
             return m if m >= g and (m >= least or touches(t)) else 0
 
-        # a client's entry right against the hole (not a shared one): the hole is in that client's work, so internal work
-        # takes none of it (a turn of internal work inside a client's work is the client's, 3b' in _rows; Nick,
-        # 2026-11-10), and what is left of it goes to that entry
+        # a client's entries right against the hole (not shared ones): a hole between two of one client's entries is in
+        # that client's work, so internal work takes none of it (a turn of internal work inside a client's work is the
+        # client's, 3b'; Nick, 2026-11-10); between two clients, or beside one, internal work there is its own
         beside = [x for x in out if x.get("kind") != "shared" and (x["e"] == a or x["s"] == b)
-                  and x.get("taskId") and billable.get(str(x["taskId"]), attribution.class_of_task(str(x["taskId"]), d.ctx) != INTERNAL)]
-        close = [t for t in mine if (inside[t] or (near(t) is not None and near(t) <= gap)) and (billable[t] or not beside)]
+                  and x.get("taskId") and billable.get(str(x["taskId"]), class_of(str(x["taskId"]), d) != INTERNAL)]
+        before = next((x for x in beside if x["e"] == a), None)
+        after = next((x for x in beside if x["s"] == b), None)
+        same = before is not None and after is not None and proj_of(before) == proj_of(after)
+        close = [t for t in mine if (inside[t] or (near(t) is not None and near(t) <= gap)) and (billable[t] or not same)]
         close.sort(key=lambda t: (-inside[t], near(t) if near(t) is not None else gap, -owed[t]))
         taken, room = {}, min(b - a, budget // g * g)
         for t in close:
@@ -1139,9 +1142,6 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
         # what is left of a hole between two entries of one client: the client's, when it is mostly that client's work or
         # internal turns (a turn of internal work between two turns of one client is the client's, 3b'), never another
         # client's work, a repository never logged, an agent alone or time logging (2026-11-10 review)
-        before = next((x for x in beside if x["e"] == a), None)
-        after = next((x for x in beside if x["s"] == b), None)
-        same = before is not None and after is not None and proj_of(before) == proj_of(after)
         ours = 0
         if same:
             for x in range(a, b):
@@ -1149,7 +1149,7 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
                 if w in (None, BLOCKED) or not d.claims[w].get("task"):
                     continue
                 wt = str(d.claims[w]["task"])
-                if proj_of({"taskId": wt}) == proj_of(before) or attribution.class_of_task(wt, d.ctx) == INTERNAL:
+                if proj_of({"taskId": wt}) == proj_of(before) or class_of(wt, d) == INTERNAL:
                     ours += 1
         if room >= g and same and 2 * ours >= b - a:
             t = str(before["taskId"])
@@ -1188,10 +1188,25 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
     return out, given_back
 
 
+def class_of(task, d: "_Day") -> str | None:
+    """A task's class (attribution.class_of_task), else, for a task never logged, its Productive project's as the plan
+    knows it (2026-11-10: Northleaf's new "Drupal 11 – DB Upgrade" task had no class, so Pulsar turns between its turns
+    were not the client's)."""
+    c = attribution.class_of_task(task, d.ctx)
+    if c or not task:
+        return c
+    project = (d.names.get(str(task)) or ("", ""))[1]
+    if not project:
+        return None
+    if attribution.internal_project(project):
+        return INTERNAL
+    return (d.ctx.get("project_class") or {}).get(project)
+
+
 def _client_task(m: dict, d: _Day) -> bool:
     """A piece or entry of a task that may be billable: a client's by its own class, or its task's."""
     t = str(m.get("task") or "")
-    return m.get("class") == CLIENT or bool(t) and attribution.class_of_task(t, d.ctx) == CLIENT
+    return m.get("class") == CLIENT or bool(t) and class_of(t, d) == CLIENT
 
 
 def project_of(m: dict, d: _Day) -> str:
@@ -1312,7 +1327,7 @@ def _caps(d: _Day, out: list, unplaced: list, evidence: dict) -> tuple:
     # the evidence cap: a task that may be billable (any not known to be internal) never gets more minutes than the
     # person was seen at work on it
     billable = lambda e: e.get("taskId") and e["kind"] not in ("meeting", "unattended") and (  # noqa: E731
-        e.get("class") == CLIENT or attribution.class_of_task(e["taskId"], ctx) != INTERNAL)
+        e.get("class") == CLIENT or class_of(e["taskId"], d) != INTERNAL)
     total: dict = defaultdict(int)
     for e in out:
         if billable(e):
