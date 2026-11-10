@@ -831,7 +831,9 @@ claim wins:
    in front (a **shared** row); then the rest of the work in front. The agents' other background time is noted, never
    placed ("Left out: pulsar 48 min (ran in parallel)");
 4. on free active minutes only: calendar meetings with no call seen, and work outside Claude, an editor or terminal
-   with no session row included (it takes the task of the work next to it, never a meeting's, and starts unticked).
+   with no session row included (it takes the task of the work right after it in the same sitting, reading the ticket
+   before the session on it, else of the work before it; never a meeting's, and it starts unticked. A glance shorter
+   than an entry joins the work right after it too, except a meeting attended, which keeps its own time).
 
 **Parallel work.** Each stretch of work has a billing class (`attribution.segment_class`): from a rule, a task link or
 a ticket key in the work itself, the class of that task; else the repository's 60 days of logged minutes (75% or more

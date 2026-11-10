@@ -1008,7 +1008,11 @@ def _outside(d: _Day) -> None:
     for a, b in short:  # a short one joins the entry beside it
         left = next((owner[x] for x in range(a - 1, max(0, a - 3), -1) if owner[x] not in (None, BLOCKED)), None)
         right = next((owner[x] for x in range(b + 1, min(N, b + 3)) if owner[x] not in (None, BLOCKED)), None)
-        pick_i = next((i for i in (left, right) if i is not None and claims[i]["kind"] not in ("logged", "skip", "shared")),
+        # the work after it first, as a long stretch (_pieces), except a meeting attended, which keeps its own time
+        # (_merge); before, the work before it took it (replay, 43 days, with _pieces: 0.9 points more minutes on the
+        # right task, 165 fewer minutes on a wrong billable client)
+        order = (left, right) if right is not None and claims[right].get("attended") else (right, left)
+        pick_i = next((i for i in order if i is not None and claims[i]["kind"] not in ("logged", "skip", "shared")),
                       None)  # never a shared stretch: that is the agent's time, not the work in front
         if pick_i is not None:
             for x in range(a, b + 1):
@@ -1018,7 +1022,7 @@ def _outside(d: _Day) -> None:
 
 def _pieces(d: _Day) -> list:
     """Runs of minutes per claim, in time order, with their claim's fields; an outside stretch takes the task of the
-    work before it, else after."""
+    work right after it in the same sitting, else of the work before it, else after."""
     owner, claims = d.owner, d.claims
     pieces, cur = [], None
     for x in range(DAY_MIN):
@@ -1034,9 +1038,17 @@ def _pieces(d: _Day) -> list:
     for p in pieces:
         p.update({k: v for k, v in claims[p["claim"]].items() if k not in ("s", "e")})
     pieces = [p for p in pieces if p["kind"] != "logged"]
-    for k, p in enumerate(pieces):  # outside stretches take the task of the work before them, else after
+    # outside stretches (a browser, Slack) take the task of the work right after them, when it follows within MERGE_GAP
+    # in the same sitting: reading the ticket or the message comes before the session it starts. Else the work before
+    # them (the end of a sitting), else after. Replay, 43 days: under such stretches the person logged the task of the
+    # work after them on 130 of 261 clean minutes, the one before on 39; with the short ones (_outside), 0.9 points more
+    # clean minutes on the right task, 149 fewer over-billed and 165 fewer on a wrong billable client
+    for k, p in enumerate(pieces):
         if p["kind"] == "outside" and not p.get("task"):
-            near = ([pieces[k - 1]] if k else []) + pieces[k + 1:k + 2]
+            after, before = pieces[k + 1:k + 2], [pieces[k - 1]] if k else []
+            soon = bool(after) and after[0]["s"] - p["last"] <= d.o["merge_gap"] \
+                and d.sitting[after[0]["s"]] == d.sitting[p["last"]]
+            near = after + before if soon else before + after
             nb = [q for q in near if q.get("task") and q["kind"] in ("focused", "agent")]  # never a meeting's task
             if any(q["kind"] == "skip" for q in near) and not nb:
                 p["kind"], p["why"] = "skip", "next to work in a repository you never log"

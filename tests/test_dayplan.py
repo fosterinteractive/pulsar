@@ -399,6 +399,37 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual((editor["taskId"], editor["kind"], editor["s"], editor["minutes"], editor["checked"]),
                          ("11", "outside", 640, 30, False))
 
+    def test_work_outside_claude_goes_with_the_session_it_comes_before(self):
+        # reading the ticket in a browser, then the session on it: the browser's half hour is the second task's (replay:
+        # the person logged the work after such a stretch three times as often as the work before it)
+        items = [work(540, 600), work(600, 630, app="Safari", title="Ticket"), work(630, 690)]
+        p = dayplan.plan(day(items=items, rows=[row(540, 600), row(630, 690, titles=["Hero video"])]), self.ctx)
+        at = {x: e["taskId"] for e in p["entries"] for x in range(e["s"], e["e"])}
+        self.assertEqual({at.get(x) for x in range(540, 600)}, {"11"})
+        self.assertEqual({at.get(x) for x in range(600, 690)}, {"22"}, p["entries"])
+
+    def test_work_outside_claude_at_the_end_of_a_sitting_goes_with_the_work_before_it(self):
+        # the next session comes after a break (another sitting): the browser time is the end of the work before it
+        items = [work(540, 600), work(600, 630, app="Safari", title="Ticket"), work(700, 760)]
+        p = dayplan.plan(day(items=items, rows=[row(540, 600), row(700, 760, titles=["Hero video"])]), self.ctx)
+        at = {x: e["taskId"] for e in p["entries"] for x in range(e["s"], e["e"])}
+        self.assertEqual({at.get(x) for x in range(540, 630)}, {"11"}, p["entries"])
+        self.assertEqual({at.get(x) for x in range(700, 760)}, {"22"})
+
+    def test_a_short_glance_outside_claude_joins_the_work_after_it(self):
+        items = [work(540, 600), work(600, 605, app="Safari", title="Ticket"), work(605, 665)]
+        p = dayplan.plan(day(items=items, rows=[row(540, 600), row(605, 665, titles=["Hero video"])]), self.ctx)
+        spans = {e["taskId"]: (e["s"], e["e"]) for e in p["entries"]}
+        self.assertEqual(spans, {"11": (540, 600), "22": (600, 665)})
+
+    def test_a_short_glance_before_a_call_stays_with_the_work_before_it(self):
+        # a meeting attended keeps its own time (_merge): the glance before its call is the end of the work before it
+        items = [work(540, 600), work(600, 605, app="Safari", title="Ticket"), work(605, 635, app="zoom.us", title="Zoom")]
+        p = dayplan.plan(day(items=items, rows=[row(540, 600)], calls=[{"s": 605, "e": 635}]), self.ctx)
+        session = next(e for e in p["entries"] if e["taskId"] == "11")
+        call = next(e for e in p["entries"] if e["kind"] == "meeting")
+        self.assertEqual(((session["s"], session["e"]), (call["s"], call["e"])), ((540, 605), (605, 635)))
+
     def test_a_session_vote_of_40_to_60_percent_is_low_and_unticked(self):
         key = dayplan.title_key("Fix the importer")
         ctx = {**self.ctx, "sess": {key: {"11": 55.0, "22": 45.0}}, "sr": {(key, "repo"): {"11": 55.0, "22": 45.0}},
