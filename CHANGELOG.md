@@ -6,6 +6,9 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- Report, Tasks against estimates: the row under the pointer is lit end to end, and a task's name opens it in Productive.
+
 ## 1.6.13 (2026-11-10)
 - Ask Claude no longer sticks on "Asking…": in 1.6.12 the pause dialog's code took the name of the button's, so the button stopped at its first step.
 - What is left before going over: the log dialog always shows a task's estimate ("8 h 30 min of 10 h with this entry, 1 h 30 min left"), amber from 80%, and a Log the day row says it from 80%; the Tasks box's bar turns amber at 80%. The service's time budget the same way, red past it, where Productive lets you read budgets (not for a Staff role).

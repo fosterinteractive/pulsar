@@ -178,10 +178,13 @@ async function loadReportEstimates() {
   const none = rows.filter(t => est[t.taskId] && !est[t.taskId].estimate);
   $('#tasks-take').textContent = r.error ? r.error
     : `${over.length} of ${rows.length} tasks are over their estimate; ${none.length} have none. Totals include everyone's time.`;
-  $('#tasks-table').innerHTML = `<table class="tbl"><thead><tr><th>Task</th><th>Logged here</th><th>Logged by everyone</th><th>Estimate</th><th>Left</th></tr></thead><tbody>`
+  $('#tasks-table').innerHTML = `<table class="tbl rowhover"><thead><tr><th>Task</th><th>Logged here</th><th>Logged by everyone</th><th>Estimate</th><th>Left</th></tr></thead><tbody>`
     + rows.map(t => {
       const d = est[t.taskId], isOver = d?.estimate && d.worked > d.estimate;
-      return `<tr><td><span class="dot" style="background:${color(t.project)};display:inline-block;margin-right:6px"></span>${esc(t.title)}
+      const url = productiveTaskURL(t.taskId);  // its page in Productive, when the organization's address is known
+      const name = url ? `<a class="tasklink" href="${esc(url)}" target="_blank" rel="noopener noreferrer"
+          aria-label="${esc(`Open “${t.title}” in Productive`)}">${esc(t.title)}</a>` : esc(t.title);
+      return `<tr><td><span class="dot" style="background:${color(t.project)};display:inline-block;margin-right:6px"></span>${name}
           <small style="color:var(--muted)"> · ${esc(t.project)}</small></td><td>${dur(t.minutes)}</td>
         <td>${d?.worked != null ? dur(d.worked) : '–'}</td><td>${d?.estimate ? dur(d.estimate) : '–'}</td>
         <td${isOver ? ' style="color:var(--gap)"' : ''}>${!d?.estimate ? '–' : isOver ? `⚠ over by ${dur(d.worked - d.estimate)}` : dur(d.estimate - d.worked)}</td></tr>`;
