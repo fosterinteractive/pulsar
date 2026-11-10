@@ -7,9 +7,11 @@
      and the offer to reinstall Pulsar (its app is older than any release that describes one).
    - The window of 1.6.0 on injects window.PULSAR_APP at the start of every load: {version, path, pid, prefs: the Mac's
      own choices (hour12, firstWeekday 1 = Sunday, locale, languages, accent), native: the app's own (badge, reminder,
-     reminderTime, login)}. Events for the page: `pulsar:wake` after a sleep or at midnight (cancelable: a listener
-     that takes it calls preventDefault, else this file moves on to today itself), and `pulsar:prefs` when those
-     choices change. --mac-accent on <html> is the Mac's accent colour. */
+     reminderTime, login), features: what it can do that an older window cannot ("savePDF"; missing in older
+     windows)}. The page and this file update without the window, so a feature is used only when the window lists it.
+     Events for the page: `pulsar:wake` after a sleep or at midnight (cancelable: a listener that takes it calls
+     preventDefault, else this file moves on to today itself), and `pulsar:prefs` when those choices change.
+     --mac-accent on <html> is the Mac's accent colour. */
 (() => {
   const H = window.webkit?.messageHandlers?.pulsar;
   if (!H) return;
@@ -252,6 +254,9 @@
       if (ZOOMS[j] !== state.zoom) COMMANDS.rows(ZOOMS[j]);
     },
     print: () => { if (state.view === 'report') click('#report-dl [data-dl="print"]'); },
+    exportPDF: () => { if (state.view === 'report') click('#report-dl [data-dl="pdf"]'); },
+    exportInvoice: () => { if (state.view === 'report') click('#report-dl [data-dl="invoice"]'); },
+    exportInvoiceCSV: () => { if (state.view === 'report') click('#report-dl [data-dl="invoice-csv"]'); },
     exportDays: () => { if (state.view === 'report') click('#report-dl [data-dl="days"]'); },
     exportEntries: () => { if (state.view === 'report') click('#report-dl [data-dl="entries"]'); },
     theme: t => { if (fn(window.applyTheme)) applyTheme(t); report(); },
@@ -412,8 +417,20 @@
       setTimeout(() => { if (asks.has(id)) { asks.delete(id); done(null); } }, 4000);
     });
   }
+  /* ---------- Save as PDF: the page as printed, straight into a file the person picks (report.js) ----------
+     Only when this window lists it; report.js opens the print dialog otherwise. Resolves with {name, error} once the
+     window has written the file (name), failed (error) or the person cancelled (neither). */
+  const pdfs = new Map();
+  let pdfN = 0;
+  const savePDF = Array.isArray(SHELL.features) && SHELL.features.includes('savePDF')
+    ? name => new Promise(done => { const id = ++pdfN; pdfs.set(id, done); send({action: 'savePDF', id, name}); }) : null;
+  function pdfSaved(id, r) {
+    const f = pdfs.get(id);
+    if (f) { pdfs.delete(id); f({name: String(r?.name || ''), error: String(r?.error || '')}); }
+  }
+
   window.pulsarNative = {
-    app: SHELL, run, closeTop, unsaved, wake, menuPick, todayUnlogged,
+    app: SHELL, run, closeTop, unsaved, wake, menuPick, todayUnlogged, savePDF, pdfSaved,
     awayBack: (from, to) => (fn(window.awayBack) ? awayBack(from, to) : null),  // awayback.js
     prefs: (prefs, native, problem) => { setPrefs(prefs, native); if (problem) toast(problem, true); },
     answer: (id, value) => { const f = asks.get(id); if (f) { asks.delete(id); f(value); } },

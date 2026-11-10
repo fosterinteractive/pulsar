@@ -341,7 +341,7 @@ function checkCustomRange() {
 }
 for (const el of [$('#rfrom'), $('#rto')]) el.addEventListener('change', checkCustomRange);
 
-/* ---------- download: CSV for spreadsheets, print for PDF ---------- */
+/* ---------- download: CSV for spreadsheets, PDF for reading and invoices, print for paper ---------- */
 function toCSV(rows) {  // the BOM makes Excel read the file as UTF-8
   const cell = v => {
     let t = v == null ? '' : String(v);
@@ -361,14 +361,93 @@ document.addEventListener('click', ev => { if (!ev.target.closest('#report-dl'))
 $('#report-dl').addEventListener('keydown', ev => {
   if (ev.key === 'Escape' && $('#report-dl').open) { ev.preventDefault(); $('#report-dl').open = false; $('#report-dl summary').focus(); }
 });
+/* ---------- the invoice summary: every task logged in the range, by project, with its time and billable time, and the
+   totals (report.invoice on the server: the Billable tile's rule). Printed alone: nothing of the activity. ---------- */
+/* a line's billable time (with its share on a subtotal), "Not billable", and the time whose billing Productive does not
+   show, as unknown: never guessed */
+function billOf(t, share = false) {
+  const parts = [t.billable ? dur(t.billable) + (share && t.billablePct != null ? ` (${t.billablePct}%)` : '') : t.nonBillable ? 'Not billable' : ''];
+  if (t.unknown) parts.push(t.unknown === t.minutes ? 'Unknown' : `${dur(t.unknown)} unknown`);
+  return parts.filter(Boolean).join(', ') || '–';
+}
+const hoursOf = m => `${hours(m)} h`;
+function renderInvoice(x) {
+  const inv = x.invoice, sameYear = x.from.slice(0, 4) === x.to.slice(0, 4);
+  const range = `${dayLabel(x.from, {day: 'numeric', month: 'long', ...(sameYear ? {} : {year: 'numeric'})})} to ${dayLabel(x.to, {day: 'numeric', month: 'long', year: 'numeric'})}`;
+  const known = inv.billable + inv.nonBillable;
+  $('#invoice-doc').innerHTML = `<h1>Invoice summary</h1><p class="inv-range">${esc(range)}</p>`
+    + inv.projects.map(p => `<section class="inv-group"><h2>${esc(p.project)}</h2>
+      <table class="inv"><thead><tr><th>Task</th><th>Time</th><th>Billable</th></tr></thead><tbody>`
+      + p.tasks.map(t => `<tr><td>${esc(t.task)}${t.noTask ? ' <small>(no task)</small>' : ''}</td><td>${esc(dur(t.minutes))}</td><td>${esc(billOf(t))}</td></tr>`).join('')
+      + `</tbody><tfoot><tr><td>Subtotal</td><td>${esc(dur(p.minutes))}</td><td>${esc(billOf(p, true))}</td></tr></tfoot></table></section>`).join('')
+    + `<table class="inv inv-total"><tbody>
+      <tr><th>Total time</th><td>${esc(dur(inv.minutes))}</td><td>${esc(hoursOf(inv.minutes))}</td></tr>
+      <tr><th>Billable time</th><td>${esc(dur(inv.billable))}</td><td>${esc(hoursOf(inv.billable))}</td></tr>
+      <tr><th>Billable</th><td>${esc(inv.billablePct == null ? 'Unknown' : `${inv.billablePct}%`)}</td><td>${inv.unknown && known ? esc(`of the ${dur(known)} with known billing`) : ''}</td></tr>
+      ${inv.unknown ? `<tr><th>Billing unknown</th><td>${esc(dur(inv.unknown))}</td><td>Productive does not show you the billing of some services</td></tr>` : ''}
+    </tbody></table>`;
+}
+/* the same lines for a spreadsheet: one row per task, a subtotal per project, the total */
+function invoiceRows(inv) {
+  const row = (project, task, x) => [project, task, hours(x.minutes), x.minutes, hours(x.billable), x.billable, x.nonBillable, x.unknown,
+    'billablePct' in x ? x.billablePct ?? '' : ''];
+  return [['Project', 'Task', 'Hours', 'Minutes', 'Billable (h)', 'Billable (min)', 'Not billable (min)', 'Billing unknown (min)', 'Billable %'],
+    ...inv.projects.flatMap(p => [...p.tasks.map(t => row(p.project, t.task, t)), row(p.project, 'Subtotal', p)]),
+    row('Total', '', inv)];
+}
+
+/* ---------- printing and PDF: the report, or the invoice summary alone (style.css, @media print) ----------
+   Pulsar's window writes a PDF straight to a file where it lists savePDF (native.js pulsarNative.savePDF). An older
+   window, which the updates never replace, and a browser open their print dialog instead, where Save as PDF does it. */
+const printOnly = what => document.documentElement.classList.toggle('print-invoice', what === 'invoice');
+let pdfBusy = false;
+/* the print dialog. In the window the page keeps what it prints until the next click or key: the dialog lays it out
+   again while it is open (page setup, paper size). The title is the name Save as PDF offers. */
+function printDialog(what, title) {
+  printOnly(what);
+  const before = document.title;
+  document.title = title;
+  let done = false;
+  const back = () => {
+    if (done) return;
+    done = true; printOnly(''); document.title = before;
+    removeEventListener('pointerdown', back, true); removeEventListener('keydown', back, true);
+  };
+  // after this click: its own pointerdown has gone by
+  setTimeout(() => { if (!done) { addEventListener('pointerdown', back, true); addEventListener('keydown', back, true); } }, 0);
+  if (APP) { toApp('print'); return; }
+  addEventListener('afterprint', back, {once: true});
+  window.print();
+}
+async function savePDF(what, name) {
+  const save = window.pulsarNative?.savePDF;
+  if (typeof save !== 'function') {  // a browser, or a window from before Save as PDF
+    if (APP) toast('Choose PDF, then Save as PDF, in the print dialog.');
+    printDialog(what, name.replace(/\.pdf$/, ''));
+    return;
+  }
+  if (pdfBusy) return;
+  pdfBusy = true; printOnly(what);
+  const r = await save(name);
+  pdfBusy = false; printOnly('');
+  if (r.error) toast(`The PDF was not saved: ${r.error}`, true);
+  else if (r.name) toast(`Saved ${r.name}.`);
+}
 $('#report-dl').addEventListener('click', ev => {
   const b = ev.target.closest('[data-dl]'); if (!b) return;
   $('#report-dl').open = false;
-  const x = R.data;
+  const x = R.data, dl = b.dataset.dl;
   if (!x || x.error) { toast('Load a report first.', true); return; }
-  const base = `pulsar-report-${x.from}-to-${x.to}`;
-  if (b.dataset.dl === 'print') { APP ? toApp('print') : window.print(); return; }
-  if (b.dataset.dl === 'days') {
+  const base = `pulsar-report-${x.from}-to-${x.to}`, invoice = `pulsar-invoice-${x.from}-to-${x.to}`;
+  if (dl === 'print') { printDialog('report', base); return; }
+  if (dl === 'pdf') { savePDF('report', `${base}.pdf`); return; }
+  if (dl === 'invoice' || dl === 'invoice-csv') {
+    // an invoice from part of the entries would be wrong: only from a full read of Productive
+    if (x.warning) { toast(`${x.warning} The invoice summary needs every entry: try again once Productive answers (↻).`, true); return; }
+    if (!x.invoice?.projects.length) { toast('Nothing logged in this range.', true); return; }
+    if (dl === 'invoice') { renderInvoice(x); savePDF('invoice', `${invoice}.pdf`); return; }
+    saveFile(`${invoice}.csv`, toCSV(invoiceRows(x.invoice)));
+  } else if (dl === 'days') {
     saveFile(`${base}-days.csv`, toCSV([
       ['Date', 'Weekday', 'Logged (h)', 'Logged (min)', 'Billable (min)', 'Not billable (min)', 'Active, work (min)',
        'Active, not logged (min)', 'Personal (min)', 'Entries', 'Approved (min)', 'Tracker'],

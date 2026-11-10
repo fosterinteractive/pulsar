@@ -19,13 +19,17 @@
 //   - Closing the window keeps Pulsar running (in the Dock, with today's time not logged as the Dock's badge, and the
 //     end-of-day reminder); a click on the Dock icon brings it back. Quitting stops the server this app started
 //     (launcher.sh --stop). A server started some other way, such as python3 pulsar.py in a git checkout, keeps running.
-//   - Downloads (CSV, the error log) ask where to save; Print opens the print dialog.
+//   - Downloads (CSV, the error log) ask where to save; Print opens the print dialog. Save as PDF (the report, the
+//     invoice summary) asks where to save too, then writes the page as printed (its print styles) into that file,
+//     with no print dialog. The page uses it only when PULSAR_APP.features lists "savePDF": an older window
+//     prints instead.
 //   - A Mac whose Safari is older than 16.2 cannot draw the page: Pulsar then opens in the browser instead.
 //
 // Built with -D PULSAR_TEST, it also takes a picture, a download and a PDF by itself (see the end of PulsarWindow).
 
 import Cocoa
 import ServiceManagement
+import UniformTypeIdentifiers
 import UserNotifications
 @preconcurrency import WebKit
 
@@ -93,6 +97,8 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
     private var running: Process?      // the launcher, while it runs
     private var reminder: Timer?
     private var warp: NativeWarp?
+    private var savingPDF = false      // a PDF is being written: one at a time
+    private var pdfAsked = (id: 0, url: URL?.none)   // the page's request being written, and its file
     private static let place = ["view", "date", "zoom", "source", "range", "from", "to"]  // the page's own address keys
 
     // MARK: start
@@ -355,6 +361,8 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
             "version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "",
             "path": Bundle.main.bundlePath, "pid": Int(ProcessInfo.processInfo.processIdentifier),
             "prefs": systemPrefs(), "native": nativePrefs(),
+            // what this window can do that an older one cannot: the page (updated without the window) checks here
+            "features": ["savePDF"],
         ]
         let controller = web.configuration.userContentController
         controller.removeAllUserScripts()
@@ -502,7 +510,10 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
             .separator(),
             item("Close", #selector(NSWindow.performClose(_:)), "w"),
             .separator(),
-            submenu("Export", [page("Days, CSV", "exportDays"), page("Time Entries, CSV", "exportEntries")]),
+            submenu("Export", [page("Report, PDF", "exportPDF"), page("Invoice Summary, PDF", "exportInvoice"),
+                               .separator(),
+                               page("Days, CSV", "exportDays"), page("Time Entries, CSV", "exportEntries"),
+                               page("Invoice Summary, CSV", "exportInvoiceCSV")]),
             page("Print…", "print", nil, "p"),
         ])
         _ = menu("Edit", [   // without these, Cmd+C and Cmd+V do nothing in the page's fields
@@ -615,7 +626,8 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
         if page["modal"] as? Bool == true { return false }   // a dialog of the page is open: it comes first
         switch run {
         case "today", "prev", "next", "rows": return view == "day"
-        case "print", "exportDays", "exportEntries": return view == "report" && page["report"] as? Bool == true
+        case "print", "exportPDF", "exportInvoice", "exportDays", "exportEntries", "exportInvoiceCSV":
+            return view == "report" && page["report"] as? Bool == true && !savingPDF
         default: return true
         }
     }
@@ -1096,6 +1108,8 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
         guard isPulsarFrame(message.frameInfo) || (action == "start" && ownMessagePage) else { return }
         switch action {
         case "print": printPage()
+        case "savePDF":   // {id, name}: answered with pulsarNative.pdfSaved(id, {name, error})
+            savePDF(id: (body["id"] as? NSNumber)?.intValue ?? 0, name: body["name"] as? String ?? "")
         case "warp":   // {to: 0..1, instant, dark}: the page's warp, drawn here on the graphics card
             warp?.to(CGFloat((body["to"] as? NSNumber)?.doubleValue ?? 0), instant: body["instant"] as? Bool ?? false,
                      dark: body["dark"] as? Bool ?? true)
@@ -1196,17 +1210,63 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
         if let id = spec["id"] { callPage("menuPick(\(Self.json(id)))") }
     }
 
-    private func printPage() {
+    /// The paper: the Mac's own size, the page fitted to its width, margins as in a browser.
+    private func paper() -> NSPrintInfo {
         let info = (NSPrintInfo.shared.copy() as? NSPrintInfo) ?? NSPrintInfo()
         info.horizontalPagination = .fit
         info.verticalPagination = .automatic
         info.isHorizontallyCentered = false
         info.isVerticallyCentered = false
         (info.leftMargin, info.rightMargin, info.topMargin, info.bottomMargin) = (28, 28, 32, 32)   // as in a browser
-        let op = web.printOperation(with: info)
+        return info
+    }
+
+    private func printPage() {
+        let op = web.printOperation(with: paper())
         op.view?.frame = web.bounds   // without a frame WebKit prints blank pages
         op.jobTitle = web.title ?? "Pulsar report"
         op.runModal(for: window, delegate: nil, didRun: nil, contextInfo: nil)
+    }
+
+    /// The page as printed (its print styles: light, no header or filters), written straight to a PDF file the person
+    /// picks, as a download is. Printing to a file, not WKWebView.createPDF: that one draws the screen (the dark
+    /// theme, the filters) on one endless page, where printing gives the print styles on pages of the Mac's paper.
+    private func savePDF(id: Int, name: String) {
+        let answer = { (saved: URL?, error: String) in
+            self.callPage("pdfSaved(\(id), \(Self.json(["name": saved?.lastPathComponent ?? "", "error": error])))")
+        }
+        guard !savingPDF else { answer(nil, "A PDF is being saved already."); return }
+        savingPDF = true
+        var file = String(name.filter { $0.isLetter || $0.isNumber || " -_.".contains($0) }.prefix(100))
+            .trimmingCharacters(in: CharacterSet(charactersIn: " ."))
+        if file.isEmpty { file = "Pulsar" }
+        if !file.lowercased().hasSuffix(".pdf") { file += ".pdf" }
+        askWhere(file, pdf: true) { url in
+            guard let url = url else { self.savingPDF = false; answer(nil, ""); return }   // cancelled: nothing to say
+            // after the save panel has gone: the print operation runs as a sheet of the same window
+            DispatchQueue.main.async {
+                let info = self.paper()
+                info.jobDisposition = .save
+                info.dictionary()[NSPrintInfo.AttributeKey.jobSavingURL] = url
+                let op = self.web.printOperation(with: info)
+                op.view?.frame = self.web.bounds
+                op.jobTitle = url.deletingPathExtension().lastPathComponent
+                op.showsPrintPanel = false
+                op.showsProgressPanel = false
+                self.pdfAsked = (id, url)
+                op.runModal(for: self.window, delegate: self, didRun: #selector(self.pdfWritten(_:success:contextInfo:)),
+                            contextInfo: nil)
+            }
+        }
+    }
+
+    /// pulsarNative.pdfSaved(id, {name, error}) in the page: the file's name once it is written, else why not.
+    @objc private func pdfWritten(_ op: NSPrintOperation, success: Bool, contextInfo: UnsafeMutableRawPointer?) {
+        savingPDF = false
+        let (id, url) = pdfAsked
+        let saved = success && url.map { FileManager.default.fileExists(atPath: $0.path) } == true
+        let answer = ["name": saved ? url?.lastPathComponent ?? "" : "", "error": saved ? "" : "The PDF could not be written."]
+        callPage("pdfSaved(\(id), \(Self.json(answer)))")
     }
 
     // MARK: alerts and confirmations from the page (none today; without these they would do nothing)
@@ -1239,21 +1299,28 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
 
     func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String,
                   completionHandler: @escaping (URL?) -> Void) {
+        askWhere(suggestedFilename, completionHandler)
+    }
+
+    /// Where to save a file: the save panel, in Downloads, as a sheet of the window; nil when the person cancels. A PDF
+    /// keeps its .pdf ending whatever name is typed.
+    private func askWhere(_ suggested: String, pdf: Bool = false, _ done: @escaping (URL?) -> Void) {
         #if PULSAR_TEST
         if let dir = ProcessInfo.processInfo.environment["PULSAR_TEST_DIR"] {
-            let url = URL(fileURLWithPath: dir).appendingPathComponent(suggestedFilename)
+            let url = URL(fileURLWithPath: dir).appendingPathComponent(suggested)
             try? FileManager.default.removeItem(at: url)
-            completionHandler(url)
+            done(url)
             return
         }
         #endif
         let panel = NSSavePanel()
-        panel.nameFieldStringValue = suggestedFilename
+        panel.nameFieldStringValue = suggested
         panel.directoryURL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
+        if pdf { panel.allowedContentTypes = [.pdf] }
         panel.beginSheetModal(for: window) { choice in
-            guard choice == .OK, let url = panel.url else { completionHandler(nil); return }
+            guard choice == .OK, let url = panel.url else { done(nil); return }
             try? FileManager.default.removeItem(at: url)   // the panel has asked about replacing it
-            completionHandler(url)
+            done(url)
         }
     }
 

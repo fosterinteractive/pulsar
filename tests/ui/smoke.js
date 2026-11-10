@@ -186,6 +186,12 @@ try {
   const reportAge = q('#updated').textContent;
   const old = reportStale(at + 61000), wrote = (wroteAt = at + 1, reportStale(at + 1000));
   wroteAt = w;
+  // the Report as a PDF file with no print dialog: the window lists savePDF, and the test build saves into its folder
+  const features = window.PULSAR_APP?.features, save = window.pulsarNative?.savePDF;
+  const canPDF = Array.isArray(features) && features.includes('savePDF') && typeof save === 'function';
+  const pdf = canPDF ? await Promise.race([save('pulsar-ui-report.pdf'), wait(20000).then(() => ({error: 'no answer in 20 s'}))]) : null;
+  check('the Report saves as a PDF file, no print dialog', canPDF && pdf?.name === 'pulsar-ui-report.pdf' && !pdf.error,
+    JSON.stringify(pdf));
   setView('day');
   check('↻ says when the Report was read', reportAge === 'just now', reportAge);
   check('the Report is read again when it is stale', read && kept && old && wrote,

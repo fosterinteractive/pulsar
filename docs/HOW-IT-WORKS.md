@@ -34,7 +34,7 @@ flowchart LR
 
 | Piece | File | What it does |
 |---|---|---|
-| Window | `macos/PulsarWindow.swift` | The app's executable. Runs the launcher (its dialogs as sheets), loads the page, and gives it a Mac app's menus, Cmd+W and Cmd+Q, right-click menus, a title bar in its colours, the Dock badge, the end-of-day reminder, Open at Login, downloads, print, About and the native warp (with `web/js/native.js`). |
+| Window | `macos/PulsarWindow.swift` | The app's executable. Runs the launcher (its dialogs as sheets), loads the page, and gives it a Mac app's menus, Cmd+W and Cmd+Q, right-click menus, a title bar in its colours, the Dock badge, the end-of-day reminder, Open at Login, downloads, print, PDFs saved straight to a file, About and the native warp (with `web/js/native.js`). |
 | Launcher | `macos/launcher.sh` | Installs or upgrades the code under `~/Library/Application Support/Pulsar/`, starts the server, rolls back if it does not start, stops it when the app quits. |
 | Server | `pulsar.py`, `pulsar/server.py` | The page, its files and a JSON API, on 127.0.0.1 only. |
 | Page | `web/` | Plain HTML, CSS and JavaScript, no build step. |
@@ -1683,7 +1683,22 @@ more of it is used. It shows logged against active time by day (billable, not bi
 project, top apps and sites, projects by day, when in the week you work (a heatmap by hour), every task against its
 estimate, and a table of every day. A day's bar and its row in the tables open that day in the Day view.
 **Download** gives the days or the entries as CSV (values starting with `=`,
-`+`, `-` or `@` are escaped, so a spreadsheet never runs them) or a print view that saves as PDF.
+`+`, `-` or `@` are escaped, so a spreadsheet never runs them), the report as a PDF, an invoice summary as a PDF or a
+CSV, and Print… for paper. The PDFs are the page as printed (its `@media print` styles: light whatever the theme, no
+header or filters, the heatmaps and bars kept). Pulsar's window writes them straight to a file
+(`pulsarNative.savePDF`; the window prints to the file the save panel names, starting in Downloads, as the CSVs do),
+but only when it lists `savePDF` in `window.PULSAR_APP.features`: the updates replace the page and the server, never
+the window, so an older window opens its print dialog instead (its PDF menu saves the file), and so does a browser.
+Print… always opens the print dialog.
+
+**The invoice summary** (`report.invoice`, in `/api/report` as `invoice`): every task logged in the range, by project
+(A to Z, "(no project)" last), most time first, with its time and billable time; a subtotal per project, then the
+total time, the billable time and the billable share. Billable is the Billable tile's rule: an entry is billable when
+its service is (`productive.billable_of`); time whose billing Productive does not show is "unknown", never guessed,
+and the share is of the time with known billing, rounded half up as the page's `pct` does. Time on a service with no
+task is a line named after the service. Nothing else: no activity, notes, dates or sessions. It is printed alone
+(`html.print-invoice`, set only while it prints), and refused while the report says Productive did not answer, so an
+invoice is never made from part of the entries.
 
 Going to the Report reads it again (`main.js` setView, `report.js` reportStale) when it was read more than a minute
 ago, or this page has logged, changed or deleted an entry since (`wroteAt`, set by `postJSON` on `/api/log` and

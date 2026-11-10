@@ -92,11 +92,14 @@
     <input type="date" id="rfrom" aria-label="From"> <span class="sub">to</span> <input type="date" id="rto" aria-label="To">
     <span class="sub" id="rlabel"></span><span class="rmsg" id="rmsg" role="status" aria-live="polite"></span>
     <details class="dl" id="report-dl"><summary class="btn bordered">Download</summary>
-      <div class="menu"><button type="button" data-dl="days">Days, CSV</button><button type="button" data-dl="entries">Time entries, CSV</button>
-        <button type="button" data-dl="print">Print or save as PDF</button></div></details>
+      <div class="menu"><button type="button" data-dl="pdf">Report, PDF</button><button type="button" data-dl="invoice">Invoice summary, PDF</button>
+        <hr><button type="button" data-dl="days">Days, CSV</button><button type="button" data-dl="entries">Time entries, CSV</button>
+        <button type="button" data-dl="invoice-csv">Invoice summary, CSV</button>
+        <hr><button type="button" data-dl="print">Print…</button></div></details>
   </div>
   <h1 class="print-title" id="print-title"></h1>
   <div class="body" id="rbody"><div class="chart"><div class="take">Loading the report…</div></div></div>
+  <div class="invoice-doc" id="invoice-doc"></div>
 </main>
 <div class="tip" id="tip" role="tooltip"></div>
 <dialog id="settings" aria-labelledby="settings-title">

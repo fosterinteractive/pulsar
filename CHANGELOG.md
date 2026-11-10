@@ -10,6 +10,9 @@ What each Pulsar release changed, newest first.
 - The log dialog offers the task you logged last in the repository's project first when nothing surer names the work, and a task assigned to you in the last three days second: the right task is among the first three offers on 65% of rows instead of 61% (43 replayed days).
 - Log the day picks the right task more often (39% of minutes on the exact task instead of 35%, on 43 replayed days): work with no sure answer takes the task you logged last in the repository's project, and where you usually log in a repository is only offered as an alternative, never picked. Less time lands on the wrong client.
 - Report, Tasks against estimates: the row under the pointer is lit end to end, and a task's name opens it in Productive.
+- Report > Download > Report, PDF saves the report as a PDF file (asked where, in Downloads, as the CSVs are) instead of opening the print dialog. It looks like the printed report: light, without the header and filters. Needs the new Pulsar.app; an older one opens the print dialog as before, where PDF > Save as PDF does it. Print… stays for paper, in the menu and as File > Print…; the new app also has both PDFs and the invoice CSV in File > Export.
+- Report > Download > Invoice summary, PDF or CSV: every task logged in the range by project, with its time and billable time, a subtotal per project, then the total time, the billable time and the billable share (as the Billable tile counts it; billing Productive does not show you stays "unknown"). Nothing about activity.
+- A printed or saved report keeps its heatmaps and bars, and is light also in the dark theme.
 
 ## 1.6.13 (2026-11-10)
 - Ask Claude no longer sticks on "Asking…": in 1.6.12 the pause dialog's code took the name of the button's, so the button stopped at its first step.

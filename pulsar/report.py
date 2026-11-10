@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import bisect
+import math
 from datetime import datetime
 
 
@@ -94,7 +95,55 @@ def build(dates: list, bounds: list, sources: dict, entries: list, today: str, s
     for x in top_apps:
         x["minutes"] = round(x["minutes"])
     keep = ("date", "minutes", "project", "budget", "service", "task", "taskId", "approved", "billable", "billing")
+    in_range = [x for x in entries if dates[0] <= x["date"] <= dates[-1]]
     return {"from": dates[0], "to": dates[-1], "today": today, "days": days,
-            "entries": [{k: x.get(k) for k in keep} for x in entries if dates[0] <= x["date"] <= dates[-1]],
+            "entries": [{k: x.get(k) for k in keep} for x in in_range],
             "hours": [[round(v) for v in row] for row in hours], "apps": top_apps,
-            "activeTotal": round(sum(x["minutes"] for x in apps.values()))}
+            "activeTotal": round(sum(x["minutes"] for x in apps.values())), "invoice": invoice(in_range)}
+
+
+def percent(part: float, whole: float):
+    """part of whole in whole percent, rounded half up as the page's pct() does; None when there is no whole."""
+    return math.floor(part / whole * 100 + 0.5) if whole else None
+
+
+def _billing(minutes: float, billable) -> dict:
+    """An entry's minutes as billable, not billable or billing unknown (its service's billing type)."""
+    return {"minutes": minutes, "billable": minutes if billable else 0,
+            "nonBillable": minutes if billable is False else 0, "unknown": minutes if billable is None else 0}
+
+
+def _add(into: dict, part: dict) -> None:
+    for k in ("minutes", "billable", "nonBillable", "unknown"):
+        into[k] = into.get(k, 0) + part[k]
+
+
+def _with_pct(x: dict) -> dict:
+    # the Report's Billable tile: the share of the time whose billing is known; unknown time counts as neither
+    x["billablePct"] = percent(x["billable"], x["billable"] + x["nonBillable"])
+    return x
+
+
+def invoice(entries: list) -> dict:
+    """What an invoice needs from a range's entries and nothing else: every task logged, by project, with its time and
+    billable time, a subtotal per project and the totals. Billable is the Report's own rule: an entry is billable when
+    its service is (productive.billable_of), and time whose billing Productive does not show stays unknown."""
+    projects: dict = {}
+    for x in entries:
+        name = x.get("project") or "(no project)"
+        p = projects.setdefault(name, {"project": name, "tasks": {}})
+        # time logged on a service with no task is a line of its own, named after the service
+        tid = x.get("taskId") or ""
+        key = tid or f"service|{x.get('serviceId') or ''}|{x.get('budget') or ''}|{x.get('service') or ''}"
+        name = (x.get("task") or "(untitled task)") if tid else (x.get("service") or "(no task)")
+        t = p["tasks"].setdefault(key, {"taskId": tid, "task": name, "noTask": not tid})
+        part = _billing(x.get("minutes") or 0, x.get("billable"))
+        _add(t, part)
+        _add(p, part)
+    out: dict = {"projects": [], "minutes": 0, "billable": 0, "nonBillable": 0, "unknown": 0}
+    # projects A to Z, as an invoice is looked up by client; within one, the most time first
+    for p in sorted(projects.values(), key=lambda p: (p["project"] == "(no project)", p["project"].casefold())):
+        p["tasks"] = sorted(p["tasks"].values(), key=lambda t: (-t["minutes"], t["task"].casefold()))
+        _add(out, p)
+        out["projects"].append(_with_pct(p))
+    return _with_pct(out)

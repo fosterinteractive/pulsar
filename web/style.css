@@ -489,9 +489,16 @@ header { flex-wrap: wrap; row-gap: 8px; }
   border-radius: 10px; box-shadow: var(--shadow); padding: 4px; display: grid; min-width: 210px; }
 .dl .menu button { text-align: left; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 12.5px; padding: 7px 10px; border-radius: 6px; cursor: pointer; }
 .dl .menu button:hover { background: var(--hover); }
-.print-title { display: none; }
+.dl .menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 6px; }
+.print-title, .invoice-doc { display: none; }
 @media print {
-  :root { --bg: #fff; --panel: #fff; --card: #fff; --text: #111; --muted: #555; --line: #ddd; --line2: #eee; color-scheme: light; }
+  /* paper is light whatever the theme: these beat the dark theme's tokens (html adds to their specificity) */
+  html:root, html:root[data-theme], html:root:not([data-theme="light"]) {
+    --bg: #fff; --panel: #fff; --card: #fff; --text: #111; --muted: #555; --faint: #888; --line: #ddd; --line2: #eee; --hover: transparent;
+    --gap: #d48a00; --gap-text: #9a6200; --seg: rgba(0,0,0,.05); --seg-on: #fff;
+    --accent: var(--mac-accent, #2a78d6); --accent2: #eb6834; --unknown: #7d7c76; --deemph: #c4c3bc; --seq-lo: #e6effa; --seq-hi: #104281;
+    --grid: #e1e0d9; --axis: #c3c2b7; --weekend: rgba(0,0,0,.025); color-scheme: light;
+  }
   html, body { height: auto; overflow: visible; background: #fff; display: block; }
   header, .rfilters, #dayview, .tip, .toast, .pop, dialog, .more summary { display: none !important; }
   #report { display: block !important; overflow: visible; padding: 0; }
@@ -502,6 +509,27 @@ header { flex-wrap: wrap; row-gap: 8px; }
   .tblwrap { overflow: visible; }
   .tbl.rowhover tbody tr:hover td { background: none; }
   #p-daily svg { max-width: 100%; height: auto; }  /* drawn for the screen's width: shrinks to the paper's */
+  /* the heatmaps, bars and swatches are backgrounds, which printing leaves out unless told to keep them */
+  #report * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* the invoice summary (report.js renderInvoice) instead of the report: nothing else on the page */
+  html.print-invoice body > :not(#report), html.print-invoice #report > :not(.invoice-doc) { display: none !important; }
+  html.print-invoice .invoice-doc { display: block; color: #111; font-size: 12px; }
+  .invoice-doc h1 { font-size: 20px; margin: 0 0 2px; }
+  .invoice-doc .inv-range { margin: 0 0 18px; color: #555; }
+  .invoice-doc h2 { font-size: 14px; margin: 0 0 6px; }
+  .inv-group { margin: 0 0 18px; break-inside: avoid; }
+  table.inv { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  table.inv th, table.inv td { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid #e4e4e4; vertical-align: top; }
+  table.inv thead th { font-weight: 600; color: #555; border-bottom-color: #bbb; }
+  table.inv th:nth-child(2), table.inv td:nth-child(2) { width: 18%; white-space: nowrap; }
+  table.inv th:nth-child(3), table.inv td:nth-child(3) { width: 30%; }
+  table.inv tfoot td { font-weight: 600; border-bottom: 0; border-top: 1px solid #bbb; }
+  table.inv small { color: #555; }
+  table.inv-total { width: auto; min-width: 60%; margin-top: 6px; break-inside: avoid; }
+  table.inv-total th { width: 9em; border-bottom: 0; }
+  table.inv-total td { border-bottom: 0; color: #111; }
+  table.inv-total td:nth-child(3) { color: #555; width: auto; }
+  table.inv-total tr:first-child th, table.inv-total tr:first-child td { border-top: 2px solid #111; padding-top: 8px; }
 }
 
 /* not signed in: one notice over everything */
