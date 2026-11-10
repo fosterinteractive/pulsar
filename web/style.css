@@ -395,8 +395,8 @@ header { flex-wrap: wrap; row-gap: 8px; }
 .preview-chip { margin-left: 6px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 1.6;
   background: color-mix(in srgb, var(--gap) 22%, transparent); color: color-mix(in srgb, var(--gap-text) 70%, var(--text)); white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
 .preview-chip.writes { background: color-mix(in srgb, var(--now) 22%, transparent); color: color-mix(in srgb, var(--now) 70%, var(--text)); }
-.ver.has-update { background: #2a78d6; color: #fff; font-weight: 600; }  /* a newer version is out: hard to miss (4.6:1) */
-.ver.has-update:hover { color: #fff; filter: brightness(1.08); }
+.ver.has-update { background: #2171cf; color: #fff; font-weight: 600; }  /* a newer version is out: hard to miss (4.85:1) */
+.ver.has-update:hover { color: #fff; filter: brightness(0.92); }  /* darker on hover: lighter would drop under 4.5:1 */
 #updates .kv { font-size: 12.5px; }
 .btnrow { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 .btnrow[hidden] { display: none; }
