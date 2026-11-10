@@ -1214,38 +1214,29 @@ only here, from `productive.my_activity`, which never returns activity about tim
 (`ctx["context_clients"]`: `dayplan._context` may name a client's task too, with the same thresholds). A rule that
 cannot change the day (no Likely rows, no learned windows) is not planned again.
 
-**The work** runs in a thread of its own (`selfcheck.nudge`), started when a signed-in page polls `GET /api/trackers`
-(every 30 seconds) and a run is due: never in tests or a read-only run (a replay, a demo; Pulsar Preview runs it),
-never without a Productive connection, never while
-`learn.warm` or `context.warm` runs, first two minutes after the server starts; then 5 minutes later while there is
-work left, an hour once there is none, 15 minutes after something did not answer. A run reads your last 30 days of
-entries once (bulk: which days changed), then, when a day needs working out, first the windows of the last 60 days
-that are not kept yet (`context.py`, up to 6 tracker reads a run), then up to 3 days, newest first: one read of the
-60 days of entries before them, your assigned tasks and the recent tasks (once a run), and per day one tracker read,
-Claude Code's sessions where the day is not kept already (`likely-full`), and one read of your Productive activity. The
-planning itself is a few milliseconds a day (on the simulated days: 1.7 ms each for the plan and each rule, 0.6 ms
-for the comparison). A day a tracker, Claude Code's sessions, the calendar, the journal or Productive did not answer
-for is not kept, and is tried again; a day the tracker answered for but recorded nothing is kept as such and left out
-of the measures. A day is worked out again when the Pulsar version or the day's entries change. Not blind to
-everything: a Claude Code session that logged the day through Pulsar in Claude Code holds the task links it logged,
-and those still name its work, so such a day may read better than Log the day would have done that morning.
+**Check** (Settings > Self-check; `POST /api/selfcheck/check`, `selfcheck.start`) is the only way it runs: one
+Check at a time, in a thread of its own (a second click does nothing), the page polling `GET /api/selfcheck`
+(`selfcheck.view`) for its progress ("12 of 22 days"). A Check (`selfcheck.check`) waits for Log the day's own
+learning from past days to end (5 minutes at most), reads your last 30 days of entries once, drops a kept day whose
+entries are gone, and takes from what is kept every day worked out by this version with the same entries. For the
+others: the windows of the last 60 days not kept yet (`context.py`, `dayplan.past_items`), one read of the 60 days of
+entries before them, your assigned tasks and the recent tasks, then per day one tracker read, Claude Code's sessions
+where the day is not kept already (`likely-full`), and one read of your Productive activity. Its tracker problems are
+its own (`trackers.own_problems`): the Activity header's warning for today is never touched. A day a tracker, Claude
+Code's sessions, the calendar, the journal or Productive did not answer for is not kept, and the next Check works it
+out; a day the tracker answered for but recorded nothing is kept as such and left out of the percents. Each Check is
+timed (`timing`: seconds, days worked out, days reused, days not whole, tracker reads, Productive requests) and logged
+once in the error log ("info"). On made-up days the planning itself is a few milliseconds a day.
 
 **Kept**: `~/.cache/pulsar/selfcheck/<date>.json`, owner-only and atomic, 62 days: the numbers, the version, how long
-it took, and a hash of the day's entries; never a task, project, client, note or window.
+it took, and a hash of the day's entries; never a task, project, client, note or window. Not blind to everything: a
+Claude Code session that logged the day through Pulsar in Claude Code holds the task links it logged, so such a day
+may read better than Log the day would have done that morning.
 
-**Settings** (Self-check > How well Pulsar picks for you) shows the last 30 days and, from 3 days, the last
-7 (`GET /api/selfcheck`; "still collecting" under 5 days), the journal's counts, and the two rules beside the plan as it
-is on the same days. **Copy the numbers** copies the totals as text; **Save the self-check** writes
-`pulsar-selfcheck-<date>.json` (`GET /api/selfcheck/download`): the version, the dates, the plan's settings that
-matter (Away after, Round entries to, the Advanced choices, whether Claude Code is used), the totals and each day's
-numbers, with what each number means. Numbers only, so no id at all: the person chooses to send them.
-
-**From Claude Code**: `pulsar_selfcheck(days, refresh)` (5.6, read only) answers the same as the file
-(`selfcheck.report`) for the last `days` (1 to 30), with the days still missing (from the copies of the days Pulsar
-kept at its last read, `selfcheck.pending`: no read of Productive). `refresh: true` works them out in the call
-(`selfcheck.refresh`): it waits for a background run to end (20 seconds at most), then does what a run does with no
-cap on the windows of the days before and at most 10 days, none started after 45 seconds, so the call stays under
-the proxy's two minutes; what is left is said, for another call or the background run. 6 calls a minute at most.
+**The tab** shows only percents of the last 30 days: the right task, the right client and no task (of the minutes
+logged), billable time on another client, over and under (of the billable minutes logged); then, when there is data,
+Log the day's rows (as proposed, another task, another time) and each rule being tried beside the plan as it is on the
+same days. **Copy** copies `selfcheck.share_text`: the same percents in one line, never a minute, date, task or name.
 
 ### 5.5 Where the suggestions come from
 
@@ -1448,7 +1439,6 @@ new session.
 | `pulsar_session` | the calling session's own minutes (Claude Code gives every MCP server `CLAUDE_CODE_SESSION_ID`; Likely rows carry their sessions' ids), by repository, with a task for each and what is not logged yet; `givenAway`: a row's minutes another session's client agent got as a shared row (never in `notLoggedYet`); a background row (`shared`) for the minutes this session's agent got that way; stretches another session also had are kept apart, and so are stretches whose task already has time logged that day with no start time (`maybeLoggedWithoutStart`, with a warning: no overlap check sees such time, and it may be this work) |
 | `pulsar_suggest` | the log dialog's task list for one stretch |
 | `pulsar_tasks` | tasks logged to lately (with the service used last), assigned ones, and a Productive search |
-| `pulsar_selfcheck` | read only: the self-check (5.4d) for the last `days` (1 to 30, default 30), as "Save the self-check" writes it: totals, the last 7 days, each day's measures, minutes per pick source, Log the day's counts, the rules being tried, what each number means, the days still missing; numbers only. `refresh: true` works out up to 10 missing days in the call |
 | `pulsar_preview` | read only: services resolved (as the log dialog picks them), notes checked (`guard_note`), every entry through `server.api_log` with `dry` (overlaps, the journal); with no problem, a code of 16 hex characters (once, 10 minutes) holding exactly those entries, and `summary`, Pulsar's own text of what would be written, one line per entry: `Wed 4 Nov 2026 09:00-10:00 (60 min): Build (Acme), Dev in B, billable. Note: "Search fixed."` (an entry over a shared row of the day's plan says so before the note: "Its agent ran while you did internal work."; when the task already has time logged that day with no start time, the line ends "This task already has 120 min logged that day with no start time: check it is not this work."; the budget after "in"; names without control, format or direction characters and without double quotation marks; a note is one line, at most 200 characters, passes `guard_note`, and has no double quotation mark of any script and no character nobody sees, so it cannot pass for the summary's own words or another entry) |
 | `pulsar_log` | `code` (exactly as given) and `summary` (word for word), and no other argument: writes the entries the code holds through `server.api_log`, one at a time, journalled as a Log the day run (Undo works), stopping at the first that is not logged. Each result is `logged`, `not logged` (refused, with the reason), `not known` (no clear answer, an HTTP 5xx or any unexpected error: it may be in Productive, and the journal never sends it again) or `not sent` (after the stop, or once a minute has passed: `mcptools.LOG_BUDGET`, so the answer always comes back in time, and the rest are previewed again); what was written before a failure is always returned |
 
@@ -1966,8 +1956,8 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `POST /api/activitywatch/fix` | `{minutes}`: ActivityWatch's AFK timeout set to Away after (saved too), with a copy of its file, then ActivityWatch restarted (4.1). The page's session only; refused read-only and in tests. |
 | `GET /api/pause?ask=` | The pause: `{paused, since, sinceText, minutes}`; `ask=1` adds whether to ask if it is still on and `back`, `ask=2` without the wait (Pause). |
 | `POST /api/pause` | `{on: true}` pause, `{on: false, until}` resume (the pause written to the days' not-work marks), `{stay: true}` keep it on. The page's session only. |
-| `GET /api/trackers` | Whether each tracker records now, and the notice's issues (4.1). Starts nothing there; a run of the self-check (5.4d) is started in the background when one is due. |
-| `GET /api/selfcheck` | How well Pulsar picks for you (5.4d): totals of the last 30 and 7 days, never a name. `GET /api/selfcheck/download`: the file. |
+| `GET /api/trackers` | Whether each tracker records now, and the notice's issues (4.1). Starts nothing. |
+| `GET /api/selfcheck` | The self-check (5.4d): whether a Check runs and how far it is, and the percents of the last 30 days, never a minute or a name. `POST /api/selfcheck/check` starts a Check (the page's session only; nothing while one runs). |
 | `POST /api/trackers/open` | `{tracker, restart}`: the notice's button opens ActivityWatch or MemTime, or restarts ActivityWatch (4.1). The page's session only; refused read-only and in tests. |
 | `POST /api/activitywatch/login` | `{add}`: whether ActivityWatch is in Login Items, or adding it, through System Events (4.1). The page's session only; refused read-only and in tests. |
 | `POST /api/log` | Log one entry. With `run` and `row`: one row of Log the day, journalled. |

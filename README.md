@@ -237,13 +237,12 @@ task, service, start, length and note, or remove an entry.
 - **Earlier days…** lists your last workdays with active time no entry covers. Tick the days, and each opens in turn as
   Log the day; each is written only when you confirm it.
 
-**How well Pulsar picks for you** (Settings → Self-check). For each of your last 30 days with entries, Pulsar
-works out, in the background on your Mac, the plan Log the day would have made without that day's entries, and
-compares it minute by minute with what you logged: the right task, the right client, minutes with no task, and billable
-time on another client, over and under. It also counts how many of your Log the day entries went in as proposed, and
-tries two new rules on the side that no plan uses yet. It is computed from your own entries and never sent anywhere;
-**Copy the numbers** and **Save the self-check** give you the totals (numbers only, no task or client names) to share
-if you choose. It shows "still collecting" until 5 days are worked out.
+**Self-check** (Settings → Self-check → **Check**). Pulsar works out, on your Mac, the plan Log the day would have made
+for each of your last 30 days without that day's entries, compares it with what you logged, and shows a few percents:
+the right task, the right client and no task (of the minutes you logged), and billable time on another client, over
+and under (of the billable minutes). Then, when there is data, how often Log the day's rows went in as proposed, and
+two rules being tried. The first Check takes a few minutes; after that only new or changed days are worked out. It
+uses your own entries and is never sent anywhere; **Copy** copies the percents, to share if you choose.
 
 **Day done, and time that was not work.** A day whose logged time reaches your daily target is done (or click **Mark the
 day done** under Work time): its yellow rails turn grey and it leaves Earlier days; **Not done** undoes it. **Not work**,
@@ -308,11 +307,6 @@ on this Mac and turns on:
   today?" or "log the time of this session". The session reads your day from Pulsar and shows the entries; Claude Code
   asks you before each write, showing Pulsar's own summary of it. One write may hold up to 40 entries, so one yes can
   log a whole day: read the summary. Pulsar must be open. These entries say "from Claude Code" in the Logged column.
-- **The self-check from a session**: ask "how well does Pulsar pick for me?" or "run Pulsar's self-check", and the
-  session shows the same numbers as Settings → Self-check → **How well Pulsar picks for you** (the
-  `pulsar_selfcheck` tool, read only): totals, each day, the minutes each kind of pick placed and how many were right,
-  and the two rules being tried. Numbers only, never a task, client or note. Days not worked out yet are listed;
-  "refresh" works out up to 10 of them in the call. You choose what to send, and to whom.
 - **Rules in Claude Code's settings** (`~/.claude/settings.json`; a backup of that file is kept beside it): an ask rule,
   so Claude Code asks before Pulsar's log tool, and deny rules that keep Claude Code's file tools out of Pulsar's folders
   (its key, sign-in code and settings, the installed code, the window's data, the cache). They stop Claude Code's file
