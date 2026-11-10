@@ -1590,8 +1590,12 @@ and the whole day every hour while the page shows. The app's window sends `pulsa
   stretch"). Closing the dialog gives the rail its focus back; closed from the keyboard (Escape, ⌘↩), the rail shows
   the focus ring, a blue outline around the amber line, until something else is clicked.
 - **Hatched rail**: a pause, away or off (under an hour, up to three hours, longer), on the Activity column's left
-  edge, named with its length where no card covers it. A click only says what it is: away time is never proposed
-  for logging; an entry for it is added by hand.
+  edge, named with its length where no card covers it. A click says what it is: away time is never proposed for
+  logging. A pause or away has **Log this time…** in its popover (and the window's right-click menu): work away from
+  the keyboard, a call or a whiteboard. It opens the log dialog on the stretch (`logAway` in `day.js`), leading with
+  the task of the entry that ended within the hour before ("Before you left"), else what the 30 minutes before held
+  (`leadFor`); like any stretch, it starts after a logged entry and stops at the next. Time off (three hours or more)
+  has neither.
 - **Dragging in the Logged column**: from an empty spot, up or down, in 1-minute steps (across entries too); letting
   go opens the log dialog on that stretch with those minutes, never rounded, which says what the stretch holds and
   offers a split when it mixes work
