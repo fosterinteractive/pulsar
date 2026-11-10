@@ -847,6 +847,14 @@ named as the fi-time-from-activity script names it (4.4). With Pulsar's own weig
 turns that run commands in clients' checkouts read as those clients' work. Shared rows were rare (45 minutes in the 52
 days): most work in front had no settled class yet, or the client's agent was not attended.
 
+**Two clients at once** (`3d` in `_rows`, Nick, 2026-11-10). The work in front comes first. Another client's agent
+that ran attended beside it (a different task and repository, both judged by the task's class) is ignored for under
+15 minutes of a sitting (`PARALLEL_MIN`); from 15, every other minute of that overlap is its, so it gets half and the
+work in front the rest: 60 minutes in front with the agent running 40 of them is 40 and 20, never more than the time
+sat. An internal tool in front with a client's agent beside it stays the client's shared stretch (3b), and 3a and 3b
+judge the client by the task's class too, so a "mixed" repository's client task counts. On 52 replayed days this rule
+moved about 30 minutes (from the "ran in parallel" note into entries) and changed no measure by more than 0.3 points.
+
 **Refill** (`_refill`, after the caps). A short turn of one task between longer turns of another joins its neighbour,
 and the evidence cap cuts that neighbour back to its own minutes: the turn's minutes were left as holes (10 November:
 Pulsar work, 24 minutes in front in 1 to 8 minute turns between turns of a client's tasks of 10 minutes or more,

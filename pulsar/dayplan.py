@@ -73,6 +73,8 @@ NEW_PICK_MIN = 0.5   # the words a task you never logged to must share with the 
 FIT_SHARE = attribution.FIT_SHARE  # a project with less of a repository's logged time than this is another client's
 FIT_MIN = attribution.FIT_MIN      # minutes of a repository's (fading) votes before its projects say anything
 CONTEST_MIN = 10     # a client's agent takes internal work's minutes (shared) only for this long at a stretch
+PARALLEL_MIN = 15    # a client's agent beside another client's work in front gets half that time from this long a
+                     # sitting (shorter: ignored; Nick, 2026-11-10)
 CLASS_ORDER = {INTERNAL: 0, "mixed": 1, "unknown": 1, CLIENT: 2}  # what the cap cuts first
 
 
@@ -734,8 +736,15 @@ def _rows(d: _Day) -> None:
             return [x for x in span if present(x, own)]
         return [x for x in span if not away[x] and (own or not logging_[x]) and not (personal[x] and not work[x])]
 
+    def internal(c: dict) -> bool:
+        return c.get("class") == INTERNAL or bool(c.get("task")) and attribution.class_of_task(c["task"], ctx) == INTERNAL
+
+    def client(c: dict) -> bool:  # by its task's class when it has one: a "mixed" repository's client task is a client's
+        # (2026-11-10: Pulsar turns between Northleaf turns in NLv3, a repository logged to both, stayed Pulsar's)
+        return c.get("class") == CLIENT or bool(c.get("task")) and attribution.class_of_task(c["task"], ctx) == CLIENT
+
     for r, c in front:  # 3a. a client's work in front
-        if c["class"] == CLIENT:
+        if client(c):
             claim(c, span_of(r, c))
     d.shared_spans = []
     for r in back:  # 3b. a client's agent, attended, over internal work in front: the client goes first (shared)
@@ -743,7 +752,7 @@ def _rows(d: _Day) -> None:
             continue
         c = prepare(r, True)
         # only a client's task, a known one: priority never makes a task billable, and never adds a minute
-        if c["class"] != CLIENT or not c["task"] or attribution.class_of_task(c["task"], ctx) == INTERNAL:
+        if not client(c) or not c["task"] or attribution.class_of_task(c["task"], ctx) == INTERNAL:
             continue
         span = range(int(r["s"]), min(N, int(math.ceil(r["e"]))))
         # internal work in front: its repository's class, or the task picked for it (a repository logged both ways,
@@ -753,7 +762,7 @@ def _rows(d: _Day) -> None:
                                                          attribution.class_of_task(in_front[x]["task"], ctx) == INTERNAL))]
         # the client's own work in front between them does not cut the stretch either: internal work in short turns
         # with the client's (2026-11-09, a few minutes of each by turns for two hours) counts as one stretch
-        own = {x for x in span if owner[x] is not None and d.claims[owner[x]].get("class") == CLIENT
+        own = {x for x in span if owner[x] is not None and owner[x] != BLOCKED and client(d.claims[owner[x]])
                and repo_key(d.claims[owner[x]].get("project")) == repo_key(r.get("project"))}
         for a, b in _runs(sorted(set(free) | own), 3):  # a glance elsewhere of up to two minutes does not cut it
             minutes = [x for x in free if a <= x <= b]
@@ -769,12 +778,6 @@ def _rows(d: _Day) -> None:
     # 3b'. a short turn of internal work (under an entry) between two turns of one client's work, in one sitting and
     # within MERGE_GAP, is that client's: the stretch is the client's work, as the Likely column shows it. 2026-11-09:
     # a few minutes at a time in the tool's own window while deploying a client's site made a separate internal entry
-    def internal(c: dict) -> bool:
-        return c["class"] == INTERNAL or bool(c.get("task")) and attribution.class_of_task(c["task"], ctx) == INTERNAL
-
-    def client(c: dict) -> bool:  # by its task's class when it has one: a "mixed" repository's client task is a client's
-        # (2026-11-10: Pulsar turns between Northleaf turns in NLv3, a repository logged to both, stayed Pulsar's)
-        return c["class"] == CLIENT or bool(c.get("task")) and attribution.class_of_task(c["task"], ctx) == CLIENT
 
     def turn(r: dict, c: dict) -> bool:
         return internal(c) and r["e"] - r["s"] < d.o["min_entry"]
@@ -793,8 +796,36 @@ def _rows(d: _Day) -> None:
             continue
         claim(before[1], [x for x in span_of(r, before[1]) if owner[x] is None])
     for r, c in front:  # 3c. the rest of the work in front
-        if c["class"] != CLIENT:
+        if not client(c):
             claim(c, span_of(r, c))
+    # 3d. a client's agent that ran attended beside another client's work in front: the work in front comes first; a
+    # run of under PARALLEL_MIN in a sitting is ignored; from that long, half of those minutes are the agent's, taken
+    # from the work in front, so the clients together get no more than the time sat (Nick, 2026-11-10)
+    beside: dict = {}  # (task, sitting) -> (claim, minutes)
+    for r in back:
+        if not r.get("qualifies") or (repo_key(r.get("project")) in never and not r.get("tasks")):
+            continue
+        c = prepare(r, True)
+        if not c["task"] or not client(c) or attribution.class_of_task(c["task"], ctx) == INTERNAL:
+            continue
+        for x in range(int(r["s"]), min(N, int(math.ceil(r["e"])))):
+            who = owner[x]
+            if not present(x, False) or who in (None, BLOCKED):
+                continue
+            f = claims[who]
+            if f.get("kind") != "focused" or not client(f) or str(f.get("task") or "") == str(c["task"]) \
+                    or repo_key(f.get("project")) == repo_key(r.get("project")):
+                continue  # its own work in front, internal work (shared, 3b), or no client in front
+            key = (str(c["task"]), d.sitting[x])
+            beside.setdefault(key, (c, set()))[1].add(x)
+    for (_, _), (c, xs) in beside.items():
+        if len(xs) < PARALLEL_MIN:
+            continue
+        half = sorted(xs)[1::2]  # every other minute: the two are laid one after the other (_merge)
+        for x in half:
+            owner[x] = None
+        claim({**c, "kind": "focused", "parallel": True,
+               "why": "its agent ran beside the work in front: half that time"}, half)
     # what else the agents did while the person was at work: the minutes no claim of theirs took, by repository
     d.bg_left = {}
     d.parallel = bytearray(N)
@@ -804,9 +835,9 @@ def _rows(d: _Day) -> None:
                 continue
             d.parallel[x] = 1
             who = owner[x]
-            if who not in (None, BLOCKED) and claims[who].get("kind") == "shared" \
+            if who not in (None, BLOCKED) and claims[who].get("kind") in ("shared", "focused") \
                     and claims[who].get("project") == r.get("project"):
-                continue
+                continue  # its own: a shared stretch, its half beside the work in front (3d), or itself in front
             d.bg_left.setdefault(r.get("project") or "", set()).add(x)
 
 

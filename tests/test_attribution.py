@@ -372,6 +372,7 @@ TASKS = {  # made-up tasks: a client's, the agency's own tool, the agency's QA h
     "T1": ("Build the tool", "FI-AI Tools", False),
     "Q1": ("QA hub upkeep", "FI-AI QA", False),
     "M1": ("Mixed retainer", "Mixedco - Retainer", None),
+    "G1": ("Globex support", "Globex - Ongoing Support", True),
 }
 
 
@@ -402,6 +403,61 @@ def history(days=8, extra=None):
 
 def work(s, e, app="Cursor", title="Mixed session", cat="work"):
     return {"s": s, "e": e, "app": app, "title": title, "host": "", "url": "", "cat": cat}
+
+
+class ParallelClientsTest(unittest.TestCase):
+    """Two clients at once (Nick, 2026-11-10): the work in front comes first; another client's agent that ran attended
+    beside it for under 15 minutes of a sitting is ignored; from 15, half of those minutes are its, taken from the
+    work in front, so the two together get no more than the time sat."""
+
+    def setUp(self):
+        extra = {f"2026-10-{d:02d}": ([{"k": [KEY], "p": "globex-site", "s": 800, "e": 860}], [entry(f"2026-10-{d:02d}", 800, 60, "G1")])
+                 for d in (14, 15, 16)}
+        self.ctx = history(extra=extra)[0]
+
+    def minutes(self, p):
+        out: dict = {}
+        for e in p["entries"]:
+            out[e["taskId"]] = out.get(e["taskId"], 0) + e["minutes"]
+        return out
+
+    def test_a_long_run_beside_the_work_in_front_gets_half_of_it(self):
+        p = plan([work(600, 660)], [front(600, 660, "client-web")], [back(600, 640, "globex-site", tasks=["G1"])], ctx=self.ctx)
+        self.assertEqual(self.minutes(p), {"C1": 40, "G1": 20}, p["entries"])  # 60 sat: 60 - 20 and half of 40
+        spans = sorted((e["s"], e["e"]) for e in p["entries"])
+        self.assertTrue(all(b <= c for (_, b), (c, _) in zip(spans, spans[1:])), spans)  # one after the other
+        self.assertEqual(p["uncovered"], [])
+
+    def test_a_short_run_or_one_not_attended_is_ignored(self):
+        for bg in (back(600, 612, "globex-site", tasks=["G1"]), back(600, 640, "globex-site", qualifies=False, tasks=["G1"])):
+            p = plan([work(600, 660)], [front(600, 660, "client-web")], [bg], ctx=self.ctx)
+            self.assertEqual(self.minutes(p), {"C1": 60}, (bg, p["entries"]))
+
+    def test_a_clients_agent_in_a_mixed_repository_is_a_client_by_its_task(self):
+        # a repository logged to a client's task and to internal ones ("mixed", as NLv3): its agent's task is the
+        # client's, so beside internal work in front the stretch is the client's (shared), as in any client's repository
+        extra = {f"2026-10-{d:02d}": ([{"k": [KEY], "p": "both-repo", "s": 800, "e": 860}], [entry(f"2026-10-{d:02d}", 800, 60, t)])
+                 for d, t in ((11, "C1"), (12, "C1"), (13, "C1"), (14, "T1"), (15, "T1"))}
+        ctx = history(extra=extra)[0]
+        self.assertEqual(ctx["classes"].get("both-repo"), "mixed")
+        p = plan([work(600, 660)], [front(600, 660, "house-tool")], [back(600, 660, "both-repo", titles=["Mixed session"])], ctx=ctx)
+        self.assertEqual(self.minutes(p).get("C1"), 60, p["entries"])
+
+    def test_an_entry_already_logged_or_a_meeting_inside_the_stretch_is_left_alone(self):
+        # 2026-11-10: a claim with no class (time already logged, a meeting) inside a client agent's stretch stopped the
+        # plan (KeyError 'class'); found by the replay of 52 days, not by a test
+        logged = [{"s": 620, "e": 630, "minutes": 10, "taskId": "Q1"}]
+        meetings = [{"s": 640, "e": 650, "title": "Standup", "uid": "m1", "declined": False, "all_day": False, "tasks": []}]
+        for fr in ("house-tool", "client-web"):
+            p = plan([work(600, 660)], [front(600, 660, fr)], [back(600, 660, "globex-site", tasks=["G1"])], ctx=self.ctx,
+                     logged=logged, meetings=meetings, calls=[{"s": 640, "e": 650}])
+            self.assertTrue(p["entries"], fr)
+
+    def test_internal_work_in_front_is_still_the_clients_shared_stretch(self):
+        # an internal tool in front with a client's agent beside it: the client's, all of it (shared, 3b), not half
+        p = plan([work(600, 660)], [front(600, 660, "house-tool")], [back(600, 660, "globex-site", tasks=["G1"])], ctx=self.ctx)
+        self.assertEqual(self.minutes(p).get("G1"), 60, p["entries"])
+        self.assertNotIn("T1", self.minutes(p))
 
 
 def front(s, e, project, **kw):
