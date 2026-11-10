@@ -395,8 +395,7 @@ function renderInvoice(x) {
   const range = `${dayLabel(x.from, {day: 'numeric', month: 'long', ...(sameYear ? {} : {year: 'numeric'})})} to ${dayLabel(x.to, {day: 'numeric', month: 'long', year: 'numeric'})}`;
   const pr = CONFIG?.productive || {}, who = [pr.personName, pr.orgName].filter(Boolean).join(' · ');
   const known = inv.billable + inv.nonBillable;
-  const stat = (label, value, sub, bar) => `<div class="inv-stat"><span class="l">${esc(label)}</span><span class="v">${esc(value)}</span>${
-    bar != null ? `<span class="inv-bar"><i style="--w:${Math.max(1, bar)}%"></i></span>` : ''}${sub ? `<span class="s">${esc(sub)}</span>` : ''}</div>`;
+  const stat = (label, value, sub) => `<div class="inv-stat"><span class="l">${esc(label)}</span><span class="v">${esc(value)}</span>${sub ? `<span class="s">${esc(sub)}</span>` : ''}</div>`;
   const bill = t => `<td${t.billable ? '' : ' class="mut"'}>${esc(billOf(t))}</td>`;
   // a project's line: its billable time, then quieter its share of the known billing and the time of unknown billing
   const projBill = p => {
@@ -411,8 +410,7 @@ function renderInvoice(x) {
     <div class="inv-head"><div><h1>Invoice summary</h1>${who ? `<p class="inv-who">${esc(who)}</p>` : ''}</div>
       <div class="inv-meta"><span class="l">Period</span><p>${esc(range)}</p></div></div>
     <section class="inv-stats">${stat('Total time', dur(inv.minutes), hoursOf(inv.minutes))}${stat('Billable', dur(inv.billable), hoursOf(inv.billable))}${
-      stat('Billable share', inv.billablePct == null ? 'Unknown' : `${inv.billablePct}%`, inv.unknown && known ? 'of the known billing' : 'of all time',
-           inv.billablePct)}${
+      stat('Billable share', inv.billablePct == null ? 'Unknown' : `${inv.billablePct}%`, inv.unknown && known ? 'of the known billing' : 'of all time')}${
       inv.unknown ? stat('Billing unknown', dur(inv.unknown), 'not shown in Productive') : ''}</section>
     <table class="inv"><colgroup><col><col class="c-share"><col class="c-time"><col class="c-bill"></colgroup>
       <thead><tr><th scope="col">Task</th><th scope="col" class="inv-sh">Share</th><th scope="col">Time</th><th scope="col">Billable</th></tr></thead>`
