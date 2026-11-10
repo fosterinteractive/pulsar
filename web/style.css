@@ -388,8 +388,8 @@ header { flex-wrap: wrap; row-gap: 8px; }
 .ver:empty { display: none; }
 /* Pulsar Preview: the branch and commit, in amber; it turns red while the preview may write to Productive */
 .preview-chip { margin-left: 6px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; line-height: 1.6;
-  background: color-mix(in srgb, var(--gap) 22%, transparent); color: var(--gap-text); white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
-.preview-chip.writes { background: color-mix(in srgb, var(--now) 22%, transparent); color: var(--now); }
+  background: color-mix(in srgb, var(--gap) 22%, transparent); color: color-mix(in srgb, var(--gap-text) 70%, var(--text)); white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.preview-chip.writes { background: color-mix(in srgb, var(--now) 22%, transparent); color: color-mix(in srgb, var(--now) 70%, var(--text)); }
 .ver.has-update { background: #2a78d6; color: #fff; font-weight: 600; }  /* a newer version is out: hard to miss (4.6:1) */
 .ver.has-update:hover { color: #fff; filter: brightness(1.08); }
 #updates .kv { font-size: 12.5px; }
@@ -663,7 +663,7 @@ kbd { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px
 .pause-btn svg { fill: currentColor; flex: none; }
 .pause-btn .i-play, .pause-btn.on .i-pause { display: none; }
 .pause-btn.on .i-play { display: inline; }
-.pause-btn.on { color: var(--gap-text); border-color: var(--gap); background: color-mix(in srgb, var(--gap) 14%, transparent); font-weight: 600; }
+.pause-btn.on { color: color-mix(in srgb, var(--gap-text) 70%, var(--text));  /* 4.5:1 on its tint */ border-color: var(--gap); background: color-mix(in srgb, var(--gap) 14%, transparent); font-weight: 600; }
 .app-time { font: inherit; font-size: 12.5px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px; margin-left: 2px; }
 .app-time:disabled { opacity: .5; }
 
