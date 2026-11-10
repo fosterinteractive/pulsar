@@ -237,6 +237,7 @@ try {
       const r = el.getBoundingClientRect(), cs = getComputedStyle(el);
       if (!r.width || !r.height || cs.visibility === 'hidden' || el.matches(':disabled') || el.closest(':disabled')) continue;
       let op = 1; for (let e = el; e; e = e.parentElement) op *= +getComputedStyle(e).opacity;
+      if (op < 0.1) continue;  // not shown (a "reading…" line still fading in): nothing to read yet
       const c = parse(cs.color); c[3] *= op;
       const bg = ground(el), ratio = contrast(over(c, bg), bg), size = parseFloat(cs.fontSize);
       seen++;
