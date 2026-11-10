@@ -69,7 +69,6 @@ GENERIC = {"the", "and", "for", "with", "drupal", "site", "website", "issues", "
 
 CONF_WORDS = {"high": "likely right", "medium": "probably right", "low": "check"}
 WORK_CONF = "low"     # a task picked by what the work names starts unticked (replay first)
-NEW_PICK_MIN = 0.5   # the words a task you never logged to must share with the work to be picked (or a key named)
 FIT_SHARE = attribution.FIT_SHARE  # a project with less of a repository's logged time than this is another client's
 FIT_MIN = attribution.FIT_MIN      # minutes of a repository's (fading) votes before its projects say anything
 CONTEST_MIN = 10     # a client's agent takes internal work's minutes (shared) only for this long at a stretch
@@ -342,6 +341,7 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
                     best = (tid, len(shared), shared)
             if best:
                 out.append((best[0], "words", "low", "name matches: " + ", ".join(sorted(best[2]))))
+    weak = lambda c: c[1] in ("repo", "sameday", "words", "work") or (c[1] == "session" and session_share < 0.6)  # noqa: E731
     # the task you logged last in a project the repository's work goes to (places): after a sure session vote, before
     # the weaker answers (replay, 43 days: +2.6 points of minutes on the right task). A session you never logged
     # (no votes anywhere: new work) seldom goes on with it, so there it is the last alternative, after what the work
@@ -349,9 +349,16 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
     # +1.1 points of the clean minutes, the right billable minutes per task and day +1.6, over-billing -30 minutes)
     last = attribution.last_of(ctx.get("lastday") or {}, places(ctx, row.get("project")))
     if last:
-        weak = lambda c: c[1] in ("repo", "sameday", "words", "work") or (c[1] == "session" and session_share < 0.6)  # noqa: E731
         at = len(out) if new_session(keys, ctx) else next((i for i, c in enumerate(out) if weak(c)), len(out))
         out.insert(at, (last[1], "lastday", "low", f"the task you logged last in {last[4]} ({last[0]})"))
+    # a task assigned to you in the last days in the repository's project, no entry of yours yet, whose name the work
+    # names (learn.assigned_named): above the last day's task, never above a sure vote. New work is mostly a new
+    # assignment (replay, 43 days: right on 52% of the minutes it took, where the last day's task was right on 11%;
+    # the right task +1.6 points of the clean minutes, the right task in the same sitting +3.8)
+    named = next((x for x in row.get("learned") or [] if x.get("named")), None)
+    if named:
+        at = next((i for i, c in enumerate(out) if weak(c) or c[1] == "lastday"), len(out))
+        out.insert(at, (str(named["taskId"]), "assigned", "low", named.get("why") or "assigned to you lately"))
     return out
 
 
@@ -395,12 +402,15 @@ def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, ass
         task, src, conf, why = None, "none", "low", "no match: pick the task"
         found = [(None, "none", "low", why)] + found
     # a task you never logged to that the work names (learn.new_tasks): the first alternative, and the pick over an
-    # answer that is unsure and not one you gave (a rule, a link, a ticket key): never above a sure vote
+    # answer that is unsure and not one you gave (a rule, a link, a ticket key) only when the work names its ticket
+    # key: never above a sure vote. By shared words alone it was right on 9% of the minutes it took (replay, 43 days: a
+    # client's name or a word like "qa" in the work named another of the client's tasks, or another client's; without
+    # it the right task +0.6 points, 134 minutes less over-billed); a task assigned to you lately that the work names is
+    # picked in candidates ("assigned")
     fresh = [x for x in row.get("learned") or [] if x.get("new")]
     new_alt = [(str(fresh[0]["taskId"]), "new", "low", fresh[0].get("why") or "")] if fresh else []
     weak = conf == "low" and src not in ("rule", "link", "ticket", "work")  # what the work names stays
-    if fresh and weak and (fresh[0].get("key") or fresh[0].get("score", 0) >= NEW_PICK_MIN) \
-            and admissible(row, ctx, str(fresh[0]["taskId"]), "ticket" if fresh[0].get("key") else "new"):
+    if fresh and weak and fresh[0].get("key") and admissible(row, ctx, str(fresh[0]["taskId"]), "ticket"):
         if task:
             new_alt = [(task, src, conf, why)]
         task, src, conf, why = str(fresh[0]["taskId"]), "new", "low", fresh[0].get("why") or ""

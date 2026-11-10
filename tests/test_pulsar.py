@@ -1021,6 +1021,30 @@ class LearnWordsTest(unittest.TestCase):
         self.assertFalse(learn.new_work(["k"], {}, (0.6, 200.0)))
         self.assertTrue(learn.new_work(["k"], {}, (0.6, 50.0)))   # too few minutes to say
         self.assertTrue(learn.new_work(["k"], {}, (0.2, 900.0)))
+        # a task assigned to you that the work names: first, as the plan picks it; second after a sure vote
+        asked = {"taskId": "A", "named": True}
+        self.assertEqual(ids(learn.first_offers(unsure, last, fresh, asked)), ["A", "N", "L", "a", "b"])
+        self.assertEqual(ids(learn.first_offers(unsure, last, asked, asked)), ["A", "L", "a", "b"])
+        self.assertEqual(ids(learn.first_offers(sure, last, fresh, asked)), ["a", "N", "A", "b"])
+        # a never-logged session whose work names a task assigned to you: that task first, marked for the plan
+        self.assertEqual(ids(learn.first_offers(unsure, last, fresh, asked, new=True)), ["A", "N", "L", "a", "b"])
+        got = learn.first_offers(unsure, last, asked, asked, new=True)
+        self.assertEqual(ids(got), ["A", "L", "a", "b"])
+        self.assertTrue(got[0].get("named"))
+
+    def test_assigned_named_is_the_assigned_task_whose_name_the_work_says(self):
+        from pulsar import learn
+        tasks = [{"taskId": "1", "title": "Blog feature fixes", "project": "Acme Support", "created": "2026-11-02"},
+                 {"taskId": "2", "title": "Footer links", "project": "Acme Support", "created": "2026-11-03"},
+                 {"taskId": "3", "title": "Blog listing order", "project": "Acme Support", "created": "2026-11-01"}]
+        got = learn.assigned_named(tasks, "the blog listing shows the oldest first", frozenset())
+        self.assertEqual((got["taskId"], got["assigned"], got["named"]), ("3", True, True))  # most words in common
+        self.assertIn("the work names it: blog, listing", got["why"])
+        self.assertEqual(learn.assigned_named(tasks, "blog posts", frozenset())["taskId"], "1")  # newest on a tie
+        # the project's own name says nothing: every task of the project has it
+        self.assertIsNone(learn.assigned_named(tasks, "acme support site", frozenset()))
+        self.assertIsNone(learn.assigned_named(tasks, "", frozenset()))
+        self.assertIsNone(learn.assigned_named([], "blog", frozenset()))
 
     def test_each_projects_last_day_task_never_depends_on_reading_order(self):
         from pulsar import attribution
@@ -1070,6 +1094,16 @@ class LearnWordsTest(unittest.TestCase):
             learn.annotate(proposal, "2026-11-04", {"person_name": "Nick Example", "person_id": "77"}, self.ENTRIES, [],
                            ZoneInfo("UTC"), pool=pool)
         self.assertEqual([x["taskId"] for x in proposal["entries"][0]["learned"][:2]], ["2", "9"])
+        # the work names the task assigned to you (a new session too): it is first, marked for the plan to pick
+        proposal = {"entries": [{"s": 600, "e": 660, "project": "law-site", "titles": ["Hero banner autoplay"]}]}
+        with mock.patch.object(learn, "warm", lambda *a: None), mock.patch.object(learn, "_stored", lambda d: None), \
+             mock.patch.object(sessions, "PROJECTS_DIR", empty), \
+             mock.patch.object(learn, "work_projects", lambda at, *a: {"Law Faculty"} if at == "law-site" else set()):
+            learn.annotate(proposal, "2026-11-04", {"person_name": "Nick Example", "person_id": "77"}, self.ENTRIES, [],
+                           ZoneInfo("UTC"), pool=pool)
+        got = proposal["entries"][0]["learned"]
+        self.assertEqual([x["taskId"] for x in got[:2]], ["9", "2"])
+        self.assertTrue(got[0]["named"] and "the work names it: hero, banner" in got[0]["why"])
 
     def test_a_later_stretch_of_the_same_session_goes_on_with_the_task_its_work_named(self):
         """2026-11-09: "D11 db upgrade" named the task at 13:21; at 14:00 only "go on, I back up live myself" was typed,

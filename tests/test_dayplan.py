@@ -579,11 +579,40 @@ class PlannerTest(unittest.TestCase):
         r = {**row(540, 600, project="z", titles=["Something new"], tasks=["55"]), "learned": [fresh]}
         [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), self.ctx)["entries"]
         self.assertEqual(e["taskId"], "55")
-        # words that only half agree are offered, not picked
-        r = {**row(540, 600, project="z", titles=["Something new"]), "learned": [{**fresh, "key": False, "score": 0.45}]}
-        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), self.ctx)["entries"]
-        self.assertIsNone(e["taskId"])
-        self.assertEqual(e["alts"][0]["taskId"], "77")
+        # words alone, however many, are offered, not picked: by shared words the plan's pick was right on 9% of its
+        # minutes (replay, 43 days); only a ticket key named makes a task you never logged to the pick
+        for score in (0.45, 0.8):
+            r = {**row(540, 600, project="z", titles=["Something new"]), "learned": [{**fresh, "key": False, "score": score}]}
+            [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), self.ctx)["entries"]
+            self.assertIsNone(e["taskId"])
+            self.assertEqual(e["alts"][0]["taskId"], "77")
+
+    def test_a_task_assigned_to_you_lately_that_the_work_names_goes_above_the_last_days_task(self):
+        # replay of 43 days (2026-11-10): new work is mostly a new assignment; above the last day's task it was right on
+        # 52% of its minutes where that one was right on 11%
+        names = {"P": {"task": "Initech support", "project": "Initech"}}
+        ctx = {**self.ctx, "sess": {}, "sr": {}, "repo": {"initech": {"P": 300.0}}, "names": names,
+               "lastday": {"Initech": ("2026-11-09", "P", 60, 0.0)}}
+        named = {"taskId": "N", "title": "Blog feature fixes", "project": "Initech", "assigned": True, "named": True,
+                 "why": "assigned to you on 2026-11-03, the work names it: blog"}
+        r = {**row(540, 600, project="initech", titles=["Blog listing"]), "learned": [named]}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"], e["confidence"], e["checked"]), ("N", "assigned", "low", False))
+        self.assertEqual(e["alts"][0]["taskId"], "P")
+        # only offered when the work does not name it (the dialog's "assigned to you" offer is not a pick)
+        r = {**r, "learned": [{**named, "named": False}]}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("P", "lastday"))
+        # a sure vote of the session stays the pick
+        key = dayplan.title_key("Blog listing")
+        sure = {**ctx, "sess": {key: {"P": 120.0}}, "sr": {(key, "initech"): {"P": 120.0}}}
+        r = {**r, "learned": [named]}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), sure)["entries"]
+        self.assertEqual((e["taskId"], e["source"], e["alts"][0]["taskId"]), ("P", "session", "N"))
+        # on internal work, a client's task is never the pick for it
+        internal = {**ctx, "task_class": {"N": "client", "P": "internal"}, "classes": {"initech": "internal"}}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), internal)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("P", "lastday"))
 
     def test_one_word_in_common_names_a_task_only_when_it_is_the_repositorys_name(self):
         # replay of 43 days: a single word like "page" or "editor" named another client's task on all its minutes
