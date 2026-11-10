@@ -908,9 +908,8 @@ async function markDay(change, said = '', undo = null) {
 }
 document.addEventListener('click', ev => {
   const pr = ev.target.closest('.pauserail');
-  if (pr) {  // the pause still on: what it is, nothing more (a stray click resumes nothing)
-    openPop(`<div class="ph"><div><h3>Paused</h3><div class="sub">since ${esc(PAUSE.sinceText || '')}${PAUSE.minutes != null ? ` · ${dur(PAUSE.minutes)}` : ''}</div></div></div>
-      <p>Nothing counts as work while Pulsar is paused. Resume at the top when you are back.</p>`, ev);
+  if (pr) {  // the pause still on: the pause's own question, Stay paused first (a stray click resumes nothing)
+    readPause(2).then(r => { if (r?.paused && !document.querySelector('dialog[open]')) askPause(r, true); });
     return;
   }
   const nw = ev.target.closest('.nwrail');

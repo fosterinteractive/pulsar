@@ -81,19 +81,23 @@ async function resumePause(until) {
   toast(days.length ? `Resumed. ${since}–${hm(days[days.length - 1][1])} is not work.` : 'Resumed.', false, r.resumedSince ? undo : null);
 }
 
-/* the question: paused since, working since, and the choices */
-function askPause(r) {
-  $('#pauseprompt-text').textContent = `Paused since ${r.sinceText} (${dur(r.minutes)}), and ${r.backText ? `you have been working since ${r.backText}` : `the tracker saw ${dur(r.workMinutes)} of work since`}.`;
+/* the question: paused since, working since, and the choices. safe (a click on the paused stretch): Stay paused has
+   the focus, so a stray click or Return changes nothing */
+function askPause(r, safe = false) {
+  const worked = r.backText ? `, and you have been working since ${r.backText}`
+    : r.workMinutes ? `, and the tracker saw ${dur(r.workMinutes)} of work since` : '';
+  $('#pauseprompt-text').textContent = `Paused since ${r.sinceText} (${dur(r.minutes)})${worked}.`;
   $('#pauseprompt-notes').textContent = r.backText
     ? `Resume from ${r.backText} counts the time after it as work. Resume now counts none of the pause.`
-    : 'Resume now counts none of the pause.';
+    : 'Nothing counts as work while Pulsar is paused. Resume now counts none of the pause as work.';
   const back = $('#pauseprompt-back');
   back.hidden = !r.backText;
   back.textContent = r.backText ? `Resume from ${r.backText}` : '';
   back.dataset.until = r.back ? String(r.back) : '';
   pauseDlg.dataset.answered = '';
   pauseDlg.showModal();
-  if (back.hidden) $('#pauseprompt-now').focus();
+  if (safe) $('#pauseprompt-stay').focus();
+  else if (back.hidden) $('#pauseprompt-now').focus();
 }
 
 /* when the window comes to the front, at most once a minute: ask if the pause is long and you are working */
