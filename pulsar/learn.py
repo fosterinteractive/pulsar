@@ -611,12 +611,14 @@ def first_offers(learned: list, last: dict | None = None, fresh: dict | None = N
 
 
 def annotate(proposal: dict, date: str, settings: dict, entries_before: list, entries_today: list, tz,
-             pool: list | None = None) -> None:
+             pool: list | None = None, warm_days: bool = True) -> None:
     """Add "learned" (tasks, why) to each row of a day's proposal, and "learning" ({done, of}) while past days are
     still being worked out. `pool` (productive.recent_tasks): tasks you never logged to, offered when the work names
-    them. Mutates the proposal; never raises."""
+    them. warm_days=False (the self-check, selfcheck.py): from the past days kept already, none worked out for it.
+    Mutates the proposal; never raises."""
     try:
-        warm(date, settings)
+        if warm_days:
+            warm(date, settings)
         days = {d: rows for d in _days_before(date) for rows in [_stored(d)] if rows}
         days[date] = rows_of(proposal)  # rows already logged today teach the ones after them
         t0_of = lambda d: datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=tz).timestamp()  # noqa: E731

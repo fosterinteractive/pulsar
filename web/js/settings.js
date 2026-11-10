@@ -210,6 +210,7 @@ function openSettings(tab) {
   fillSettings(CONFIG);
   settingsDirty = false; $('#settings-msg').onclick = null;
   paintWarp();
+  scLoad();  // How well Pulsar picks for you (selfcheck.js)
   /* the connection may have changed since the page loaded (a token renewed or expired): ask again, and refresh only
      what the person does not type into */
   getJSON('/api/config').then(c => {

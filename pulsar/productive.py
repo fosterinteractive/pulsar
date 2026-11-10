@@ -1045,6 +1045,68 @@ def recent_tasks(since: str, settings: dict, limit: int = 2000) -> list:
     return out
 
 
+ACTIVITY_PAGES = 3  # of 200: a person's own activity over three days fits one
+# activity about time itself (an entry logged, a timer, a booking): the self-check reads this to test a rule blind, so
+# the entries of the day it plans must never come back through it
+_TIME_KINDS = re.compile(r"time|timer|booking", re.I)
+
+
+def _activity_task(r: dict) -> Optional[str]:
+    """The task an activity is about: the task itself, or the task its comment, to-do or file is on. None for one
+    about time (an entry, a timer, a booking)."""
+    if any(_TIME_KINDS.search(str(r.get(k) or "")) for k in ("item_type", "parent_type", "root_type")):
+        return None
+    if r.get("task_id"):
+        return str(r["task_id"])
+    for kind, ref in (("item_type", "item_id"), ("parent_type", "parent_id"), ("root_type", "root_id")):
+        if str(r.get(kind) or "").lower() == "task" and r.get(ref):
+            return str(r[ref])
+    return None
+
+
+def my_activity(d0: str, d1: str, settings: dict) -> list:
+    """What you did on tasks in Productive from d0 to d1 (YYYY-MM-DD, a day either side read): the tasks you created,
+    changed or commented on, with the to-dos and files you added, [{at: epoch, task: id}]; never time logged. Only
+    your own (the creator is checked here too, whatever the filter did) and read only: one request a day
+    (ACTIVITY_PAGES at most). Used by the self-check alone (selfcheck.py: dayplan's TOUCH rule, tried, never applied)."""
+    conn = _need(settings)
+    person = str(settings.get("person_id") or "")
+    if not person.isdigit():  # a filter on "" could match anyone's activity
+        raise ProductiveError("Productive did not say who you are, so no activity was read: open Settings.")
+    after, before = day_shift(d0, -1), day_shift(d1, 1)
+    out: list = []
+    for page in range(ACTIVITY_PAGES):
+        if conn["kind"] == "token":
+            status, doc = rest_get("/activities", {"filter[creator_id]": person, "filter[after]": after,
+                                                   "filter[before]": before, "page[size]": 200, "page[number]": page + 1},
+                                   conn["token"], settings.get("org_id"))
+            if status != 200 or not isinstance(doc, dict):
+                raise ProductiveError(f"Productive did not list your activity ({why(status, doc)}).")
+            rows = [{**(d.get("attributes") or {}), "creator": _rel(d, "creator")}
+                    for d in doc.get("data") or [] if isinstance(d, dict)]
+        else:
+            d = parse_mcp(mcp_text("query_resources", {
+                "resource_type": "activities", "limit": 200, "offset": page * 200,
+                "filters": {"op": "and", "conditions": [{"field": "creator", "operator": "eq", "value": person},
+                                                        {"field": "after", "operator": "gt_eq", "value": after},
+                                                        {"field": "before", "operator": "lt_eq", "value": before}]},
+                "include_fields": ["created_at", "item_type", "item_id", "parent_type", "parent_id", "root_type",
+                                   "root_id", "task_id", "creator"]}, conn["token"]))
+            if not isinstance(d.get("items"), dict):
+                raise ProductiveError("Productive answered without a list of your activity.")
+            cols = d["items"]["columns"]
+            rows = [dict(zip(cols, r)) for r in d["items"]["rows"]]
+            for r in rows:
+                r["creator"] = str(r.get("creator") or "").split(":")[-1] or None
+        for r in rows:
+            task, at = _activity_task(r), epoch(r.get("created_at"))
+            if task and at is not None and str(r.get("creator") or "") == person:
+                out.append({"at": at, "task": task})
+        if len(rows) < 200:
+            break
+    return sorted(out, key=lambda x: x["at"])
+
+
 def search_tasks(q: str, settings: dict) -> list:
     return _task_rows([{"field": "title", "operator": "contains", "value": q}], settings, limit=25)
 

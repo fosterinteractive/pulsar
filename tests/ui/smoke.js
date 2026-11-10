@@ -396,6 +396,35 @@ try {
       `${near} / ${quiet} / ${over} / row ${row.includes('near')} / box ${box.near}`);
   }
 
+  // Settings > How well Pulsar picks for you: the server answers with totals (worked out in the background, never
+  // names), the panel shows made-up ones as a table with the last 7 days beside the last 30, says "still collecting"
+  // under five days, and Copy the numbers holds totals only. The real answer is painted back afterwards.
+  {
+    const real = await getJSON('/api/selfcheck');
+    const t = {logged: 600, untimed: 0, rightTask: 300, rightClient: 480, noTask: 60, wrongClient: 20, over: 45, under: 30,
+               billableLogged: 400, billableProposed: 420, proposed: 640, days: 6};
+    const shadow = {activity: {...t, rightTask: 330, days: 6, base: t}, clients: {...t, days: 0, base: t}};
+    const fake = {version: '9.9.9', from: '2026-10-11', to: '2026-11-09', days: 6, noActivity: 0, minDays: 5, collecting: false,
+                  month: {...t, shadow}, week: {...t, days: 3, shadow}, weekDays: 3, older: 0, todo: 0, running: false, connected: true,
+                  log: {entries: 20, byHand: 5, viaLogTheDay: 15, asProposed: 10, taskChanged: 3, timeChanged: 1, serviceChanged: 1, unknown: 0}};
+    scPaint(fake);
+    const [main, tried] = [...document.querySelectorAll('#sc-body .sc-t')];
+    const cells = [...(main?.querySelectorAll('tbody tr') || [])].map(tr => [...tr.querySelectorAll('td')].map(td => td.textContent).join('/'));
+    const rule = tried?.querySelector('tbody tr td:nth-child(3)')?.textContent || '';
+    const buttons = !q('#sc-copy').hidden && !q('#sc-save').hidden && !q('#sc-save-hint').hidden;
+    const text = scText(fake);
+    scPaint({...fake, days: 2, collecting: true});
+    const collecting = q('#sc-status').textContent.startsWith('Still collecting: 2 of the 5 days') && !q('#sc-body table');
+    scPaint(real);
+    check('Settings shows how well Pulsar picks for you',
+      !real.error && typeof real.days === 'number' && typeof real.collecting === 'boolean'
+        && cells.join() === '50%/50%,80%/80%,10%/10%,20 min/20 min,45 min/45 min,30 min/30 min' && rule === '55% +5 pt'
+        && buttons && collecting,
+      `${real.error || `${real.days} days`} | ${cells.join(', ')} | ${rule} | buttons ${buttons} | collecting ${collecting}`);
+    check('Copy the numbers holds totals only', text.includes('Right task 50%') && text.includes('Of your 20 entries, 15 came through Log the day')
+      && !/project|client:|task:/i.test(text.replace(/Right client|another client|Client tasks by window|Right task|No task|another task/g, '')), text);
+  }
+
   check('no page errors during the run', !errors.length, errors.join(' | ') || 'none');
 } catch (e) {
   check('the script ran to the end', false, `${e.name}: ${e.message}`);

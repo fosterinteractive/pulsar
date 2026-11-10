@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, appupdate, askclaude, awsetup, calendar, claudelink, claudeuses, config, daymarks, dayplan, dayreview, flags, learn, likely, logbook, mcptools, newtask, productive, pause, ranges, report, sessions, trackers, trackhealth, updater, names
+from . import __version__, appupdate, askclaude, awsetup, calendar, claudelink, claudeuses, config, daymarks, dayplan, dayreview, flags, learn, likely, logbook, mcptools, newtask, productive, pause, ranges, report, selfcheck, sessions, trackers, trackhealth, updater, names
 from .mcp import whoami_proof
 
 UPDATER = updater.Updater()
@@ -858,17 +858,6 @@ def api_suggest(q: dict) -> dict:
         d1 = q["date"]
         d0 = (datetime.strptime(d1, "%Y-%m-%d") - timedelta(days=30)).strftime("%Y-%m-%d")
         rows, history_error, _, _ = productive_rows(d0, d1, s)  # a saved copy, or nothing, when Productive fails
-        by_task: dict = {}
-        for r in sorted(rows, key=lambda r: (r["date"], r.get("start") or 0)):
-            if not r.get("taskId"):
-                continue
-            t = by_task.setdefault(r["taskId"], {"taskId": r["taskId"], "title": r["task"], "project": r["project"],
-                                                 "minutes": 0, "count": 0})
-            t.update({"serviceId": r.get("serviceId"), "service": r["service"], "budget": r["budget"],
-                      "billable": r.get("billable"), "last": r["date"]})
-            t["minutes"] += r["minutes"]
-            t["count"] += 1
-        recent = sorted(by_task.values(), key=lambda t: (t["last"], t["count"]), reverse=True)
         problem = ""
         try:
             mine = productive.assigned_tasks(s)
@@ -876,16 +865,35 @@ def api_suggest(q: dict) -> dict:
             mine = []
             problem = f"Your assigned tasks could not be read: {exc}"
             logbook.record("productive", problem, kind="warning", once_per=600)
-        known = {t["taskId"]: t for t in mine}
-        for t in recent:  # what Productive says of the tasks you logged to: due date, status, blocked
-            t.update({k: known[t["taskId"]][k] for k in ("due", "status", "blocked")} if t["taskId"] in known else {})
-        assigned = urgent_first([t for t in mine if t["taskId"] not in by_task], today(config.tz(s)))
+        lists = suggest_lists(rows, mine, today(config.tz(s)))
         # kept 10 minutes; one with a part that could not be read only a minute, so the next dialog tries again
         _recent[key] = (time.time() + (60 if problem or history_error else 600),
-                        {"recent": recent, "assigned": assigned, **({"assignedError": problem} if problem else {}),
+                        {**lists, **({"assignedError": problem} if problem else {}),
                          **({"historyError": f"Your last 30 days could not be read: {history_error}"}
                             if history_error else {})})
     return _recent[key][1]
+
+
+def suggest_lists(rows: list, mine: list, today_iso: str) -> dict:
+    """{"recent", "assigned"}: the tasks of `rows` (your entries) newest first, each with the service used last on it,
+    and the tasks of `mine` (assigned to you) not among them, the urgent ones first as of `today_iso`. api_suggest's
+    lists, and the self-check's for a past day (dayplan.gather, blind)."""
+    by_task: dict = {}
+    for r in sorted(rows, key=lambda r: (r["date"], r.get("start") or 0)):
+        if not r.get("taskId"):
+            continue
+        t = by_task.setdefault(r["taskId"], {"taskId": r["taskId"], "title": r.get("task") or "",
+                                             "project": r.get("project") or "", "minutes": 0, "count": 0})
+        t.update({"serviceId": r.get("serviceId"), "service": r.get("service") or "", "budget": r.get("budget") or "",
+                  "billable": r.get("billable"), "last": r["date"]})
+        t["minutes"] += r["minutes"]
+        t["count"] += 1
+    recent = sorted(by_task.values(), key=lambda t: (t["last"], t["count"]), reverse=True)
+    known = {t["taskId"]: t for t in mine}
+    for t in recent:  # what Productive says of the tasks you logged to: due date, status, blocked
+        t.update({k: known[t["taskId"]][k] for k in ("due", "status", "blocked") if k in known[t["taskId"]]}
+                 if t["taskId"] in known else {})
+    return {"recent": recent, "assigned": urgent_first([t for t in mine if t["taskId"] not in by_task], today_iso)}
 
 
 def urgent_first(tasks: list, today_iso: str) -> list:
@@ -1016,6 +1024,16 @@ def api_repeats(q: dict) -> dict:
     items = found[trackers.pick(found, q.get("source", "auto"))]
     items = clock_spans(items, t0, t1, tz)  # by the clock on a day the clocks change, like the usual times
     return {"repeats": repeat_suggestions(_repeats[key][1], items, datetime.strptime(date, "%Y-%m-%d").weekday())}
+
+
+def day_repeats(rows: list, items: list, date: str, s: dict) -> list:
+    """The repeats seen in a day's windows (`items`, by the clock, as api_activity gives them), learned from `rows`,
+    your entries before the day: api_repeats from what was read already (the self-check: dayplan.gather, blind)."""
+    cards = config.advanced(s)["meeting_cards"]
+    if cards == "off":
+        return []
+    patterns = repeating(rows, config.tz(s), date, strict=cards == "strict")
+    return repeat_suggestions(patterns, items, datetime.strptime(date, "%Y-%m-%d").weekday())
 
 
 _rows_before = config.Newest(10)  # (date, person) -> (when, rows)
@@ -1467,9 +1485,10 @@ def api_log(body: dict, via: str = "") -> dict:
     # row that run (or any run of that day) already sent, so a restart or a retry never writes it twice
     journal = None
     if body.get("run") is not None or body.get("row") is not None:
+        proposed = dayplan.proposed_fields(body.get("proposed"))  # as first planned: the self-check (selfcheck.py)
         journal = {"run": str(body.get("run") or ""), "row": str(body.get("row") or ""),
                    "entry": {"start": start, "minutes": minutes, "taskId": task_id, "serviceId": service_id},
-                   **({"via": via} if via else {})}
+                   **({"via": via} if via else {}), **({"proposed": proposed} if proposed else {})}
     if body.get("dry"):
         return _log_checked(body, s, date, begin, minutes, task_id, service_id, tz, a, b, journal)
     key = (date, start, minutes, task_id, service_id)
@@ -1860,7 +1879,8 @@ def _log_checked(body: dict, s: dict, date: str, begin, minutes: int, task_id: s
     def note(status, **fields):  # a Log the day row: its state in the journal, on disk before the next step
         if journal and not body.get("dry"):
             dayplan.mark(journal["run"], date, journal["row"], journal["entry"], status,
-                         **({"via": journal["via"]} if journal.get("via") else {}), **fields)
+                         **({"via": journal["via"]} if journal.get("via") else {}),
+                         **({"proposed": journal["proposed"]} if journal.get("proposed") else {}), **fields)
 
     if not body.get("dry") and config.writes_blocked():  # refused before the journal or the log hears of it
         raise ValueError(config.writes_blocked())
@@ -2056,7 +2076,23 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(api_pause(q))
             if url.path == "/api/trackers":  # polled by the page: whether the trackers record (its notice)
                 s = config.load()
+                selfcheck.nudge(s)  # the self-check's next run, in the background, while a signed-in page is open
                 return self.send_json(trackhealth.health(s["activitywatch_url"], config.tz(s)))
+            if url.path == "/api/selfcheck":  # Settings: How well Pulsar picks for you (totals, never names)
+                s = config.load()
+                selfcheck.nudge(s)
+                return self.send_json(selfcheck.summary(s))
+            if url.path == "/api/selfcheck/download":  # Save the self-check: the numbers, for the person to send
+                doc = selfcheck.download(config.load())
+                body = (json.dumps(doc, indent=1) + "\n").encode("utf-8")
+                name = f"pulsar-selfcheck-{doc['made']}.json"
+                self.send_response(200)
+                for k, v in (("Content-Type", "application/json; charset=utf-8"), ("Content-Length", str(len(body))),
+                             ("Content-Disposition", f'attachment; filename="{name}"'), ("Cache-Control", "no-store"),
+                             ("X-Content-Type-Options", "nosniff")):
+                    self.send_header(k, v)
+                self.end_headers()
+                return self.wfile.write(body)
             if url.path == "/api/calendar/status":  # polled by Settings while the person signs in to Google
                 return self.send_json(calendar.status(config.load()))
             routes = {"/api/activity": api_activity, "/api/entries": api_entries, "/api/proposal": api_proposal,

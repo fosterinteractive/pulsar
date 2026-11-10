@@ -18,6 +18,10 @@ const ldRow = id => LD.rows.find(r => r.id === id);
 const LD_IGNORE = params.get('ignore_logged') === '1';
 const CONF_WORDS = {high: 'likely right', medium: 'probably right', low: 'check'};
 const ldPending = r => !['logged', 'writing'].includes(r.status) && r.status !== 'unknown';
+/* a row as the plan proposed it, before anything was changed: sent with the row, so the journal keeps it beside what
+   was logged (Settings, How well Pulsar picks for you: logged as proposed, with another task or another time) */
+const ldOrig = e => ({taskId: e.taskId || null, serviceId: e.serviceId || null, start: hm24(e.s), minutes: e.minutes,
+                      source: e.source || '', confidence: e.confidence || null, ticked: !!e.checked});
 
 /* small line icons for why a row says what it says */
 const WI = {
@@ -62,7 +66,7 @@ async function openLogDay({fresh = false} = {}) {
   const r = await getJSON(`/api/dayplan?date=${d}&source=${state.source}${LD_IGNORE ? '&ignore_logged=1' : ''}`);
   if (!LD.on || LD.date !== d) return;
   LD.loading = false; LD.plan = r;
-  LD.rows = (r.entries || []).map((e, i) => ({...e, id: 'r' + i, key: ldRowKey(d, e), opened: false, edited: false,
+  LD.rows = (r.entries || []).map((e, i) => ({...e, id: 'r' + i, key: ldRowKey(d, e), orig: ldOrig(e), opened: false, edited: false,
                                                status: e.sent === 'logged' ? 'logged' : e.sent ? 'unknown' : null,
                                                reason: e.sent ? 'A run of this day already sent it.' : '',
                                                ...(e.shared ? ldSharedFrom(e) : {})}));
@@ -111,7 +115,9 @@ function ldClaudePlan(d, r, ans) {
   if (ldDlg.open) { LD.claudeLate = [d, r, ans]; return; }
   LD.claudeLate = null;
   if (LD.writing) { LD.askNote = "Claude answered while writing; Start over to see its picks."; renderReview(); return; }
-  const fresh = (r.entries || []).map((e, i) => ({...e, id: 'c' + i, key: ldRowKey(d, e), opened: false, edited: false, status: null, reason: ''}));
+  // each row keeps Pulsar's own first plan as "proposed" (asking Claude is the person's step), where one was at that time
+  const firstAt = e => LD.rows.find(o => o.s === e.s && o.e === e.e)?.orig;
+  const fresh = (r.entries || []).map((e, i) => ({...e, id: 'c' + i, key: ldRowKey(d, e), orig: firstAt(e) || ldOrig(e), opened: false, edited: false, status: null, reason: ''}));
   let changed = 0;
   if (!LD.rows.some(x => x.edited || x.status)) {  // nothing touched yet: the new plan as a whole
     changed = fresh.filter(n => !LD.rows.some(o => o.s === n.s && o.taskId === n.taskId)).length;
@@ -645,7 +651,7 @@ ldDlg.addEventListener('click', ev => {
 ldDlg.addEventListener('close', () => { if (LD.claudeLate) ldClaudePlan(...LD.claudeLate); });
 
 const rowBody = r => ({date: LD.date, start: hm24(r.s), minutes: r.minutes, taskId: r.taskId, serviceId: r.serviceId,
-                       note: (r.note || '').trim(), run: LD.run, row: r.id});
+                       note: (r.note || '').trim(), run: LD.run, row: r.id, proposed: r.orig || null});
 function newRun() {
   const hex = [...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('');
   return `ld-${LD.date}-${hex}`;
