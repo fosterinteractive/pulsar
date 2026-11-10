@@ -6,6 +6,9 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- What is left before going over: the log dialog always shows a task's estimate ("8 h 30 min of 10 h with this entry, 1 h 30 min left"), amber from 80%, and a Log the day row says it from 80%; the Tasks box's bar turns amber at 80%. The service's time budget the same way, red past it, where Productive lets you read budgets (not for a Staff role).
+
 ## 1.6.12 (2026-11-10)
 - The window is new in this release (Pause in the Dock icon's menu, the panel when you come back): Settings > Updates offers Reinstall Pulsar to every older one.
 - What a session says names its task before the checkout's git branch does (a branch is used only when the session's own words name nothing), and Ukrainian words for a database and an update ("оновлення бази даних") match "DB" and "Upgrade" in task names. A task never logged takes its project's class, so internal turns between its turns are the client's. Internal work after a client's work, or between two clients, is its own.

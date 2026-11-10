@@ -784,6 +784,15 @@ chips of the summary) show one quiet line when Productive says something about a
   worked already); Log the day adds, per row, the plan's earlier rows on the same task (`flags.over_estimate`;
   `GET /api/services` takes `minutes=N`). A write drops the task from the 5-minute cache, so the next check reads
   the new time worked.
+- **What is left, before going over** (Nick, 2026-11-10, as Timely shows it). With this entry the task reaches 80% of
+  its estimate (`flags.NEAR`) but not over it: "8 h of the 10 h estimate with this entry, 2 h left"
+  (`flags.near_estimate`), amber, on the Log the day row and nothing to fix (it is not counted in "to fix in
+  Productive"). The log dialog always says it while the task has an estimate, under the flags ("Estimate: 8 h 30 min of
+  10 h with this entry, 1 h 30 min left", `burnLine` in `log.js`), amber from 80%; the Tasks box's bar turns amber at
+  80% too. **The service's time budget** the same way (`overbudget`, `nearbudget`, `flags.service_budget`; the dialog's
+  "Budget:" line, red past it), from the service's `budgeted_time` and `worked_time` (`productive.budget_time`): only
+  where Productive lets the person read them ("View budgets where a user is a member"). For a Staff role both come back
+  empty, and nothing is said. Log the day counts the plan's earlier rows on the same service.
 
 Each line links to the task in Productive (the address of 5.2b). Pulsar only reads: it never closes, estimates or
 budgets anything, and a flag never unticks a row of Log the day. The closed state comes with the task Pulsar already
