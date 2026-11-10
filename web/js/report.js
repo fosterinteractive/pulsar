@@ -384,7 +384,7 @@ function renderInvoice(x) {
   const projBill = p => {
     const quiet = x => ` <span class="inv-pct">${esc(x)}</span>`;
     if (!p.billable) return bill(p);
-    return `<td>${esc(dur(p.billable))}${p.billablePct != null ? quiet(`${p.billablePct}%`) : ''}${
+    return `<td>${esc(dur(p.billable))}${p.billablePct != null && p.billablePct < 100 ? quiet(`${p.billablePct}%`) : ''}${
       p.unknown ? `<span class="inv-pct inv-unknown">${esc(dur(p.unknown))} unknown</span>` : ''}</td>`;
   };
   // a div, not a header: the print styles hide the page's header elements
