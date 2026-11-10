@@ -31,6 +31,12 @@ import json, sys
 doc = json.load(open(sys.argv[1]))
 if isinstance(doc, dict):  # the script itself failed
     print("error:", doc.get("error")); sys.exit(1)
+import os
+if any(c["name"] == "the back-from-away panel is asked to draw" for c in doc):  # the window drew it into the folder
+    size = open(os.path.join(os.path.dirname(sys.argv[1]), "back.txt")).read().split() if os.path.exists(
+        os.path.join(os.path.dirname(sys.argv[1]), "back.txt")) else []
+    doc.append({"name": "the back-from-away panel draws", "ok": size[2:] == ["330", "108"],
+                "detail": "x".join(size[2:]) or "nothing drawn"})
 bad = [c for c in doc if not c["ok"]]
 for c in doc:
     print(("ok  " if c["ok"] else "FAIL") + "  " + c["name"] + (f"  ({c['detail']})" if c["detail"] else ""))

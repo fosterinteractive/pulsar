@@ -483,11 +483,11 @@ function render() {
       }
       for (const e of ldActive() && LD.plan?.ignoreLogged ? [] : logged.entries) if (e.s != null) for (let m = Math.floor(e.s); m < Math.floor(e.s) + e.minutes && m < end; m++) covered[m] = 1;
       for (const [a, b] of ldActive() ? ldCoverSpans() : []) for (let m = Math.floor(a); m < b && m < end; m++) covered[m] = 1;  // ticked proposals
-      for (const [a, b] of notWorkSpans()) {  // marked "not work": counted nowhere, drawn quiet, a click counts it again
+      for (const [a, b] of notWorkSpans()) {  // marked "not work": counted nowhere, drawn quiet; a click says so, with its button
         for (let m = a; m < b && m < end; m++) covered[m] = 1;
         html += `<div class="nwrail" data-nw-a="${a}" data-nw-b="${b}" style="top:${a * ppm}px;height:${(b - a) * ppm}px"
-          title="Not work (you said so): ${hm(a)}–${hm(b)}. Click to count it as work again." tabindex="0" role="button"
-          aria-label="Not work, ${hm(a)}–${hm(b)}: count it as work again"></div>`;
+          title="Not work (you said so, or paused): ${hm(a)}–${hm(b)}" tabindex="0" role="button"
+          aria-label="Not work, ${hm(a)}–${hm(b)}"></div>`;
       }
       for (const [a, b] of pausedSpans()) {  // the pause still on (pause.js): counted nowhere; a click says so, with Resume
         for (let m = a; m < b && m < end; m++) covered[m] = 1;
@@ -913,7 +913,20 @@ document.addEventListener('click', ev => {
     return;
   }
   const nw = ev.target.closest('.nwrail');
-  if (nw) { const a = +nw.dataset.nwA, b = +nw.dataset.nwB; markDay({remove: [a, b]}, `${hm(a)}–${hm(b)} counts as work again.`); return; }
+  if (nw) {  // what it is, and "Count as work again" only from its own button (a stray click changes nothing)
+    const a = +nw.dataset.nwA, b = +nw.dataset.nwB;
+    openPop(`<div class="ph"><div><h3>Not work</h3><div class="sub">${hm(a)}–${hm(b)} · ${dur(b - a)}</div></div>
+      <button class="btn bordered sm" data-nw-count-a="${a}" data-nw-count-b="${b}">Count as work again</button></div>
+      <p>You marked this as not work, or Pulsar was paused then. It counts nowhere: not in Log the day, not as time not logged.</p>`, ev);
+    return;
+  }
+  const nwc = ev.target.closest('[data-nw-count-a]');
+  if (nwc) {
+    const a = +nwc.dataset.nwCountA, b = +nwc.dataset.nwCountB;
+    closePop();
+    markDay({remove: [a, b]}, `${hm(a)}–${hm(b)} counts as work again.`, {label: 'Undo', run: () => markDay({add: [a, b]})});
+    return;
+  }
   const dm = ev.target.closest('[data-day-mark]');
   if (dm) markDay({done: dm.dataset.dayMark === 'done'}, dm.dataset.dayMark === 'done' ? 'Day done. It leaves Earlier days.' : '');
 });

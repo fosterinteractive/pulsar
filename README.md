@@ -238,13 +238,13 @@ task, service, start, length and note, or remove an entry.
 **Day done, and time that was not work.** A day whose logged time reaches your daily target is done (or click **Mark the
 day done** under Work time): its yellow rails turn grey and it leaves Earlier days; **Not done** undoes it. **Not work**,
 in the log dialog or on a Log the day row, says a stretch was not work: it is no longer marked or proposed (click its
-grey hatched rail to undo). These marks, and Not an example, stay on this Mac and are never sent to Productive.
+grey hatched rail, then **Count as work again**, to undo). These marks, and Not an example, stay on this Mac and are never sent to Productive.
 
 **Pause.** Stepping away for something that is not work? Click **Pause** at the top (or in the Dock icon's menu, or
 Pulsar's menu-bar item): from then on nothing counts as work. The button turns amber with the time it began, the day
 shows the paused time hatched in amber, and Log the day, the Report, the end-of-day reminder and Pulsar in Claude Code
 leave it out. Your tracker goes on recording. Click it again (or **Resume** in the Dock menu) when you are back: the
-paused time becomes "not work" on the day, which a click on it undoes. If you forget, Pulsar asks when you open its
+paused time becomes "not work" on the day (its grey rail has **Count as work again**). If you forget, Pulsar asks when you open its
 window: paused for an hour or more (Settings → Time and activity → Away → **Ask about a long pause**: 30 minutes to 4
 hours, or Never) while the tracker saw you working, it offers **Resume from** the time you came back, **Resume now**
 or **Stay paused**.

@@ -265,15 +265,104 @@ try {
 
   // Ask when I come back: on by default in the window, its threshold, and what the panel would say (never shown here)
   {
+    const pauseWas = PAUSE; PAUSE = {paused: false};  // the offer as when not paused (the real pause is put back)
     const n = appNative(), t0 = new Date(), at = (h, m) => new Date(t0.getFullYear(), t0.getMonth(), t0.getDate(), h, m).getTime() / 1000;
     const midnight = state.date === todayLocal() && TZ === Intl.DateTimeFormat().resolvedOptions().timeZone;
     const ok = midnight ? await awayBack(at(0, 5), at(0, 50)) : 'skipped';
     const short = midnight ? await awayBack(at(0, 5), at(0, 7)) : null, off = midnight ? await awayBack(at(0, 5), at(4, 0)) : null;
-    const expect = !midnight || (PAUSE.paused ? ok === null : !!ok && /^Away .+ · 45 min$/.test(ok.title));
+    PAUSE = {paused: true, since: at(0, 0)};
+    const paused = midnight ? await awayBack(at(0, 5), at(0, 50)) : null;
+    PAUSE = pauseWas;
+    const expect = !midnight || (!!ok && /^Away .+ · 45 min$/.test(ok.title) && paused === null);
     check('Ask when I come back: on, and what it offers', (!n || n.askBack === undefined || (n.askBack === true && !q('#app-askback-row').hidden))
       && awayAskAfter() >= (CONFIG.awayAfter || 15) && expect && short === null && off === null
       && shortTask('Pulsar - Time tracking app for Productive') === 'Pulsar' && shortTask('[FIP-72] Scrum - Nick') === '[FIP-72] Scrum',
-      `${n?.askBack === undefined ? 'no window setting' : 'on ' + n.askBack}, from ${awayAskAfter()} min, ${JSON.stringify(ok)}${PAUSE.paused ? ' (paused)' : ''}`);
+      `${n?.askBack === undefined ? 'no window setting' : 'on ' + n.askBack}, from ${awayAskAfter()} min, ${JSON.stringify(ok)}, while paused ${JSON.stringify(paused)}`);
+    check('Ask when I come back follows Away after', awayAskAfter() === (CONFIG.awayAfter || 15), `${awayAskAfter()} and ${CONFIG.awayAfter}`);
+  }
+
+  // a grey "not work" rail: a click explains, and only its own button counts it as work again (nothing is written here)
+  if (state.view === 'day') {
+    const marksWas = state.marks;
+    state.marks = {...(state.marks || {}), date: state.date, notWork: [...((state.marks || {}).notWork || []), [60, 90]]};
+    render();
+    const rail = q('.nwrail:not(.pauserail)'), posts = [];
+    const postWas = postJSON; postJSON = async (path, body) => { posts.push(path); return {}; };  // nothing reaches the server
+    if (rail) {
+      const r = rail.getBoundingClientRect();
+      rail.dispatchEvent(new MouseEvent('click', {bubbles: true, clientX: r.left + 2, clientY: r.top + 2}));
+      await wait(200);
+    }
+    const shown = q('#pop').classList.contains('on'), btn = q('#pop [data-nw-count-a]');
+    check('a click on a not-work rail explains, writes nothing', !!rail && shown && !!btn && !posts.length,
+      `${rail ? 'rail' : 'no rail'}, popover ${shown}, button ${btn?.textContent}, posts ${posts.join(',') || 'none'}`);
+    closePop(); postJSON = postWas; state.marks = marksWas; render();
+  } else check('a click on a not-work rail explains, writes nothing', true, 'skipped: not on the day');
+
+  // the paused stretch: a click opens the pause's question, Stay paused focused (the pause is made up; nothing written)
+  if (state.view === 'day' && state.date === todayLocal()) {
+    const pauseWas = PAUSE, readWas = readPause, now = Date.now() / 1000;
+    const fake = {paused: true, since: now - 3600, sinceText: '1:00 PM', minutes: 60, ask: false, workMinutes: 4};
+    PAUSE = fake; readPause = async () => fake;
+    render(); await wait(100);
+    const pr = q('.pauserail');
+    if (pr) { const r = pr.getBoundingClientRect(); pr.dispatchEvent(new MouseEvent('click', {bubbles: true, clientX: r.left + 2, clientY: r.top + 2})); }
+    await until(() => q('#pauseprompt').open, 2000);
+    const asked = q('#pauseprompt').open, focus = document.activeElement?.id;
+    pauseDlg.dataset.answered = 'smoke'; if (asked) pauseDlg.close();
+    PAUSE = pauseWas; readPause = readWas; paintPause(); render();
+    check('a click on the paused stretch asks first, Stay paused focused', !!pr && asked && focus === 'pauseprompt-stay', `${pr ? 'rail' : 'no rail'}, asked ${asked}, focus ${focus}`);
+  } else check('a click on the paused stretch asks first, Stay paused focused', true, 'skipped: not on today');
+
+  // a tracker's notice waits for two checks in a row (made-up answers; nothing reaches ActivityWatch)
+  {
+    const getWas = getJSON, seenWas = {...trackSeen};
+    getJSON = async path => path === '/api/trackers'
+      ? {issues: [{key: 'smoke-down', tracker: 'aw', action: 'open', text: 'ActivityWatch is not running.'}], login: true}
+      : getWas(path);
+    await checkTrackers();
+    const first = trackDlg.open;
+    trackSeen['smoke-down'] -= 60 * 1000;  // as if seen a minute ago
+    await checkTrackers();
+    const second = trackDlg.open, login = !q('#trackprompt-settings').hidden;
+    trackActed = true; if (second) trackDlg.close();
+    getJSON = getWas; delete trackSeen['smoke-down']; delete trackQuiet['smoke-down']; Object.assign(trackSeen, seenWas);
+    check('a tracker notice waits for a second check', !first && second && !login, `first ${first}, second ${second}, login button ${login}`);
+  }
+
+  // a break on an earlier day: its popover has Log this time…, which opens the log dialog there (closed unsaved)
+  {
+    const today = state.date;
+    let band = q('.awayband.pause, .awayband.away'), day = band ? today : null;
+    for (let back = 1; !band && back <= 14; back++) {
+      go(shiftDate(today, -back));
+      await until(() => state.act && state.date === shiftDate(today, -back));
+      await wait(300);
+      band = q('.awayband.pause, .awayband.away');
+      if (band) day = state.date;
+    }
+    if (band) {
+      band.scrollIntoView({block: 'center'}); await wait(200);
+      const r = band.getBoundingClientRect();
+      band.dispatchEvent(new MouseEvent('click', {bubbles: true, clientX: r.left + 2, clientY: r.top + 4}));
+      await wait(200);
+      const btn = q('#pop [data-away-a]');
+      btn?.click();
+      const opened = await until(() => q('#logdlg').open, 3000);
+      const start = logForm.elements.start?.value || '';
+      check('a break offers Log this time…, at where it began', !!btn && opened && start === hm24(+band.dataset.a),
+        `${day}: ${btn ? 'button' : 'no button'}, dialog ${opened}, start ${start} of ${hm24(+band.dataset.a)}`);
+      if (q('#logdlg').open) q('#logdlg').close();
+      closePop();
+    } else check('a break offers Log this time…, at where it began', true, 'skipped: no pause or away in 14 days');
+    if (state.date !== today) { go(today); await until(() => state.logged && state.date === today); }
+  }
+
+  // the window's back-from-away panel draws (Pulsar's test window only; macos/ui_smoke.sh reads its size)
+  if (window.PULSAR_APP && window.webkit?.messageHandlers?.pulsar) {
+    window.webkit.messageHandlers.pulsar.postMessage({action: 'testBack', offer: {a: 600, b: 640, title: 'Away 10:00 AM–10:40 AM · 40 min', task: 'Before you left: Pulsar'}});
+    await wait(1500);
+    check('the back-from-away panel is asked to draw', true, 'its size is checked after the run');
   }
 
   check('no page errors during the run', !errors.length, errors.join(' | ') || 'none');

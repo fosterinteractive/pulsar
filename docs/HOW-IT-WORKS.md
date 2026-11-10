@@ -1563,7 +1563,8 @@ and the whole day every hour while the page shows. The app's window sends `pulsa
   "Active, not logged" is quiet, Log the day is not the main button, and Earlier days leaves it out. **Not work**, in
   the log dialog opened on a stretch or on a Log the day row, marks that time as not work: it counts nowhere (no rail,
   not in "Active, not logged", not proposed by Log the day, less in Earlier days) and shows as a quiet hatched rail; a
-  click on it, or Undo in the note at the bottom, counts it as work again. `GET /api/daymarks?date=` (or `from=&to=`),
+  click on it says what it is, and its **Count as work again** (then Undo in the note at the bottom) counts it as work
+  again: a stray click changes nothing (Nick, 2026-11-10). `GET /api/daymarks?date=` (or `from=&to=`),
   `POST /api/daymarks` `{date, done | undone | add: [a, b] | remove: [a, b] | nolearn: id | learn: id}`, the page's
   session only.
 - **Pause** (`pulsar/pause.py`, `web/js/pause.js`, `~/.cache/pulsar/pause.json` `{since, asked}`). Pause at the top
