@@ -1603,7 +1603,8 @@ and the whole day every hour while the page shows. The app's window sends `pulsa
   `awayback.js`), which offers nothing while paused, over midnight, for a stretch mostly logged already or in a
   meeting (today's, when the day shown is today), or under the threshold; else `{a, b, title, task}` with the task of
   the entry before (`entryBefore`). The panel (`showBack`: a non-activating floating panel under the menu bar item, or
-  at the top right of the screen) says "Away 14:10–14:45 · 35 min" and "Before you left: …", with Break and Log This
+  at the top right of the screen) says "Away 14:10–14:45 · 35 min" and "Before you left: Pulsar" (the task's name up
+  to " - ", `shortTask`; the log dialog shows it whole), with Break and Log This
   Time… (the window comes forward and runs `awayLog`: today, then `logAway`); it takes no focus, follows the theme,
   is announced to VoiceOver and goes after 20 seconds, leaving a break. `awayAsk` is set by the page
   (`sendAwayAsk`, on every config): Away after, or ActivityWatch's AFK timeout when longer, since that decides what the

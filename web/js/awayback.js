@@ -17,6 +17,13 @@ function sendAwayAsk() {  // main.js applyConfig: the window's threshold follows
   }
 }
 
+/* a task's short name for the panel: the part before " - " (“Pulsar - Time tracking app for Productive” is “Pulsar”);
+   the log dialog shows it whole */
+function shortTask(title) {
+  const t = String(title || '').trim(), head = t.split(/\s[-–—:|]\s/)[0].trim();
+  return (head.length >= 3 ? head : t).slice(0, 32);
+}
+
 /* {a, b, title, task} in minutes of today, or null: what the window's panel says, if anything */
 async function awayBack(fromSec, toSec) {
   if (!CONFIG || signedOut || PAUSE.paused) return null;
@@ -31,7 +38,7 @@ async function awayBack(fromSec, toSec) {
   const meets = state.date === today ? state.meet?.events || [] : [];
   if (meets.some(m => !m.all_day && !m.declined && over(+m.s, +m.e) >= len / 2)) return null;
   const before = entryBefore(entries, a);
-  return {a, b, title: `Away ${hm(a)}–${hm(b)} · ${dur(len)}`, task: before?.task ? `Before you left: ${before.task}` : ''};
+  return {a, b, title: `Away ${hm(a)}–${hm(b)} · ${dur(len)}`, task: before?.task ? `Before you left: ${shortTask(before.task)}` : ''};
 }
 
 /* the panel's Log This Time…: today's day, then the log dialog on the stretch */

@@ -271,7 +271,8 @@ try {
     const short = midnight ? await awayBack(at(0, 5), at(0, 7)) : null, off = midnight ? await awayBack(at(0, 5), at(4, 0)) : null;
     const expect = !midnight || (PAUSE.paused ? ok === null : !!ok && /^Away .+ · 45 min$/.test(ok.title));
     check('Ask when I come back: on, and what it offers', (!n || n.askBack === undefined || (n.askBack === true && !q('#app-askback-row').hidden))
-      && awayAskAfter() >= (CONFIG.awayAfter || 15) && expect && short === null && off === null,
+      && awayAskAfter() >= (CONFIG.awayAfter || 15) && expect && short === null && off === null
+      && shortTask('Pulsar - Time tracking app for Productive') === 'Pulsar' && shortTask('[FIP-72] Scrum - Nick') === '[FIP-72] Scrum',
       `${n?.askBack === undefined ? 'no window setting' : 'on ' + n.askBack}, from ${awayAskAfter()} min, ${JSON.stringify(ok)}${PAUSE.paused ? ' (paused)' : ''}`);
   }
 
