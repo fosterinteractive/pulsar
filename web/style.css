@@ -318,15 +318,9 @@ dialog#settings::backdrop { background: rgba(0,0,0,.35); }
 }
 #settings section { padding: 14px 0; border-bottom: 1px solid var(--line2); }
 #settings section:last-child { border-bottom: 0; }
-/* How well Pulsar picks for you (selfcheck.js): a measure and what it means on the left, the numbers on the right */
-.sc-t { width: 100%; border-collapse: collapse; font-size: 13px; margin: 4px 0 8px; }
-.sc-t th, .sc-t td { padding: 6px 0 6px 12px; border-bottom: 1px solid var(--line2); vertical-align: top; text-align: right; }
-.sc-t th[scope="row"], .sc-t thead th:first-child { text-align: left; padding-left: 0; font-weight: 500; }
-.sc-t thead th { color: var(--muted); font-weight: 500; font-size: 12px; white-space: nowrap; border-bottom-color: var(--line); }
-.sc-t th small { display: block; color: var(--muted); font-weight: 400; font-size: 12px; margin-top: 1px; }
-.sc-t td { white-space: nowrap; font-variant-numeric: tabular-nums; }
-.sc-t td small { display: block; color: var(--muted); font-size: 11.5px; }
-#sc-rules { margin-top: 6px; }
+/* Settings > Self-check (selfcheck.js): two groups of percents */
+.sc-h { font-size: 12px; font-weight: 500; color: var(--muted); margin: 12px 0 2px; }
+#sc-body .kv + .hint { margin-top: 10px; }
 #settings h3 { font-size: 13px; margin: 0 0 8px; }
 .field { display: grid; gap: 4px; margin: 8px 0; font-size: 12.5px; }
 .field span { color: var(--muted); }
@@ -710,6 +704,7 @@ kbd { font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px
 .pause-btn.on { color: color-mix(in srgb, var(--gap-text) 70%, var(--text));  /* 4.5:1 on its tint */ border-color: var(--gap); background: color-mix(in srgb, var(--gap) 14%, transparent); font-weight: 600; }
 .app-time { font: inherit; font-size: 12.5px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 1px 4px; margin-left: 2px; }
 .app-time:disabled { opacity: .5; }
+#sc-check:disabled { opacity: .55; cursor: default; }
 
 /* a Mac's settings for more contrast (Accessibility, Display): stronger secondary text and lines */
 @media (prefers-contrast: more) {

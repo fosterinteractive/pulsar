@@ -16,7 +16,7 @@ async function openLogs(days = logsDays) {
   const when = t => new Intl.DateTimeFormat(DATE_LOCALE, {day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: CLOCK12, timeZone: TZ}).format(new Date(t));
   $('#logs-list').innerHTML = r.error ? `<p class="status warn">${esc(r.error)}</p>`
     : !list.length ? `<p class="hint">No errors ${days === 1 ? 'in the last 24 hours' : `in the last ${days} days`}.</p>`
-    : list.map(e => `<div class="lg"><div class="lg-h"><span class="lg-k ${e.kind === 'error' ? 'err' : ''}">${e.kind === 'error' ? 'Error' : 'Warning'}</span>
+    : list.map(e => `<div class="lg"><div class="lg-h"><span class="lg-k ${e.kind === 'error' ? 'err' : ''}">${e.kind === 'error' ? 'Error' : e.kind === 'info' ? 'Info' : 'Warning'}</span>
         <span class="num">${esc(when(e.time))}</span><span class="lg-w">${esc(e.where)}</span><span class="lg-v">v${esc(e.version || '?')}</span></div>
         <div class="lg-m">${esc(e.message)}</div>
         ${e.detail ? `<details><summary>Details</summary><pre>${esc(e.detail)}</pre></details>` : ''}</div>`).join('');

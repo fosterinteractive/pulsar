@@ -1918,8 +1918,12 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
              "assigned": suggest,
              "fresh": lambda: server.new_task_source(date, s)}
     if blind is not None:  # what the self-check read once for its days; the repeats from the day's windows, below
-        calls.update(logged=lambda: (list(blind.get("day") or []), None, None, False), history=lambda: (before, None),
-                     repeats=lambda: {"repeats": []}, fresh=lambda: blind.get("fresh"))
+        def own_read():  # a past day's read, in a thread of the pool: its problems its own, never today's warning
+            with trackers.own_problems() as problems:
+                got_ = server.api_activity({"date": date, "source": source})
+            return {**got_, "problems": dict(problems)}
+        calls.update(act=own_read, logged=lambda: (list(blind.get("day") or []), None, None, False),
+                     history=lambda: (before, None), repeats=lambda: {"repeats": []}, fresh=lambda: blind.get("fresh"))
     with ThreadPoolExecutor(8) as pool:
         jobs = {k: pool.submit(f) for k, f in calls.items()}
         got = {k: j.result() for k, j in jobs.items()}

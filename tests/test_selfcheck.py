@@ -177,8 +177,9 @@ def entry(d, i, start_h, minutes=60, task="1", project="Acme", billable=True):
             "serviceId": "9", "project": project, "billable": billable, "task": "T", "service": "Dev"}
 
 
-class RunTest(unittest.TestCase):
-    """run_once with Productive, the tracker and the plan made up: what it reads, works out, keeps and skips."""
+class CheckTest(unittest.TestCase):
+    """check(), the Check button's work, with Productive, the tracker and the plan made up: what it reads, works out,
+    reuses, keeps, skips and how it times itself."""
 
     def setUp(self):
         self.dir = tempfile.mkdtemp()
@@ -189,7 +190,6 @@ class RunTest(unittest.TestCase):
         self.problem = None
         self.answer = None
         self.fail_days = set()
-        selfcheck._failed.clear()
 
         def rows(d0, d1, s, bulk=False):
             self.reads.append((d0, d1, bulk))
@@ -232,9 +232,10 @@ class RunTest(unittest.TestCase):
         for p in self.patches:
             p.stop()
 
-    def test_a_run_works_out_the_newest_days_first_and_keeps_numbers_only(self):
-        self.assertEqual(selfcheck.run_once(self.s, TODAY), selfcheck.SOON)  # four days, three a run: one is left
-        self.assertEqual([d for d, _ in self.planned], ["2026-11-09", "2026-11-06", "2026-11-05"])
+    def test_a_check_works_out_every_day_and_keeps_numbers_only(self):
+        got = selfcheck.check(self.s, TODAY)
+        self.assertTrue(got["ok"], got)
+        self.assertEqual([d for d, _ in self.planned], ["2026-11-09", "2026-11-06", "2026-11-05", "2026-11-03"])
         doc = selfcheck.stored("2026-11-09")
         self.assertEqual((doc["version"], doc["logged"], doc["rightTask"], doc["entries"], doc["byHand"]),
                          (__version__, 60, 60, 1, 1))
@@ -243,180 +244,136 @@ class RunTest(unittest.TestCase):
         _, blind = self.planned[0]
         self.assertEqual(blind["day"], [self.entries[0]])  # the day's own entries go in only as "day"
         self.assertEqual(self.reads[0], ("2026-10-11", "2026-11-09", True))  # one read of the 30 days, in bulk
-        self.assertEqual(self.activity_reads, [d for d, _ in self.planned])  # one activity read per day worked out
+        self.assertEqual(self.activity_reads, [d for d, _ in self.planned])  # one activity read per day
         self.assertFalse({"Acme", "Dev", "T", "2026-11-09-1"} & set(json.dumps(doc).replace(":", " ").replace(",", " ")
                                                                    .replace('"', " ").split()))  # no name, no id
+        # timed: 4 days, none kept before, every window kept already; Productive: the 30 days, the 60 before, assigned
+        # and recent tasks, and an activity read per day
+        self.assertEqual({k: v for k, v in got["timing"].items() if k != "seconds"},
+                         {"days": 4, "reused": 0, "failed": 0, "trackerReads": 4, "productiveReads": 8})
+        self.assertGreaterEqual(got["timing"]["seconds"], 0)
 
-    def test_nothing_changed_nothing_worked_out(self):
-        while selfcheck.run_once(self.s, TODAY) == selfcheck.SOON:
-            pass
+    def test_a_second_check_reuses_the_days_already_worked_out(self):
+        selfcheck.check(self.s, TODAY)
         self.planned.clear()
-        self.assertEqual(selfcheck.run_once(self.s, TODAY), selfcheck.IDLE)
+        got = selfcheck.check(self.s, TODAY)
         self.assertEqual(self.planned, [])
+        self.assertEqual((got["timing"]["days"], got["timing"]["reused"], got["timing"]["productiveReads"]), (0, 4, 1))
 
     def test_a_new_version_or_a_changed_day_is_worked_out_again(self):
-        while selfcheck.run_once(self.s, TODAY) == selfcheck.SOON:
-            pass
+        selfcheck.check(self.s, TODAY)
         old = selfcheck.stored("2026-11-06")
         selfcheck.store("2026-11-06", {**old, "version": "0.0.1"}, TODAY)
         self.entries.append(entry("2026-11-09", 2, 13))  # logged later: the day is worked out again
         self.planned.clear()
-        selfcheck.run_once(self.s, TODAY)
-        self.assertEqual([d for d, _ in self.planned], ["2026-11-09", "2026-11-06"])  # the changed day first
+        got = selfcheck.check(self.s, TODAY)
+        self.assertEqual([d for d, _ in self.planned], ["2026-11-09", "2026-11-06"])
+        self.assertEqual(got["timing"]["reused"], 2)
         self.assertEqual(selfcheck.stored("2026-11-06")["version"], __version__)
         self.assertEqual(selfcheck.stored("2026-11-09")["entries"], 2)
 
     def test_nothing_kept_when_productive_or_the_plan_did_not_answer(self):
         self.problem = "Productive timed out."
-        self.assertEqual(selfcheck.run_once(self.s, TODAY), selfcheck.LATER)
+        got = selfcheck.check(self.s, TODAY)
+        self.assertFalse(got["ok"])
+        self.assertIn("Productive did not answer", got["note"])
         self.assertEqual(self.planned, [])
         self.problem = None
-        self.answer = {"entries": [], "blindProblem": "no tracker answered"}
-        self.assertEqual(selfcheck.run_once(self.s, TODAY), selfcheck.LATER)
+        self.fail_days = {"2026-11-09"}
+        got = selfcheck.check(self.s, TODAY)
         self.assertIsNone(selfcheck.stored("2026-11-09"))  # never kept as if it were real
+        self.assertEqual((got["timing"]["failed"], got["timing"]["days"]), (1, 3))
+        self.assertIn("1 day could not be worked out now", got["note"])
 
     def test_a_day_whose_entries_are_gone_is_dropped(self):
-        while selfcheck.run_once(self.s, TODAY) == selfcheck.SOON:
-            pass
+        selfcheck.check(self.s, TODAY)
         self.entries = [r for r in self.entries if r["date"] != "2026-11-06"]
-        selfcheck.run_once(self.s, TODAY)
+        selfcheck.check(self.s, TODAY)
         self.assertIsNone(selfcheck.stored("2026-11-06"))
         self.assertIsNotNone(selfcheck.stored("2026-11-05"))
 
-    def test_a_day_that_failed_waits_behind_the_others(self):
-        self.fail_days = {"2026-11-09"}
-        self.assertEqual(selfcheck.run_once(self.s, TODAY), selfcheck.LATER)
-        self.planned.clear()
-        selfcheck.run_once(self.s, TODAY)
-        self.assertEqual([d for d, _ in self.planned], ["2026-11-03", "2026-11-09"])
-
-    def test_refresh_works_out_the_missing_days_now_within_its_caps(self):
-        for f in os.listdir(os.path.join(self.dir, "context-days")):
-            os.remove(os.path.join(self.dir, "context-days", f))
-        with mock.patch.object(selfcheck, "REFRESH_SECONDS", -1), mock.patch.dict(selfcheck._state, {"running": False}):
-            got = selfcheck.refresh(self.s, TODAY)  # out of time before the first day: none started, all said
-        self.assertEqual((got["worked"], got["left"]), (0, 4))
-        self.assertIn("4 more days to work out", got["note"])
-        self.assertEqual(len(os.listdir(os.path.join(self.dir, "context-days"))), context.LEARN_DAYS)  # all, in one call
-        with mock.patch.dict(selfcheck._state, {"running": False}):
-            got = selfcheck.refresh(self.s, TODAY)
-        self.assertEqual((got["worked"], got["left"], got["note"]), (4, 0, ""))
-        self.assertFalse(selfcheck._state["running"])
-        self.assertEqual(selfcheck.report(self.s, 30, TODAY)["days"]["workedOut"], 4)
-
-    def test_refresh_waits_for_a_background_run_then_says_so(self):
-        with mock.patch.object(selfcheck, "REFRESH_WAIT", 0.2), mock.patch.dict(selfcheck._state, {"running": True}):
-            got = selfcheck.refresh(self.s, TODAY)
-            self.assertTrue(selfcheck._state["running"])  # the background run's slot is left alone
-        self.assertEqual(got["worked"], 0)
-        self.assertIn("background run", got["note"])
-        self.assertEqual(self.planned, [])
-
-    def test_the_days_still_missing_come_from_the_kept_copies_of_the_days(self):
-        for d in ("2026-11-09", "2026-11-06"):
-            server.write_json(server._copy_path(d, self.s), {"fetched": "x", "rows": [r for r in self.entries if r["date"] == d]})
-        self.assertEqual(selfcheck.pending(self.s, TODAY), ["2026-11-09", "2026-11-06"])
-        selfcheck.run_once(self.s, TODAY)
-        self.assertEqual(selfcheck.pending(self.s, TODAY), [])
-
-    def test_never_without_a_connection_or_while_learning_runs(self):
+    def test_never_without_a_connection_and_after_log_the_days_learning(self):
         with mock.patch.object(productive, "connection", lambda s: {"kind": None}):
-            self.assertEqual(selfcheck.run_once(self.s, TODAY), selfcheck.IDLE)
-        self.assertEqual(selfcheck.run_once({"timezone": "UTC"}, TODAY), selfcheck.IDLE)
-        with learn._warming:
-            self.assertEqual(selfcheck.run_once(self.s, TODAY), selfcheck.SOON)
+            self.assertIn("Connect Productive", selfcheck.check(self.s, TODAY)["note"])
+        self.assertFalse(selfcheck.check({"timezone": "UTC"}, TODAY)["ok"])
+        with learn._warming, mock.patch.object(selfcheck, "WAIT_LEARNING", 0.5):
+            got = selfcheck.check(self.s, TODAY)
+        self.assertIn("still learning", got["note"])
         self.assertEqual((self.reads, self.planned), ([], []))
 
-    def test_the_windows_of_the_days_before_come_first_a_few_a_run(self):
+    def test_the_windows_of_the_days_before_come_first_their_problems_their_own(self):
+        from pulsar import trackers
         for f in os.listdir(os.path.join(self.dir, "context-days")):
             os.remove(os.path.join(self.dir, "context-days", f))
         read = []
-        with mock.patch.object(dayplan, "past_items", lambda d, url: read.append(d) or [work(1, 2)]):
-            self.assertEqual(selfcheck.run_once(self.s, TODAY), selfcheck.SOON)
-        self.assertEqual(len(read), selfcheck.READS)  # never 60 days at once
-        self.assertEqual(read[0], "2026-11-09")
+
+        def past(d, url):  # what a failing reader would do to the shared warning, from inside the check
+            read.append(d)
+            trackers.PROBLEMS["memtime"] = "a past day's problem"
+            return [work(1, 2)]
+        trackers.PROBLEMS.clear()
+        trackers.PROBLEMS["aw"] = "today's warning"
+        try:
+            with mock.patch.object(dayplan, "past_items", past):
+                got = selfcheck.check(self.s, TODAY)
+            self.assertEqual(dict(trackers.PROBLEMS), {"aw": "today's warning"})  # today's warning as it was
+        finally:
+            trackers.PROBLEMS.clear()
+        self.assertEqual((len(read), read[0]), (context.LEARN_DAYS, "2026-11-09"))
+        self.assertEqual(got["timing"]["trackerReads"], context.LEARN_DAYS + 4)
+        with mock.patch.object(dayplan, "past_items", lambda d, url: None):  # no tracker answered: nothing worked out
+            for f in os.listdir(os.path.join(self.dir, "context-days"))[:3]:
+                os.remove(os.path.join(self.dir, "context-days", f))
+            self.planned.clear()
+            selfcheck.store("2026-11-09", {**selfcheck.stored("2026-11-09"), "version": "0"}, TODAY)
+            got = selfcheck.check(self.s, TODAY)
+        self.assertIn("No tracker answered", got["note"])
         self.assertEqual(self.planned, [])
 
     def test_a_day_seen_by_no_tracker_is_kept_aside_from_the_measures(self):
         self.answer = {"entries": [], "noActivity": True, "blindProblem": None, "shadow": {}}
-        selfcheck.run_once(self.s, TODAY)
+        selfcheck.check(self.s, TODAY)
         doc = selfcheck.stored("2026-11-09")
         self.assertTrue(doc["noActivity"])
         self.assertNotIn("logged", doc)
-        sm = selfcheck.summary(self.s, TODAY)
-        self.assertEqual((sm["days"], sm["noActivity"]), (0, len(self.planned)))
+        self.assertEqual(selfcheck.view(self.s, TODAY)["days"], 0)
 
 
-class ShareTest(unittest.TestCase):
-    def test_the_line_to_share_holds_percents_only(self):
-        from pulsar import selfcheck
-        self.assertIn("still collecting", selfcheck.share_text("9.9", selfcheck.totals([]), None, {}, {}))
-        day = {"logged": 200, "rightTask": 100, "rightClient": 150, "noTask": 20, "wrongClient": 10, "over": 30,
-               "under": 5, "billableLogged": 100, "shadow": {"clients": {"logged": 200, "rightTask": 120,
-                                                                         "rightClient": 160}}}
-        t = selfcheck.totals([day])
-        log = {"viaLogTheDay": 5, "unknown": 1, "asProposed": 2, "taskChanged": 1, "timeChanged": 1}
-        line = selfcheck.share_text("9.9", t, None, log, {})
-        self.assertEqual(selfcheck.percents(t)["otherClient"], 10)  # of the billable minutes logged
-        for part in ("right task 50%", "right client 75%", "no task 10%", "another client 10%", "over 30%",
-                     "under 5%", "50% as proposed", "client tasks by window: right task 60% (now 50%)"):
-            self.assertIn(part, line)
-        self.assertNotRegex(line, r"\bmin\b|\bh\b|\d{4}-\d{2}-\d{2}")
+class StartTest(unittest.TestCase):
+    def test_one_check_at_a_time_in_the_background_timed_once(self):
+        gate, ran, logged = threading.Event(), [], []
 
-
-class OwnProblemsTest(unittest.TestCase):
-    def test_reading_past_days_never_touches_todays_tracker_warning(self):
-        """A past day's tracker read in the self-check has its own problems: the Activity header's warning for today
-        is neither set nor cleared by it."""
-        from pulsar import selfcheck, trackers
-        trackers.PROBLEMS.clear()
-        trackers.PROBLEMS["aw"] = "today's warning"
-
-        def reads(*a, **k):  # what a failing past-day read would do
-            trackers.PROBLEMS.pop("aw", None)
-            trackers.PROBLEMS["memtime"] = "a past day's problem"
-            return {"wait": 60, "worked": 0, "left": 0, "note": ""}
-        try:
-            with mock.patch.object(selfcheck, "_run_days", reads):
-                selfcheck._run({})
-            self.assertEqual(dict(trackers.PROBLEMS), {"aw": "today's warning"})
-        finally:
-            trackers.PROBLEMS.clear()
-
-
-class NudgeTest(unittest.TestCase):
-    def test_never_in_tests_nor_read_only(self):
-        with mock.patch.object(selfcheck, "run_once", lambda s: self.fail("ran in a test")), \
-                mock.patch.dict(selfcheck._state, {"running": False, "next": 0.0}):
-            self.assertFalse(selfcheck.nudge({"person_id": "1"}))
-            with mock.patch.object(config, "tests_offline", lambda: False), \
-                    mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}):
-                self.assertFalse(selfcheck.nudge({"person_id": "1"}))
-
-    def test_one_run_at_a_time_then_not_before_the_next(self):
-        gate, ran = threading.Event(), []
-
-        def run_once(s):
+        def check(s, today=None):
             ran.append(1)
+            selfcheck._state.update(step="days", done=1, of=3)
             gate.wait(5)
-            return selfcheck.SOON
-        with mock.patch.object(config, "tests_offline", lambda: False), \
-                mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": ""}), \
-                mock.patch.object(selfcheck, "run_once", run_once), \
-                mock.patch.dict(selfcheck._state, {"running": False, "next": 0.0}):
-            self.assertTrue(selfcheck.nudge({}))
-            self.assertFalse(selfcheck.nudge({}))  # one runs: the page never waits for it
-            gate.set()
+            return {"ok": True, "note": "", "timing": {"seconds": 1.5, "days": 3, "reused": 0, "failed": 0,
+                                                      "trackerReads": 3, "productiveReads": 7}}
+        with mock.patch.object(selfcheck, "check", check), \
+                mock.patch.object(selfcheck.logbook, "record", lambda *a, **k: logged.append((a, k))), \
+                mock.patch.dict(selfcheck._state, {"running": False, "last": None}):
+            self.assertTrue(selfcheck.start({"person_id": "1"}))
             for _ in range(50):
+                if ran:
+                    break
+                time.sleep(0.01)
+            self.assertFalse(selfcheck.start({"person_id": "1"}))  # a second click while it runs does nothing
+            self.assertEqual((selfcheck._state["running"], selfcheck._state["done"], selfcheck._state["of"]), (True, 1, 3))
+            gate.set()
+            for _ in range(100):
                 if not selfcheck._state["running"]:
                     break
                 time.sleep(0.02)
-            self.assertFalse(selfcheck.nudge({}))  # the next only SOON seconds later
-            self.assertGreater(selfcheck._state["next"], time.time() + selfcheck.SOON - 5)
+            self.assertFalse(selfcheck._state["running"])
+            self.assertEqual(selfcheck._state["last"]["timing"]["days"], 3)
         self.assertEqual(ran, [1])
+        [(args, kw)] = logged
+        self.assertIn("3 days worked out", args[1])
+        self.assertIn("7 Productive requests", args[1])
+        self.assertEqual(kw["kind"], "info")
 
 
-class SummaryTest(unittest.TestCase):
+class ViewTest(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()
         self.p = mock.patch.object(config, "CACHE_DIR", self.dir)
@@ -427,41 +384,46 @@ class SummaryTest(unittest.TestCase):
 
     def put(self, d, **kw):
         doc = {"format": 1, "date": d, "version": __version__, "logged": 100, "rightTask": 50, "rightClient": 80,
-               "noTask": 10, "over": 5, "entries": 2, "byHand": 1, "asProposed": 1, "viaLogTheDay": 1,
-               "bySource": {"session": [100, 50, 100]},
-               "shadow": {"activity": {"logged": 100, "rightTask": 55}, "clients": None}, **kw}
+               "noTask": 10, "over": 5, "wrongClient": 2, "under": 0, "billableLogged": 50, "entries": 2, "byHand": 1,
+               "asProposed": 1, "viaLogTheDay": 1, "bySource": {"session": [100, 50, 100]},
+               "shadow": {"activity": None, "clients": {"logged": 100, "rightTask": 55, "rightClient": 90}}, **kw}
         selfcheck.store(d, doc, TODAY)
 
-    def test_still_collecting_under_five_days_then_the_totals(self):
-        for d in ("2026-11-09", "2026-11-06", "2026-11-05"):
+    def test_percents_of_the_last_30_days_never_minutes(self):
+        s = {"person_id": "1", "timezone": "UTC"}
+        self.assertIsNone(selfcheck.view(s, TODAY)["percents"])
+        for d in ("2026-11-09", "2026-11-06", "2026-10-20", "2026-09-01"):  # the last is older than 30 days
             self.put(d)
-        sm = selfcheck.summary({"person_id": "1", "timezone": "UTC"}, TODAY)
-        self.assertTrue(sm["collecting"])
-        self.assertEqual((sm["days"], sm["weekDays"], sm["week"]["days"]), (3, 3, 3))
-        for d in ("2026-10-20", "2026-10-21", "2026-09-01"):  # the last is older than 30 days: not counted
-            self.put(d, version="0.0.1")
-        sm = selfcheck.summary({"person_id": "1", "timezone": "UTC"}, TODAY)
-        self.assertFalse(sm["collecting"])
-        m = sm["month"]
-        self.assertEqual((m["days"], m["logged"], m["rightTask"], m["over"]), (5, 500, 250, 25))
-        self.assertEqual(sm["older"], 2)
-        self.assertEqual(sm["log"]["byHand"], 5)
-        # a shadow over the days it has, beside the plan's own on those days
-        self.assertEqual((m["shadow"]["activity"]["days"], m["shadow"]["activity"]["rightTask"],
-                          m["shadow"]["activity"]["base"]["rightTask"]), (5, 275, 250))
-        self.assertEqual(m["shadow"]["clients"]["days"], 0)
+        v = selfcheck.view(s, TODAY)
+        self.assertEqual(v["days"], 3)
+        self.assertEqual(v["percents"], {"rightTask": 50, "rightClient": 80, "noTask": 10, "otherClient": 4,
+                                         "over": 10, "under": 0})
+        self.assertEqual(v["logTheDay"], {"asProposed": 100, "taskChanged": 0, "timeChanged": 0, "serviceChanged": 0})
+        self.assertEqual(v["rules"], [{"name": "Client tasks by window", "days": 3,
+                                       "withRule": {"rightTask": 55, "rightClient": 90, "noTask": 0, "otherClient": None,
+                                                    "over": None, "under": None},
+                                       "now": {"rightTask": 50, "rightClient": 80, "noTask": 10, "otherClient": 4,
+                                               "over": 10, "under": 0}}])
+        self.assertIn("right task 50%", v["share"])
+        self.assertNotIn("week", v)
+        self.assertEqual(set(v) - {"running", "step", "done", "of", "last", "connected", "days", "minDays", "older",
+                                   "percents", "logTheDay", "rules", "share"}, set())
 
-    def test_the_file_holds_numbers_only(self):
-        self.put("2026-11-09")
-        doc = selfcheck.download({"person_id": "1", "timezone": "UTC", "round_to": 10, "person_name": "Ann Example"},
-                                 TODAY)
-        self.assertEqual((doc["pulsar"], doc["from"], doc["to"]), (__version__, "2026-10-11", "2026-11-09"))
-        self.assertEqual((doc["settings"]["roundTo"], doc["settings"]["awayAfter"]), (10, 15))
-        [d] = doc["perDay"]
-        self.assertEqual(d["bySource"], {"session": [100, 50, 100]})
-        self.assertEqual((doc["days"]["workedOut"], doc["totals"]["rightTask"], doc["logTheDay"]["byHand"]), (1, 50, 1))
-        self.assertNotIn("sig", d)
-        self.assertNotIn("Ann", json.dumps(doc))
+
+class ShareTest(unittest.TestCase):
+    def test_the_line_to_share_holds_percents_only(self):
+        self.assertIn("no day worked out yet", selfcheck.share_text("9.9", selfcheck.totals([]), {}))
+        day = {"logged": 200, "rightTask": 100, "rightClient": 150, "noTask": 20, "wrongClient": 10, "over": 30,
+               "under": 5, "billableLogged": 100, "shadow": {"clients": {"logged": 200, "rightTask": 120,
+                                                                         "rightClient": 160}}}
+        t = selfcheck.totals([day])
+        log = {"viaLogTheDay": 5, "unknown": 1, "asProposed": 2, "taskChanged": 1, "timeChanged": 1}
+        line = selfcheck.share_text("9.9", t, log)
+        self.assertEqual(selfcheck.percents(t)["otherClient"], 10)  # of the billable minutes logged
+        for part in ("right task 50%", "right client 75%", "no task 10%", "another client 10%", "over 30%",
+                     "under 5%", "50% as proposed", "Client tasks by window: right task 60% (now 50%)"):
+            self.assertIn(part, line)
+        self.assertNotRegex(line, r"\bmin\b|\bh\b|\d{4}-\d{2}-\d{2}")
 
 
 class BlindGatherTest(unittest.TestCase):
@@ -602,6 +564,9 @@ class PageTest(unittest.TestCase):
         self.assertIn("How well Pulsar picks for you", panel)
         self.assertIn('<script src="/static/js/selfcheck.js"></script>', html)
         self.assertIn("scLoad();", self.read("js", "settings.js"))
+        self.assertEqual(panel.count("<button"), 2)  # Check, and Copy once there are percents
+        self.assertIn('id="sc-check">Check</button>', panel)
+        self.assertNotIn("download", self.read("js", "selfcheck.js").lower())
 
 
 if __name__ == "__main__":

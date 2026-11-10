@@ -396,33 +396,50 @@ try {
       `${near} / ${quiet} / ${over} / row ${row.includes('near')} / box ${box.near}`);
   }
 
-  // Settings > How well Pulsar picks for you: the server answers with totals (worked out in the background, never
-  // names), the panel shows made-up ones as a table with the last 7 days beside the last 30, says "still collecting"
-  // under five days, and Copy the numbers holds totals only. The real answer is painted back afterwards.
+  // Settings > Self-check: one Check button; a click shows the progress and a second click does nothing; then a few
+  // percents, the Log the day line and the rules' lines; Copy copies the server's line of percents. Read only: the
+  // click's request is answered here (postJSON replaced for the moment), so no Check runs; the real state is painted
+  // back afterwards.
   {
     const real = await getJSON('/api/selfcheck');
-    const t = {logged: 600, untimed: 0, rightTask: 300, rightClient: 480, noTask: 60, wrongClient: 20, over: 45, under: 30,
-               billableLogged: 400, billableProposed: 420, proposed: 640, days: 6};
-    const shadow = {activity: {...t, rightTask: 330, days: 6, base: t}, clients: {...t, days: 0, base: t}};
-    const fake = {version: '9.9.9', from: '2026-10-11', to: '2026-11-09', days: 6, noActivity: 0, minDays: 5, collecting: false,
-                  month: {...t, shadow}, week: {...t, days: 3, shadow}, weekDays: 3, older: 0, todo: 0, running: false, connected: true,
-                  log: {entries: 20, byHand: 5, viaLogTheDay: 15, asProposed: 10, taskChanged: 3, timeChanged: 1, serviceChanged: 1, unknown: 0}};
-    scPaint(fake);
-    const [main, tried] = [...document.querySelectorAll('#sc-body .sc-t')];
-    const cells = [...(main?.querySelectorAll('tbody tr') || [])].map(tr => [...tr.querySelectorAll('td')].map(td => td.textContent).join('/'));
-    const rule = tried?.querySelector('tbody tr td:nth-child(3)')?.textContent || '';
-    const buttons = !q('#sc-copy').hidden && !q('#sc-save').hidden && !q('#sc-save-hint').hidden;
-    const text = scText(fake);
-    scPaint({...fake, days: 2, collecting: true});
-    const collecting = q('#sc-status').textContent.startsWith('Still collecting: 2 of the 5 days') && !q('#sc-body table');
-    scPaint(real);
-    check('Settings shows how well Pulsar picks for you',
-      !real.error && typeof real.days === 'number' && typeof real.collecting === 'boolean'
-        && cells.join() === '50%/50%,80%/80%,10%/10%,20 min/20 min,45 min/45 min,30 min/30 min' && rule === '55% +5 pt'
-        && buttons && collecting,
-      `${real.error || `${real.days} days`} | ${cells.join(', ')} | ${rule} | buttons ${buttons} | collecting ${collecting}`);
-    check('Copy the numbers holds totals only', text.includes('Right task 50%') && text.includes('Of your 20 entries, 15 came through Log the day')
-      && !/project|client:|task:/i.test(text.replace(/Right client|another client|Client tasks by window|Right task|No task|another task/g, '')), text);
+    const p = {rightTask: 52, rightClient: 72, noTask: 16, otherClient: 2, over: 7, under: 4};
+    const base = {connected: true, days: 22, minDays: 5, older: 0, step: '', done: 0, of: 0, last: null,
+                  percents: null, logTheDay: null, rules: [], share: ''};
+    const realPost = window.postJSON;
+    const posts = [];
+    window.postJSON = async (path, body) => { posts.push(path); return {...base, running: true, step: 'days', done: 12, of: 30}; };
+    let progress = '', disabled = false;
+    try {
+      const btn = q('#sc-check');
+      btn.click();
+      await until(() => q('#sc-status').textContent.startsWith('Checking'), 2000);
+      progress = q('#sc-status').textContent;
+      disabled = btn.disabled;
+      btn.click();  // while it runs: nothing
+    } finally {
+      window.postJSON = realPost;
+    }
+    clearTimeout(scPoll);
+    const done = {...base, running: false, percents: p, last: {ok: true, note: ''},
+                  logTheDay: {asProposed: 50, taskChanged: 25, timeChanged: 25, serviceChanged: 0},
+                  rules: [{name: 'Client tasks by window', days: 22, withRule: {...p, rightTask: 55, rightClient: 87}, now: p}],
+                  share: 'Pulsar 9.9.9 self-check, 22 days: right task 52%, right client 72%, no task 16%; billable to another client 2%, over 7%, under 4%.'};
+    scPaint(done);
+    const shown = [...document.querySelectorAll('#sc-body .kv')].map(x => [...x.children].map(c => c.textContent).join(' '));
+    const lines = [...document.querySelectorAll('#sc-body p')].map(x => x.textContent.trim());
+    const copy = !q('#sc-copy').hidden && scLast.share === done.share;
+    const buttons = q('#sc-sec').querySelectorAll('button').length;
+    scPaint(real.error ? {...base, connected: false} : real);
+    check('Settings > Self-check: Check shows progress, one at a time',
+      !real.error && typeof real.running === 'boolean' && posts.join() === '/api/selfcheck/check' && progress === 'Checking: 12 of 30 days…'
+        && disabled && buttons === 2,
+      `${real.error || 'answers'} | ${posts.join()} | ${progress} | disabled ${disabled} | buttons ${buttons}`);
+    check('Settings > Self-check: percents only, and Copy copies the line',
+      shown.join() === 'Right task 52%,Right client 72%,No task 16%,Billable to another client 2%,Over 7%,Under 4%'
+        && lines[0] === 'Log the day rows logged as proposed: 50%, another task 25%, another time 25%.'
+        && lines[1] === 'Client tasks by window (a rule being tried, not used yet): right task 55% (now 52%), right client 87% (now 72%).'
+        && copy && !/\bmin\b|\bh\b/.test(q('#sc-body').textContent),
+      `${shown.join(', ')} | ${lines.join(' / ')} | copy ${copy}`);
   }
 
   check('no page errors during the run', !errors.length, errors.join(' | ') || 'none');

@@ -2076,23 +2076,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(api_pause(q))
             if url.path == "/api/trackers":  # polled by the page: whether the trackers record (its notice)
                 s = config.load()
-                selfcheck.nudge(s)  # the self-check's next run, in the background, while a signed-in page is open
                 return self.send_json(trackhealth.health(s["activitywatch_url"], config.tz(s)))
-            if url.path == "/api/selfcheck":  # Settings: How well Pulsar picks for you (totals, never names)
-                s = config.load()
-                selfcheck.nudge(s)
-                return self.send_json(selfcheck.summary(s))
-            if url.path == "/api/selfcheck/download":  # Save the self-check: the numbers, for the person to send
-                doc = selfcheck.download(config.load())
-                body = (json.dumps(doc, indent=1) + "\n").encode("utf-8")
-                name = f"pulsar-selfcheck-{doc['made']}.json"
-                self.send_response(200)
-                for k, v in (("Content-Type", "application/json; charset=utf-8"), ("Content-Length", str(len(body))),
-                             ("Content-Disposition", f'attachment; filename="{name}"'), ("Cache-Control", "no-store"),
-                             ("X-Content-Type-Options", "nosniff")):
-                    self.send_header(k, v)
-                self.end_headers()
-                return self.wfile.write(body)
+            if url.path == "/api/selfcheck":  # Settings > Self-check: a Check's progress, and percents (never names)
+                return self.send_json(selfcheck.view(config.load()))
             if url.path == "/api/calendar/status":  # polled by Settings while the person signs in to Google
                 return self.send_json(calendar.status(config.load()))
             routes = {"/api/activity": api_activity, "/api/entries": api_entries, "/api/proposal": api_proposal,
@@ -2206,6 +2192,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(api_pause_change(body))
             if urlparse(self.path).path == "/api/trackers/open":  # the trackers notice: open or restart one
                 return self.send_json(api_trackers_open(body))
+            if urlparse(self.path).path == "/api/selfcheck/check":  # Settings > Self-check > Check: in the background
+                s = config.load()
+                return self.send_json({"started": selfcheck.start(s), **selfcheck.view(s)})
             if urlparse(self.path).path == "/api/calendar/connect":
                 url = calendar.start(self.server.server_address[1])
                 try:
