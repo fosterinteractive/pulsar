@@ -772,6 +772,10 @@ def _rows(d: _Day) -> None:
     def internal(c: dict) -> bool:
         return c["class"] == INTERNAL or bool(c.get("task")) and attribution.class_of_task(c["task"], ctx) == INTERNAL
 
+    def client(c: dict) -> bool:  # by its task's class when it has one: a "mixed" repository's client task is a client's
+        # (2026-11-10: Pulsar turns between Northleaf turns in NLv3, a repository logged to both, stayed Pulsar's)
+        return c["class"] == CLIENT or bool(c.get("task")) and attribution.class_of_task(c["task"], ctx) == CLIENT
+
     def turn(r: dict, c: dict) -> bool:
         return internal(c) and r["e"] - r["s"] < d.o["min_entry"]
 
@@ -780,7 +784,7 @@ def _rows(d: _Day) -> None:
             continue
         before = next((front[j] for j in range(k - 1, -1, -1) if not turn(*front[j])), None)
         after = next((front[j] for j in range(k + 1, len(front)) if not turn(*front[j])), None)
-        if not (before and after and before[1]["class"] == after[1]["class"] == CLIENT and before[1].get("task")
+        if not (before and after and client(before[1]) and client(after[1]) and before[1].get("task")
                 and repo_key(before[0].get("project")) == repo_key(after[0].get("project"))
                 and after[0]["s"] - before[0]["e"] <= d.o["merge_gap"]):
             continue
@@ -1040,7 +1044,7 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
             covered[x] = 1
     holes, start = [], None
     for x in range(N + 1):
-        hole = x < N and d.work[x] and not covered[x] and not d.away[x]
+        hole = x < N and d.work[x] and not covered[x] and not d.away[x] and d.owner[x] != BLOCKED  # logging: never
         if hole and start is None:
             start = x
         if not hole and start is not None:
@@ -1070,7 +1074,12 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
             m = min(room, m)
             return m if m >= g and (m >= least or touches(t)) else 0
 
-        close = [t for t in mine if inside[t] or (near(t) is not None and near(t) <= gap)]
+        # a client's entry right against the hole (not a shared one): the hole is in that client's work, so internal work
+        # takes none of it (a turn of internal work inside a client's work is the client's, 3b' in _rows; Nick,
+        # 2026-11-10), and what is left of it goes to that entry
+        beside = [x for x in out if x.get("kind") != "shared" and (x["e"] == a or x["s"] == b)
+                  and x.get("taskId") and billable.get(str(x["taskId"]), attribution.class_of_task(str(x["taskId"]), d.ctx) != INTERNAL)]
+        close = [t for t in mine if (inside[t] or (near(t) is not None and near(t) <= gap)) and (billable[t] or not beside)]
         close.sort(key=lambda t: (-inside[t], near(t) if near(t) is not None else gap, -owed[t]))
         taken, room = {}, min(b - a, budget // g * g)
         for t in close:
@@ -1081,7 +1090,16 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
                 owed[t] -= m
                 if billable[t]:
                     pool[proj[t]] -= m
-        if room >= g:  # what is left of the hole: internal work in front there, or already taking part of it
+        if room >= g and beside and 2 * sum(inside.values()) >= b - a:  # what is left of a hole in a client's work,
+            # when it is mostly work seen in front (not an agent alone, not time logging): that client's entry grows
+            t = max(beside, key=lambda x: (inside.get(str(x["taskId"]), 0), x["e"] == a))["taskId"]
+            t = str(t)
+            if t not in mine:
+                mine[t] = [p for p in pieces if str(p.get("task") or "") == t] or [{"s": a, "last": b - 1, "minutes": room,
+                                                                                    "task": t, "kind": "focused", "parts": []}]
+            taken[t] = taken.get(t, 0) + room
+            room = 0
+        elif room >= g:  # what is left of the hole: internal work in front there, or already taking part of it
             spare = [t for t in close if not billable[t] and (inside[t] or t in taken)]
             if spare and (taken.get(spare[0], 0) + room >= least or touches(spare[0])):
                 taken[spare[0]] = taken.get(spare[0], 0) + room

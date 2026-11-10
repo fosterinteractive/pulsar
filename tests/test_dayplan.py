@@ -445,6 +445,23 @@ class PlannerTest(unittest.TestCase):
         p = dayplan.plan(day(items=[work(540, 600)], rows=[site(540, 560), tool(560, 575), site(575, 600)]), ctx)
         self.assertIn("B", [e["taskId"] for e in p["entries"]])
 
+    def test_internal_turns_inside_a_clients_work_in_a_mixed_repository_are_the_clients(self):
+        # 2026-11-10: Pulsar turns of 1 to 8 minutes between turns of Northleaf's tasks in NLv3, a repository logged to
+        # both clients' and internal tasks ("mixed"): the rule went by the repository's class, so they stayed Pulsar's
+        # and showed as entries of their own. By the task's class, the client's tasks are a client's: the turns are its
+        ctx = {**self.ctx, "names": {"A": {"task": "Upgrade", "project": "Initech"}, "C": {"task": "Maintenance", "project": "Initech"},
+                                     "B": {"task": "Tool", "project": "FI-AI"}},
+               "task_class": {"A": "client", "C": "client", "B": "internal"}, "classes": {"site": "mixed", "tool": "mixed"}}
+        # the tasks are Claude's picks, not links in the work, so a row's class is its repository's: "mixed"
+        spans = [(540, 552, "site", "A"), (552, 556, "tool", "B"), (556, 568, "site", "C"), (568, 576, "tool", "B"),
+                 (576, 588, "site", "A"), (588, 591, "tool", "B"), (591, 603, "site", "C"), (603, 605, "tool", "B")]
+        rows = [row(s, e, project=pr, titles=["Work"]) for s, e, pr, _ in spans]
+        picks = {f"{s}|{pr}": {"tasks": [{"taskId": t}], "why": "Claude", "note": ""} for s, _, pr, t in spans}
+        p = dayplan.plan(day(items=[work(540, 605)], rows=rows, picks=picks), ctx)
+        self.assertNotIn("B", [e["taskId"] for e in p["entries"]], p["entries"])  # the tool's turns are the client's
+        self.assertEqual(p["uncovered"], [], p["entries"])
+        self.assertEqual(sum(e["minutes"] for e in p["entries"]), 65)
+
     def test_a_short_piece_by_its_own_entry_is_offered_and_a_crumb_joins_the_larger_piece(self):
         # 2026-11-09: 7 minutes of a task, then 3 of another, right before the task's own entry: the 7 joined the 3,
         # took its task, and the evidence cap dropped them all

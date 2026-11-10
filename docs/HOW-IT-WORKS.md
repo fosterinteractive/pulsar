@@ -856,16 +856,21 @@ yet given that time: first those with minutes in the hole, then those within 30 
 task that may be billable takes from what its project was seen and not given, rounded down, so a client is never
 given more than its work was seen, while one session's work split over a few of its tasks (7, 37 and 6 minutes) is
 not lost for being short; internal work takes what it is owed to the nearest step, and what is left of a hole where
-it was in front. A new entry is never shorter than an entry (10 minutes); an entry of the same task against the hole
-grows instead. Never past the active-time cap. On 19 past days: 365 more minutes proposed (16 of the 19 days, 10 to
-55 a day), the minutes per task right for 45.2% instead of 44.3%, the right task at the right minute 47.4% instead
-of 48.2% (a hole is filled where it is, not at the turn's own minute), the log dialog's picks unchanged.
+it was in front. A hole with a client's entry right against it is in that client's work: internal work takes none
+of it, and what is left goes to that entry when the hole is mostly work seen in front (a turn of internal work inside a
+client's work is the client's, as `3b'`). Time spent logging and an agent's time alone are never filled. A new entry
+is never shorter than an entry (10 minutes); an entry of the same task against the hole grows instead. Never past the
+active-time cap. On 19 past days, with `3b'` by the task's class: 450 more minutes proposed (16 of the 19 days),
+the minutes per task right for 45.5% instead of 44.3%, the right task at the right minute 46.8% instead of 48.2% (a
+hole is filled where it is, not at the turn's own minute, and internal turns now go to the client around them where
+some days logged them on their own), the log dialog's picks unchanged.
 
 Pieces of one task in one sitting (it ends after Away after with no activity) join, also across another task's pieces
 when every one of them is under 10 minutes (two works by turns, a few minutes of each: one entry each, one after the
 other, each its own minutes, within the time they took; but a turn of internal work under 10 minutes between two turns
 of one client's work, in one sitting and within 30 minutes, is that client's, `3b'` in `_rows`, as the Likely column
-shows the stretch (on 19 past days 65 more minutes had a task, the minutes per task right for 44.2% instead of 44.0%,
+shows the stretch; "one client's work" by the task's class when the turn has a task, so a "mixed" repository's client
+tasks count (10 November: Pulsar turns between Northleaf turns in NLv3, a repository logged to both, stayed Pulsar's) (on 19 past days 65 more minutes had a task, the minutes per task right for 44.2% instead of 44.0%,
 the right task at the right minute 48.0% instead of 48.8%: some of those turns had been logged on their own); before 1.6.8 the short turns folded into one entry that the
 evidence cap cut, and on 9 November 65 of 114 minutes showed as not logged; on 19 past days 145 more minutes had a
 task, the minutes per task were right for 42.6% instead of 41.3%, and the right task at the right minute 48.1%
