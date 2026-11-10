@@ -1105,6 +1105,9 @@ def _context(d: _Day) -> None:
     # never the task of one of the day's meetings: it is logged with the meeting, and its channel read before the daily
     # meeting named the desk work around it, joined to the meeting (replay, no sessions: 0 of 1,096 minutes right)
     meetings = {str(c["task"]) for c in claims if c.get("task") and c["kind"] in ("meeting", "unattended")}
+    # internal, and in an internal project: a task of a client's project logged non-billable is the client's too
+    internal = lambda t: class_of(t, d) == INTERNAL \
+        and project_class(project_of({"task": t}, d), d.ctx) == INTERNAL  # noqa: E731
     fr = context_mod.front(d.items, N)
     said: dict = {}
     picked: list = [None] * N
@@ -1115,8 +1118,7 @@ def _context(d: _Day) -> None:
             continue
         if fr[x] not in said:
             got = context_mod.pick(context_mod.keys(d.items[fr[x]]), learned)
-            said[fr[x]] = got if got and got[0] not in meetings \
-                and (CONTEXT_CLIENTS or class_of(got[0], d) == INTERNAL) else None
+            said[fr[x]] = got if got and got[0] not in meetings and (CONTEXT_CLIENTS or internal(got[0])) else None
         picked[x] = said[fr[x]]
     runs: list = []  # [task, [minutes picked], best (share, total)]
     for x in range(N):

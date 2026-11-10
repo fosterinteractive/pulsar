@@ -164,6 +164,11 @@ class WithoutClaudeTest(unittest.TestCase):
         hist, kept = history({"7": doc}, billable=True)
         p = plan([doc(600, 640)], hist, kept)
         self.assertEqual([e["taskId"] for e in p["entries"]], [None])
+        # nor a task of a client's project you logged non-billable (its class is internal, its project the client's)
+        hist, kept = history({"7": doc, "9": page}, billable=True)
+        hist = [{**r, "billable": False} if r["taskId"] == "7" else r for r in hist]
+        p = plan([doc(600, 640)], hist, kept)
+        self.assertEqual([e["taskId"] for e in p["entries"]], [None])
 
 
 class WithClaudeTest(unittest.TestCase):
