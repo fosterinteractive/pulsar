@@ -437,6 +437,46 @@ class PlannerTest(unittest.TestCase):
         [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600)]), ctx)["entries"]
         self.assertEqual((e["taskId"], e["confidence"], e["checked"]), ("11", "low", False))
 
+    def test_a_pick_sure_by_its_source_but_in_doubt_starts_unticked(self):
+        # replay of 43 days (2026-11-10): ticked minutes on the right task 87.8% instead of 72.6% (dayplan.doubt)
+        names = {**self.ctx["names"], "55": {"task": "Other client's ticket", "project": "Globex"}}
+        ctx = {**self.ctx, "names": names}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, tasks=["11"])]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"], e["confidence"], e["checked"]), ("11", "link", "high", True))
+        # a link when the session named other tasks too (18% right; a single link 68%)
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, tasks=["11", "22"])]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"], e["confidence"], e["checked"]), ("11", "link", "low", False))
+        self.assertIn("the session links other tasks too", e["why"])
+        # a link to a task of a project the repository is not logged to
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, tasks=["55"])]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"], e["confidence"], e["checked"]), ("55", "link", "low", False))
+        self.assertIn("repo is not logged to Globex", e["why"])
+        # a task taken from another entry of the same session today, in another repository
+        rows = [row(540, 600), row(700, 760, project="elsewhere")]
+        first, second = dayplan.plan(day(items=[work(540, 600), work(700, 760)], rows=rows), ctx)["entries"]
+        self.assertEqual((first["taskId"], first["checked"]), ("11", True))
+        self.assertEqual((second["taskId"], second["source"], second["confidence"], second["checked"]),
+                         ("11", "sameday", "low", False))
+
+    def test_a_sessions_vote_on_a_clients_work_is_sure_only_from_80_percent(self):
+        # a client's tasks are its tickets: on a client's work a vote of 60 to 79% was right on none of 332 minutes,
+        # from 80% on 72%; on internal work 60 to 79% was right on 96% (replay of 43 days, 2026-11-10)
+        key = dayplan.title_key("Fix the importer")
+
+        def entry(share: float, cls: str) -> dict:
+            votes = {"11": share * 100, "22": (1 - share) * 100}
+            ctx = {**self.ctx, "sess": {key: votes}, "sr": {(key, "repo"): votes}, "lastday": {},
+                   "classes": {"repo": cls}}
+            [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600)]), ctx)["entries"]
+            return e
+        e = entry(0.7, "client")
+        self.assertEqual((e["taskId"], e["source"], e["confidence"], e["checked"]), ("11", "session", "low", False))
+        self.assertIn("logged to other tasks of the client too", e["why"])
+        e = entry(0.85, "client")
+        self.assertEqual((e["taskId"], e["confidence"], e["checked"]), ("11", "high", True))
+        e = entry(0.7, "internal")
+        self.assertEqual((e["taskId"], e["confidence"], e["checked"]), ("11", "high", True))
+
     def test_what_the_work_names_comes_before_where_you_usually_log(self):
         # 2026-11-09: "D11 db upgrade" on a site's repository; the session's and the repository's history offered other
         # tasks first. A task of the repository's project that the work names (learn.work_match) is the pick, unticked

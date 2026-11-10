@@ -78,6 +78,9 @@ CLASS_ORDER = {INTERNAL: 0, "mixed": 1, "unknown": 1, CLIENT: 2}  # what the cap
 # answers from the history or from words alone, not from the work naming the task (a rule, a link, a ticket key, a task
 # Claude opened): on a repository whose client the history knows, they never pick another client's task (admissible)
 WEAK_SOURCES = ("session", "sameday", "words", "new")
+SURE_SHARE = 0.6     # a session's vote with this share (and 30 minutes) is sure: "high", ticked
+SURE_CLIENT = 0.8    # on a client's work, from this share only (doubt): a client's tasks are its tickets, and a session
+                     # that was logged to several of them moves between them
 
 
 def opts_for(settings: dict) -> dict:
@@ -305,6 +308,27 @@ def _keys(row: dict) -> list:
     return [k for k in (title_key(t) for t in row.get("titles") or []) if k]
 
 
+def session_vote(row: dict, ctx: dict) -> tuple | None:
+    """(task, weight, share) of the session's vote for a row: its top task among the votes that apply in the row's
+    repository (attribution.session_votes), with its share of every vote the session has there, or of every vote of
+    the session; None without one."""
+    names = ctx.get("names") or {}
+    keys = _keys(row)
+    v, here = attribution.session_votes(keys, row.get("project"), ctx.get("sess") or {}, ctx.get("sr") or {},
+                                        (ctx.get("repo") or {}).get(repo_key(row.get("project"))) or {},
+                                        lambda t: (names.get(str(t)) or {}).get("project"), bool(row.get("single")))
+    if not v:
+        return None
+    tot = (sum(v.values()) if here else sum(m for k in keys for m in ((ctx.get("sess") or {}).get(k) or {}).values())) or 1
+    t, m, _ = _ranked(v)[0]
+    return t, m, m / tot
+
+
+def links(row: dict) -> list:
+    """The task links a row's session named, each once, in their order (the first is the "link" pick)."""
+    return list(dict.fromkeys(str(t) for t in ((row.get("repoLinks") if "repoLinks" in row else row.get("tasks")) or [])))
+
+
 def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) -> list:
     """Every source's answer for a row, in ORDER: [(task, source, confidence, why)]. The first is the pick, the
     rest are the alternatives offered beside it."""
@@ -343,17 +367,13 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
         elif src == "session":
             # the session's votes in this repository; its other votes only where they may carry over
             # (attribution.session_votes: a session's history applies per repository); the share counts every vote
-            # it has here, or every vote of the session
-            v, here = attribution.session_votes(keys, row.get("project"), ctx["sess"], ctx.get("sr") or {},
-                                                (ctx.get("repo") or {}).get(repo_key(row.get("project"))) or {},
-                                                lambda t: (names.get(str(t)) or {}).get("project"), bool(row.get("single")))
-            tot = (sum(v.values()) if here else sum(m for k in keys for m in (ctx["sess"].get(k) or {}).values())) or 1
-            if v:
-                t, m, _ = _ranked(v)[0]
-                share = m / tot
+            # it has here, or every vote of the session (session_vote)
+            got = session_vote(row, ctx)
+            if got:
+                t, m, share = got
                 session_share = share
                 # 40-60% was "medium" and was right no more often than "low" (replay, 34 days): it starts unticked
-                conf = "high" if share >= 0.6 and m >= 30 else "low"
+                conf = "high" if share >= SURE_SHARE and m >= 30 else "low"
                 out.append((t, "session", conf, f"you logged it while in this Claude session ({round(share * 100)}%)"))
         elif src == "repo":
             v = ctx["repo"].get(repo_key(row.get("project"))) or {}
@@ -387,7 +407,7 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
                     best = (tid, len(shared), shared)
             if best:
                 out.append((best[0], "words", "low", "name matches: " + ", ".join(sorted(best[2]))))
-    weak = lambda c: c[1] in ("repo", "sameday", "words", "work") or (c[1] == "session" and session_share < 0.6)  # noqa: E731
+    weak = lambda c: c[1] in ("repo", "sameday", "words", "work") or (c[1] == "session" and session_share < SURE_SHARE)  # noqa: E731
     # the task you logged last in a project the repository's work goes to (places): after a sure session vote, before
     # the weaker answers (replay, 43 days: +2.6 points of minutes on the right task). A session you never logged
     # (no votes anywhere: new work) seldom goes on with it, so there it is the last alternative, after what the work
@@ -445,6 +465,33 @@ def admissible(row: dict, ctx: dict, task, source: str, assigned: list | None = 
     return True
 
 
+def doubt(row: dict, ctx: dict, task, source: str) -> str:
+    """Why a pick its source calls sure starts unticked all the same (its confidence "low"), or "". Replay of 43 days:
+    the ticked minutes on the right task 87.8% instead of 72.6% of the clean minutes, 2% of the right ones unticked,
+    and 190 minutes less billed over the time worked (the cap cuts unsure entries first). Unsure:
+    - a task taken from another entry of the same session today (sameday): right on 17 to 47% of its ticked minutes;
+    - a task link, a task the session opened, a ticket key, of a project the repository is not logged to (0% right);
+    - a task link when the session named other tasks too (18% right; a single link 68%);
+    - a session's vote on a client's work under SURE_CLIENT: 60 to 79% was right on none of 332 minutes, 80% and more
+      on 72%; on internal work 60 to 79% was right on 96%, so there SURE_SHARE stays."""
+    if not task:
+        return ""
+    if source == "sameday":  # its why says so already
+        return "check it"
+    if source in ("link", "seen", "ticket"):
+        project = ((ctx.get("names") or {}).get(str(task)) or {}).get("project")
+        where = places(ctx, row.get("project"))
+        if project and where and project not in where:
+            return f"{row.get('project')} is not logged to {project}"
+        if source == "link" and len(links(row)) > 1:
+            return "the session links other tasks too"
+    if source == "session" and row.get("class") == CLIENT:
+        got = session_vote(row, ctx)
+        if got and got[2] < SURE_CLIENT:
+            return "this session was logged to other tasks of the client too"
+    return ""
+
+
 def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, assigned: list | None = None,
            pick: dict | None = None) -> dict:
     """{task, source, conf, why, alts} for one Likely row. Claude's pick (Ask Claude) replaces an answer that is not
@@ -474,6 +521,10 @@ def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, ass
         if task:
             new_alt = [(task, src, conf, why)]
         task, src, conf, why = str(fresh[0]["taskId"]), "new", "low", fresh[0].get("why") or ""
+    # sure by its source, in doubt all the same: unticked, and Claude's pick replaces it as any unsure answer (doubt)
+    reason = doubt(row, ctx, task, src) if conf != "low" else ""
+    if reason:
+        conf, why = "low", f"{why}; {reason}"
     alts = []
     claude_none = bool(pick) and not pick.get("tasks") and conf != "high"  # Claude found no task: keep ours, say so
     if pick and pick.get("tasks") and conf != "high" \
