@@ -533,8 +533,9 @@ header { flex-wrap: wrap; row-gap: 8px; }
   .inv-stat .l, .inv-stat .s { font-size: 8pt; color: #6e6e73; }
   .inv-stat .v { font-size: 15pt; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
   table.inv { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  table.inv col.c-time { width: 17%; }
-  table.inv col.c-bill { width: 26%; }
+  table.inv col.c-share { width: 14%; }
+  table.inv col.c-time { width: 15%; }
+  table.inv col.c-bill { width: 22%; }
   table.inv th, table.inv td { padding: 3px 0; text-align: left; vertical-align: baseline; font-weight: 400; }
   table.inv th:not(:first-child), table.inv td:not(:first-child) { text-align: right; padding-left: 12px; white-space: nowrap; }
   table.inv thead th { font-size: 7pt; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #8e8e93;
@@ -545,8 +546,9 @@ header { flex-wrap: wrap; row-gap: 8px; }
   table.inv tbody.inv-group tr:nth-child(2) td { padding-top: 6px; }
   table.inv tbody.inv-group tr:not(.inv-proj) td:first-child { padding-left: 10px; color: #3a3a3c; }
   table.inv td.mut { color: #8e8e93; }
-  table.inv .inv-share { font-weight: 400; color: #8e8e93; font-size: 8pt; margin-left: 8px; white-space: nowrap; }
-  table.inv .inv-share i { display: inline-block; width: 34px; height: 3px; margin: 0 5px 0 0; vertical-align: 2px;
+  table.inv th.inv-sh, table.inv td.inv-sh { text-align: left; }
+  table.inv td.inv-sh { font-weight: 400; color: #8e8e93; font-size: 8pt; }
+  table.inv td.inv-sh i { display: inline-block; width: 38px; height: 3px; margin: 0 6px 0 0; vertical-align: 2px;
     border-radius: 2px; background: linear-gradient(90deg, #1d1d1f var(--w), #e5e5ea var(--w)); }
   table.inv .inv-pct { font-weight: 400; color: #8e8e93; font-size: 8pt; margin-left: 3px; }
   table.inv .inv-unknown { display: block; margin: 1px 0 0; }

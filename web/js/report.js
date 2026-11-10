@@ -393,13 +393,16 @@ function renderInvoice(x) {
     <section class="inv-stats">${stat('Total time', dur(inv.minutes), hoursOf(inv.minutes))}${stat('Billable', dur(inv.billable), hoursOf(inv.billable))}${
       stat('Billable share', inv.billablePct == null ? 'Unknown' : `${inv.billablePct}%`, inv.unknown && known ? 'of the known billing' : 'of all time')}${
       inv.unknown ? stat('Billing unknown', dur(inv.unknown), 'not shown in Productive') : ''}</section>
-    <table class="inv"><colgroup><col><col class="c-time"><col class="c-bill"></colgroup>
-      <thead><tr><th scope="col">Task</th><th scope="col">Time</th><th scope="col">Billable</th></tr></thead>`
-    + inv.projects.map(p => `<tbody class="inv-group"><tr class="inv-proj"><th scope="rowgroup">${esc(p.project)}${
-        inv.minutes ? ` <span class="inv-share" title="share of the time"><i style="--w:${Math.max(2, Math.round(100 * p.minutes / inv.minutes))}%"></i>${Math.round(100 * p.minutes / inv.minutes)}%</span>` : ''}</th><td>${esc(dur(p.minutes))}</td>${projBill(p)}</tr>`
-      + p.tasks.map(t => `<tr><td>${esc(t.task)}${t.noTask ? ' <small>no task</small>' : ''}</td><td>${esc(dur(t.minutes))}</td>${bill(t)}</tr>`).join('')
-      + '</tbody>').join('')
-    + `</table><div class="inv-foot"><span>From ${who ? 'the' : 'your'} Productive time entries, ${esc(range)}. The bars show each project's share of the time.</span><span class="inv-mark">Pulsar</span></div>`;
+    <table class="inv"><colgroup><col><col class="c-share"><col class="c-time"><col class="c-bill"></colgroup>
+      <thead><tr><th scope="col">Task</th><th scope="col" class="inv-sh">Share</th><th scope="col">Time</th><th scope="col">Billable</th></tr></thead>`
+    + inv.projects.map(p => {
+      const share = inv.minutes ? Math.round(100 * p.minutes / inv.minutes) : 0;
+      return `<tbody class="inv-group"><tr class="inv-proj"><th scope="rowgroup">${esc(p.project)}</th>`
+        + `<td class="inv-sh"><i style="--w:${Math.max(2, share)}%"></i>${share}%</td><td>${esc(dur(p.minutes))}</td>${projBill(p)}</tr>`
+        + p.tasks.map(t => `<tr><td>${esc(t.task)}${t.noTask ? ' <small>no task</small>' : ''}</td><td></td><td>${esc(dur(t.minutes))}</td>${bill(t)}</tr>`).join('')
+        + '</tbody>';
+    }).join('')
+    + `</table><div class="inv-foot"><span>From ${who ? 'the' : 'your'} Productive time entries, ${esc(range)}. Share: each project's part of the time.</span><span class="inv-mark">Pulsar</span></div>`;
 }
 /* the same lines for a spreadsheet: one row per task, a subtotal per project, the total */
 function invoiceRows(inv) {
