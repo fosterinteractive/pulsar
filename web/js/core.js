@@ -413,9 +413,11 @@ function rgbOf(css) {
   const el = document.createElement('i');
   el.style.color = css; el.hidden = true;
   document.body.append(el);
-  const m = getComputedStyle(el).color.match(/[\d.]+/g);
+  const c = getComputedStyle(el).color, m = c.match(/[\d.]+/g);
   el.remove();
-  return m && m.length >= 3 ? m.slice(0, 3).map(Number) : null;
+  // a mixed colour comes back as color(srgb 0.97 0.95 0.92), in 0 to 1: scaled to rgb's 0 to 255
+  const k = c.startsWith('color(') ? 255 : 1;
+  return m && m.length >= 3 ? m.slice(0, 3).map(x => +x * k) : null;
 }
 function contrast(a, b) {
   const lum = c => c.map(v => (v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);

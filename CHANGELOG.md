@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- The accent's contrast check reads mixed colours right (they come back as color(srgb …) in 0 to 1).
 - The log dialog offers the task you logged last in the repository's project first when nothing surer names the work, and a task assigned to you in the last three days second: the right task is among the first three offers on 65% of rows instead of 61% (43 replayed days).
 - Log the day picks the right task more often (39% of minutes on the exact task instead of 35%, on 43 replayed days): work with no sure answer takes the task you logged last in the repository's project, and where you usually log in a repository is only offered as an alternative, never picked. Less time lands on the wrong client.
 - Report, Tasks against estimates: the row under the pointer is lit end to end, and a task's name opens it in Productive.

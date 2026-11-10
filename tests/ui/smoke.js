@@ -227,7 +227,9 @@ try {
 
   // text contrast: every text on the day view at 4.5:1 or more (3:1 when large), in the theme shown
   {
-    const parse = c => { const m = c.match(/[\d.]+/g); return m ? [+m[0], +m[1], +m[2], m.length > 3 ? +m[3] : 1] : null; };
+    // a mixed colour (color-mix) comes back as color(srgb 0.97 0.95 0.92 / a), in 0 to 1, not rgb's 0 to 255
+    const parse = c => { const m = c.match(/[\d.]+/g), k = c.startsWith('color(') ? 255 : 1;
+      return m ? [m[0] * k, m[1] * k, m[2] * k, m.length > 3 ? +m[3] : 1] : null; };
     const over = (top, bot) => [0, 1, 2].map(i => top[i] * top[3] + bot[i] * (1 - top[3]));
     const ground = el => {
       const layers = [];
