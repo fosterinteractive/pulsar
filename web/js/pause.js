@@ -15,6 +15,15 @@ function tzMoment(sec) {
   return {date: `${p.year}-${p.month}-${p.day}`, min: +p.hour * 60 + +p.minute};
 }
 
+/* a moment as the page writes times (12-hour on a Mac set so): "2:15 PM" today, "Mon 5:40 PM" on another day */
+function whenText(sec) {
+  const m = tzMoment(sec);
+  return m.date === todayLocal() ? hm(m.min)
+    : `${new Intl.DateTimeFormat('en-GB', {timeZone: TZ, weekday: 'short'}).format(new Date(sec * 1000))} ${hm(m.min)}`;
+}
+/* the server's answer with its times written as the page writes them */
+const pauseTimes = r => ({...r, ...(r.since ? {sinceText: whenText(r.since)} : {}), ...(r.back ? {backText: whenText(r.back)} : {})});
+
 /* the pause still on, on the day shown: [[a, b]] in minutes of the day, up to now on today */
 function pausedSpans() {
   if (!PAUSE.paused || !PAUSE.since) return [];
@@ -35,8 +44,9 @@ function paintPause() {
 }
 
 async function readPause(ask = 0) {
-  const r = await getJSON(`/api/pause${ask ? `?ask=${ask}` : ''}`);
-  if (r.error) return null;
+  const got = await getJSON(`/api/pause${ask ? `?ask=${ask}` : ''}`);
+  if (got.error) return null;
+  const r = pauseTimes(got);
   const was = PAUSE.paused;
   PAUSE = r;
   paintPause();
@@ -45,7 +55,8 @@ async function readPause(ask = 0) {
 }
 
 /* after a change: the day's marks again (Resume wrote some), the day redrawn, the Report read again */
-async function afterPause(r) {
+async function afterPause(answer) {
+  const r = pauseTimes(answer);
   PAUSE = {paused: r.paused, since: r.since, sinceText: r.sinceText, minutes: r.minutes};
   paintPause();
   wroteAt = Date.now();

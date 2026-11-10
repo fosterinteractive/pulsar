@@ -199,7 +199,7 @@ try {
   paintTrackers({login: null}, [{key: 'aw-down', tracker: 'aw', action: 'open', text: 'ActivityWatch is not running.'},
     {key: 'memtime-down', tracker: 'memtime', action: 'open', text: 'MemTime is not running.'}]);
   const tp = [q('#trackprompt-title').textContent, q('#trackprompt-go').textContent, !q('#trackprompt-settings').hidden,
-    q('#trackprompt-get').hidden];
+    getComputedStyle(q('#trackprompt-get')).display === 'none'];  // not shown, not only marked hidden
   paintTrackers({getUrl: 'https://activitywatch.net/downloads/'}, [{key: 'none', tracker: null, action: 'get', text: 'None.'}]);
   const tn = [q('#trackprompt-title').textContent, q('#trackprompt-go').hidden, !q('#trackprompt-get').hidden];
   trackShown = shownBefore;

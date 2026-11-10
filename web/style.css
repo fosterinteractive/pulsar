@@ -353,6 +353,7 @@ ul.hint { padding-left: 18px; display: grid; gap: 2px; }
 .msg:empty { display: none; }
 .btn.bordered { border: 1px solid var(--line); }
 a.btn { display: inline-block; text-decoration: none; }
+a.btn[hidden] { display: none; }  /* the line above would show it */
 .settings-btn { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }
 #theme-btn { width: 30px; font-size: 14px; padding: 3px 0; }
 .mini-select { position: absolute; top: 9px; right: 10px; font: inherit; font-size: 11.5px; color: var(--muted);
