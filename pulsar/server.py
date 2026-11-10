@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, appupdate, askclaude, awsetup, calendar, claudelink, claudeuses, config, daymarks, dayplan, dayreview, flags, learn, likely, logbook, mcptools, newtask, productive, ranges, report, sessions, trackers, updater, names
+from . import __version__, appupdate, askclaude, awsetup, calendar, claudelink, claudeuses, config, daymarks, dayplan, dayreview, flags, learn, likely, logbook, mcptools, newtask, productive, ranges, report, sessions, trackers, trackhealth, updater, names
 from .mcp import whoami_proof
 
 UPDATER = updater.Updater()
@@ -351,6 +351,19 @@ def api_aw_fix(body: dict) -> dict:
     if res["changed"] and not res["ok"]:  # the file changed, the restart did not finish: worth a line in Logs
         logbook.record("activitywatch", res["message"], kind="warning", once_per=0)
     return {"result": res, "awayAfter": config.away_after(s), "activitywatch": awsetup.status(config.away_after(s))}
+
+
+def api_trackers_open(body: dict) -> dict:
+    """The trackers notice's button: opens ActivityWatch or MemTime, or restarts ActivityWatch (`restart`), then says
+    how they stand. The page's session only; refused in a test or a read-only run."""
+    tracker = body.get("tracker")
+    if tracker not in ("aw", "memtime"):
+        raise ValueError("tracker: aw or memtime")
+    s = config.load()
+    res = trackhealth.start(tracker, s["activitywatch_url"], restart=body.get("restart") is True)
+    if not res["ok"]:
+        logbook.record(f"tracker {tracker}", res["message"], kind="warning")
+    return {"result": res}
 
 
 def api_aw_login(body: dict) -> dict:
@@ -1953,6 +1966,9 @@ class Handler(BaseHTTPRequestHandler):
                 if not (DATE.match(q.get("from") or "") and DATE.match(q.get("to") or "")):
                     raise ValueError("from=YYYY-MM-DD&to=YYYY-MM-DD")
                 return self.send_json({"days": daymarks.between(q["from"], q["to"])})
+            if url.path == "/api/trackers":  # polled by the page: whether the trackers record (its notice)
+                s = config.load()
+                return self.send_json(trackhealth.health(s["activitywatch_url"], config.tz(s)))
             if url.path == "/api/calendar/status":  # polled by Settings while the person signs in to Google
                 return self.send_json(calendar.status(config.load()))
             routes = {"/api/activity": api_activity, "/api/entries": api_entries, "/api/proposal": api_proposal,
@@ -2062,6 +2078,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(api_aw_fix(body))
             if urlparse(self.path).path == "/api/activitywatch/login":  # Settings: ActivityWatch in Login Items
                 return self.send_json(api_aw_login(body))
+            if urlparse(self.path).path == "/api/trackers/open":  # the trackers notice: open or restart one
+                return self.send_json(api_trackers_open(body))
             if urlparse(self.path).path == "/api/calendar/connect":
                 url = calendar.start(self.server.server_address[1])
                 try:

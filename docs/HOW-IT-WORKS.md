@@ -329,6 +329,17 @@ The column groups items into blocks per zoom slot (1 to 60 minutes): each slot s
 and equal neighbours join (`activityBlocks` in `day.js`). Away time is drawn as a hatched rail on the column's edge,
 above the blocks, because a 30-minute block can hide a 20-minute break, and named (Pause, Away, Off) with its length
 at the first place in it no block covers.
+- **When a tracker stops** (`pulsar/trackhealth.py`, `web/js/trackcheck.js`). The page asks `GET /api/trackers` every
+  30 seconds. A tracker counts when it is used: its data changed within 30 days (ActivityWatch's `aw-server*/*.db*`,
+  MemTime's `core.db` and its `-wal`), so one installed and left never nags. ActivityWatch records when its server
+  answers and its window watcher's bucket was written within 10 minutes (it writes every few seconds while the Mac is
+  awake); MemTime when its process runs (`pgrep -x memtime`, never in a test). Issues: `aw-down` and `memtime-down`
+  (offer Open), `aw-stale` and `aw-nowindow` (offer Restart, awsetup's restart), and `none` when nothing records
+  (Open what is installed, else the ActivityWatch download page). The notice shows once two checks in a row agree, so
+  a Mac that just woke or ActivityWatch restarting is not one, and not over another dialog. Later, ✕ or Escape quiet
+  it for an hour; a problem that clears and comes back asks again. When ActivityWatch is to be opened and Login Items
+  have not answered yes, a button takes Settings to the Away section. Opening runs `open -a` (ActivityWatch where it
+  is) or `open -b com.memtime.app`; refused in a test or a read-only run.
 
 ### 4.2 Logged (`pulsar/productive.py`)
 
@@ -1765,6 +1776,8 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
 | `POST /api/session` | Trade a sign-in code for a session token. `POST /api/session/end` signs out. |
 | `POST /api/settings` | Save settings (each field checked; `advanced` is merged with what is saved, and only choices other than the usual are kept, 5.4). |
 | `POST /api/activitywatch/fix` | `{minutes}`: ActivityWatch's AFK timeout set to Away after (saved too), with a copy of its file, then ActivityWatch restarted (4.1). The page's session only; refused read-only and in tests. |
+| `GET /api/trackers` | Whether each tracker records now, and the notice's issues (4.1). Starts nothing. |
+| `POST /api/trackers/open` | `{tracker, restart}`: the notice's button opens ActivityWatch or MemTime, or restarts ActivityWatch (4.1). The page's session only; refused read-only and in tests. |
 | `POST /api/activitywatch/login` | `{add}`: whether ActivityWatch is in Login Items, or adding it, through System Events (4.1). The page's session only; refused read-only and in tests. |
 | `POST /api/log` | Log one entry. With `run` and `row`: one row of Log the day, journalled. |
 | `GET /api/dayplan?date=&source=` | Log the day: the day proposed for review. Nothing is written. |

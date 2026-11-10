@@ -184,6 +184,22 @@ try {
   check('the Report is read again when it is stale', read && kept && old && wrote,
     `read ${read}, kept within the minute ${kept}, stale after a minute ${old}, after a write ${wrote}`);
 
+  // the trackers notice: what the server says of them, and the notice it makes (painted only, never shown)
+  const th = await getJSON('/api/trackers');
+  check('the server says how the trackers stand', Array.isArray(th.issues) && 'running' in (th.aw || {}),
+    th.issues ? th.issues.map(x => x.key).join(', ') || 'all recording' : JSON.stringify(th));
+  const shownBefore = trackShown;
+  paintTrackers({login: null}, [{key: 'aw-down', tracker: 'aw', action: 'open', text: 'ActivityWatch is not running.'},
+    {key: 'memtime-down', tracker: 'memtime', action: 'open', text: 'MemTime is not running.'}]);
+  const tp = [q('#trackprompt-title').textContent, q('#trackprompt-go').textContent, !q('#trackprompt-settings').hidden,
+    q('#trackprompt-get').hidden];
+  paintTrackers({getUrl: 'https://activitywatch.net/downloads/'}, [{key: 'none', tracker: null, action: 'get', text: 'None.'}]);
+  const tn = [q('#trackprompt-title').textContent, q('#trackprompt-go').hidden, !q('#trackprompt-get').hidden];
+  trackShown = shownBefore;
+  check('the trackers notice offers to open them and Login Items',
+    tp.join() === 'ActivityWatch and MemTime stopped recording,Open ActivityWatch and MemTime,true,true'
+    && tn.join() === 'No activity tracker is recording,true,true', `${tp.join(' | ')} / ${tn.join(' | ')}`);
+
   check('no page errors during the run', !errors.length, errors.join(' | ') || 'none');
 } catch (e) {
   check('the script ran to the end', false, `${e.name}: ${e.message}`);

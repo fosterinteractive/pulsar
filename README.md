@@ -45,7 +45,8 @@ Pulsar needs macOS 12 Monterey or newer, on Apple Silicon or Intel.
    **⚙ Settings → Connections → API token** and click **Save** ([Connect Productive](#connect-productive)).
 5. **Check ActivityWatch**: **Settings → Time and activity → Away** shows whether ActivityWatch counts a break as Pulsar
    does and opens at login, and fixes either with a click. For Login Items, macOS asks once whether Pulsar may control
-   System Events: allow it.
+   System Events: allow it. Whenever ActivityWatch or MemTime stops recording while Pulsar is open, a notice says so
+   and offers to open it.
 
 ### About the install line
 
@@ -451,6 +452,7 @@ pulsar/
   config.py            settings, time zone, the tokens (keychain or private file), session key, sign-in codes
   trackers.py          ActivityWatch and MemTime readers
   awsetup.py           ActivityWatch's AFK timeout (read, and Fix on a click) and its Login Items
+  trackhealth.py       whether the trackers record now (the page's notice when one stopped), and opening them
   productive.py        Productive: REST with a token, or Claude Code's MCP connection (renewed through
                        `claude mcp get`); billing; tasks; writing
   likely.py            the Likely column: sessions.py, or the fi-time-from-activity skill where it is installed
