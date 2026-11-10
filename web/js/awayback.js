@@ -2,12 +2,9 @@
    keyboard the window (PulsarWindow.swift, checkIdle) asks awayBack whether to offer logging it, and shows a small panel
    near the menu bar: Break, or Log This Time… (the log dialog on that stretch, as a break's own button: logAway). Not
    offered while paused, for time over midnight or three hours or more (time off), or for time mostly logged already or
-   in a meeting. The window asks from awayAskAfter minutes: Away after, or ActivityWatch's AFK timeout when longer,
-   since that decides what the day shows as away. */
-function awayAskAfter() {
-  const aw = CONFIG?.activitywatch;
-  return Math.max(CONFIG?.awayAfter || 15, aw?.installed && aw.seconds ? Math.ceil(aw.seconds / 60) : 0);
-}
+   in a meeting. The window asks from Away after, the one away time Pulsar and ActivityWatch share (Save sets
+   ActivityWatch to it: server.sync_activitywatch). */
+function awayAskAfter() { return CONFIG?.awayAfter || 15; }
 let awayAskSent = 0;
 function sendAwayAsk() {  // main.js applyConfig: the window's threshold follows the settings
   const m = awayAskAfter();

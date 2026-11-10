@@ -164,9 +164,14 @@ def read_timeout(path: str | None = None) -> dict:
 
 
 def longer(seconds, minutes: int) -> bool:
-    """Whether ActivityWatch's timeout hides pauses "Away after" should see: then Settings offers Fix. The same or
-    shorter, the file is never touched."""
+    """Whether ActivityWatch's timeout hides pauses "Away after" should see."""
     return isinstance(seconds, (int, float)) and not isinstance(seconds, bool) and seconds > minutes * 60
+
+
+def differs(seconds, minutes: int) -> bool:
+    """Whether ActivityWatch's timeout is not "Away after": one away time everywhere (Nick, 2026-11-10), so Settings
+    offers Fix and Save sets it. Unreadable: never touched."""
+    return isinstance(seconds, (int, float)) and not isinstance(seconds, bool) and seconds != minutes * 60
 
 
 def _backup_path(path: str, now: float) -> str:
@@ -344,8 +349,9 @@ def restart(base: str, run=None, fetch=None, sleep=time.sleep, clock=time.monoto
 
 def fix(minutes: int, base: str, path: str | None = None, run=None, fetch=None, sleep=time.sleep,
         clock=time.monotonic) -> dict:
-    """Settings' Fix: ActivityWatch counts you away after `minutes` ("Away after"), then restarts.
-    {"ok", "changed", "message", "backup"}. Refused in a test or a read-only run."""
+    """Settings' Fix, and Save when the two differ: ActivityWatch counts you away after `minutes` ("Away after"),
+    longer or shorter than it was, then restarts. {"ok", "changed", "message", "backup"}. Refused in a test or a
+    read-only run."""
     path = path or TOML
     why = blocked()
     if why:
@@ -355,7 +361,7 @@ def fix(minutes: int, base: str, path: str | None = None, run=None, fetch=None, 
     now = read_timeout(path)
     if now["problem"]:
         return {"ok": False, "changed": False, "message": f"Pulsar did not change {path}: {now['problem']}."}
-    if not longer(now["seconds"], minutes):
+    if not differs(now["seconds"], minutes):
         return {"ok": True, "changed": False,
                 "message": f"ActivityWatch already counts you as away after {_mins(now['seconds'])}: nothing to change."}
     try:
@@ -459,4 +465,4 @@ def status(minutes: int) -> dict:
     t = read_timeout()
     return {"installed": installed(), "file": TOML.replace(os.path.expanduser("~"), "~", 1),
             "seconds": t["seconds"], "fromFile": t["exists"], "problem": t["problem"],
-            "longer": longer(t["seconds"], minutes), "login": LOGIN["on"]}
+            "longer": longer(t["seconds"], minutes), "differs": differs(t["seconds"], minutes), "login": LOGIN["on"]}

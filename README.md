@@ -44,7 +44,8 @@ Pulsar needs macOS 12 Monterey or newer, on Apple Silicon or Intel.
 4. **Productive**: with Claude Code's Productive connection there is nothing to do. Otherwise paste a token into
    **⚙ Settings → Connections → API token** and click **Save** ([Connect Productive](#connect-productive)).
 5. **Check ActivityWatch**: **Settings → Time and activity → Away** shows whether ActivityWatch counts a break as Pulsar
-   does and opens at login, and fixes either with a click. For Login Items, macOS asks once whether Pulsar may control
+   does and opens at login, and fixes either with a click. **Away after** is the one away time: Save sets
+   ActivityWatch's AFK timeout to it. For Login Items, macOS asks once whether Pulsar may control
    System Events: allow it. Whenever ActivityWatch or MemTime stops recording while Pulsar is open, a notice says so
    and offers to open it.
 

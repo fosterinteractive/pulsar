@@ -814,8 +814,24 @@ def api_settings(body: dict) -> dict:
     if tidied:
         config.update({"claude_rules_added": tidied["rulesAdded"]})
     s = current_settings()
+    aw = sync_activitywatch(s)
     # Productive is asked again only when the connection changed: saving a rule or a time zone needs no test
-    return {"config": public_config(s), "test": test_productive(s) if connection else None, "link": link}
+    return {"config": public_config(s), "test": test_productive(s) if connection else None, "link": link,
+            "activitywatch": aw}
+
+
+def sync_activitywatch(s: dict):
+    """One away time everywhere (Nick, 2026-11-10): when ActivityWatch's AFK timeout is not Away after, Save sets it and
+    restarts ActivityWatch (awsetup.fix). Not from Pulsar Preview, whose settings are its own while ActivityWatch is the
+    real Pulsar's too; not in a test or read-only run. None when nothing was to change."""
+    minutes = config.away_after(s)
+    st = awsetup.status(minutes)
+    if not st["installed"] or st["problem"] or not st["differs"] or config.is_preview() or awsetup.blocked():
+        return None
+    res = awsetup.fix(minutes, s["activitywatch_url"])
+    if res["changed"] and not res["ok"]:
+        logbook.record("activitywatch", res["message"], kind="warning", once_per=0)
+    return res
 
 
 # ---- tasks, services, logging ----------------------------------------------------------------------------

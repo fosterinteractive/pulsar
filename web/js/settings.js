@@ -242,12 +242,13 @@ function paintAw(a = awState) {
   box.hidden = !a?.installed;
   if (!a?.installed) return;
   const m = +form.elements.away_after.value || 15, st = $('#aw-timeout'), long = a.seconds != null && a.seconds > m * 60;
-  st.classList.toggle('warn', !!(a.problem || long));
+  const off = a.seconds != null && a.seconds !== m * 60, sync = CONFIG?.preview ? 'Fix sets it' : 'Save or Fix sets it';
+  st.classList.toggle('warn', !!(a.problem || off));
   st.textContent = a.problem ? `Pulsar could not read ActivityWatch's AFK timeout in ${a.file}: ${a.problem}. It changes nothing there.`
-    : long ? `ActivityWatch counts you as away only after ${awMins(a.seconds)}, so pauses from ${m} minutes to ${awMins(a.seconds)} are not in its data.`
-    : a.seconds === m * 60 ? `ActivityWatch counts you as away after ${awMins(a.seconds)} too.`
-    : `ActivityWatch counts you as away after ${awMins(a.seconds)}${a.fromFile ? '' : ' (its default)'}: a pause shorter than ${m} minutes between two stretches of work counts as work.`;
-  $('#aw-fix-row').hidden = $('#aw-fix-hint').hidden = !long;
+    : long ? `ActivityWatch counts you as away only after ${awMins(a.seconds)}, so pauses from ${m} minutes to ${awMins(a.seconds)} are not in its data. ${sync} to ${m} minutes.`
+    : !off ? `ActivityWatch counts you as away after ${awMins(a.seconds)} too.`
+    : `ActivityWatch counts you as away after ${awMins(a.seconds)}${a.fromFile ? '' : ' (its default)'}, Pulsar after ${m} minutes. ${sync} to ${m} minutes.`;
+  $('#aw-fix-row').hidden = $('#aw-fix-hint').hidden = !off;
   $('#aw-fix').textContent = `Fix: set ActivityWatch to ${m} minutes`;
   const on = a.login, login = $('#aw-login');
   login.classList.toggle('warn', on === false);
@@ -404,8 +405,14 @@ async function saveSettings(extra = {}) {
     showTab('t-claude');
     return;
   }
+  if (r.activitywatch && !r.activitywatch.ok) {  // Away after is saved; ActivityWatch did not follow (server.sync_activitywatch)
+    msg.className = 'msg warn'; msg.textContent = `Saved, but ActivityWatch: ${r.activitywatch.message}`;
+    showTab('t-day');
+    return;
+  }
   dlg.close();
-  toast(r.link ? `Settings saved. ${r.link.message}` : r.test ? `Settings saved. ${r.test.message}` : 'Settings saved.');
+  const aw = r.activitywatch?.changed ? ` ActivityWatch follows: away after ${r.config.awayAfter} minutes, and it was restarted.` : '';
+  toast((r.link ? `Settings saved. ${r.link.message}` : r.test ? `Settings saved. ${r.test.message}` : 'Settings saved.') + aw);
 }
 
 form.addEventListener('submit', ev => { ev.preventDefault(); saveSettings(); });

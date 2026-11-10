@@ -305,15 +305,17 @@ Both readers return the same items: `{s, e, app, title, host, url, cat, icon}`, 
   timeout is not in its data and no threshold in Pulsar can see it. Settings → Time and activity → **Away** reads that
   one key, line by line with the standard library (`scan`; `[aw-watcher-afk-testing]` and every other section are
   never read or changed; a form it cannot read for sure, such as a dotted key, the key twice or a value that is not a
-  number, is said and left alone). A timeout longer than Away after offers **Fix**: it keeps a copy of the file next
+  number, is said and left alone). One away time everywhere (Nick, 2026-11-10): a timeout other than Away after,
+  longer or shorter, offers **Fix**, and **Save** does the same by itself (`server.sync_activitywatch`; not from
+  Pulsar Preview, whose settings are its own while ActivityWatch is the real Pulsar's). Fix keeps a copy of the file next
   to it (`aw-watcher-afk.toml.pulsar-<date-time>.bak`, never over another file), changes that one line, or adds the
   key in that section, writes through a temporary file and a rename with the file's own permissions, reads it back
   (and puts the file back if it does not say the new value), saves Away after, and restarts ActivityWatch: aw-qt
   ignores an AppleScript quit, so `pkill -f "ActivityWatch.app/Contents/MacOS/aw-qt"`, then a wait (15 seconds at
   most) until no process of the app is left, `open -a` the app, and a wait (30 seconds at most each) for
   `/api/0/info` and for the AFK watcher (its process, or a heartbeat in its bucket since the restart). The page says
-  before the click that the new timeout applies to new data only. A timeout the same or shorter is never touched:
-  `present_spans` counts the shorter pauses as work. **Login Items**: ActivityWatch not in them records nothing after
+  before the click that the new timeout applies to new data only. The same timeout is never touched. The
+  fi-time-from-activity skill's script reads Away after from Pulsar's settings too. **Login Items**: ActivityWatch not in them records nothing after
   a restart of the Mac until someone opens it. Only on a click, Pulsar asks System
   Events for the login items' names and, on a second click, adds the app where it really is (the copy that runs,
   else `/Applications` or `~/Applications`, else Spotlight by bundle id, each checked by its `Info.plist`) as a hidden
@@ -1971,8 +1973,8 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   place that way still has to be removed by hand (`~/Library/Application Support/Pulsar/`).
 - In a browser (not the window) the page cannot check who answers on the port: after a restart it asks to be opened
   from the app icon, but a page loaded there by hand loads whatever holds the port. Its token is worth nothing there.
-- ActivityWatch's AFK timeout decides which breaks are in its data: one longer than Away after hides the shorter
-  breaks until Fix is clicked, and Fix changes new data only. Pulsar checks neither MemTime's idle time nor whether
+- ActivityWatch's AFK timeout decides which breaks are in its data: Save sets it to Away after, but a timeout
+  changed by hand afterwards hides or shows other breaks until the next Save or Fix, and either changes new data only. Pulsar checks neither MemTime's idle time nor whether
   MemTime opens at login; a MemTime pause shorter than Away after is neither away nor work (its window is not known).
 - Away after is read when a day is worked out: Likely's past days kept on disk (`likely-full/`) keep the sittings of
   the setting they were worked out with until ↻ works them out again. Where the fi-time-from-activity skill makes the

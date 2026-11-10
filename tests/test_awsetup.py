@@ -83,13 +83,14 @@ class ReadTimeoutTest(unittest.TestCase):
 
 
 class DecisionTest(unittest.TestCase):
-    def test_only_a_timeout_longer_than_away_after_needs_a_fix(self):
-        self.assertTrue(awsetup.longer(1200, 15))      # 20 minutes hides the pauses of 15 to 20
-        self.assertTrue(awsetup.longer(1800, 20))
-        self.assertFalse(awsetup.longer(900, 15))      # the same: nothing to fix
-        self.assertFalse(awsetup.longer(180, 15))      # shorter: Pulsar counts the short pauses as work
-        self.assertFalse(awsetup.longer(None, 15))     # unreadable: never touched
-        self.assertFalse(awsetup.longer(True, 0))
+    def test_a_timeout_other_than_away_after_needs_a_fix(self):
+        self.assertTrue(awsetup.differs(1200, 15))     # 20 minutes hides the pauses of 15 to 20
+        self.assertTrue(awsetup.differs(180, 15))      # shorter: one away time everywhere (Nick, 2026-11-10)
+        self.assertFalse(awsetup.differs(900, 15))     # the same: nothing to fix
+        self.assertFalse(awsetup.differs(None, 15))    # unreadable: never touched
+        self.assertFalse(awsetup.differs(True, 0))
+        self.assertTrue(awsetup.longer(1200, 15))
+        self.assertFalse(awsetup.longer(180, 15))
 
     def test_settings_shows_it_without_starting_a_program(self):
         path = toml(REAL_SHAPE)
@@ -274,8 +275,30 @@ class FixTest(unittest.TestCase):
         self.assertEqual((got["ok"], got["changed"]), (False, False))
         self.assertIn("Permission denied", got["message"])
 
-    def test_the_same_or_shorter_or_unreadable_is_never_touched(self):
-        for text in ("[aw-watcher-afk]\ntimeout = 900\n", "[aw-watcher-afk]\ntimeout = 180\n", '[aw-watcher-afk]\ntimeout = "x"\n'):
+    def test_a_shorter_timeout_is_set_too(self):
+        path, restarted = toml("[aw-watcher-afk]\ntimeout = 180\n"), []
+        with mock.patch.object(awsetup, "blocked", lambda: None), \
+                mock.patch.object(awsetup, "restart", lambda base, *a: restarted.append(base) or {"ok": True, "message": "Restarted."}):
+            got = awsetup.fix(20, "http://localhost:5600", path)
+        self.assertTrue(got["ok"] and got["changed"], got)
+        self.assertEqual((awsetup.read_timeout(path)["seconds"], len(restarted)), (1200, 1))
+
+    def test_save_sets_activitywatch_to_away_after_but_not_from_preview(self):
+        path, calls = toml(REAL_SHAPE), []  # ActivityWatch at 20 minutes
+        fake = lambda minutes, base: calls.append(minutes) or {"ok": True, "changed": True, "message": "set"}  # noqa: E731
+        s = {**config.DEFAULTS, "away_after": 15}
+        with mock.patch.object(awsetup, "TOML", path), mock.patch.object(awsetup, "SUPPORT", os.path.dirname(path)), \
+                mock.patch.object(awsetup, "fix", fake):
+            self.assertIsNone(server.sync_activitywatch(s))  # a test run: refused before anything
+            with mock.patch.object(awsetup, "blocked", lambda: None):
+                self.assertEqual(server.sync_activitywatch(s)["message"], "set")
+                self.assertIsNone(server.sync_activitywatch({**s, "away_after": 20}))  # the same already
+                with mock.patch.object(config, "is_preview", lambda: True):
+                    self.assertIsNone(server.sync_activitywatch(s))  # Preview: ActivityWatch is the real Pulsar's too
+        self.assertEqual(calls, [15])
+
+    def test_the_same_or_unreadable_is_never_touched(self):
+        for text in ("[aw-watcher-afk]\ntimeout = 900\n", '[aw-watcher-afk]\ntimeout = "x"\n'):
             path = toml(text)
             with mock.patch.object(awsetup, "blocked", lambda: None), \
                     mock.patch.object(awsetup, "restart", mock.Mock(side_effect=AssertionError("no restart"))):
