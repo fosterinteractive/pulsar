@@ -339,7 +339,7 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
     if last:
         weak = lambda c: c[1] in ("repo", "sameday", "words", "work") or (c[1] == "session" and session_share < 0.6)  # noqa: E731
         at = next((i for i, c in enumerate(out) if weak(c)), len(out))
-        out.insert(at, (last[1], "lastday", "low", f"the task you logged last in {last[3]} ({last[0]})"))
+        out.insert(at, (last[1], "lastday", "low", f"the task you logged last in {last[4]} ({last[0]})"))
     return out
 
 

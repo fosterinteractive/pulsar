@@ -205,30 +205,35 @@ def fits(votes: dict, project_of, task) -> bool | None:
 
 
 def last_day_tasks(entries: list, date: str) -> dict:
-    """{project: (day, task, minutes)}: each project's task of its latest day before `date`, the one with the most
-    minutes that day (ties: the lower id, so the answer never depends on the order things were read in). entries:
-    {date, taskId, project, minutes, meeting}; meetings do not count."""
-    per: dict = defaultdict(lambda: defaultdict(float))
+    """{project: (day, task, minutes, end)}: each project's task of its latest day before `date`, the one with the most
+    minutes that day; with as many, the one logged later that day (`end`: its latest entry's end, epoch seconds, 0 when
+    unknown), then the lower id, so the answer never depends on the order things were read in. entries: {date, taskId,
+    project, minutes, start, meeting}; meetings do not count."""
+    per: dict = defaultdict(lambda: defaultdict(lambda: [0.0, 0.0]))
     for r in entries:
         if r.get("project") and r.get("taskId") and not r.get("meeting") and str(r.get("date") or "") < date:
-            per[(r["project"], r["date"])][str(r["taskId"])] += r.get("minutes") or 0
+            got = per[(r["project"], r["date"])][str(r["taskId"])]
+            got[0] += r.get("minutes") or 0
+            if r.get("start") is not None:
+                got[1] = max(got[1], float(r["start"]) + (r.get("minutes") or 0) * 60)
     out: dict = {}
     for (p, d), tasks in per.items():
         if p not in out or d > out[p][0]:
-            t, m = min(tasks.items(), key=lambda kv: (-kv[1], kv[0]))
-            out[p] = (d, t, m)
+            t, (m, end) = max(tasks.items(), key=lambda kv: (kv[1][0], kv[1][1], _neg_id(kv[0])))
+            out[p] = (d, t, m, end)
     return out
 
 
 def last_of(lastday: dict, places) -> tuple | None:
-    """(day, task, minutes, project): the latest of last_day_tasks among `places`; on the same day the one with more
-    minutes, then the project's name, so the pick never depends on the order of a set."""
+    """(day, task, minutes, end, project): the latest of last_day_tasks among `places`; on the same day the one with
+    more minutes, then the one logged later, then the project's name, so the pick never depends on the order of a set."""
     got = [lastday[p] + (p,) for p in places if p in lastday]
-    return min(got, key=lambda x: (_neg_day(x[0]), -x[2], x[3])) if got else None
+    return max(got, key=lambda x: (x[0], x[2], x[3], _neg_id(x[4]))) if got else None
 
 
-def _neg_day(day: str) -> int:
-    return -int(str(day).replace("-", "") or 0)
+def _neg_id(text: str) -> tuple:
+    """A key that sorts `text` backwards (max picks the lowest)."""
+    return tuple(-ord(c) for c in str(text))
 
 
 def projects_of(votes: dict, project_of) -> set:

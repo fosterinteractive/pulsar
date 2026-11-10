@@ -598,8 +598,8 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
             last = None
             if got:
                 n = names.get(got[1]) or {}
-                last = {"taskId": str(got[1]), "title": n.get("task") or "", "project": n.get("project") or got[3],
-                        "why": f"the task you logged last in {got[3]} ({got[0]})"}
+                last = {"taskId": str(got[1]), "title": n.get("task") or "", "project": n.get("project") or got[4],
+                        "why": f"the task you logged last in {got[4]} ({got[0]})"}
             mine = [t for t in unseen if me and str(t.get("assignee") or "") == me and t.get("project") in places
                     and str(t.get("taskId")) not in closed
                     and 0 <= (day0 - datetime.strptime(str(t.get("created"))[:10], "%Y-%m-%d")).days <= FRESH_DAYS]

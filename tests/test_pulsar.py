@@ -1015,14 +1015,18 @@ class LearnWordsTest(unittest.TestCase):
         from pulsar import attribution
         rows = [{"date": "2026-11-03", "taskId": "2", "project": "P", "minutes": 30},
                 {"date": "2026-11-03", "taskId": "1", "project": "P", "minutes": 30},     # a tie: the lower id
+                {"date": "2026-11-03", "taskId": "6", "project": "R", "minutes": 20, "start": 1000.0},
+                {"date": "2026-11-03", "taskId": "4", "project": "R", "minutes": 20, "start": 5000.0},  # logged later
                 {"date": "2026-11-02", "taskId": "9", "project": "P", "minutes": 300},    # an older day
                 {"date": "2026-11-04", "taskId": "8", "project": "P", "minutes": 60},     # the day itself: not before it
                 {"date": "2026-11-03", "taskId": "7", "project": "P", "minutes": 90, "meeting": True},
                 {"date": "2026-11-03", "taskId": "5", "project": "Q", "minutes": 45}]
         for order in (rows, rows[::-1]):
             got = attribution.last_day_tasks(order, "2026-11-04")
-            self.assertEqual(got, {"P": ("2026-11-03", "1", 30), "Q": ("2026-11-03", "5", 45)})
-            self.assertEqual(attribution.last_of(got, {"P", "Q"}), ("2026-11-03", "5", 45, "Q"))  # same day: more minutes
+            self.assertEqual(got, {"P": ("2026-11-03", "1", 30, 0.0), "Q": ("2026-11-03", "5", 45, 0.0),
+                                   "R": ("2026-11-03", "4", 20, 6200.0)})
+            self.assertEqual(attribution.last_of(got, {"P", "Q"}), ("2026-11-03", "5", 45, 0.0, "Q"))  # more minutes
+            self.assertEqual(attribution.last_of(got, {"P", "R"})[1], "1")
             self.assertEqual(attribution.last_of(got, ["Q", "P"]), attribution.last_of(got, ["P", "Q"]))
         self.assertIsNone(attribution.last_of({}, {"P"}))
 
