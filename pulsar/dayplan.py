@@ -1526,12 +1526,16 @@ def ticket_flags(entries: list, found: dict, date: str, settings: dict) -> None:
     with ThreadPoolExecutor(4) as pool:  # read once per project here (kept a day), so each row below finds it
         list(pool.map(lambda pid: flags.project_share(pid, settings), projects))
     planned: dict = {}  # task id -> minutes of the plan's rows so far: the estimate counts them all, in time order
+    by_service: dict = {}  # the same per service: its budget counts them all
     for e in sorted(entries, key=lambda e: e.get("s") or 0):
         b = (found.get(e["taskId"]) or (None, None))[0] if e.get("taskId") else None
         if b:
             planned[e["taskId"]] = planned.get(e["taskId"], 0) + (e.get("minutes") or 0)
-        e["ticket"] = flags.for_task(b.get("task"), b.get("services"), date, settings,
-                                     minutes=planned[e["taskId"]]) if b else []
+            if e.get("serviceId"):
+                by_service[e["serviceId"]] = by_service.get(e["serviceId"], 0) + (e.get("minutes") or 0)
+        e["ticket"] = flags.for_task(b.get("task"), b.get("services"), date, settings, minutes=planned[e["taskId"]],
+                                     service_id=e.get("serviceId"),
+                                     service_minutes=by_service.get(e.get("serviceId"), 0)) if b else []
 
 
 def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: dict | None = None,

@@ -1073,10 +1073,12 @@ def project_services(project_id: str, date: str, settings: dict, names: Optional
         inc = _index(doc)
         services = [{"id": str(d.get("id")), "name": _attr(d, "name") or "",
                      "budget": _attr(inc.get(("deals", _rel(d, "deal") or "")), "name") or "",
-                     **billable_of(_attr(d, "billing_type"))} for d in doc.get("data") or []]
+                     **billable_of(_attr(d, "billing_type")),
+                     **budget_time(_attr(d, "budgeted_time"), _attr(d, "worked_time"))} for d in doc.get("data") or []]
     else:
         d = parse_mcp(mcp_text("query_resources", {
-            "resource_type": "services", "limit": 100, "include_fields": ["name", "deal", "deal.name"],
+            "resource_type": "services", "limit": 100,
+            "include_fields": ["name", "deal", "deal.name", "budgeted_time", "worked_time"],
             "filters": {"op": "and", "conditions": [{"field": "project", "operator": "eq", "value": str(project_id)},
                                                     {"field": "bookable_date", "operator": "eq", "value": date}]}}, conn["token"]))
         cols, inc = d["items"]["columns"], d.get("included") or {}
@@ -1085,8 +1087,22 @@ def project_services(project_id: str, date: str, settings: dict, names: Optional
         names.set_many({f"deal:services:{r['id']}": (r.get("deal") or ":").split(":")[1] for r in rows if r.get("deal")})
         _mcp_billing([f"services:{r['id']}" for r in rows], conn["token"], names)
         services = [{"id": str(r["id"]), "name": r.get("name") or "", "budget": deals.get(r.get("deal") or "") or "",
-                     **billable_of(names.get(f"billing:services:{r['id']}"))} for r in rows]
+                     **billable_of(names.get(f"billing:services:{r['id']}")),
+                     **budget_time(r.get("budgeted_time"), r.get("worked_time"))} for r in rows]
     return services
+
+
+def budget_time(budgeted, worked) -> dict:
+    """{"budgetTime": {"budgeted", "worked"}} in minutes, for a service with a time budget whose fields this person may
+    read; {} otherwise. Productive leaves both empty for a role without "View budgets where a user is a member" (Staff),
+    so most people see nothing here."""
+    def minutes(v):
+        try:
+            return None if v is None or isinstance(v, bool) else float(v)
+        except (TypeError, ValueError):
+            return None
+    b, w = minutes(budgeted), minutes(worked)
+    return {"budgetTime": {"budgeted": b, "worked": w}} if b and b > 0 and w is not None and w >= 0 else {}
 
 
 ESTIMATE_SAMPLE = 100  # a project's most recently active tasks, read to tell whether it uses estimates

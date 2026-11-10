@@ -57,12 +57,48 @@ class FlagsTest(unittest.TestCase):
 
     def test_over_the_estimate_counts_the_time_worked_and_the_minutes_about_to_be_logged(self):
         t = {**task(estimate=240), "worked": 200}
-        self.assertEqual(flags.for_task(t, [{"id": "1"}], "2026-11-06", {}, self.names, minutes=30), [])  # 230 of 240
+        self.assertEqual(flags.for_task(t, [{"id": "1"}], "2026-11-06", {}, self.names, minutes=30),  # 230 of 240: left
+                         [{"kind": "nearestimate", "text": "3 h 50 min of the 4 h estimate with this entry, 10 min left"}])
+        self.assertEqual(flags.for_task(t, [{"id": "1"}], "2026-11-06", {}, self.names, minutes=-20), [])  # 180: under 80%
         [f] = flags.for_task(t, [{"id": "1"}], "2026-11-06", {}, self.names, minutes=130)
         self.assertEqual(f, {"kind": "overestimate", "text": "+1 h 30 min over the estimate (5 h 30 min of 4 h)"})
         self.assertEqual(flags.for_task(t, [{"id": "1"}], "2026-11-06", {}, self.names), [])  # no minutes: no check
         self.assertIsNone(flags.over_estimate({**t, "worked": None}, 600))  # time worked unknown: nothing said
         self.assertIsNone(flags.over_estimate({**task(), "worked": 900}, 600))  # no estimate: noestimate's business
+
+    def test_near_the_estimate_from_80_percent_with_this_entry(self):
+        # Nick, 2026-11-10 (as Timely shows it): see how much is left before going over, not only after
+        t = {**task(estimate=600), "worked": 450}
+        self.assertIsNone(flags.near_estimate(t, 20))                       # 470 of 600: 78%
+        self.assertEqual(flags.near_estimate(t, 30)["text"], "8 h of the 10 h estimate with this entry, 2 h left")
+        self.assertEqual(flags.near_estimate(t, 150)["text"], "10 h of the 10 h estimate with this entry, 0 min left")
+        self.assertIsNone(flags.near_estimate(t, 151))                      # over: overestimate's business
+        self.assertIsNone(flags.near_estimate({**t, "worked": None}, 100))  # time worked unknown
+        self.assertIsNone(flags.near_estimate({**t, "estimate": None}, 100))
+
+    def test_a_services_time_budget_only_where_it_can_be_read(self):
+        svc = {"id": "1", "budgetTime": {"budgeted": 3000, "worked": 2400}}  # 50 h budget, 40 h used
+        self.assertEqual(flags.service_budget(svc, 60)["kind"], "nearbudget")   # 41 h: 82%
+        self.assertEqual(flags.service_budget(svc, 60)["text"], "41 h of the service's 50 h budget with this entry, 9 h left")
+        self.assertEqual(flags.service_budget(svc, 700)["text"], "+1 h 40 min over the service's budget (51 h 40 min of 50 h)")
+        self.assertIsNone(flags.service_budget({**svc, "budgetTime": {"budgeted": 3000, "worked": 1000}}, 60))
+        self.assertIsNone(flags.service_budget({"id": "1"}, 6000))          # not readable (Staff): nothing said
+        t = {**task(estimate=6000), "worked": 0}
+        got = flags.for_task(t, [svc, {"id": "2"}], "2026-11-06", {}, self.names, minutes=60, service_id="1")
+        self.assertEqual([f["kind"] for f in got], ["nearbudget"])
+        self.assertEqual(flags.for_task(t, [svc, {"id": "2"}], "2026-11-06", {}, self.names, minutes=60, service_id="2"), [])
+        self.assertEqual(productive.budget_time(None, None), {})              # what a Staff role gets
+        self.assertEqual(productive.budget_time(0, 10), {})
+        self.assertEqual(productive.budget_time("3000", 2400.0), {"budgetTime": {"budgeted": 3000.0, "worked": 2400.0}})
+
+    def test_log_the_day_counts_the_plans_earlier_rows_on_the_same_service(self):
+        svc = {"id": "1", "budgetTime": {"budgeted": 600, "worked": 400}}
+        found = {"7": ({"task": {**task(), "worked": 0}, "services": [svc]}, None),
+                 "8": ({"task": {**task(), "worked": 0}, "services": [svc]}, None)}
+        rows = [{"s": 540, "minutes": 60, "taskId": "7", "serviceId": "1"}, {"s": 600, "minutes": 60, "taskId": "8", "serviceId": "1"}]
+        dayplan.ticket_flags(rows, found, "2026-11-06", {"advanced": {"no_estimate": False}})
+        self.assertEqual(rows[0]["ticket"], [])                                   # 460 of 600: 77%
+        self.assertEqual([f["kind"] for f in rows[1]["ticket"]], ["nearbudget"])  # 520 of 600 with the first: 87%
 
     def test_log_the_day_counts_the_plans_earlier_rows_on_the_same_task(self):
         t = {**task(estimate=120), "worked": 60}

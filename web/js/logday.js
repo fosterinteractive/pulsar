@@ -242,7 +242,8 @@ function renderReview() {
     return;
   }
   const T = ldTotals(), ov = ldOverlaps(), toCheck = LD.rows.filter(ldCheck);
-  const flagged = LD.rows.filter(r => ldPending(r) && r.ticket?.length), nFlags = flagged.reduce((s, r) => s + r.ticket.length, 0);
+  const fixes = r => (r.ticket || []).filter(f => !LD_NEAR.has(f.kind));  // near an estimate or budget: said on the row, nothing to fix
+  const flagged = LD.rows.filter(r => ldPending(r) && fixes(r).length), nFlags = flagged.reduce((s, r) => s + fixes(r).length, 0);
   const ovMin = [...ov.values()].flat().reduce((s, o) => s + o.minutes, 0) / 2;
   const target = TARGET, withThese = T.logged + T.minutes;
   const pct = x => Math.min(100, x / Math.max(target, withThese) * 100);
@@ -381,10 +382,13 @@ function sharedLine(r) {
 
 /* the row's ticket flags (pulsar/flags.py), read only: what to fix in Productive, and the link to the task there.
    Outside the row's button, since a link cannot sit inside one. */
+const LD_NEAR = new Set(['nearestimate', 'nearbudget']);  // flags.py: how much is left, amber, nothing to fix
 function ticketLine(r) {
-  if (!r.ticket?.length) return '';
-  const url = productiveTaskURL(r.taskId);
-  return `<p class="e-flags">! ${r.ticket.map(f => esc(f.text)).join(' · ')}${url ? ` · <a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open in Productive</a>` : ''}</p>`;
+  const fix = (r.ticket || []).filter(f => !LD_NEAR.has(f.kind)), near = (r.ticket || []).filter(f => LD_NEAR.has(f.kind));
+  if (!fix.length && !near.length) return '';
+  const url = productiveTaskURL(r.taskId), link = url ? ` · <a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open in Productive</a>` : '';
+  return (near.length ? `<p class="e-flags near">${near.map(f => esc(f.text)).join(' · ')}${fix.length ? '' : link}</p>` : '')
+    + (fix.length ? `<p class="e-flags">! ${fix.map(f => esc(f.text)).join(' · ')}${link}</p>` : '');
 }
 
 /* ---------- the editor of the open row ---------- */

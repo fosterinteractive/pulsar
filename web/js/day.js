@@ -76,8 +76,8 @@ async function refreshLogged() {
 function estimateLine(t) {
   if (!t || t.worked == null) return null;
   if (!t.estimate) return {text: `${dur(t.worked)}, no estimate`, over: false, pct: null};
-  const over = t.worked > t.estimate;
-  return {over, pct: Math.min(100, t.worked / t.estimate * 100),
+  const over = t.worked > t.estimate, near = !over && t.worked >= 0.8 * t.estimate;  // flags.NEAR: amber from 80%
+  return {over, near, pct: Math.min(100, t.worked / t.estimate * 100),
           text: over ? `${dur(t.worked)} of ${dur(t.estimate)}, over by ${dur(t.worked - t.estimate)}`
                      : `${dur(t.worked)} of ${dur(t.estimate)}, ${dur(t.estimate - t.worked)} left`};
 }
@@ -600,8 +600,8 @@ function renderAside(gapMin) {
     setHTML(box, '<h2>Tasks against estimates</h2>' + (state.estimatesError ? `<div class="note">${esc(state.estimatesError)}</div>` : '') + [...byTask.values()].sort((a, b) => b.today - a.today).map(t => {
       const line = est ? estimateLine(est[t.taskId]) : null;
       return `<div class="tk"><div class="tk-h"><span class="dot" style="background:${color(t.project)}"></span><b title="${esc(t.project)}">${esc(t.title)}</b><span class="num">${dur(t.today)} today</span></div>
-        ${line ? `<div class="tk-l${line.over ? ' over' : ''}">${line.over ? '<span aria-hidden="true">⚠ </span>' : ''}${esc(line.text)}</div>
-          ${line.pct != null ? `<div class="bar"><i style="width:${line.pct}%${line.over ? ';background:var(--gap);opacity:1' : ''}"></i></div>` : ''}`
+        ${line ? `<div class="tk-l${line.over || line.near ? ' over' : ''}">${line.over ? '<span aria-hidden="true">⚠ </span>' : ''}${esc(line.text)}</div>
+          ${line.pct != null ? `<div class="bar"><i style="width:${line.pct}%${line.over || line.near ? ';background:var(--gap);opacity:1' : ''}"></i></div>` : ''}`
                : `<div class="tk-l">${est ? 'no data from Productive' : 'reading estimates…'}</div>`}</div>`;
     }).join('') + '<div class="note">Totals include everyone\'s time on the task.</div>');
   }

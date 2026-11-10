@@ -156,6 +156,12 @@ section.rv[hidden] { display: none; }
 .e-flags a, .tflags a { color: var(--accent); text-decoration: none; white-space: nowrap; }
 .e-flags a:hover, .tflags a:hover { text-decoration: underline; }
 .tflags { margin-top: -4px; }
+/* how much of an estimate or a budget is left (log.js burnLine, logday.js ticketLine): quiet, amber from 80%, the budget
+   over it in red (both at 4.5:1) */
+.burn { margin-top: -4px; color: var(--muted); }
+.burn .near, .e-flags.near { color: var(--gap-text); }
+.burn .over { color: color-mix(in srgb, var(--now) 70%, var(--text)); font-weight: 600; }
+.e-flags.near + .e-flags { margin-top: -8px; }
 
 /* a shared row (logday.js sharedLine): its note, and who the stretch goes to */
 .e-shared { flex: 0 0 100%; min-width: 0; margin: -6px 0 0; padding: 0 14px 9px 104px; display: flex; flex-wrap: wrap;

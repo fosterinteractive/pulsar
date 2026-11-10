@@ -304,7 +304,36 @@ function showFlags(task, flags, nums) {
   el.hidden = !texts.length;
   el.innerHTML = texts.length ? '! ' + texts.map(esc).join(' · ')
     + (url ? ` · <a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open in Productive</a>` : '') : '';
+  burnLine();
 }
+/* how much of the task's estimate and of the service's time budget is used with this entry, always while they are
+   known, so it shows before going over (Nick, 2026-11-10, as Timely does): "8 h 30 min of 10 h with this entry, 1 h 30
+   min left", amber from flags.NEAR (80%). Over the estimate is the flag line's (overEstimate); over the budget is said
+   here, as nothing else says it. The budget only where Productive lets this person read it (productive.budget_time). */
+const BURN_NEAR = 0.8;
+let logServices = [];
+function burnLine() {
+  const el = $('#log-burn'), n = flagsShown.nums, t = flagsShown.task, f = logForm.elements, mins = +f.minutes.value || 0;
+  const mine = (id, field) => logEdit && id && String(logEdit[field]) === String(id) ? logEdit.minutes || 0 : 0;  // an edit's own minutes are counted already
+  const parts = [];
+  if (t && n?.estimate && n.worked != null) {
+    const total = n.worked + mins - mine(t.taskId, 'taskId');
+    if (total <= n.estimate)
+      parts.push({near: total >= BURN_NEAR * n.estimate,
+                  text: `Estimate: ${dur(total)} of ${dur(n.estimate)} with this entry, ${dur(n.estimate - total)} left`});
+  }
+  const svc = t ? logServices.find(x => x.id === f.service.value) : null, b = svc?.budgetTime;
+  if (b?.budgeted && b.worked != null) {
+    const total = b.worked + mins - mine(svc.id, 'serviceId');
+    parts.push(total > b.budgeted
+      ? {over: true, text: `Budget: +${dur(total - b.budgeted)} over the service's ${dur(b.budgeted)}`}
+      : {near: total >= BURN_NEAR * b.budgeted, text: `Budget: ${dur(total)} of ${dur(b.budgeted)} with this entry, ${dur(b.budgeted - total)} left`});
+  }
+  el.hidden = !parts.length;
+  el.innerHTML = parts.map(p => `<span class="${p.over ? 'over' : p.near ? 'near' : ''}">${esc(p.text)}</span>`).join('<br>');
+}
+logForm.elements.service.addEventListener('change', burnLine);
+
 function overEstimate() {
   const n = flagsShown.nums, t = flagsShown.task, mins = +logForm.elements.minutes.value || 0;
   if (!n?.estimate || n.worked == null || !mins) return '';
@@ -359,6 +388,7 @@ async function loadServices(task) {
     ? {id: logEdit.serviceId, name: logEdit.service || 'Its service', budget: logEdit.budget || ''} : null;
   if (r.error && !own) { f.service.innerHTML = ''; setLogMsg(r.error, true); return; }
   let list = r.services || [];
+  logServices = list;
   const ownGone = own && !list.some(x => x.id === own.id);
   if (ownGone) list = [{...own, gone: true}, ...list];
   if (!list.length) {  // the flag line says so (no budget on this date), with the link to Productive
@@ -383,6 +413,7 @@ async function loadServices(task) {
     `<option value="${esc(x.id)}"${pick?.id === x.id ? ' selected' : ''}>${esc(x.name.trim())}${x.budget ? ' · ' + esc(x.budget) : ''}${
       x.billable ? ' · billable' : x.billable === false ? ' · not billable' : ''}${x.gone ? ' · takes no new time on this date' : ''}</option>`).join('');
   f.service.disabled = false;
+  burnLine();
   // a blocked task can still take time (the blocker may be what you worked on), but say so before anything is written
   const said = [task.blocked ? `This task is ${(task.status || 'blocked').toLowerCase()} in Productive. You can still log to it.` : '',
                 ownGone ? (r.error ? r.error + ' ' : '') + "Its service takes no new time on this date. It stays unless you pick "
