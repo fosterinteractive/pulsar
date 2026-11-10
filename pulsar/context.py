@@ -12,10 +12,12 @@ window was in front and a hash of each of its keys, never the titles, the pages 
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import re
 import threading
+import time
 from datetime import datetime, timedelta
 
 from . import config, logbook
@@ -26,28 +28,73 @@ SHARE = 0.6    # the share of a key's votes its task needs
 LEAST = 5.0    # the faded minutes a key needs before it says anything
 RUN = 5        # minutes at least, in a row, for a stretch to take a task this way
 GAP = 2        # minutes between two of a stretch's minutes at most
+SPREAD = 30    # minutes its task reaches into the work outside Claude around it, in its sitting (as dayplan.MERGE_GAP)
 HALF_LIFE = 7  # days: a day's votes count half as much this many days later (as learn.py)
 LEARN_DAYS = 60
 KEEP_DAYS = 62
-FORMAT = 1
+RETRY = 3600   # seconds before the past days are read again after a tracker did not answer
+FORMAT = 2     # 2: keys salted (SALT)
 DIR = os.path.join(config.CACHE_DIR, "context-days")
+SALT = os.path.join(config.CACHE_DIR, "context-salt")  # this Mac's own, owner-only: the keys cannot be guessed
 SPLIT = re.compile(r" - | \| | · | – | — ")
 
 
+_salt = None
+_salt_lock = threading.Lock()
+
+
+def salt() -> bytes:
+    """This Mac's salt for the keys, made once (owner-only): a file kept cannot be checked against guessed names (a
+    site, a channel). Missing or unreadable, a new one is made, and the days kept under the old one are read again."""
+    global _salt
+    with _salt_lock:
+        if _salt is None:
+            try:
+                with open(SALT, "rb") as fh:
+                    got = fh.read()
+                if len(got) < 16:
+                    raise ValueError("short")
+            except (OSError, ValueError):
+                got = os.urandom(32)
+                try:
+                    os.makedirs(os.path.dirname(SALT), exist_ok=True)
+                    fd = os.open(SALT + ".new", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                    with os.fdopen(fd, "wb") as fh:
+                        fh.write(got)
+                    os.replace(SALT + ".new", SALT)
+                except OSError:
+                    pass  # kept for this run only: nothing kept under it is read again later
+            _salt = got
+        return _salt
+
+
+def salt_id() -> str:
+    """Which salt a kept day was made with (a hash of it: the salt itself never goes in a day's file)."""
+    return hashlib.sha256(b"id|" + salt()).hexdigest()[:12]
+
+
 def _hash(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return hmac.new(salt(), text.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
 
 
 def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"\d+", "#", (text or "").lower())).strip()
 
 
+CALL_APP = re.compile(r"zoom|teams|webex|facetime", re.I)  # the apps of server.is_call's calls
+
+
 def keys(it: dict) -> list:
     """The keys of a window, most precise first, hashed: a Slack conversation (from its window title); a page's site
     and the first parts of its path (numbers left out: one key for every ticket of a tracker, one per site); the first
-    part of the title and, outside a browser, its last part (a document, an editor's folder); the app."""
+    part of the title and, outside a browser, its last part (a document, an editor's folder); the app. None for a call
+    or a call app's window: a call is the meetings' (dayplan._meetings), and Zoom's own window, left in front after
+    the daily meeting logged in Zoom, named that meeting's task for the desk work around it."""
+    from .server import is_call
     app, title = str(it.get("app") or ""), str(it.get("title") or "")
     url, host = str(it.get("url") or ""), str(it.get("host") or "").lower()
+    if CALL_APP.search(app) or is_call(it):
+        return []
     out = []
     if app == "Slack":
         conv = re.sub(r"\s*-\s*\d+ new items?.*$", "", title.split(" - ")[0]).strip().lower()
@@ -99,10 +146,22 @@ def day_rows(items: list) -> dict:
     return {"keys": table, "runs": runs}
 
 
+def sound(doc) -> bool:
+    """A day kept whole, in this format: keys a list of lists of hashes, runs [s, e, index into keys] of numbers."""
+    if not isinstance(doc, dict) or doc.get("format", FORMAT) != FORMAT:
+        return False
+    table, runs = doc.get("keys"), doc.get("runs")
+    return isinstance(table, list) and isinstance(runs, list) \
+        and all(isinstance(k, list) and all(isinstance(h, str) for h in k) for k in table) \
+        and all(isinstance(r, list) and len(r) == 3 and all(isinstance(v, (int, float)) for v in r)
+                and isinstance(r[2], int) and 0 <= r[2] < len(table) for r in runs)
+
+
 def votes(days: dict, entries: list, t0_of, date: str, half_life: float = HALF_LIFE,
-          learn_days: int = LEARN_DAYS) -> dict:
+          learn_days: int = LEARN_DAYS, tz=None) -> dict:
     """{key: {task: faded minutes}}: every minute of your entries (with a start) on a kept day votes for its task with
-    every key of the window in front then. days: {date: day_rows(...)}."""
+    every key of the window in front then. days: {date: day_rows(...)}. tz: the person's time zone; the activity is
+    by the clock (server.clock_spans), so on a day the clocks change an entry's start is too."""
     day0 = datetime.strptime(date, "%Y-%m-%d")
     lo = (day0 - timedelta(days=learn_days)).strftime("%Y-%m-%d")
     by_day: dict = {}
@@ -111,7 +170,7 @@ def votes(days: dict, entries: list, t0_of, date: str, half_life: float = HALF_L
             by_day.setdefault(r["date"], []).append(r)
     out: dict = {}
     for d, doc in days.items():
-        if not doc or d not in by_day:
+        if not doc or d not in by_day or not sound(doc):
             continue
         w = 0.5 ** ((day0 - datetime.strptime(d, "%Y-%m-%d")).days / half_life) if half_life else 1.0
         at: list = [None] * 1440
@@ -120,7 +179,10 @@ def votes(days: dict, entries: list, t0_of, date: str, half_life: float = HALF_L
                 at[x] = j
         table, t0 = doc.get("keys") or [], t0_of(d)
         for r in by_day[d]:
-            a = int(round((float(r["start"]) - t0) / 60))
+            start = float(r["start"])
+            shift = 0.0 if tz is None else (datetime.fromtimestamp(start, tz).utcoffset()
+                                            - datetime.fromtimestamp(t0, tz).utcoffset()).total_seconds()
+            a = int(round((start - t0 + shift) / 60))
             task = str(r["taskId"])
             for x in range(max(0, a), min(1440, a + int(r.get("minutes") or 0))):
                 if at[x] is None or at[x] >= len(table):
@@ -149,6 +211,7 @@ def pick(ks: list, learned: dict):
 # ---- kept on this Mac ----------------------------------------------------------------------------------------------
 
 _warming = threading.Lock()
+_failed_at = 0.0  # when a past day could last not be read (no tracker answering): none is read for RETRY seconds
 
 
 def _path(date: str) -> str:
@@ -159,15 +222,23 @@ def stored(date: str):
     try:
         with open(_path(date), encoding="utf-8") as fh:
             doc = json.load(fh)
-        return doc if isinstance(doc, dict) and doc.get("format") == FORMAT and isinstance(doc.get("runs"), list) else None
+        return doc if isinstance(doc, dict) and doc.get("format") == FORMAT and doc.get("salt") == salt_id() \
+            and sound(doc) else None
     except (OSError, ValueError):
         return None
 
 
 def store(date: str, items: list) -> None:
-    """Keep a day that is over (its windows' hashed keys); an old day kept falls out."""
-    os.makedirs(DIR, mode=0o700, exist_ok=True)
-    config.write_atomic(_path(date), json.dumps({"format": FORMAT, **day_rows(items)}, separators=(",", ":")))
+    """Keep a day that is over (its windows' hashed keys); an old day kept falls out. A folder that cannot be written
+    keeps nothing: the tasks outside Claude come from fewer days, and Log the day goes on."""
+    try:
+        os.makedirs(DIR, mode=0o700, exist_ok=True)
+        config.write_atomic(_path(date), json.dumps({"format": FORMAT, "salt": salt_id(), **day_rows(items)},
+                                                          separators=(",", ":")))
+    except OSError as exc:
+        logbook.record("learn", f"Past windows could not be kept: {type(exc).__name__}: {exc}", kind="warning",
+                       once_per=3600)
+        return
     lo = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%d")
     for f in os.listdir(DIR):
         if f.endswith(".json") and f[:10] < lo:
@@ -190,20 +261,27 @@ def days_before(date: str) -> dict:
 
 def warm(date: str, today: str, read_items) -> None:
     """Keep, in the background, the past days not kept yet: read_items(date) -> the day's activity items (the tracker,
-    read only). One run at a time; a second call returns at once."""
-    if not _warming.acquire(blocking=False):
+    read only), None when no tracker read it. One run at a time; a second call returns at once. The first day not
+    read ends the run, and none is read for RETRY seconds: no pass of 60 reads each time Log the day opens while the
+    tracker is down."""
+    global _failed_at
+    if time.time() - _failed_at < RETRY or not _warming.acquire(blocking=False):
         return
 
     def run():
+        global _failed_at
         try:
             d0 = datetime.strptime(date, "%Y-%m-%d")
             for i in range(1, LEARN_DAYS + 1):
                 d = (d0 - timedelta(days=i)).strftime("%Y-%m-%d")
                 if d < today and stored(d) is None:
                     items = read_items(d)
-                    if items is not None:
-                        store(d, items)
+                    if items is None:
+                        _failed_at = time.time()
+                        break
+                    store(d, items)
         except Exception as exc:  # a hint: the tasks outside Claude just come from fewer days
+            _failed_at = time.time()
             logbook.record("learn", f"Learning from past windows: {type(exc).__name__}: {exc}", kind="warning")
         finally:
             _warming.release()

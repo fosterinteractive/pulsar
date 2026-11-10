@@ -18,6 +18,8 @@ import tempfile
 import threading
 import time
 import urllib.request
+from collections.abc import MutableMapping
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Callable
 
@@ -227,7 +229,46 @@ def http_json(url: str, timeout: float = 5):
         return json.loads(resp.read().decode("utf-8"))
 
 
-PROBLEMS: dict = {}  # tracker -> why it gave nothing the last time it was read; shown in the Activity header
+class _Problems(MutableMapping):
+    """tracker -> why it gave nothing the last time it was read; shown in the Activity header. A thread inside
+    own_problems() keeps its own, so a background read of a past day never clears or sets today's."""
+
+    def _now(self) -> dict:
+        own = getattr(_own, "problems", None)
+        return _shared if own is None else own
+
+    def __getitem__(self, k):
+        return self._now()[k]
+
+    def __setitem__(self, k, v):
+        self._now()[k] = v
+
+    def __delitem__(self, k):
+        del self._now()[k]
+
+    def __iter__(self):
+        return iter(list(self._now()))
+
+    def __len__(self):
+        return len(self._now())
+
+    def copy(self) -> dict:
+        return dict(self._now())
+
+
+_shared: dict = {}
+_own = threading.local()
+PROBLEMS = _Problems()
+
+
+@contextmanager
+def own_problems():
+    """The problems of the reads made inside, in this thread only ({tracker: why}), apart from PROBLEMS."""
+    _own.problems = {}
+    try:
+        yield _own.problems
+    finally:
+        del _own.problems
 
 
 def activitywatch_raw(base: str, t0: float, t1: float) -> dict | None:
