@@ -99,10 +99,22 @@ def day_rows(items: list) -> dict:
     return {"keys": table, "runs": runs}
 
 
+def sound(doc) -> bool:
+    """A day kept whole, in this format: keys a list of lists of hashes, runs [s, e, index into keys] of numbers."""
+    if not isinstance(doc, dict) or doc.get("format", FORMAT) != FORMAT:
+        return False
+    table, runs = doc.get("keys"), doc.get("runs")
+    return isinstance(table, list) and isinstance(runs, list) \
+        and all(isinstance(k, list) and all(isinstance(h, str) for h in k) for k in table) \
+        and all(isinstance(r, list) and len(r) == 3 and all(isinstance(v, (int, float)) for v in r)
+                and isinstance(r[2], int) and 0 <= r[2] < len(table) for r in runs)
+
+
 def votes(days: dict, entries: list, t0_of, date: str, half_life: float = HALF_LIFE,
-          learn_days: int = LEARN_DAYS) -> dict:
+          learn_days: int = LEARN_DAYS, tz=None) -> dict:
     """{key: {task: faded minutes}}: every minute of your entries (with a start) on a kept day votes for its task with
-    every key of the window in front then. days: {date: day_rows(...)}."""
+    every key of the window in front then. days: {date: day_rows(...)}. tz: the person's time zone; the activity is
+    by the clock (server.clock_spans), so on a day the clocks change an entry's start is too."""
     day0 = datetime.strptime(date, "%Y-%m-%d")
     lo = (day0 - timedelta(days=learn_days)).strftime("%Y-%m-%d")
     by_day: dict = {}
@@ -111,7 +123,7 @@ def votes(days: dict, entries: list, t0_of, date: str, half_life: float = HALF_L
             by_day.setdefault(r["date"], []).append(r)
     out: dict = {}
     for d, doc in days.items():
-        if not doc or d not in by_day:
+        if not doc or d not in by_day or not sound(doc):
             continue
         w = 0.5 ** ((day0 - datetime.strptime(d, "%Y-%m-%d")).days / half_life) if half_life else 1.0
         at: list = [None] * 1440
@@ -120,7 +132,10 @@ def votes(days: dict, entries: list, t0_of, date: str, half_life: float = HALF_L
                 at[x] = j
         table, t0 = doc.get("keys") or [], t0_of(d)
         for r in by_day[d]:
-            a = int(round((float(r["start"]) - t0) / 60))
+            start = float(r["start"])
+            shift = 0.0 if tz is None else (datetime.fromtimestamp(start, tz).utcoffset()
+                                            - datetime.fromtimestamp(t0, tz).utcoffset()).total_seconds()
+            a = int(round((start - t0 + shift) / 60))
             task = str(r["taskId"])
             for x in range(max(0, a), min(1440, a + int(r.get("minutes") or 0))):
                 if at[x] is None or at[x] >= len(table):
@@ -159,15 +174,21 @@ def stored(date: str):
     try:
         with open(_path(date), encoding="utf-8") as fh:
             doc = json.load(fh)
-        return doc if isinstance(doc, dict) and doc.get("format") == FORMAT and isinstance(doc.get("runs"), list) else None
+        return doc if isinstance(doc, dict) and doc.get("format") == FORMAT and sound(doc) else None
     except (OSError, ValueError):
         return None
 
 
 def store(date: str, items: list) -> None:
-    """Keep a day that is over (its windows' hashed keys); an old day kept falls out."""
-    os.makedirs(DIR, mode=0o700, exist_ok=True)
-    config.write_atomic(_path(date), json.dumps({"format": FORMAT, **day_rows(items)}, separators=(",", ":")))
+    """Keep a day that is over (its windows' hashed keys); an old day kept falls out. A folder that cannot be written
+    keeps nothing: the tasks outside Claude come from fewer days, and Log the day goes on."""
+    try:
+        os.makedirs(DIR, mode=0o700, exist_ok=True)
+        config.write_atomic(_path(date), json.dumps({"format": FORMAT, **day_rows(items)}, separators=(",", ":")))
+    except OSError as exc:
+        logbook.record("learn", f"Past windows could not be kept: {type(exc).__name__}: {exc}", kind="warning",
+                       once_per=3600)
+        return
     lo = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%d")
     for f in os.listdir(DIR):
         if f.endswith(".json") and f[:10] < lo:

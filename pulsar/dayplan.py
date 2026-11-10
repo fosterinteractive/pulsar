@@ -186,7 +186,7 @@ def remember_services(service: dict, project_service: dict, rows: list) -> None:
 
 
 def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_LIFE, learn_days: int = LEARN_DAYS,
-          person: str = "", context_days: dict | None = None) -> dict:
+          person: str = "", context_days: dict | None = None, tz=None) -> dict:
     """What the days before `date` say: votes session key -> task, (session key, repository) -> task and repository ->
     task (each earlier Likely row votes, with its minutes, for the task logged over most of it, credited to the
     background row under it when that one's repository is the one logged to the task's project: attribution.credits;
@@ -259,7 +259,7 @@ def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_L
             "skip": set(WORD.findall((person or "").lower())),
             "task_class": task_class, "project_class": project_class,
             "classes": attribution.repo_classes(credited, task_class),
-            "context": context_mod.votes(context_days, before, t0_of, date, half_life, learn_days) if context_days else {}}
+            "context": context_mod.votes(context_days, before, t0_of, date, half_life, learn_days, tz) if context_days else {}}
 
 
 # ---- a task for one Likely row -------------------------------------------------------------------------------------
@@ -1787,6 +1787,17 @@ def ticket_flags(entries: list, found: dict, date: str, settings: dict) -> None:
                                      service_minutes=by_service.get(e.get("serviceId"), 0)) if b else []
 
 
+def past_items(date: str, url: str):
+    """A past day's activity for context.warm, read only; None unless a tracker read it whole, so that day is read
+    again later and never kept empty: no tracker answering, or one that said what went wrong (ActivityWatch down
+    while MemTime's file is still there answers, with nothing for the day)."""
+    from . import server
+    got = server.api_activity({"date": date})
+    if got.get("items"):
+        return got["items"]
+    return [] if not got.get("problems") and trackers.answering(url) else None
+
+
 def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: dict | None = None,
            inputs: dict | None = None) -> dict:
     """The proposal for `date` from Pulsar's live data. ignore_logged (test servers only) plans as if nothing were
@@ -1885,15 +1896,12 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
     if date < today and context_mod.stored(date) is None and act.get("items"):
         context_mod.store(date, act["items"])
 
-    def read_day(d):  # None while no tracker answers: that day is read again later, never kept empty
-        got_ = server.api_activity({"date": d})
-        url = s.get("activitywatch_url") or config.DEFAULTS["activitywatch_url"]
-        return got_.get("items") if got_.get("items") or trackers.answering(url) else None
+    url = s.get("activitywatch_url") or config.DEFAULTS["activitywatch_url"]
     if not config.tests_offline():  # the tests' own trackers are made up: none to read in the background
-        context_mod.warm(date, today, read_day)
+        context_mod.warm(date, today, lambda d: past_items(d, url))
     ctx = learn(date, [] if hproblem else history, {d: r for d, r in days.items() if r}, t0_of,
                 half_life=config.advanced(s)["memory"], person=str(s.get("person_name") or ""),
-                context_days=context_mod.days_before(date))
+                context_days=context_mod.days_before(date), tz=tz)
     if not ignore_logged:
         # the day's own entries are the newest use of a service, as in the log dialog (its "logged lately" list holds the
         # day too): a task first logged this morning keeps that service in the afternoon's rows. Replayed on 43 days

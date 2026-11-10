@@ -6,8 +6,11 @@
 import json
 import os
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timezone
+from unittest import mock
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -89,6 +92,20 @@ class KeysTest(unittest.TestCase):
         hist, kept = history({"7": doc}, days=1, minutes=3)
         self.assertIsNone(context.pick(context.keys(doc(0, 1)), context.votes(kept, hist, t0_of, DATE)))
 
+    def test_a_day_the_clocks_change_votes_by_the_clock(self):
+        # the activity is by the clock (server.clock_spans), an entry's start is a moment: the autumn day has 25 hours,
+        # so 15:00 is 960 minutes after midnight, and the window in front at 15:00 is at minute 900 of the clock
+        tz, day = ZoneInfo("Europe/Kyiv"), "2026-10-25"
+        t0 = lambda d: datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=tz).timestamp()  # noqa: E731
+        at = lambda hour: datetime(2026, 10, 25, hour, tzinfo=tz).timestamp()  # noqa: E731
+        kept = {day: context.day_rows([doc(900, 960), slack(960, 1020)])}
+        hist = [{"date": day, "start": at(15), "minutes": 60, "taskId": "7"},
+                {"date": day, "start": at(16), "minutes": 60, "taskId": "8"}]
+        learned = context.votes(kept, hist, t0, "2026-10-26", tz=tz)
+        self.assertEqual(context.pick(context.keys(doc(0, 1)), learned)[0], "7")
+        self.assertEqual(context.pick(context.keys(slack(0, 1)), learned)[0], "8")
+
+
     def test_a_window_used_for_two_tasks_alike_names_neither(self):
         hist, kept = history({"7": doc})
         hist += [{**r, "taskId": "9"} for r in hist]  # the same minutes logged to another task as well
@@ -103,6 +120,7 @@ class WithoutClaudeTest(unittest.TestCase):
         p = plan([doc(600, 640), slack(640, 680)], hist, kept)
         got = [(e["s"], e["e"], e["taskId"], e["source"], e["checked"]) for e in p["entries"]]
         self.assertEqual(got, [(600, 640, "7", "context", False), (640, 680, "8", "context", False)])
+
 
     def test_with_no_history_nothing_is_named(self):
         p = plan([doc(600, 640)], [], {})
@@ -144,6 +162,37 @@ class KeptTest(unittest.TestCase):
         self.assertEqual(context.stored(DATE)["runs"], [[0, 30, 0]])
         self.assertIsNone(context.stored("2026-08-01"))  # more than KEEP_DAYS before
         self.assertEqual(list(context.days_before("2026-11-05")), [DATE])
+
+    def test_a_damaged_day_kept_is_left_out(self):
+        hist, kept = history({"7": doc})
+        folder = tempfile.mkdtemp(dir=os.path.dirname(context.DIR))
+        self.addCleanup(mock.patch.object(context, "DIR", folder).stop)
+        mock.patch.object(context, "DIR", folder).start()
+        bad = {"2026-11-03": '{"format":1,"keys":[],"runs":[[1,2]]}', "2026-11-02": '{"format":1,"keys":[["k"]],"runs":[["a","b",0]]}',
+               "2026-11-01": '{"format":1,"keys":{"0":["k"]},"runs":[[0,10,0]]}', "2026-10-31": '{"format":1,"ru'}
+        for d, text in bad.items():
+            with open(context._path(d), "w", encoding="utf-8") as fh:
+                fh.write(text)
+        days = context.days_before(DATE)
+        self.assertEqual(set(days) & set(bad), set())
+        dayplan.learn(DATE, hist, {}, t0_of, context_days={**days, **{d: json.loads(t) for d, t in bad.items() if d != "2026-10-31"}})
+
+    def test_a_cache_folder_that_cannot_be_written_breaks_nothing(self):
+        with tempfile.NamedTemporaryFile() as fh, mock.patch.object(context, "DIR", os.path.join(fh.name, "context-days")):
+            context.store("2026-11-03", [doc(0, 30)])  # no error: that day is simply not kept
+            self.assertIsNone(context.stored("2026-11-03"))
+
+    def test_a_past_day_no_tracker_read_whole_is_never_kept_empty(self):
+        cases = [({"items": [], "problems": {"aw": "ActivityWatch is not answering"}}, True, None),  # MemTime's file is there
+                 ({"items": [], "problems": {"aw": "ActivityWatch did not return its events: timed out"}}, True, None),
+                 ({"items": [], "problems": {}}, False, None),
+                 ({"items": [], "problems": {}}, True, []),  # a day off: kept, empty
+                 ({"items": [slack(600, 610)], "problems": {"aw": "x"}}, True, [slack(600, 610)])]
+        from pulsar import server, trackers
+        for got, answering, want in cases:
+            with mock.patch.object(server, "api_activity", return_value=got), \
+                    mock.patch.object(trackers, "answering", return_value=answering):
+                self.assertEqual(dayplan.past_items("2026-11-03", "http://localhost:5600"), want, (got, answering))
 
     def test_warm_keeps_the_days_a_tracker_gave_and_reads_the_others_again_later(self):
         asked = []
