@@ -839,8 +839,10 @@ claim wins:
    window was in front: the Slack conversation, the page's site and first path parts, the first and last parts of
    the window's title, the app (`context.py`; 60% of 5 faded minutes or more, its most precise key first), unticked;
    the rest of that sitting's work outside Claude takes it as it takes a session's. A client's task is never named
-   this way: it is left for you to pick. Replayed on 43 days as if the owner had no Claude Code: the right task on
-   28% of the clean minutes instead of 0.4%, billing unchanged; with his sessions, unchanged.
+   this way: it is left for you to pick; nor is the task of one of the day's meetings, and a call's window (Zoom,
+   Teams, a Meet page, a huddle) neither names nor teaches. Replayed on 43 days as if the owner had no Claude Code:
+   the right task on 29% of the clean minutes instead of 0.4%, billing unchanged; with his sessions, one sitting with
+   no session in it changed (35 minutes).
 
 **Parallel work.** Each stretch of work has a billing class (`attribution.segment_class`): from a rule, a task link or
 a ticket key in the work itself, the class of that task; else the repository's 60 days of logged minutes (75% or more

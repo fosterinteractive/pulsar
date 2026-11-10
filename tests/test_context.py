@@ -38,6 +38,10 @@ def doc(s, e, name="Budget plan"):
     return {"s": s, "e": e, "app": "Numbers", "title": name, "host": "", "url": "", "cat": "work"}
 
 
+def zoom(s, e, title="Zoom Meeting"):
+    return {"s": s, "e": e, "app": "zoom.us", "title": title, "host": "", "url": "", "cat": "work"}
+
+
 def history(windows: dict, days=6, minutes=60, billable=False):
     """Past days: each window in front 9:00-10:00 (then 10:30-11:30, ...) while its task was logged then."""
     hist, kept = [], {}
@@ -105,6 +109,15 @@ class KeysTest(unittest.TestCase):
         self.assertEqual(context.pick(context.keys(doc(0, 1)), learned)[0], "7")
         self.assertEqual(context.pick(context.keys(slack(0, 1)), learned)[0], "8")
 
+    def test_a_call_window_names_nothing_and_teaches_nothing(self):
+        # a call is the meetings' (dayplan._meetings): the daily meeting logged in Zoom never names the desk work after
+        # Zoom's own window was left in front
+        hist, kept = history({"5": zoom})
+        learned = context.votes(kept, hist, t0_of, DATE)
+        self.assertEqual(context.keys(zoom(0, 1)), [])
+        self.assertIsNone(context.pick(context.keys(zoom(0, 1, "Zoom Workplace")), learned))
+        p = plan([zoom(600, 610, "Zoom Workplace"), doc(610, 700, "Notes")], hist, kept)
+        self.assertEqual({e["taskId"] for e in p["entries"]}, {None})
 
     def test_a_window_used_for_two_tasks_alike_names_neither(self):
         hist, kept = history({"7": doc})
@@ -121,6 +134,19 @@ class WithoutClaudeTest(unittest.TestCase):
         got = [(e["s"], e["e"], e["taskId"], e["source"], e["checked"]) for e in p["entries"]]
         self.assertEqual(got, [(600, 640, "7", "context", False), (640, 680, "8", "context", False)])
 
+    def test_the_task_of_the_days_meeting_is_never_named_by_a_window(self):
+        # the daily meeting's channel read before the meeting named the desk work around it the meeting's task, then
+        # joined it to the meeting (replay, no sessions: 0 of 1,096 minutes right); the meeting keeps its own task
+        hist, kept = history({"5": lambda s, e: slack(s, e, "#standup")})
+        meeting = {"s": 990, "e": 1050, "title": "Standup", "uid": "m1", "declined": False, "all_day": False,
+                   "tasks": [{"taskId": "5", "title": "Task 5", "project": "Internal", "n": 9, "of": 10}]}
+        ctx = dayplan.learn(DATE, hist, {}, t0_of, context_days=kept)
+        day = {"items": [slack(780, 790, "#standup"), doc(790, 990, "Notes"), zoom(990, 1050)], "away": [], "rows": [],
+               "logged": [], "meetings": [meeting], "repeats": [], "calls": [{"s": 990, "e": 1050}], "rules": [],
+               "assigned": [], "picks": {}}
+        got = [(e["s"], e["e"], e["taskId"]) for e in dayplan.plan(day, ctx)["entries"]]
+        self.assertEqual([t for s, e, t in got if s < 990], [None] * len([1 for s, e, t in got if s < 990]), got)
+        self.assertIn((990, 1050, "5"), got)
 
     def test_with_no_history_nothing_is_named(self):
         p = plan([doc(600, 640)], [], {})

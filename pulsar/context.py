@@ -42,12 +42,20 @@ def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"\d+", "#", (text or "").lower())).strip()
 
 
+CALL_APP = re.compile(r"zoom|teams|webex|facetime", re.I)  # the apps of server.is_call's calls
+
+
 def keys(it: dict) -> list:
     """The keys of a window, most precise first, hashed: a Slack conversation (from its window title); a page's site
     and the first parts of its path (numbers left out: one key for every ticket of a tracker, one per site); the first
-    part of the title and, outside a browser, its last part (a document, an editor's folder); the app."""
+    part of the title and, outside a browser, its last part (a document, an editor's folder); the app. None for a call
+    or a call app's window: a call is the meetings' (dayplan._meetings), and Zoom's own window, left in front after
+    the daily meeting logged in Zoom, named that meeting's task for the desk work around it."""
+    from .server import is_call
     app, title = str(it.get("app") or ""), str(it.get("title") or "")
     url, host = str(it.get("url") or ""), str(it.get("host") or "").lower()
+    if CALL_APP.search(app) or is_call(it):
+        return []
     out = []
     if app == "Slack":
         conv = re.sub(r"\s*-\s*\d+ new items?.*$", "", title.split(" - ")[0]).strip().lower()

@@ -1087,20 +1087,24 @@ def _context(d: _Day) -> None:
 
     Replayed on 43 days of the owner's tracker and entries as if he had no Claude Code (no sessions, nothing they
     teach; meetings, repeats and calls as the app has them). Before, every minute outside a meeting came with no task:
-    the right task on 0.3% of the minutes (0.4% clean), 84.5% of the proposed hours with no task. With this: 21.6%
-    (28.3% clean), in the right sitting 33.1% of the clean minutes instead of 0.7%, 45.0% of the hours with no task;
+    the right task on 0.3% of the minutes (0.4% clean), 84.5% of the proposed hours with no task. With this: 21.9%
+    (28.7% clean), in the right sitting 33.5% of the clean minutes instead of 0.7%, 49.1% of the hours with no task;
     over-billing, wrong billable clients and the billable hours exactly as before (no client's task is named). Naming
     a client's task too (CONTEXT_CLIENTS; at a share of 0.7 from 10 minutes) named 2.2 more points right but added
     34 hours over-billed and 7 on a wrong billable client. A fallback to your last day's task for the rest named 7.1
     more points but 38 more hours over-billed; a Productive task page in front
     named the logged task on 32% of its minutes, the task you updated in Productive within an hour on 24%: both left
-    out. With the owner's sessions the replay is unchanged (it acts only where none was in front)."""
+    out. Of the named minutes that were logged, the task logged on 79% where a window named it and 40% where its
+    neighbours took it. With the owner's sessions one sitting changed in 43 days, 35 minutes with no session in front."""
     learned = d.ctx.get("context")
     if not learned:
         return
     N, owner, claims = DAY_MIN, d.owner, d.claims
     spoken = {d.sitting[x] for x in range(N) if owner[x] not in (None, BLOCKED)
               and claims[owner[x]]["kind"] in ("focused", "agent", "shared")}
+    # never the task of one of the day's meetings: it is logged with the meeting, and its channel read before the daily
+    # meeting named the desk work around it, joined to the meeting (replay, no sessions: 0 of 1,096 minutes right)
+    meetings = {str(c["task"]) for c in claims if c.get("task") and c["kind"] in ("meeting", "unattended")}
     fr = context_mod.front(d.items, N)
     said: dict = {}
     picked: list = [None] * N
@@ -1111,7 +1115,8 @@ def _context(d: _Day) -> None:
             continue
         if fr[x] not in said:
             got = context_mod.pick(context_mod.keys(d.items[fr[x]]), learned)
-            said[fr[x]] = got if got and (CONTEXT_CLIENTS or class_of(got[0], d) == INTERNAL) else None
+            said[fr[x]] = got if got and got[0] not in meetings \
+                and (CONTEXT_CLIENTS or class_of(got[0], d) == INTERNAL) else None
         picked[x] = said[fr[x]]
     runs: list = []  # [task, [minutes picked], best (share, total)]
     for x in range(N):
