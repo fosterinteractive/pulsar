@@ -62,7 +62,7 @@ try {
   q('#logsdlg').close();
 
   // a pause or time away: named; a click says what it is, and only its own button logs it (from where it began)
-  const band = q('.awayband');
+  const band = q('.awayband:not(.off)');
   if (band) {
     const label = [...document.querySelectorAll('.awaylabel')].map(x => x.textContent);
     check('breaks are named', label.some(t => /^(Pause|Away|Off) · /.test(t)), label.join(' | ') || 'no label shown');

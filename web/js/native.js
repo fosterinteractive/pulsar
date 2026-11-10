@@ -282,7 +282,8 @@
     if (state.view !== 'day') return null;
     const Z = state.zoom, rail = t.closest('#dayview .gaprail'), away = t.closest('#dayview .awayband');
     if (rail) return [{title: 'Log This Time…', run: () => rail.click()}];
-    if (away) return [{title: 'Log This Time…', run: () => logAway(+away.dataset.a, +away.dataset.b)}];  // day.js
+    if (away && away.dataset.kind !== 'off') return [{title: 'Log This Time…', run: () => logAway(+away.dataset.a, +away.dataset.b)}];  // day.js
+    if (away) return null;  // time off: nothing to log
     const card = t.closest('#dayview .card[data-k]');
     if (!card) return null;
     const i = +card.dataset.i, k = card.dataset.k;

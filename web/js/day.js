@@ -626,11 +626,12 @@ function openPop(html, ev) {
 }
 document.addEventListener('click', ev => {
   const band = ev.target.closest('.awayband');
-  if (band) {  // a pause or time away: what it is; logged only from its own button (a call, a whiteboard)
-    const a = +band.dataset.a, b = +band.dataset.b, word = AWAY_WORD[band.dataset.kind] || 'Away';
+  if (band) {  // a pause or time away: what it is; logged only from its own button (a call, a whiteboard), never time off
+    const a = +band.dataset.a, b = +band.dataset.b, word = AWAY_WORD[band.dataset.kind] || 'Away', off = band.dataset.kind === 'off';
     openPop(`<div class="ph"><div><h3>${word}</h3><div class="sub">${hm(a)}–${hm(b)} · ${dur(b - a)} without input</div></div>
-      <button class="btn bordered sm" data-away-a="${a}" data-away-b="${b}">Log this time…</button></div>
-      <p>Not counted as work, and never proposed for logging. If it was work away from the keyboard (a call, a whiteboard), log it here.</p>`, ev);
+      ${off ? '' : `<button class="btn bordered sm" data-away-a="${a}" data-away-b="${b}">Log this time…</button>`}</div>
+      <p>Not counted as work, and never proposed for logging.${off ? ' To log it anyway, add an entry by hand.'
+        : ' If it was work away from the keyboard (a call, a whiteboard), log it here.'}</p>`, ev);
     return;
   }
   const awayBtn = ev.target.closest('[data-away-a]');
