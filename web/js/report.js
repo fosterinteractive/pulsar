@@ -406,7 +406,7 @@ function renderInvoice(x) {
     + invoiceSections(inv).map(({label, ps}) => {
       const sum = k => ps.reduce((n, p) => n + (p[k] || 0), 0);
       return `<tbody class="inv-section"><tr><th scope="rowgroup" colspan="2">${esc(label)}</th><td>${esc(dur(sum('minutes')))}</td>`
-        + `<td>${sum('billable') ? esc(dur(sum('billable'))) : ''}</td></tr></tbody>` + ps.map(p => {
+        + '<td></td></tr></tbody>' + ps.map(p => {
       const share = inv.minutes ? Math.round(100 * p.minutes / inv.minutes) : 0;
       return `<tbody class="inv-group"><tr class="inv-proj"><th scope="rowgroup">${esc(p.project)}</th>`
         + `<td class="inv-sh"><i style="--w:${Math.max(2, share)}%"></i>${share}%</td><td>${esc(dur(p.minutes))}</td>${projBill(p)}</tr>`
