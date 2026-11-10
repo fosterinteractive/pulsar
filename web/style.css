@@ -517,23 +517,36 @@ header { flex-wrap: wrap; row-gap: 8px; }
   #report * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   /* the invoice summary (report.js renderInvoice) instead of the report: nothing else on the page */
   html.print-invoice body > :not(#report), html.print-invoice #report > :not(.invoice-doc) { display: none !important; }
-  html.print-invoice .invoice-doc { display: block; color: #111; font-size: 12px; }
-  .invoice-doc h1 { font-size: 20px; margin: 0 0 2px; }
-  .invoice-doc .inv-range { margin: 0 0 18px; color: #555; }
-  .invoice-doc h2 { font-size: 14px; margin: 0 0 6px; }
-  .inv-group { margin: 0 0 18px; break-inside: avoid; }
+  /* a document, quiet: one typeface, hairlines, the totals first, each project's subtotal on its own first line */
+  html.print-invoice .invoice-doc { display: block; color: #1d1d1f;
+    font: 10pt/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+  .inv-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; padding-bottom: 14px;
+    border-bottom: 1px solid #d2d2d7; margin-bottom: 18px; }
+  .inv-head h1 { font-size: 21pt; font-weight: 600; letter-spacing: -0.01em; line-height: 1.15; margin: 0; }
+  .inv-who { margin: 5px 0 0; font-size: 11pt; }
+  .inv-meta { text-align: right; color: #6e6e73; font-size: 9pt; }
+  .inv-meta p { margin: 0; }
+  .inv-stats { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 8px; margin: 0 0 24px; break-inside: avoid; }
+  .inv-stat { background: #f5f5f7; border-radius: 9px; padding: 9px 12px 10px; display: flex; flex-direction: column; gap: 1px; }
+  .inv-stat .l, .inv-stat .s { font-size: 8pt; color: #6e6e73; }
+  .inv-stat .v { font-size: 15pt; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
   table.inv { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  table.inv th, table.inv td { text-align: left; padding: 4px 8px 4px 0; border-bottom: 1px solid #e4e4e4; vertical-align: top; }
-  table.inv thead th { font-weight: 600; color: #555; border-bottom-color: #bbb; }
-  table.inv th:nth-child(2), table.inv td:nth-child(2) { width: 18%; white-space: nowrap; }
-  table.inv th:nth-child(3), table.inv td:nth-child(3) { width: 30%; }
-  table.inv tfoot td { font-weight: 600; border-bottom: 0; border-top: 1px solid #bbb; }
-  table.inv small { color: #555; }
-  table.inv-total { width: auto; min-width: 60%; margin-top: 6px; break-inside: avoid; }
-  table.inv-total th { width: 9em; border-bottom: 0; }
-  table.inv-total td { border-bottom: 0; color: #111; }
-  table.inv-total td:nth-child(3) { color: #555; width: auto; }
-  table.inv-total tr:first-child th, table.inv-total tr:first-child td { border-top: 2px solid #111; padding-top: 8px; }
+  table.inv col.c-time { width: 17%; }
+  table.inv col.c-bill { width: 26%; }
+  table.inv th, table.inv td { padding: 4px 0; text-align: left; vertical-align: baseline; font-weight: 400;
+    border-bottom: 0.5pt solid #e5e5ea; }
+  table.inv th:not(:first-child), table.inv td:not(:first-child) { text-align: right; padding-left: 12px; white-space: nowrap; }
+  table.inv thead th { font-size: 8pt; font-weight: 500; color: #6e6e73; border-bottom: 1pt solid #1d1d1f; padding-bottom: 5px; }
+  table.inv tbody.inv-group { break-inside: avoid; }
+  table.inv tr.inv-proj th, table.inv tr.inv-proj td { font-weight: 600; padding-top: 14px; border-bottom: 0.75pt solid #c7c7cc; }
+  table.inv tbody.inv-group tr:not(.inv-proj) td:first-child { padding-left: 10px; }
+  table.inv tbody.inv-group tr:last-child td { border-bottom: 0; padding-bottom: 6px; }
+  table.inv td.mut { color: #8e8e93; }
+  table.inv .inv-share { font-weight: 400; color: #6e6e73; font-size: 8.5pt; margin-left: 6px; }
+  table.inv .inv-pct { font-weight: 400; color: #6e6e73; font-size: 8.5pt; margin-left: 2px; }
+  table.inv .inv-unknown { display: block; margin: 1px 0 0; }
+  table.inv small { color: #8e8e93; font-size: 8pt; margin-left: 4px; }
+  .inv-foot { margin-top: 22px; padding-top: 9px; border-top: 1px solid #d2d2d7; font-size: 8pt; color: #6e6e73; }
 }
 
 /* not signed in: one notice over everything */
