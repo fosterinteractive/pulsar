@@ -80,6 +80,18 @@ class PauseTest(Files):
         self.assertEqual(pause.elapsed("2026-10-25", [[240, 300]], KYIV, t0), [(300.0, 360.0)])  # 04:00 is 5 h in
         self.assertEqual(pause.elapsed("2026-11-10", [[240, 1440]], KYIV, at("2026-11-10", "00:00")), [(240.0, 1440.0)])
 
+    def test_undo_puts_the_pause_and_the_marks_back(self):
+        daymarks.change("2026-11-10", add=[770, 800])  # marked by hand before, overlapping the pause
+        pause.start(now=at("2026-11-10", "13:10"))
+        got = pause.stop(KYIV, now=at("2026-11-10", "14:30"))
+        self.assertEqual(daymarks.get("2026-11-10")["notWork"], [[770, 870]])
+        back = pause.restore(got["resumedSince"], got["marked"], got["was"], now=at("2026-11-10", "14:31"))
+        self.assertEqual((back["paused"], back["since"]), (True, at("2026-11-10", "13:10")))
+        self.assertEqual(daymarks.get("2026-11-10")["notWork"], [[770, 800]])
+        self.assertEqual(pause.restore(got["resumedSince"], got["marked"], got["was"])["since"], at("2026-11-10", "13:10"))
+        with self.assertRaises(ValueError):
+            pause.restore("13:10", {}, {})
+
     def test_a_broken_file_is_no_pause(self):
         with open(pause.PATH, "w") as fh:
             fh.write('{"since": "yesterday"}')

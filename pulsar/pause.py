@@ -93,7 +93,8 @@ def _days(since: float, until: float, tz) -> list:
 
 def stop(tz, until: float | None = None, now: float | None = None) -> dict:
     """Ends the pause at `until` (now when not given; never before it began or after now): from `since` to there is
-    written to each day's "not work" marks. {"paused": False, "marked": {date: [a, b]}}."""
+    written to each day's "not work" marks. {"paused": False, "marked": {date: [a, b]}, "was": {date: the marks before},
+    "since"}: what restore() needs to undo it."""
     now = time.time() if now is None else now
     with _lock:
         doc = _read()
@@ -101,15 +102,34 @@ def stop(tz, until: float | None = None, now: float | None = None) -> dict:
             return {**state(), "marked": {}}
         since = doc["since"]
         end = now if until is None else min(now, max(since, float(until)))
-        marked = {}
+        marked, was = {}, {}
         if end - since >= 60:  # under a minute marks nothing
             for date in _days(since, end, tz):
                 span = clock_span(since, end, date, tz)
                 if span:
+                    was[date] = daymarks.get(date).get("notWork") or []
                     daymarks.change(date, add=span)
                     marked[date] = span
         _write({})
-    return {**state(), "marked": marked}
+    return {**state(), "marked": marked, "was": was, "resumedSince": since}
+
+
+def restore(since, marked, was, now: float | None = None) -> dict:
+    """Undo of a resume: the pause on again from `since`, and each day's "not work" marks as they were before it
+    (`marked` taken off, `was` put back). Nothing when paused again already."""
+    now = time.time() if now is None else now
+    if isinstance(since, bool) or not isinstance(since, (int, float)) or not now - 8 * 86400 <= since <= now:
+        raise ValueError("since: when the pause began")
+    with _lock:
+        if "since" in _read():
+            return state()
+        for date, span in (marked if isinstance(marked, dict) else {}).items():
+            if daymarks.DATE.fullmatch(str(date)) and daymarks.merge([span]):
+                daymarks.change(date, remove=span)
+                for x in daymarks.merge((was or {}).get(date) if isinstance(was, dict) else []):
+                    daymarks.change(date, add=x)
+        _write({"since": float(since)})
+    return state()
 
 
 def live(date: str, tz, now: float | None = None) -> list:

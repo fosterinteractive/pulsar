@@ -397,10 +397,15 @@ def api_pause(q: dict) -> dict:
 
 def api_pause_change(body: dict) -> dict:
     """{on: true}: pause from now. {on: false, until}: resume, the pause marked not work up to `until` (an epoch; now
-    when not given). {stay: true}: the pause goes on, asked again after another stretch."""
+    when not given), with what Undo needs. {stay: true}: the pause goes on, asked again after another stretch.
+    {undo: {since, marked, was}}: the resume taken back (pause.restore)."""
     s = config.load()
-    marked = {}
-    if body.get("stay") is True:
+    marked: dict = {}
+    extra: dict = {}
+    if isinstance(body.get("undo"), dict):  # Undo after a resume: the pause back as it was
+        u = body["undo"]
+        pause.restore(u.get("since"), u.get("marked"), u.get("was"))
+    elif body.get("stay") is True:
         pause.stay()
     elif body.get("on") is True:
         pause.start()
@@ -408,10 +413,11 @@ def api_pause_change(body: dict) -> dict:
         until = body.get("until")
         if until is not None and (isinstance(until, bool) or not isinstance(until, (int, float))):
             raise ValueError("until: a time in seconds")
-        marked = pause.stop(config.tz(s), until=until)["marked"]
+        got = pause.stop(config.tz(s), until=until)
+        marked, extra = got["marked"], {"was": got["was"], "resumedSince": got["resumedSince"]}
     else:
-        raise ValueError("on: true or false, or stay: true")
-    return {**api_pause({}), "marked": marked}
+        raise ValueError("on: true or false, stay: true, or undo")
+    return {**api_pause({}), "marked": marked, **extra}
 
 
 def api_trackers_open(body: dict) -> dict:

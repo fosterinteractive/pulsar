@@ -1545,7 +1545,9 @@ and the whole day every hour while the page shows. The app's window sends `pulsa
   and `pulsar_day`'s active-not-logged time (with `notWork` listed; `pulsar_status` says `pausedSince`). The page
   draws it as an amber hatched rail up to now and gives it no "Active, not logged" rail; Log the day's rows inside it
   are left out (`ldNotWork`). Resume writes `[since, until)` to each day's `notWork` marks, split at midnight, and
-  forgets the pause: `until` is now, or the time the person came back. **The question**: when the window comes to the
+  forgets the pause: `until` is now, or the time the person came back. Its note has **Undo** (10 seconds): `{undo:
+  {since, marked, was}}` puts the pause back from when it began and each day's marks as they were before
+  (`pause.restore`). A click on the paused stretch only says what it is: nothing there resumes. **The question**: when the window comes to the
   front (at most once a minute, and every 10 minutes while it stays there), `GET /api/pause?ask=1` asks when the
   pause is at least Settings' **Ask about a long pause** old (Away; Advanced's `pause_ask`: 60 minutes unless
   changed, 0 never), the tracker saw 10 minutes of work or more since it began, and the person has not said **Stay

@@ -908,13 +908,11 @@ async function markDay(change, said = '', undo = null) {
 }
 document.addEventListener('click', ev => {
   const pr = ev.target.closest('.pauserail');
-  if (pr) {  // the pause still on: what it is, and Resume only from its own button (a stray click resumes nothing)
-    openPop(`<div class="ph"><div><h3>Paused</h3><div class="sub">since ${esc(PAUSE.sinceText || '')}${PAUSE.minutes != null ? ` · ${dur(PAUSE.minutes)}` : ''}</div></div>
-      <button class="btn bordered sm" data-pause-resume>Resume</button></div>
-      <p>Nothing counts as work while Pulsar is paused. Resume when you are back, here or at the top.</p>`, ev);
+  if (pr) {  // the pause still on: what it is, nothing more (a stray click resumes nothing)
+    openPop(`<div class="ph"><div><h3>Paused</h3><div class="sub">since ${esc(PAUSE.sinceText || '')}${PAUSE.minutes != null ? ` · ${dur(PAUSE.minutes)}` : ''}</div></div></div>
+      <p>Nothing counts as work while Pulsar is paused. Resume at the top when you are back.</p>`, ev);
     return;
   }
-  if (ev.target.closest('[data-pause-resume]')) { closePop(); $('#pause-btn').click(); return; }  // pause.js: resume, or ask from when
   const nw = ev.target.closest('.nwrail');
   if (nw) { const a = +nw.dataset.nwA, b = +nw.dataset.nwB; markDay({remove: [a, b]}, `${hm(a)}–${hm(b)} counts as work again.`); return; }
   const dm = ev.target.closest('[data-day-mark]');

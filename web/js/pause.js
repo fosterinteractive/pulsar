@@ -71,7 +71,14 @@ async function resumePause(until) {
   if (r.error) { toast(r.error, true); return; }
   await afterPause(r);
   const days = Object.values(r.marked || {});  // under a minute marks nothing
-  toast(days.length ? `Resumed. ${since}–${hm(days[days.length - 1][1])} is not work: a click on it counts it as work again.` : 'Resumed.');
+  // a resume clicked by mistake is undone here: the pause back from when it began, the marks as they were
+  const undo = {label: 'Undo', run: async () => {
+    const u = await postJSON('/api/pause', {undo: {since: r.resumedSince, marked: r.marked || {}, was: r.was || {}}});
+    if (u.error) { toast(u.error, true); return; }
+    await afterPause({...u, marked: r.marked});
+    toast(`Paused again since ${since}.`);
+  }};
+  toast(days.length ? `Resumed. ${since}–${hm(days[days.length - 1][1])} is not work.` : 'Resumed.', false, r.resumedSince ? undo : null);
 }
 
 /* the question: paused since, working since, and the choices */
