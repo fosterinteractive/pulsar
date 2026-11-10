@@ -1116,6 +1116,15 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
         case "prefs":  // the page's Settings: {set: {badge, reminder, reminderTime, login}}
             setPrefs(body["set"] as? [String: Any] ?? [:])
         #if PULSAR_TEST
+        case "testShot":   // the test build only: a picture of the page as it is now, PULSAR_TEST_DIR/<name>.png
+            let name = String((body["name"] as? String ?? "shot").filter { $0.isLetter || $0.isNumber || $0 == "-" }.prefix(40))
+            if let dir = ProcessInfo.processInfo.environment["PULSAR_TEST_DIR"] {
+                web.takeSnapshot(with: nil) { image, _ in
+                    if let tiff = image?.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                        try? png.write(to: URL(fileURLWithPath: dir).appendingPathComponent("\(name).png"))
+                    }
+                }
+            }
         case "testBack":   // the test build only: the back-from-away panel with a made-up offer, drawn into PULSAR_TEST_DIR
             showBack(body["offer"] as? [String: Any] ?? [:])
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
