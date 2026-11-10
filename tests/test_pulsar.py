@@ -993,6 +993,59 @@ class LearnWordsTest(unittest.TestCase):
         self.assertTrue(got[0]["why"].startswith("your notes on it share words with this work: "))
 
 
+    def test_first_offers_put_the_last_days_task_first_and_a_new_assigned_task_second(self):
+        """Replay of 43 days (2026-11-10): the right task among the first three offers on 65% of rows instead of 61%."""
+        from pulsar import learn
+        last, fresh = {"taskId": "L"}, {"taskId": "N"}
+        ids = lambda xs: [x["taskId"] for x in xs]  # noqa: E731
+        unsure = [{"taskId": "a", "why": "logged while in this Claude session: 1 h", "share": 0.4}, {"taskId": "b", "why": "x"}]
+        self.assertEqual(ids(learn.first_offers(unsure, last, fresh)), ["L", "N", "a", "b"])
+        sure = [{**unsure[0], "share": 0.7}, unsure[1]]
+        self.assertEqual(ids(learn.first_offers(sure, last, fresh)), ["a", "N", "b"])   # a sure vote stays first
+        named = [{"taskId": "w", "work": True, "words": 3, "why": "what you typed names it: a, b, c"}]
+        self.assertEqual(ids(learn.first_offers(named, last, None)), ["w"])            # the work names it: sure
+        self.assertEqual(ids(learn.first_offers([{**named[0], "words": 2}], last, None)), ["L", "w"])
+        self.assertEqual(ids(learn.first_offers([{**named[0], "neverLogged": True}], last, None)), ["L", "w"])
+        self.assertEqual(ids(learn.first_offers([{"taskId": "L"}, {"taskId": "N"}], last, fresh)), ["L", "N"])
+        self.assertEqual(ids(learn.first_offers([{"taskId": "b"}, {"taskId": "L"}], last, None)), ["L", "b"])  # moved up
+        self.assertEqual(ids(learn.first_offers([], last, fresh)), ["L", "N"])
+        self.assertEqual(learn.first_offers(unsure), unsure)
+
+    def test_each_projects_last_day_task_never_depends_on_reading_order(self):
+        from pulsar import attribution
+        rows = [{"date": "2026-11-03", "taskId": "2", "project": "P", "minutes": 30},
+                {"date": "2026-11-03", "taskId": "1", "project": "P", "minutes": 30},     # a tie: the lower id
+                {"date": "2026-11-02", "taskId": "9", "project": "P", "minutes": 300},    # an older day
+                {"date": "2026-11-04", "taskId": "8", "project": "P", "minutes": 60},     # the day itself: not before it
+                {"date": "2026-11-03", "taskId": "7", "project": "P", "minutes": 90, "meeting": True},
+                {"date": "2026-11-03", "taskId": "5", "project": "Q", "minutes": 45}]
+        for order in (rows, rows[::-1]):
+            got = attribution.last_day_tasks(order, "2026-11-04")
+            self.assertEqual(got, {"P": ("2026-11-03", "1", 30), "Q": ("2026-11-03", "5", 45)})
+            self.assertEqual(attribution.last_of(got, {"P", "Q"}), ("2026-11-03", "5", 45, "Q"))  # same day: more minutes
+            self.assertEqual(attribution.last_of(got, ["Q", "P"]), attribution.last_of(got, ["P", "Q"]))
+        self.assertIsNone(attribution.last_of({}, {"P"}))
+
+    def test_annotate_offers_the_last_days_task_and_a_new_task_assigned_to_you(self):
+        from zoneinfo import ZoneInfo
+        from pulsar import learn, sessions
+        empty = tempfile.mkdtemp()
+        proposal = {"entries": [{"s": 600, "e": 660, "project": "law-site", "titles": ["Morning work session"]}]}
+        pool = [{"taskId": "9", "title": "Hero banner", "project": "Law Faculty", "assignee": "77", "created": "2026-11-02"},
+                {"taskId": "10", "title": "Footer", "project": "Law Faculty", "assignee": "77", "created": "2026-10-20"},
+                {"taskId": "11", "title": "Menu", "project": "Law Faculty", "assignee": "5", "created": "2026-11-03"},
+                {"taskId": "12", "title": "Search", "project": "Acme Support", "assignee": "77", "created": "2026-11-03"}]
+        with mock.patch.object(learn, "warm", lambda *a: None), mock.patch.object(learn, "_stored", lambda d: None), \
+             mock.patch.object(sessions, "PROJECTS_DIR", empty), \
+             mock.patch.object(learn, "work_projects", lambda at, *a: {"Law Faculty"} if at == "law-site" else set()):
+            learn.annotate(proposal, "2026-11-04", {"person_name": "Nick Example", "person_id": "77"}, self.ENTRIES, [],
+                           ZoneInfo("UTC"), pool=pool)
+        got = proposal["entries"][0]["learned"]
+        self.assertEqual([x["taskId"] for x in got[:2]], ["2", "9"])
+        self.assertEqual(got[0]["why"], "the task you logged last in Law Faculty (2026-11-03)")
+        self.assertTrue(got[1]["assigned"] and "assigned to you on 2026-11-02" in got[1]["why"])
+        self.assertNotIn("new", got[1])  # an offer only: the plan never picks it for being new
+
     def test_a_later_stretch_of_the_same_session_goes_on_with_the_task_its_work_named(self):
         """2026-11-09: "D11 db upgrade" named the task at 13:21; at 14:00 only "go on, I back up live myself" was typed,
         and that stretch went back to the repository's history. Same session, same repository: the named task goes on."""

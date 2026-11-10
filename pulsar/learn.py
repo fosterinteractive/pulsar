@@ -196,6 +196,8 @@ def suggest(row: dict, sess: dict, repo: dict, names: dict, limit: int = 5, text
             f = attribution.fits(weights, project_of, t)
             if f is True or (single and f is None):
                 here[t] = v
+    total = sum(w for w, _ in here.values()) or 1
+    share = {t: w / total for t, (w, _) in here.items()}  # how sure the session's vote is (first_offers)
     for t, (w, m) in sorted(here.items(), key=lambda kv: -kv[1][0]):
         out.setdefault(t, f"logged while in this Claude session: {_dur(m)}")
     for t, (w, m) in sorted(repo.get(at, {}).items(), key=lambda kv: -kv[1][0]):
@@ -211,7 +213,8 @@ def suggest(row: dict, sess: dict, repo: dict, names: dict, limit: int = 5, text
         order = head + first + order[len(head):] + found
     order = list(dict.fromkeys(order))[:limit]
     return [{"taskId": t, "title": names.get(t, {}).get("task") or "", "project": names.get(t, {}).get("project") or "",
-             "why": out[t]} for t in order]
+             "why": out[t], **({"share": round(share[t], 3)} if t in share and out[t].startswith("logged while in this")
+                               else {})} for t in order]
 
 
 def _dur(m: float) -> str:
@@ -502,7 +505,8 @@ def work_match(text: str, projects: set, tasks: list, skip: frozenset = frozense
         x = cands[t]
         out.append({"taskId": t, "title": x.get("title") or "", "project": x.get("project") or "", "score": score,
                     "why": "what you typed names it: " + ", ".join(shared[:3])
-                           + (" (no entry of yours yet)" if x.get("new") else ""), "work": True, "words": len(shared)})
+                           + (" (no entry of yours yet)" if x.get("new") else ""), "work": True, "words": len(shared),
+                    **({"neverLogged": True} if x.get("new") else {})})
     return out
 
 
@@ -516,6 +520,26 @@ def with_work(learned: list, work: list) -> list:
         and learned[0]["taskId"] not in ids and learned[0]["why"].startswith("logged while in this Claude session")
     work = [{**w, "first": not second} for w in work]
     return rest[:1] + work + rest[1:] if second else work + rest
+
+
+SURE_SHARE = 0.6  # a session's vote with this share of its votes is sure: nothing goes above it
+FRESH_DAYS = 3    # a task assigned to you this many days before the work at most is offered second
+
+
+def first_offers(learned: list, last: dict | None = None, fresh: dict | None = None) -> list:
+    """The offers with two more (replay, 43 days: the right task among the first three on 65% of rows instead of
+    61%): the task you logged last in the repository's project first, unless the first offer is sure (a session's vote
+    of SURE_SHARE, or the work naming a task you logged by WORK_WORDS words); and the newest task assigned to you in
+    that project second (half of the work on tasks new to you was on one assigned to you within FRESH_DAYS days)."""
+    def put(lst: list, x: dict | None, at: int) -> list:
+        if not x or x["taskId"] in [y["taskId"] for y in lst[:at + 1]]:
+            return lst
+        rest = [y for y in lst if y["taskId"] != x["taskId"]]
+        return rest[:at] + [x] + rest[at:]
+    top = learned[0] if learned else {}
+    sure = top.get("share", 0) >= SURE_SHARE \
+        or (bool(top.get("work")) and top.get("words", 0) >= WORK_WORDS and not top.get("neverLogged"))
+    return put(learned if sure else put(learned, last, 0), fresh, 1)
 
 
 def annotate(proposal: dict, date: str, settings: dict, entries_before: list, entries_today: list, tz,
@@ -565,6 +589,26 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
             if ids:
                 e["seenTasks"] = list(dict.fromkeys(ids + list(e.get("seenTasks") or [])))[:4]
                 e["tasks"] = list(dict.fromkeys(list(e.get("repoLinks") or []) + e["seenTasks"]))[:4]
+        lastday = attribution.last_day_tasks(entries, date)
+        day0 = datetime.strptime(date, "%Y-%m-%d")
+
+        def offers(places: set) -> tuple:
+            """(the task you logged last in these projects, the newest task assigned to you in them): first_offers."""
+            got = attribution.last_of(lastday, places)
+            last = None
+            if got:
+                n = names.get(got[1]) or {}
+                last = {"taskId": str(got[1]), "title": n.get("task") or "", "project": n.get("project") or got[3],
+                        "why": f"the task you logged last in {got[3]} ({got[0]})"}
+            mine = [t for t in unseen if me and str(t.get("assignee") or "") == me and t.get("project") in places
+                    and str(t.get("taskId")) not in closed
+                    and 0 <= (day0 - datetime.strptime(str(t.get("created"))[:10], "%Y-%m-%d")).days <= FRESH_DAYS]
+            new = max(mine, key=lambda t: str(t.get("created"))) if mine else None
+            fresh = {"taskId": str(new["taskId"]), "title": new.get("title") or "", "project": new.get("project") or "",
+                     "why": f"assigned to you on {str(new.get('created'))[:10]}, no entry of yours yet",
+                     "assigned": True} if new else None
+            return last, fresh
+
         named: dict = {}  # (session keys, repository) -> the work's task named earlier today (work_match)
         named_at: dict = {}  # the same, with the start of each row that named it
         pairs = list(zip(front, stored)) + list(zip(back, stored[len(front):]))
@@ -572,6 +616,7 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
             row = {**row, "single": bool(e.get("single"))}
             found: list = []
             work: list = []
+            places: set = set()
             try:
                 steps = work_steps(e, t0)
                 said = work_text(e, t0, steps=steps)
@@ -595,7 +640,8 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
             except (OSError, ValueError) as exc:  # the votes alone, as before
                 logbook.record("learn", f"Words of the work: {type(exc).__name__}: {exc}", kind="warning")
                 text = {}
-            e["learned"] = with_work(with_new(suggest(row, sess, repo, names, text=text, sr=sr), found), work)
+            e["learned"] = first_offers(with_work(with_new(suggest(row, sess, repo, names, text=text, sr=sr), found),
+                                                  work), *offers(places))
         # rows under five minutes are not read for words (work by turns makes many): they go on with the task their
         # session's work named before them in the same repository; nothing else is added to them
         for e in (proposal.get("entries") or []) + (proposal.get("background") or []):

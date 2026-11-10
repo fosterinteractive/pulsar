@@ -210,16 +210,9 @@ def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_L
     recent = [t for t, d in sorted(last.items(), key=lambda kv: kv[1], reverse=True) if d >= lo30]
     never = {p for p in seen if p and seen[p] >= 60 and logged[p] / seen[p] < 0.1}
     task_class, project_class = attribution.task_classes(before)
-    # each project's task of its latest earlier day (the most minutes that day): the work of a repository logged to
-    # that project most often goes on with it (replay, 43 days: right on 62% of the minutes it covers)
-    per_day: dict = defaultdict(lambda: defaultdict(float))
-    for r in before:
-        if r.get("project") and not r.get("meeting"):
-            per_day[(r["project"], r["date"])][str(r["taskId"])] += r.get("minutes") or 0
-    lastday: dict = {}
-    for (p, d), tasks in per_day.items():
-        if p not in lastday or d > lastday[p][0]:
-            lastday[p] = (d, max(tasks.items(), key=lambda kv: kv[1])[0])
+    # each project's task of its latest earlier day: the work of a repository logged to that project most often goes
+    # on with it (replay, 43 days: right on 62% of the minutes it covers)
+    lastday = attribution.last_day_tasks(before, date)
     return {"sess": sess, "repo": repo, "sr": sr, "service": service, "project_service": project_service,
             "names": names, "recent": recent, "never_logged": never, "lastday": lastday,
             "skip": set(WORD.findall((person or "").lower())),
@@ -342,15 +335,11 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
                 out.append((best[0], "words", "low", "name matches: " + ", ".join(sorted(best[2]))))
     # the task you logged last in a project the repository's work goes to (places): after a sure session vote, before
     # the weaker answers (replay, 43 days: +2.6 points of minutes on the right task)
-    last = None
-    for p in sorted(places(ctx, row.get("project"))):
-        got = (ctx.get("lastday") or {}).get(p)
-        if got and got[1] and (last is None or got[0] > last[0]):
-            last = (got[0], got[1], p)
+    last = attribution.last_of(ctx.get("lastday") or {}, places(ctx, row.get("project")))
     if last:
         weak = lambda c: c[1] in ("repo", "sameday", "words", "work") or (c[1] == "session" and session_share < 0.6)  # noqa: E731
         at = next((i for i, c in enumerate(out) if weak(c)), len(out))
-        out.insert(at, (last[1], "lastday", "low", f"the task you logged last in {last[2]} ({last[0]})"))
+        out.insert(at, (last[1], "lastday", "low", f"the task you logged last in {last[3]} ({last[0]})"))
     return out
 
 

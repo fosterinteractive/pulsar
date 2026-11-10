@@ -204,6 +204,33 @@ def fits(votes: dict, project_of, task) -> bool | None:
     return mine / total >= FIT_SHARE
 
 
+def last_day_tasks(entries: list, date: str) -> dict:
+    """{project: (day, task, minutes)}: each project's task of its latest day before `date`, the one with the most
+    minutes that day (ties: the lower id, so the answer never depends on the order things were read in). entries:
+    {date, taskId, project, minutes, meeting}; meetings do not count."""
+    per: dict = defaultdict(lambda: defaultdict(float))
+    for r in entries:
+        if r.get("project") and r.get("taskId") and not r.get("meeting") and str(r.get("date") or "") < date:
+            per[(r["project"], r["date"])][str(r["taskId"])] += r.get("minutes") or 0
+    out: dict = {}
+    for (p, d), tasks in per.items():
+        if p not in out or d > out[p][0]:
+            t, m = min(tasks.items(), key=lambda kv: (-kv[1], kv[0]))
+            out[p] = (d, t, m)
+    return out
+
+
+def last_of(lastday: dict, places) -> tuple | None:
+    """(day, task, minutes, project): the latest of last_day_tasks among `places`; on the same day the one with more
+    minutes, then the project's name, so the pick never depends on the order of a set."""
+    got = [lastday[p] + (p,) for p in places if p in lastday]
+    return min(got, key=lambda x: (_neg_day(x[0]), -x[2], x[3])) if got else None
+
+
+def _neg_day(day: str) -> int:
+    return -int(str(day).replace("-", "") or 0)
+
+
 def projects_of(votes: dict, project_of) -> set:
     """The projects a repository is logged to (FIT_SHARE of its votes, {task: weight}); none with too little history
     (FIT_MIN)."""
