@@ -98,7 +98,7 @@ function scText(r) {
 
 $('#sc-copy').addEventListener('click', async () => {
   if (!scLast || scLast.error) return;
-  const text = scText(scLast), msg = $('#sc-msg');
+  const text = scLast.share || scText(scLast), msg = $('#sc-msg');  // the server's line of percents
   try {
     await navigator.clipboard.writeText(text);
   } catch {  // no clipboard access: the old way, from a selected field
@@ -108,6 +108,6 @@ $('#sc-copy').addEventListener('click', async () => {
     try { document.execCommand('copy'); } catch { msg.textContent = 'Could not copy. Save the self-check instead.'; ta.remove(); return; }
     ta.remove();
   }
-  msg.textContent = 'Copied: the totals only.';
+  msg.textContent = 'Copied: the percents only.';
 });
 $('#sc-save').addEventListener('click', () => downloadFromAPI('/api/selfcheck/download', 'pulsar-selfcheck.json'));

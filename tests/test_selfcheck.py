@@ -347,6 +347,23 @@ class RunTest(unittest.TestCase):
         self.assertEqual((sm["days"], sm["noActivity"]), (0, len(self.planned)))
 
 
+class ShareTest(unittest.TestCase):
+    def test_the_line_to_share_holds_percents_only(self):
+        from pulsar import selfcheck
+        self.assertIn("still collecting", selfcheck.share_text("9.9", selfcheck.totals([]), None, {}, {}))
+        day = {"logged": 200, "rightTask": 100, "rightClient": 150, "noTask": 20, "wrongClient": 10, "over": 30,
+               "under": 5, "billableLogged": 100, "shadow": {"clients": {"logged": 200, "rightTask": 120,
+                                                                         "rightClient": 160}}}
+        t = selfcheck.totals([day])
+        log = {"viaLogTheDay": 5, "unknown": 1, "asProposed": 2, "taskChanged": 1, "timeChanged": 1}
+        line = selfcheck.share_text("9.9", t, None, log, {})
+        self.assertEqual(selfcheck.percents(t)["otherClient"], 10)  # of the billable minutes logged
+        for part in ("right task 50%", "right client 75%", "no task 10%", "another client 10%", "over 30%",
+                     "under 5%", "50% as proposed", "client tasks by window: right task 60% (now 50%)"):
+            self.assertIn(part, line)
+        self.assertNotRegex(line, r"\bmin\b|\bh\b|\d{4}-\d{2}-\d{2}")
+
+
 class OwnProblemsTest(unittest.TestCase):
     def test_reading_past_days_never_touches_todays_tracker_warning(self):
         """A past day's tracker read in the self-check has its own problems: the Activity header's warning for today
@@ -579,7 +596,8 @@ class PageTest(unittest.TestCase):
 
     def test_settings_has_the_panel_and_its_script(self):
         html = self.read("index.html")
-        panel = html[html.index('id="p-day"'):html.index('id="p-claude"')]
+        panel = html[html.index('id="p-check"'):html.index('id="p-upd"')]  # its own tab, Self-check
+        self.assertIn('id="t-check"', html)
         self.assertIn('id="sc-sec"', panel)
         self.assertIn("How well Pulsar picks for you", panel)
         self.assertIn('<script src="/static/js/selfcheck.js"></script>', html)

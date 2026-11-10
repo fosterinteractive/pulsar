@@ -364,22 +364,24 @@ TOOLS = [
     {"name": "pulsar_selfcheck", "title": "Pulsar: how well it picks",
      "description": ("Pulsar's self-check of its own picks for this person: for each of their past days (up to 30), the "
                      "plan Log the day would make without that day's entries, compared minute by minute with what they "
-                     "logged, meetings included. Totals, the last 7 days, and each day: the right task, the right client, "
-                     "logged minutes with no task, billable time put on another client, billable over and under, the "
-                     "minutes each kind of pick placed and how many were right, how their Log the day entries compare "
-                     "with what was proposed, and two rules being tried that no plan uses (shadow). meaning says what "
-                     "each number is. Numbers only, never a task, client, note or name; worked out on this Mac. Days "
-                     "are worked out in the background; days.missing says how many are not yet, and refresh: true "
-                     "works out up to 10 of them now (up to about a minute). Use it for 'how well does Pulsar pick for "
-                     "me' or 'run the self-check'. Show the person the numbers: they choose whether to send them to "
-                     "anyone. Read only."),
+                     "logged, meetings included. Percents for the last 30 and 7 days: the right task, the right client, "
+                     "no task, billable time on another client, over and under; how often their Log the day rows were "
+                     "logged as proposed; two rules being tried that no plan uses; and 'share', one line of percents "
+                     "to pass on. Only percents, never a minute, task, client, note or name; worked out on this Mac. "
+                     "detail: true adds per-day numbers (still no names). Days are worked out in the background; "
+                     "days.missing says how many are not yet, and refresh: true works out up to 10 of them now (up to "
+                     "about a minute). Use it for 'how well does Pulsar pick for me' or 'run the self-check'. Show "
+                     "the person the result: they choose whether to send the share line to anyone. Read only."),
      "inputSchema": {"type": "object", "additionalProperties": False,
                      "properties": {"days": {"type": "integer", "minimum": 1, "maximum": 30,
                                              "description": "The last this many finished days. Default: 30"},
                                     "refresh": {"type": "boolean",
                                                 "description": "Work out the days not done yet now, in this call, "
                                                                "instead of waiting for Pulsar's background run. "
-                                                               "Default: false"}}},
+                                                               "Default: false"},
+                                    "detail": {"type": "boolean",
+                                               "description": "Also the numbers of each day and of each kind of pick "
+                                                              "(still no names). Default: false: percents only"}}},
      "annotations": {"title": "Pulsar: how well it picks", **READ}},
     {"name": "pulsar_status", "title": "Pulsar: status",
      "description": ("Never fails. Whether Pulsar is open on this Mac (every other tool needs it), its version, whether "

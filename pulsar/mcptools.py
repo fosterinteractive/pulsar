@@ -54,7 +54,7 @@ SESSION_VARS = ("CLAUDE_CODE_SESSION_ID", "PULSAR_MCP_SESSION_ID")
 # each tool's arguments (the proxy's inputSchema): anything else is refused
 ARGS = {"pulsar_status": (), "pulsar_day": ("date",), "pulsar_propose": ("date", "prefer"), "pulsar_session": ("date",),
         "pulsar_suggest": ("date", "start", "minutes"), "pulsar_tasks": ("query", "date"),
-        "pulsar_preview": ("date", "entries"), "pulsar_log": ("code", "summary"), "pulsar_selfcheck": ("days", "refresh")}
+        "pulsar_preview": ("date", "entries"), "pulsar_log": ("code", "summary"), "pulsar_selfcheck": ("days", "refresh", "detail")}
 ENTRY_KEYS = ("start", "minutes", "taskId", "serviceId", "note")
 BODY_KEYS = ("args", "client", "session", "sessionFrom", "projectDir", "ignoreLogged")
 PER_MINUTE = {"pulsar_log": 10, "pulsar_preview": 20, "pulsar_selfcheck": 6}  # every other tool: 60
@@ -1386,23 +1386,24 @@ def pulsar_selfcheck(args: dict) -> dict:
     Read only: nothing goes to Productive but reads, and nothing is written but the self-check's own numbers."""
     from . import selfcheck, server
     ignore_logged()  # the test switch's guard; the self-check plans every day blind anyway
-    days, refresh = args.get("days", selfcheck.DAYS), args.get("refresh", False)
+    days, refresh, detail = args.get("days", selfcheck.DAYS), args.get("refresh", False), args.get("detail", False)
     if isinstance(days, bool) or not isinstance(days, int) or not 1 <= days <= selfcheck.DAYS:
         raise ToolError(f"days is a whole number from 1 to {selfcheck.DAYS}. Nothing was done.")
-    if not isinstance(refresh, bool):
-        raise ToolError("refresh is true or false. Nothing was done.")
+    if not isinstance(refresh, bool) or not isinstance(detail, bool):
+        raise ToolError("refresh and detail are true or false. Nothing was done.")
     s = server.current_settings()
     if not s.get("person_id"):
         raise ToolError("Pulsar is not connected to Productive yet, and the self-check compares Pulsar's plan with what "
                         "was logged there. Ask the person to connect it in Pulsar's Settings.")
     today = _today(config.timezone_name(s))
     done = selfcheck.refresh(s, today) if refresh else None
-    out = selfcheck.report(s, days, today)
-    left = out["days"]["missing"]
+    full = selfcheck.report(s, days, today)
+    out = full if detail else selfcheck.brief(full)
+    left = full["days"]["missing"]
     return {**out, "refresh": done,
-            "next": ("Show the person these numbers. They are only numbers, worked out on this Mac; the person decides "
-                     "whether to send them to anyone. Pulsar's Settings, Self-check, How well Pulsar picks for "
-                     "you, shows the same, and Save the self-check there writes them to a file.")
+            "next": ("Show the person these percents and the share line as they are. They are only percents, worked "
+                     "out on this Mac; the person decides whether to send the share line to anyone. Pulsar's Settings, "
+                     "Self-check, shows the same.")
                     + (f" {left} {'day is' if left == 1 else 'days are'} not worked out yet: refresh: true works out up "
                        f"to {selfcheck.REFRESH_DAYS} now." if left and not refresh else "")}
 

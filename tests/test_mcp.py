@@ -729,13 +729,28 @@ class McpTest(unittest.TestCase):
             with mock.patch.object(selfcheck, "refresh", lambda s, today=None: self.fail("refreshed unasked")):
                 got, err = self.call("pulsar_selfcheck", {})
             self.assertFalse(err, got)
+            # by default percents only: no minutes, no single days, and a line to share
             self.assertEqual((got["pulsar"], got["days"]["asked"], got["days"]["workedOut"]), (__version__, 30, 1))
-            self.assertEqual((got["days"]["missing"], got["days"]["missingDates"]), (1, [day_before]))
-            self.assertEqual((got["totals"]["rightTask"], got["perDay"][0]["bySource"], got["logTheDay"]["byHand"]),
-                             (60, {"session": [100, 60, 90]}, 1))
+            self.assertEqual(got["days"]["missing"], 1)
+            self.assertEqual(got["last30"]["rightTask"], 50)                      # 60 of 120 minutes
+            self.assertEqual(got["logTheDay"]["asProposed"], 50)                  # 1 of 2 rows
+            self.assertEqual(got["rulesBeingTried"]["clients"]["withRule"]["rightTask"], 58)  # 70 of 120
+            self.assertNotIn("perDay", got)
+            self.assertNotIn("missingDates", got["days"])
+            self.assertIn("right task 50%", got["share"])
+            self.assertNotRegex(got["share"], r"\bmin\b|\d{4}-\d{2}-\d{2}")       # never minutes or a day's date
             self.assertIn("refresh: true", got["next"])
             text = json.dumps(got, ensure_ascii=False)
             for w in SECRET_WORDS + ["Acme", "Build"]:  # the day's entries are only counted, never shown
+                self.assertNotIn(w, text)
+            # detail: true adds each day's numbers, still no names
+            got, err = self.call("pulsar_selfcheck", {"detail": True})
+            self.assertFalse(err, got)
+            self.assertEqual((got["days"]["missing"], got["days"]["missingDates"]), (1, [day_before]))
+            self.assertEqual((got["totals"]["rightTask"], got["perDay"][0]["bySource"], got["logTheDay"]["byHand"]),
+                             (60, {"session": [100, 60, 90]}, 1))
+            text = json.dumps(got, ensure_ascii=False)
+            for w in SECRET_WORDS + ["Acme", "Build"]:
                 self.assertNotIn(w, text)
             with mock.patch.object(selfcheck, "refresh", lambda s, today=None: {"worked": 1, "left": 0, "note": ""}):
                 got, err = self.call("pulsar_selfcheck", {"days": 7, "refresh": True})

@@ -446,6 +446,53 @@ def totals(docs: list) -> dict:
     return t
 
 
+def percents(t: dict | None) -> dict | None:
+    """Totals as whole percents, the only numbers meant to be passed on: the right task, the right client and no task
+    of the minutes logged; billable time on another client, over and under, of the billable minutes logged. None where
+    there is nothing to divide by."""
+    if not t:
+        return None
+    pc = lambda a, b: round(100 * a / b) if b else None  # noqa: E731
+    return {"rightTask": pc(t["rightTask"], t["logged"]), "rightClient": pc(t["rightClient"], t["logged"]),
+            "noTask": pc(t["noTask"], t["logged"]), "otherClient": pc(t["wrongClient"], t["billableLogged"]),
+            "over": pc(t["over"], t["billableLogged"]), "under": pc(t["under"], t["billableLogged"])}
+
+
+def log_percents(log: dict) -> dict | None:
+    """Log the day's rows as proposed, with another task, another time, another service: percents of the rows logged
+    through it with a record of what was proposed."""
+    known = int(log.get("viaLogTheDay") or 0) - int(log.get("unknown") or 0)
+    if known <= 0:
+        return None
+    return {k: round(100 * int(log.get(k) or 0) / known) for k in ("asProposed", "taskChanged", "timeChanged",
+                                                                   "serviceChanged")}
+
+
+def share_text(version: str, month: dict | None, week: dict | None, log: dict, rules: dict) -> str:
+    """One short paragraph of percents to paste anywhere the person chooses: never a minute, a date, a task, a client
+    or a name."""
+    def part(p):
+        f = lambda v: "n/a" if v is None else f"{v}%"  # noqa: E731
+        return (f"right task {f(p['rightTask'])}, right client {f(p['rightClient'])}, no task {f(p['noTask'])}; "
+                f"billable to another client {f(p['otherClient'])}, over {f(p['over'])}, under {f(p['under'])}")
+    if not month or not month.get("days"):
+        return f"Pulsar {version} self-check: still collecting, no day worked out yet."
+    out = [f"Pulsar {version} self-check, {month['days']} days: {part(percents(month))}."]
+    if week:
+        out.append(f"Last {week['days']} days: {part(percents(week))}.")
+    lp = log_percents(log)
+    if lp:
+        out.append(f"Log the day rows: {lp['asProposed']}% as proposed, {lp['taskChanged']}% another task, "
+                   f"{lp['timeChanged']}% another time.")
+    for name, label in (("activity", "Productive activity"), ("clients", "client tasks by window")):
+        sh = (month.get("shadow") or {}).get(name) or {}
+        if sh.get("days"):
+            a, b = percents(sh), percents(sh["base"])
+            out.append(f"Rule being tried, {label}: right task {a['rightTask']}% (now {b['rightTask']}%), "
+                       f"right client {a['rightClient']}% (now {b['rightClient']}%).")
+    return " ".join(out)
+
+
 def summary(s: dict | None = None, today: str | None = None) -> dict:
     """The last DAYS finished days (and the last WEEK when WEEK_MIN of them are worked out): sums, never names."""
     from . import server
@@ -460,7 +507,9 @@ def summary(s: dict | None = None, today: str | None = None) -> dict:
             "week": totals(week) if len(week) >= WEEK_MIN else None, "weekDays": len(week),
             "log": {k: sum(int(x.get(k) or 0) for x in docs) for k in LOG_COUNTS},
             "older": sum(1 for x in docs if x.get("version") != __version__),
-            "todo": _state["todo"], "running": _state["running"], "connected": bool(s.get("person_id"))}
+            "todo": _state["todo"], "running": _state["running"], "connected": bool(s.get("person_id")),
+            "share": share_text(__version__, totals(measured), totals(week) if len(week) >= WEEK_MIN else None,
+                                {k: sum(int(x.get(k) or 0) for x in docs) for k in LOG_COUNTS}, {})}
 
 
 DAY_KEYS = ("date", "version", "noActivity", "took") + MEASURES + LOG_COUNTS
@@ -522,7 +571,28 @@ def report(s: dict | None = None, days: int = DAYS, today: str | None = None) ->
             "totals": totals(measured),
             "last7": totals(week) if days > WEEK and len(week) >= WEEK_MIN else None,
             "logTheDay": {k: sum(int(x.get(k) or 0) for x in docs) for k in LOG_COUNTS},
-            "perDay": [_day_out(x) for x in docs], "meaning": MEANING}
+            "perDay": [_day_out(x) for x in docs], "meaning": MEANING,
+            "share": share_text(__version__, totals(measured),
+                                totals(week) if days > WEEK and len(week) >= WEEK_MIN else None,
+                                {k: sum(int(x.get(k) or 0) for x in docs) for k in LOG_COUNTS}, {})}
+
+
+def brief(full: dict) -> dict:
+    """What Pulsar in Claude Code's pulsar_selfcheck answers unless asked for detail: the percents and the line to
+    share, and how many days they come from. No minutes, no dates of single days, no per-day numbers."""
+    t, w = full["totals"], full["last7"]
+    rules = {}
+    for name in SHADOWS:
+        sh = (t.get("shadow") or {}).get(name) or {}
+        if sh.get("days"):
+            rules[name] = {"days": sh["days"], "withRule": percents(sh), "now": percents(sh["base"])}
+    return {"pulsar": full["pulsar"], "days": {k: full["days"][k] for k in ("asked", "workedOut", "missing",
+                                                                           "stillCollecting", "enough")},
+            "last30": percents(t) if t.get("days") else None, "last7": percents(w) if w else None,
+            "logTheDay": log_percents(full["logTheDay"]), "rulesBeingTried": rules, "share": full["share"],
+            "meaning": {"percents": "rightTask, rightClient, noTask: of the minutes logged; otherClient, over, under: "
+                                    "of the billable minutes logged",
+                        "how": MEANING["how"]}}
 
 
 def download(s: dict | None = None, today: str | None = None) -> dict:
