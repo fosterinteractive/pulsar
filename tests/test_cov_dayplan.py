@@ -308,10 +308,6 @@ class RandomDaysTest(Ctx):
                 self.assertFalse(any(e["s"] < u["e"] and u["s"] < e["e"] for e in p["entries"]), (why, u))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class NewTaskAndWordsTest(unittest.TestCase):
     """2026-11-10, Nick's evening: a session titled "Оновлення бази даних Drupal 11" in a checkout on the branch
     campaign-guides-cta went to Campaign Guides (the branch named it, the Ukrainian words named nothing), and Pulsar turns
@@ -341,3 +337,6 @@ class NewTaskAndWordsTest(unittest.TestCase):
         rows = [front(600, 625, "both-repo"), front(625, 631, "house-tool"), front(631, 660, "both-repo")]
         p = plan([work(600, 660)], rows, ctx=ctx, picks={"600|both-repo": pick, "631|both-repo": pick})
         self.assertNotIn("T1", [e["taskId"] for e in p["entries"]], [(e["s"], e["e"], e["taskId"]) for e in p["entries"]])
+
+if __name__ == "__main__":
+    unittest.main()
