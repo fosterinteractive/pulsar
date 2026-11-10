@@ -144,6 +144,7 @@
     if (prefs) SHELL.prefs = prefs;
     if (native) SHELL.native = native;
     if (SHELL.prefs?.accent) document.documentElement.style.setProperty('--mac-accent', SHELL.prefs.accent);
+    if (typeof paintAccent === 'function') paintAccent();  // core.js: the accent's text and fill, from the Mac's accent
     window.dispatchEvent(new CustomEvent('pulsar:prefs', {detail: {prefs: SHELL.prefs, native: SHELL.native}}));
   }
   setPrefs();

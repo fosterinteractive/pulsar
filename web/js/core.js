@@ -399,10 +399,45 @@ function applyTheme(t) {
   btn.dataset.v = t;
   /** @type {HTMLSelectElement} */ ($('#theme-sel')).value = t;
   try { t === 'system' ? localStorage.removeItem('pulsar-theme') : localStorage.setItem('pulsar-theme', t); } catch (e) {}
+  if (typeof paintAccent === 'function') paintAccent();  // below: the accent's text and fill follow the theme
 }
 $('#theme-btn').onclick = () => applyTheme({system: 'light', light: 'dark', dark: 'system'}[$('#theme-btn').dataset.v]);
 $('#theme-sel').onchange = ev => applyTheme(/** @type {HTMLSelectElement} */ (ev.target).value);
 applyTheme(document.documentElement.dataset.theme);
+
+/* The accent where it carries text: white on it (Settings' selected tab, the app's main buttons, the picked day) and
+   it as text (links). The Mac's accent as it is often fails 4.5:1 (system blue under white is 4.0:1, yellow 1.6:1), so
+   it is mixed with black for a fill, and with the text colour for a text, only as far as it takes in the theme shown:
+   --accent-fill and --accent-text, again whenever the theme or the accent changes. */
+function rgbOf(css) {
+  const el = document.createElement('i');
+  el.style.color = css; el.hidden = true;
+  document.body.append(el);
+  const m = getComputedStyle(el).color.match(/[\d.]+/g);
+  el.remove();
+  return m && m.length >= 3 ? m.slice(0, 3).map(Number) : null;
+}
+function contrast(a, b) {
+  const lum = c => c.map(v => (v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+}
+function paintAccent() {
+  const root = document.documentElement.style;
+  root.removeProperty('--accent-fill'); root.removeProperty('--accent-text');
+  const acc = rgbOf('var(--accent)'), text = rgbOf('var(--text)'), grounds = ['--bg', '--panel', '--card'].map(v => rgbOf(`var(${v})`));
+  if (!acc || !text || grounds.some(g => !g)) return;
+  const mix = (a, b, p) => a.map((v, i) => Math.round(v * p + b[i] * (1 - p))), rgb = c => `rgb(${c.join(', ')})`;
+  let f = 1;
+  while (f > 0.3 && contrast(mix(acc, [0, 0, 0], f), [255, 255, 255]) < 4.6) f -= 0.02;
+  let t = 1;
+  while (t > 0.2 && Math.min(...grounds.map(g => contrast(mix(acc, text, t), g))) < 4.6) t -= 0.02;
+  root.setProperty('--accent-fill', rgb(mix(acc, [0, 0, 0], f)));
+  root.setProperty('--accent-text', rgb(mix(acc, text, t)));
+}
+paintAccent();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintAccent);
+matchMedia('(prefers-contrast: more)').addEventListener('change', paintAccent);
 
 /* Tab reaches every button and link. WebKit (the app's window) skips them unless macOS's keyboard navigation is on,
    so each one with no tabindex of its own gets 0, now and whenever the page draws new ones; a tabindex already set
