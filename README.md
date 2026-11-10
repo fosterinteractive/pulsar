@@ -248,6 +248,11 @@ window: paused for an hour or more (Settings → Time and activity → Away → 
 hours, or Never) while the tracker saw you working, it offers **Resume from** the time you came back, **Resume now**
 or **Stay paused**.
 
+**Back from time away.** A call, a whiteboard, a talk at someone's desk: when you come back to the Mac after time
+away (Settings' **Away after** or more), a small panel near the menu bar says how long you were away and what you
+worked on before, with **Break** and **Log This Time…**. Ignore it and it stays a break. Settings → Time and activity
+→ Away → **Ask when I come back** switches it off. A break on the day also has **Log this time…** in its popover.
+
 ### Meetings
 
 - **Google Calendar**: **Settings → Connections → Connect Google Calendar** opens Google's sign-in; after **Allow**, the

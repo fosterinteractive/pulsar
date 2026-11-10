@@ -1596,6 +1596,18 @@ and the whole day every hour while the page shows. The app's window sends `pulsa
   the task of the entry that ended within the hour before ("Before you left"), else what the 30 minutes before held
   (`leadFor`); like any stretch, it starts after a logged entry and stops at the next. Time off (three hours or more)
   has neither.
+- **Ask when I come back** (the window's own choice, `askBack`, on by default; Settings → Time and activity → Away,
+  shown only in a window that has it). Every 5 seconds the window reads how long since the last key or mouse input
+  (`CGEventSource.secondsSinceLastEventType`, `checkIdle`). Input again after `awayAsk` minutes or more, measured on
+  the wall clock so a Mac that slept counts, and under three hours: it asks the page (`pulsarNative.awayBack` in
+  `awayback.js`), which offers nothing while paused, over midnight, for a stretch mostly logged already or in a
+  meeting (today's, when the day shown is today), or under the threshold; else `{a, b, title, task}` with the task of
+  the entry before (`entryBefore`). The panel (`showBack`: a non-activating floating panel under the menu bar item, or
+  at the top right of the screen) says "Away 14:10–14:45 · 35 min" and "Before you left: …", with Break and Log This
+  Time… (the window comes forward and runs `awayLog`: today, then `logAway`); it takes no focus, follows the theme,
+  is announced to VoiceOver and goes after 20 seconds, leaving a break. `awayAsk` is set by the page
+  (`sendAwayAsk`, on every config): Away after, or ActivityWatch's AFK timeout when longer, since that decides what the
+  day shows as away.
 - **Dragging in the Logged column**: from an empty spot, up or down, in 1-minute steps (across entries too); letting
   go opens the log dialog on that stretch with those minutes, never rounded, which says what the stretch holds and
   offers a split when it mixes work
