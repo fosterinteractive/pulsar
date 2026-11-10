@@ -1046,6 +1046,43 @@ class LearnWordsTest(unittest.TestCase):
         self.assertIsNone(learn.assigned_named(tasks, "", frozenset()))
         self.assertIsNone(learn.assigned_named([], "blog", frozenset()))
 
+    def test_first_offers_put_the_task_logged_before_the_last_one_third(self):
+        """Replay of 43 days (2026-11-10): the right task among the first three offers on 67.1% of rows instead of
+        64.9% (74.2% of their minutes instead of 72.5%)."""
+        from pulsar import learn
+        last, fresh, prev = {"taskId": "L"}, {"taskId": "N"}, {"taskId": "P"}
+        ids = lambda xs: [x["taskId"] for x in xs]  # noqa: E731
+        unsure = [{"taskId": "a", "why": "logged while in this Claude session: 1 h", "share": 0.4}, {"taskId": "b", "why": "x"}]
+        self.assertEqual(ids(learn.first_offers(unsure, last, fresh, previous=prev)), ["L", "N", "P", "a", "b"])
+        self.assertEqual(ids(learn.first_offers(unsure, last, None, previous=prev)), ["L", "a", "P", "b"])
+        sure = [{**unsure[0], "share": 0.7}, unsure[1]]
+        self.assertEqual(ids(learn.first_offers(sure, last, fresh, previous=prev)), ["a", "N", "P", "b"])  # a sure vote stays first
+        moved = [{"taskId": "b"}, {"taskId": "c"}, {"taskId": "P"}]
+        self.assertEqual(ids(learn.first_offers(moved, last, fresh, previous=prev)), ["L", "N", "P", "b", "c"])  # moved up
+        self.assertEqual(ids(learn.first_offers(unsure, last, fresh)), ["L", "N", "a", "b"])
+
+    def test_the_task_logged_before_the_last_one_never_depends_on_reading_order(self):
+        from pulsar import attribution
+        rows = [{"date": "2026-11-03", "taskId": "1", "project": "P", "minutes": 30, "start": 1000.0},
+                {"date": "2026-11-03", "taskId": "2", "project": "P", "minutes": 30, "start": 9000.0},  # logged later
+                {"date": "2026-11-02", "taskId": "2", "project": "P", "minutes": 300, "start": 99999.0},
+                {"date": "2026-11-02", "taskId": "3", "project": "P", "minutes": 60},
+                {"date": "2026-11-02", "taskId": "5", "project": "P", "minutes": 60},     # a tie with 3: the lower id
+                {"date": "2026-11-04", "taskId": "8", "project": "P", "minutes": 60},     # the day itself: not before it
+                {"date": "2026-11-03", "taskId": "7", "project": "P", "minutes": 90, "start": 99999.0, "meeting": True},
+                {"date": "2026-11-01", "taskId": "6", "project": "Q", "minutes": 45}]
+        for order in (rows, rows[::-1]):
+            got = attribution.latest_tasks(order, "2026-11-04")
+            self.assertEqual(got["2"], ("2026-11-03", 10800.0, "P"))
+            self.assertNotIn("8", got)
+            self.assertNotIn("7", got)
+            self.assertEqual(attribution.latest_in(got, {"P"}), ("2026-11-03", "2", "P"))
+            self.assertEqual(attribution.latest_in(got, {"P"}, {"2"}), ("2026-11-03", "1", "P"))
+            self.assertEqual(attribution.latest_in(got, {"P"}, {"2", "1"}), ("2026-11-02", "3", "P"))
+            self.assertEqual(attribution.latest_in(got, {"P", "Q"}, {"2", "1", "3", "5"}), ("2026-11-01", "6", "Q"))
+        self.assertIsNone(attribution.latest_in({}, {"P"}))
+        self.assertIsNone(attribution.latest_in(attribution.latest_tasks(rows, "2026-11-04"), {"Z"}))
+
     def test_each_projects_last_day_task_never_depends_on_reading_order(self):
         from pulsar import attribution
         rows = [{"date": "2026-11-03", "taskId": "2", "project": "P", "minutes": 30},
@@ -1085,6 +1122,8 @@ class LearnWordsTest(unittest.TestCase):
         self.assertTrue(got[0]["assigned"] and "assigned to you on 2026-11-02" in got[0]["why"])
         self.assertNotIn("new", got[0])  # an offer only: the plan never picks it for being new
         self.assertEqual(got[1]["why"], "the task you logged last in Law Faculty (2026-11-03)")
+        # third, the task you logged in that project before the last one
+        self.assertEqual((got[2]["taskId"], got[2]["why"]), ("3", "you logged it in Law Faculty on 2026-10-06"))
         # a session logged before: the last task first, the assigned one second
         proposal = {"entries": [{"s": 600, "e": 660, "project": "law-site", "titles": ["Morning work session"]}]}
         voted = ({learn.key("Morning work session"): {"3": [5.0, 30]}}, {}, {})

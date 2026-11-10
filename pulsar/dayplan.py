@@ -266,6 +266,7 @@ def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_L
     habit = attribution.new_session_habit(credited, before, project_of.get, habit_from)
     return {"sess": sess, "repo": repo, "sr": sr, "service": service, "project_service": project_service,
             "names": names, "recent": recent, "never_logged": never, "lastday": lastday, "new_habit": habit,
+            "latest": attribution.latest_tasks(before, date),
             "skip": set(WORD.findall((person or "").lower())),
             "task_class": task_class, "project_class": project_class,
             "classes": attribution.repo_classes(credited, task_class)}
@@ -492,6 +493,14 @@ def doubt(row: dict, ctx: dict, task, source: str) -> str:
     return ""
 
 
+def previous(row: dict, ctx: dict) -> tuple | None:
+    """(day, task, project): the task logged latest in the projects the repository's work goes to (places), other than
+    the last day's task there (candidates' "lastday"), or None. An alternative: choose."""
+    where = places(ctx, row.get("project"))
+    last = attribution.last_of(ctx.get("lastday") or {}, where)
+    return attribution.latest_in(ctx.get("latest") or {}, where, {str(last[1])} if last else set())
+
+
 def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, assigned: list | None = None,
            pick: dict | None = None) -> dict:
     """{task, source, conf, why, alts} for one Likely row. Claude's pick (Ask Claude) replaces an answer that is not
@@ -534,14 +543,21 @@ def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, ass
         alts = [(t, s, c, f"Pulsar's guess: {w}") for t, s, c, w in alts]
         task, src, conf, why = str(first["taskId"]), "claude", "medium", f"Claude: {pick.get('why') or 'its pick'}"
         alts += [(str(t["taskId"]), "claude", "low", "Claude: another option") for t in pick["tasks"][1:]]
-    seen = {task}
+    seen, out = {task}, []
     for t, s, c, w in alts + new_alt + found[1:] + [(str(x["taskId"]), "learned", "low", x.get("why") or "")
                                                     for x in row.get("learned") or []]:
         if t and t not in seen:
             seen.add(t)
-            alts.append((t, s, c, w))
+            out.append((t, s, c, w))
+    # the task logged before the last one in the repository's project: the second alternative, never above Claude's
+    # (replay, 43 days: the right task is the pick or one of its three alternatives on 71.1% of the clean minutes
+    # instead of 70.1%, and the first alternative is right as often as before)
+    prev = previous(row, ctx) if src != "claude" else None
+    if prev and prev[1] != task and prev[1] not in [x[0] for x in out[:2]]:
+        out = [x for x in out if x[0] != prev[1]]
+        out.insert(min(1, len(out)), (prev[1], "previous", "low", f"you logged it in {prev[2]} on {prev[0]}"))
     return {"task": task, "source": src, "conf": conf, "why": why, "claudeNone": claude_none,
-            "alts": [{"taskId": t, "source": s, "why": w} for t, s, c, w in alts if t and t != task][:3]}
+            "alts": [{"taskId": t, "source": s, "why": w} for t, s, c, w in out][:3]}
 
 
 # ---- the day ------------------------------------------------------------------------------------------------------

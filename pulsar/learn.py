@@ -576,14 +576,17 @@ def assigned_named(tasks: list, text: str, skip: frozenset = frozenset()) -> dic
 
 
 def first_offers(learned: list, last: dict | None = None, fresh: dict | None = None,
-                 named: dict | None = None, new: bool = False) -> list:
-    """The offers with three more (replay, 43 days: the right task among the first three on 65% of rows instead of
-    61%): the task you logged last in the repository's project first, unless the first offer is sure (a session's vote
-    of SURE_SHARE, or the work naming a task you logged by WORK_WORDS words); and the newest task assigned to you in
-    that project second (half of the work on tasks new to you was on one assigned to you within FRESH_DAYS days). A
-    task assigned to you that the work names (assigned_named) goes above the last day's task, as the plan picks it, or
-    second after a sure offer (replay, 2026-11-10: the first offer right on 50.3% of rows instead of 48.8%, 59.5% of
-    the minutes instead of 57.7%; the first three unchanged).
+                 named: dict | None = None, previous: dict | None = None, new: bool = False) -> list:
+    """The offers with more: the task you logged last in the repository's project first, unless the first offer is
+    sure (a session's vote of SURE_SHARE, or the work naming a task you logged by WORK_WORDS words); the newest task
+    assigned to you in that project second (half of the work on tasks new to you was on one assigned to you within
+    FRESH_DAYS days); and the task you logged there before the last one third. Replay of 43 days: the right task among
+    the first three on 61% of rows with none of them, 65% with the first two, 67.1% with all three (74.2% of their
+    minutes instead of 72.5% with two): work goes back to the ticket before the last one often enough.
+
+    named: a task assigned to you that the work names (assigned_named) goes above the last day's task, as the plan
+    picks it, or second after a sure offer (replay, 2026-11-10: the first offer right on 50.3% of rows instead of
+    48.8%, 59.5% of the minutes instead of 57.7%; the first three unchanged).
 
     new: the session was never logged (no votes: new work), and then the last task goes after the task assigned to you,
     or after the first offer when there is no such task (replay, 43 days: on such rows the first offer was right on 12%
@@ -604,7 +607,7 @@ def first_offers(learned: list, last: dict | None = None, fresh: dict | None = N
         out = put(put(learned, last, 0), named or fresh, 0) if named or fresh else put(learned, last, 1)
     else:
         out = put(put(learned, last, 0), named, 0)
-    return put(out, fresh, 1)
+    return put(put(out, fresh, 1), previous, 2)
 
 
 def annotate(proposal: dict, date: str, settings: dict, entries_before: list, entries_today: list, tz,
@@ -656,17 +659,24 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
                 e["seenTasks"] = list(dict.fromkeys(ids + list(e.get("seenTasks") or [])))[:4]
                 e["tasks"] = list(dict.fromkeys(list(e.get("repoLinks") or []) + e["seenTasks"]))[:4]
         lastday = attribution.last_day_tasks(entries, date)
+        latest = attribution.latest_tasks(entries, date)
         day0 = datetime.strptime(date, "%Y-%m-%d")
 
         def offers(places: set, said: str = "") -> tuple:
             """(the task you logged last in these projects, the newest task assigned to you in them, the one of those
-            the work's words name): first_offers."""
+            the work's words name, the task you logged there before the last one): first_offers."""
             got = attribution.last_of(lastday, places)
             last = None
             if got:
                 n = names.get(got[1]) or {}
                 last = {"taskId": str(got[1]), "title": n.get("task") or "", "project": n.get("project") or got[4],
                         "why": f"the task you logged last in {got[4]} ({got[0]})"}
+            before = attribution.latest_in(latest, places, {str(got[1])} if got else set())
+            previous = None
+            if before:
+                n = names.get(before[1]) or {}
+                previous = {"taskId": str(before[1]), "title": n.get("task") or "", "project": n.get("project") or before[2],
+                            "why": f"you logged it in {before[2]} on {before[0]}"}
             mine = [t for t in unseen if me and str(t.get("assignee") or "") == me and t.get("project") in places
                     and str(t.get("taskId")) not in closed
                     and 0 <= (day0 - datetime.strptime(str(t.get("created"))[:10], "%Y-%m-%d")).days <= FRESH_DAYS]
@@ -674,7 +684,7 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
             fresh = {"taskId": str(new["taskId"]), "title": new.get("title") or "", "project": new.get("project") or "",
                      "why": f"assigned to you on {str(new.get('created'))[:10]}, no entry of yours yet",
                      "assigned": True} if new else None
-            return last, fresh, assigned_named(mine, said, skip)
+            return last, fresh, assigned_named(mine, said, skip), previous
 
         named: dict = {}  # (session keys, repository) -> the work's task named earlier today (work_match)
         named_at: dict = {}  # the same, with the start of each row that named it

@@ -290,6 +290,11 @@ class PlannerTest(unittest.TestCase):
         [e] = p["entries"]
         self.assertEqual((e["taskId"], e["source"], e["alts"][0]["taskId"]), ("55", "claude", "44"))
         self.assertTrue(e["alts"][0]["why"].startswith("Pulsar's guess"))
+        # Claude's other option after it, then the rest, each once (the guess took the third place again)
+        pick = {**pick, "tasks": pick["tasks"] + [{"taskId": "66", "title": "Another", "project": "Q"}]}
+        rows = [{**rows[0], "learned": [{"taskId": "77", "title": "Learned", "project": "G", "why": "x"}]}]
+        [e] = dayplan.plan(day(items=[work(700, 740)], rows=rows, picks={"700|other": pick}), ctx)["entries"]
+        self.assertEqual([a["taskId"] for a in e["alts"]], ["44", "66", "77"])
 
     def test_the_results_never_call_an_unclear_row_not_written(self):
         """A row sent with no clear answer may be in Productive: the results say so, and a journal that could not be
@@ -476,6 +481,16 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual((e["taskId"], e["confidence"], e["checked"]), ("11", "high", True))
         e = entry(0.7, "internal")
         self.assertEqual((e["taskId"], e["confidence"], e["checked"]), ("11", "high", True))
+
+    def test_the_task_logged_before_the_last_one_is_the_second_alternative(self):
+        # replay of 43 days (2026-11-10): the right task is the pick or one of its three alternatives on 71.1% of the
+        # clean minutes instead of 70.1%
+        ctx = history_for({"Fix the importer": "11", "Hero video": "22", "Footer": "33"})
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600)]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("11", "session"))
+        # 33 was logged last in the project (the last day's task), 22 before it
+        self.assertEqual([a["taskId"] for a in e["alts"][:2]], ["33", "22"])
+        self.assertEqual(e["alts"][1]["why"], "you logged it in P on 2026-10-27")
 
     def test_what_the_work_names_comes_before_where_you_usually_log(self):
         # 2026-11-09: "D11 db upgrade" on a site's repository; the session's and the repository's history offered other

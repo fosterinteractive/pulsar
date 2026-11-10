@@ -262,6 +262,30 @@ def last_of(lastday: dict, places) -> tuple | None:
     return max(got, key=lambda x: (x[0], x[2], x[3], _neg_id(x[4]))) if got else None
 
 
+def latest_tasks(entries: list, date: str) -> dict:
+    """{task: (day, end, project)}: when each task was last logged before `date`, by its latest entry's day and end
+    (epoch seconds, 0 when unknown); meetings do not count (as in last_day_tasks). latest_in reads it."""
+    out: dict = {}
+    for r in entries:
+        if r.get("project") and r.get("taskId") and not r.get("meeting") and str(r.get("date") or "") < date:
+            end = float(r["start"]) + (r.get("minutes") or 0) * 60 if r.get("start") is not None else 0.0
+            got = (str(r["date"]), end, r["project"])
+            t = str(r["taskId"])
+            if t not in out or got[:2] > out[t][:2]:
+                out[t] = got
+    return out
+
+
+def latest_in(latest: dict, places, skip=()) -> tuple | None:
+    """(day, task, project): the task logged latest (latest_tasks) in any of `places`, the tasks in `skip` left out;
+    at the same moment the lower id, so the answer never depends on the order things were read in."""
+    got = [(d, e, _neg_id(t), t, p) for t, (d, e, p) in latest.items() if p in places and t not in skip]
+    if not got:
+        return None
+    d, _, _, t, p = max(got)
+    return d, t, p
+
+
 def _neg_id(text: str) -> tuple:
     """A key that sorts `text` backwards (max picks the lowest)."""
     return tuple(-ord(c) for c in str(text))
