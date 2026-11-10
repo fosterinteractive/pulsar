@@ -379,6 +379,15 @@ function invoiceSections(inv) {
           {label: 'Billing unknown', ps: most(inv.projects.filter(p => !(p.billable > 0) && p.unknown > 0))},
           {label: 'Not billable', ps: most(inv.projects.filter(p => !(p.billable > 0) && !(p.unknown > 0)))}].filter(x => x.ps.length);
 }
+/* Pulsar's mark for the documents it prints, its gradients under ids of its own (k: one per copy on the page): the header's logo is hidden in print,
+   and a gradient defined there would draw nothing here */
+const printMark = k => `<svg class="inv-logo" viewBox="0 0 32 32" aria-hidden="true"><defs>
+  <radialGradient id="ivGlow${k}" cx="16" cy="16" r="9" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff"/><stop offset=".3" stop-color="#f0abfc"/><stop offset="1" stop-color="#a78bfa" stop-opacity="0"/></radialGradient>
+  <linearGradient id="ivUp${k}" x1="16" y1="16" x2="16" y2="0" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#06b6d4"/><stop offset=".6" stop-color="#22d3ee" stop-opacity=".7"/><stop offset="1" stop-color="#22d3ee" stop-opacity="0"/></linearGradient>
+  <linearGradient id="ivDown${k}" x1="16" y1="16" x2="16" y2="32" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ec4899"/><stop offset=".6" stop-color="#f472b6" stop-opacity=".7"/><stop offset="1" stop-color="#f472b6" stop-opacity="0"/></linearGradient></defs>
+  <g transform="rotate(28 16 16)"><path d="M16 16 L11.8 0.5 L20.2 0.5 Z" fill="url(#ivUp${k})"/><path d="M16 16 L11.8 31.5 L20.2 31.5 Z" fill="url(#ivDown${k})"/>
+  <ellipse cx="16" cy="16" rx="11.5" ry="3.6" fill="none" stroke="#8b5cf6" stroke-opacity=".9" stroke-width="1.3"/></g>
+  <circle cx="16" cy="16" r="9" fill="url(#ivGlow${k})"/><circle cx="16" cy="16" r="2.8" fill="#fff" stroke="#7c3aed" stroke-width="1"/></svg>`;
 /* the invoice summary as a document: who and when, the totals first, then one table where each project opens with its
    subtotal and lists its tasks; numbers right-aligned, what is not billable quieter (style.css, @media print) */
 function renderInvoice(x) {
@@ -386,7 +395,8 @@ function renderInvoice(x) {
   const range = `${dayLabel(x.from, {day: 'numeric', month: 'long', ...(sameYear ? {} : {year: 'numeric'})})} to ${dayLabel(x.to, {day: 'numeric', month: 'long', year: 'numeric'})}`;
   const pr = CONFIG?.productive || {}, who = [pr.personName, pr.orgName].filter(Boolean).join(' · ');
   const known = inv.billable + inv.nonBillable;
-  const stat = (label, value, sub) => `<div class="inv-stat"><span class="l">${esc(label)}</span><span class="v">${esc(value)}</span>${sub ? `<span class="s">${esc(sub)}</span>` : ''}</div>`;
+  const stat = (label, value, sub, bar) => `<div class="inv-stat"><span class="l">${esc(label)}</span><span class="v">${esc(value)}</span>${
+    bar != null ? `<span class="inv-bar"><i style="--w:${Math.max(1, bar)}%"></i></span>` : ''}${sub ? `<span class="s">${esc(sub)}</span>` : ''}</div>`;
   const bill = t => `<td${t.billable ? '' : ' class="mut"'}>${esc(billOf(t))}</td>`;
   // a project's line: its billable time, then quieter its share of the known billing and the time of unknown billing
   const projBill = p => {
@@ -396,10 +406,13 @@ function renderInvoice(x) {
       p.unknown ? `<span class="inv-pct inv-unknown">${esc(dur(p.unknown))} unknown</span>` : ''}</td>`;
   };
   // a div, not a header: the print styles hide the page's header elements
-  $('#invoice-doc').innerHTML = `<div class="inv-head"><div><h1>Invoice summary</h1>${who ? `<p class="inv-who">${esc(who)}</p>` : ''}</div>
-      <div class="inv-meta"><p>${esc(range)}</p><p>Prepared ${esc(dayLabel(todayLocal(), {day: 'numeric', month: 'long', year: 'numeric'}))}</p></div></div>
+  const prepared = dayLabel(todayLocal(), {day: 'numeric', month: 'long', year: 'numeric'});
+  $('#invoice-doc').innerHTML = `<div class="inv-brand">${printMark('h')}<span>Pulsar</span><span class="inv-prepared">Prepared ${esc(prepared)}</span></div>
+    <div class="inv-head"><div><h1>Invoice summary</h1>${who ? `<p class="inv-who">${esc(who)}</p>` : ''}</div>
+      <div class="inv-meta"><span class="l">Period</span><p>${esc(range)}</p></div></div>
     <section class="inv-stats">${stat('Total time', dur(inv.minutes), hoursOf(inv.minutes))}${stat('Billable', dur(inv.billable), hoursOf(inv.billable))}${
-      stat('Billable share', inv.billablePct == null ? 'Unknown' : `${inv.billablePct}%`, inv.unknown && known ? 'of the known billing' : 'of all time')}${
+      stat('Billable share', inv.billablePct == null ? 'Unknown' : `${inv.billablePct}%`, inv.unknown && known ? 'of the known billing' : 'of all time',
+           inv.billablePct)}${
       inv.unknown ? stat('Billing unknown', dur(inv.unknown), 'not shown in Productive') : ''}</section>
     <table class="inv"><colgroup><col><col class="c-share"><col class="c-time"><col class="c-bill"></colgroup>
       <thead><tr><th scope="col">Task</th><th scope="col" class="inv-sh">Share</th><th scope="col">Time</th><th scope="col">Billable</th></tr></thead>`
@@ -409,12 +422,12 @@ function renderInvoice(x) {
         + '<td></td></tr></tbody>' + ps.map(p => {
       const share = inv.minutes ? Math.round(100 * p.minutes / inv.minutes) : 0;
       return `<tbody class="inv-group"><tr class="inv-proj"><th scope="rowgroup">${esc(p.project)}</th>`
-        + `<td class="inv-sh"><i style="--w:${Math.max(2, share)}%"></i>${share}%</td><td>${esc(dur(p.minutes))}</td>${projBill(p)}</tr>`
+        + `<td class="inv-sh"><span class="inv-bar"><i style="--w:${Math.max(2, share)}%"></i></span>${share}%</td><td>${esc(dur(p.minutes))}</td>${projBill(p)}</tr>`
         + p.tasks.map(t => `<tr><td>${esc(t.task)}${t.noTask ? ' <small>no task</small>' : ''}</td><td></td><td>${esc(dur(t.minutes))}</td>${bill(t)}</tr>`).join('')
         + '</tbody>';
     }).join('');
     }).join('')
-    + `</table><div class="inv-foot"><span>From ${who ? 'the' : 'your'} Productive time entries, ${esc(range)}. Share: each project's part of the time.</span><span class="inv-mark">Pulsar</span></div>`;
+    + `</table><div class="inv-foot"><span>From ${who ? 'the' : 'your'} Productive time entries, ${esc(range)}. Share: each project's part of the time.</span><span class="inv-mark">${printMark('f')}Pulsar</span></div>`;
 }
 /* the same lines for a spreadsheet: one row per task, a subtotal per project, the total */
 function invoiceRows(inv) {

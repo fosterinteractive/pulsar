@@ -520,11 +520,16 @@ header { flex-wrap: wrap; row-gap: 8px; }
   /* a document, quiet: one typeface, hairlines, the totals first, each project's subtotal on its own first line */
   html.print-invoice .invoice-doc { display: block; color: #1d1d1f;
     font: 10pt/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif; }
-  .inv-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; padding-bottom: 14px;
-    border-bottom: 1px solid #d2d2d7; margin-bottom: 18px; }
-  .inv-head h1 { font-size: 21pt; font-weight: 600; letter-spacing: -0.01em; line-height: 1.15; margin: 0; }
-  .inv-who { margin: 5px 0 0; font-size: 11pt; }
-  .inv-meta { text-align: right; color: #6e6e73; font-size: 9pt; }
+  .inv-brand { display: flex; align-items: center; gap: 6px; font-size: 8.5pt; font-weight: 600; letter-spacing: .02em;
+    color: #1d1d1f; margin: 0 0 22px; }
+  .inv-brand .inv-logo { width: 16px; height: 16px; }
+  .inv-brand .inv-prepared { margin-left: auto; font-weight: 400; color: #8e8e93; letter-spacing: 0; }
+  .inv-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; padding-bottom: 16px;
+    border-bottom: 0.5pt solid #d2d2d7; margin-bottom: 20px; }
+  .inv-head h1 { font-size: 23pt; font-weight: 600; letter-spacing: -0.02em; line-height: 1.1; margin: 0; }
+  .inv-who { margin: 6px 0 0; font-size: 11pt; color: #3a3a3c; }
+  .inv-meta { text-align: right; font-size: 10pt; display: flex; flex-direction: column; gap: 1px; }
+  .inv-meta .l { font-size: 7pt; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #8e8e93; }
   .inv-meta p { margin: 0; }
   .inv-stats { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; margin: 0 0 26px; break-inside: avoid;
     background: #f5f5f7; border-radius: 12px; }
@@ -532,6 +537,10 @@ header { flex-wrap: wrap; row-gap: 8px; }
   .inv-stat + .inv-stat { border-left: 1px solid #e3e3e8; }
   .inv-stat .l, .inv-stat .s { font-size: 8pt; color: #6e6e73; }
   .inv-stat .v { font-size: 15pt; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .inv-bar { display: inline-block; width: 38px; height: 3px; border-radius: 2px; background: #e5e5ea; overflow: hidden;
+    vertical-align: 2px; }
+  .inv-bar i { display: block; height: 100%; width: var(--w); border-radius: 2px; background: #7c3aed; }
+  .inv-stat .inv-bar { display: block; width: 100%; margin: 5px 0 3px; }
   table.inv { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   table.inv col.c-share { width: 14%; }
   table.inv col.c-time { width: 15%; }
@@ -546,20 +555,22 @@ header { flex-wrap: wrap; row-gap: 8px; }
   table.inv tbody.inv-section td { padding-left: 12px; text-transform: none; letter-spacing: 0; font-size: 8pt; }
   table.inv thead + tbody.inv-section th, table.inv thead + tbody.inv-section td { padding-top: 12px; }
   table.inv tr.inv-proj th, table.inv tr.inv-proj td { font-weight: 600; padding: 16px 0 5px; border-bottom: 0.5pt solid #d2d2d7; }
+  table.inv tr.inv-proj th { font-size: 10.5pt; letter-spacing: -0.005em; }
   table.inv tr.inv-proj td { padding-left: 12px; }
   table.inv tbody.inv-group tr:nth-child(2) td { padding-top: 6px; }
+  table.inv tbody.inv-group tr:not(.inv-proj) td { font-size: 9.5pt; }
   table.inv tbody.inv-group tr:not(.inv-proj) td:first-child { padding-left: 10px; color: #3a3a3c; }
   table.inv td.mut { color: #8e8e93; }
   table.inv th.inv-sh, table.inv td.inv-sh { text-align: left; }
   table.inv td.inv-sh { font-weight: 400; color: #8e8e93; font-size: 8pt; }
-  table.inv td.inv-sh i { display: inline-block; width: 38px; height: 3px; margin: 0 6px 0 0; vertical-align: 2px;
-    border-radius: 2px; background: linear-gradient(90deg, #1d1d1f var(--w), #e5e5ea var(--w)); }
+  table.inv td.inv-sh .inv-bar { margin: 0 6px 0 0; }
   table.inv .inv-pct { font-weight: 400; color: #8e8e93; font-size: 8pt; margin-left: 3px; }
   table.inv .inv-unknown { display: block; margin: 1px 0 0; }
   table.inv small { color: #8e8e93; font-size: 8pt; margin-left: 4px; }
   .inv-foot { margin-top: 26px; padding-top: 9px; border-top: 0.5pt solid #d2d2d7; font-size: 7.5pt; color: #8e8e93;
     display: flex; justify-content: space-between; gap: 16px; }
-  .inv-mark { font-weight: 600; letter-spacing: .04em; color: #6e6e73; }
+  .inv-mark { font-weight: 600; letter-spacing: .02em; color: #6e6e73; display: inline-flex; align-items: center; gap: 4px; }
+  .inv-mark .inv-logo { width: 11px; height: 11px; }
 }
 
 /* not signed in: one notice over everything */
