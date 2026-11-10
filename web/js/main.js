@@ -20,6 +20,7 @@ function applyConfig(c) {
       + (pv.writes ? 'It WRITES to Productive (allowed in Settings).' : 'It does not write to Productive.');
     chip.classList.toggle('writes', !!pv.writes);
   }
+  if (typeof sendAwayAsk === 'function') sendAwayAsk();  // awayback.js: the window's "Ask when I come back" threshold
 }
 
 function setView(v) {

@@ -191,6 +191,8 @@
           <label class="field"><span>Ask about a long pause</span>
             <select name="adv_pause_ask"><option value="60">After 1 hour</option><option value="30">After 30 minutes</option><option value="120">After 2 hours</option><option value="240">After 4 hours</option><option value="0">Never</option></select></label>
           <p class="hint">While Pulsar is paused (Pause at the top, or the Dock icon's menu), nothing counts as work. If it has been paused this long and the tracker sees you working, Pulsar asks whether the pause is still on.</p>
+          <label class="check" id="app-askback-row" hidden><input type="checkbox" id="app-askback"> Ask when I come back</label>
+          <p class="hint" id="app-askback-hint" hidden>Back after time away (<span id="app-askback-min">15</span> minutes or more, under three hours), a small panel near the menu bar offers to log it, for a call or a whiteboard: Break or Log This Time…. Ignored, it stays a break. Changes at once, no Save needed.</p>
           <div id="aw-setup" hidden>
             <p class="status" id="aw-timeout"></p>
             <p class="hint" id="aw-fix-hint" hidden>Fix changes that one line in ActivityWatch's file and keeps a copy of the file next to it, then restarts ActivityWatch. Days already recorded keep their breaks: the new timeout applies to new data only.</p>
@@ -441,6 +443,7 @@
 <script src="/static/js/logs.js"></script>
 <script src="/static/js/trackcheck.js"></script>
 <script src="/static/js/pause.js"></script>
+<script src="/static/js/awayback.js"></script>
 <script src="/static/js/native.js"></script>
 <script src="/static/js/main.js"></script>
 </body>

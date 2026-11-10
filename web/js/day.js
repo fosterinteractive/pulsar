@@ -185,10 +185,14 @@ function logStretch(a, b, exact = false) {
 /* time away logged after all (its popover's button, or the window's right-click menu): the log dialog on the stretch,
    leading with the task of the work just before you left, a call about the same thing being the usual case: the entry
    that ended within the hour before, else what the 30 minutes before held (leadFor) */
+const entryEnd = x => x.e ?? x.s + x.minutes;
+/* the logged entry with a task that ended within the hour before minute `a` (the work just before you left), or null */
+function entryBefore(entries, a) {
+  return (entries || []).filter(x => x.s != null && x.taskId && entryEnd(x) <= a + 5 && entryEnd(x) >= a - 60)
+    .sort((p, q) => entryEnd(q) - entryEnd(p))[0] || null;
+}
 function logAway(a, b) {
-  const end = x => x.e ?? x.s + x.minutes;
-  const before = (state.logged?.entries || []).filter(x => x.s != null && x.taskId && end(x) <= a + 5 && end(x) >= a - 60)
-    .sort((p, q) => end(q) - end(p))[0];
+  const end = entryEnd, before = entryBefore(state.logged?.entries, a);
   const from = Math.max(0, a - 30), held = before ? null : leadFor(from, a, rulesInRange(from, a));
   openLog({start: a, minutes: realMinutes(state.date, a, b),
            lead: before ? {label: 'Before you left', tasks: [{taskId: before.taskId, title: before.task, project: before.project,
@@ -485,11 +489,11 @@ function render() {
           title="Not work (you said so): ${hm(a)}–${hm(b)}. Click to count it as work again." tabindex="0" role="button"
           aria-label="Not work, ${hm(a)}–${hm(b)}: count it as work again"></div>`;
       }
-      for (const [a, b] of pausedSpans()) {  // the pause still on (pause.js): counted nowhere, and a click resumes
+      for (const [a, b] of pausedSpans()) {  // the pause still on (pause.js): counted nowhere; a click says so, with Resume
         for (let m = a; m < b && m < end; m++) covered[m] = 1;
         html += `<div class="nwrail pauserail" style="top:${a * ppm}px;height:${(b - a) * ppm}px"
-          title="Paused since ${esc(PAUSE.sinceText || '')}: not work. Click to resume." tabindex="0" role="button"
-          aria-label="Paused since ${esc(PAUSE.sinceText || '')}: resume"></div>`;
+          title="Paused since ${esc(PAUSE.sinceText || '')}: not work" tabindex="0" role="button"
+          aria-label="Paused since ${esc(PAUSE.sinceText || '')}: not work"></div>`;
       }
       const doneDay = !!dayDone();
       let runStart = -1;
@@ -903,7 +907,14 @@ async function markDay(change, said = '', undo = null) {
   return true;
 }
 document.addEventListener('click', ev => {
-  if (ev.target.closest('.pauserail')) { $('#pause-btn').click(); return; }  // pause.js: resume, or ask from when
+  const pr = ev.target.closest('.pauserail');
+  if (pr) {  // the pause still on: what it is, and Resume only from its own button (a stray click resumes nothing)
+    openPop(`<div class="ph"><div><h3>Paused</h3><div class="sub">since ${esc(PAUSE.sinceText || '')}${PAUSE.minutes != null ? ` · ${dur(PAUSE.minutes)}` : ''}</div></div>
+      <button class="btn bordered sm" data-pause-resume>Resume</button></div>
+      <p>Nothing counts as work while Pulsar is paused. Resume when you are back, here or at the top.</p>`, ev);
+    return;
+  }
+  if (ev.target.closest('[data-pause-resume]')) { closePop(); $('#pause-btn').click(); return; }  // pause.js: resume, or ask from when
   const nw = ev.target.closest('.nwrail');
   if (nw) { const a = +nw.dataset.nwA, b = +nw.dataset.nwB; markDay({remove: [a, b]}, `${hm(a)}–${hm(b)} counts as work again.`); return; }
   const dm = ev.target.closest('[data-day-mark]');

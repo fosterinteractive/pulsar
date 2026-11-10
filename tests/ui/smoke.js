@@ -263,6 +263,18 @@ try {
     check('the accent carries text at 4.5:1 in every Mac accent', !bad.length, bad.join(' | ') || 'blue, yellow, orange, green, pink, both themes');
   }
 
+  // Ask when I come back: on by default in the window, its threshold, and what the panel would say (never shown here)
+  {
+    const n = appNative(), t0 = new Date(), at = (h, m) => new Date(t0.getFullYear(), t0.getMonth(), t0.getDate(), h, m).getTime() / 1000;
+    const midnight = state.date === todayLocal() && TZ === Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const ok = midnight ? await awayBack(at(0, 5), at(0, 50)) : 'skipped';
+    const short = midnight ? await awayBack(at(0, 5), at(0, 7)) : null, off = midnight ? await awayBack(at(0, 5), at(4, 0)) : null;
+    const expect = !midnight || (PAUSE.paused ? ok === null : !!ok && /^Away .+ · 45 min$/.test(ok.title));
+    check('Ask when I come back: on, and what it offers', (!n || n.askBack === undefined || (n.askBack === true && !q('#app-askback-row').hidden))
+      && awayAskAfter() >= (CONFIG.awayAfter || 15) && expect && short === null && off === null,
+      `${n?.askBack === undefined ? 'no window setting' : 'on ' + n.askBack}, from ${awayAskAfter()} min, ${JSON.stringify(ok)}${PAUSE.paused ? ' (paused)' : ''}`);
+  }
+
   check('no page errors during the run', !errors.length, errors.join(' | ') || 'none');
 } catch (e) {
   check('the script ran to the end', false, `${e.name}: ${e.message}`);

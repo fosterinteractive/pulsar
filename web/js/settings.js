@@ -167,8 +167,11 @@ const appNative = () => (window.PULSAR_APP && typeof window.PULSAR_APP === 'obje
 function paintApp(n = appNative()) {
   const sec = $('#app-sec'), can = !!(n && window.pulsarNative?.setNativePrefs);
   sec.hidden = !can;
-  if (!can) return;
+  if (!can) { $('#app-askback-row').hidden = $('#app-askback-hint').hidden = true; return; }
   $('#app-menubar-row').hidden = n.menubar === undefined;  // a window older than 1.6.3 has no menu bar item
+  $('#app-askback-row').hidden = $('#app-askback-hint').hidden = n.askBack === undefined;  // awayback.js: 1.6.12's window
+  $('#app-askback').checked = n.askBack !== false;
+  $('#app-askback-min').textContent = String(awayAskAfter());
   $('#app-menubar').checked = n.menubar !== false;
   $('#app-badge').checked = !!n.badge;
   $('#app-reminder').checked = !!n.reminder;

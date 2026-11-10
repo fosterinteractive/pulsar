@@ -98,7 +98,8 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
     // MARK: start
 
     func applicationWillFinishLaunching(_ note: Notification) {
-        defaults.register(defaults: ["menubar": true, "badge": true, "reminder": true, "reminderTime": "17:30", "pageZoom": 1.0])
+        defaults.register(defaults: ["menubar": true, "badge": true, "reminder": true, "reminderTime": "17:30", "pageZoom": 1.0,
+                                     "askBack": true, "awayAsk": 15])
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         let logDay = UNNotificationAction(identifier: "logday", title: "Log the Day", options: [.foreground])
@@ -114,6 +115,8 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
         let timer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in self?.checkReminder() }
         RunLoop.main.add(timer, forMode: .common)
         reminder = timer
+        let idle = Timer(timeInterval: 5, repeats: true) { [weak self] _ in self?.checkIdle() }
+        RunLoop.main.add(idle, forMode: .common)
         start()
         if !launchedAtLogin() { NSApp.activate(ignoringOtherApps: true) }  // at login: no taking the keyboard away
     }
@@ -374,7 +377,8 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
 
     private func nativePrefs() -> [String: Any] {
         ["menubar": defaults.bool(forKey: "menubar"), "badge": defaults.bool(forKey: "badge"), "reminder": defaults.bool(forKey: "reminder"),
-         "reminderTime": defaults.string(forKey: "reminderTime") ?? "17:30", "login": loginStatus()]
+         "reminderTime": defaults.string(forKey: "reminderTime") ?? "17:30", "login": loginStatus(),
+         "askBack": defaults.bool(forKey: "askBack"), "awayAsk": defaults.integer(forKey: "awayAsk")]
     }
 
     /// The page's theme on the window too: the title bar's colour and light or dark, so the two never disagree.
@@ -874,6 +878,111 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
         }
     }
 
+    // MARK: back from time away (Settings > Away > Ask when I come back)
+
+    private var idleLast: (at: Date, idle: Double)?
+    private var backPanel: NSPanel?
+    private var backOffer: [String: Any] = [:]
+    private var backClose: Timer?
+
+    /// Every 5 seconds: how long since the last key or mouse input, as macOS counts it. Back after `awayAsk` minutes
+    /// (the page's Away after, or ActivityWatch's AFK timeout when longer) and under three hours (time off), measured
+    /// on the wall clock so a Mac that slept counts too: the page says whether to offer logging it (pulsarNative.awayBack:
+    /// not while paused, not for time logged or in a meeting), and a small panel near the menu bar offers it.
+    private func checkIdle() {
+        guard defaults.bool(forKey: "askBack"), isPulsar(web.url) else { idleLast = nil; return }
+        let now = Date()
+        let idle = CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
+        defer { idleLast = (now, idle) }
+        guard let last = idleLast, idle < 30 else { return }   // back: input within the last half minute
+        let from = last.at.addingTimeInterval(-last.idle), to = now.addingTimeInterval(-idle)
+        let gap = to.timeIntervalSince(from), least = Double(max(5, defaults.integer(forKey: "awayAsk"))) * 60
+        guard gap >= least, gap < 3 * 3600 else { return }   // a lid closed right after typing counts too
+        web.callAsyncJavaScript("return window.pulsarNative && pulsarNative.awayBack ? await pulsarNative.awayBack(from, to) : null",
+                                arguments: ["from": from.timeIntervalSince1970, "to": to.timeIntervalSince1970],
+                                in: nil, in: .page) { result in
+            guard case .success(let value) = result, let offer = value as? [String: Any] else { return }
+            self.showBack(offer)
+        }
+    }
+
+    /// "Away 14:10–14:45 · 35 min", the task before, Break and Log This Time…: under the menu bar item, or at the top
+    /// right of the screen without it. It takes no focus, follows Pulsar's theme, and goes after 20 seconds: ignored,
+    /// the time stays a break.
+    private func showBack(_ offer: [String: Any]) {
+        guard let title = offer["title"] as? String, offer["a"] != nil, offer["b"] != nil else { return }
+        closeBack()
+        let size = NSSize(width: 330, height: 108)
+        let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView],
+                            backing: .buffered, defer: false)
+        panel.titleVisibility = .hidden
+        panel.titlebarAppearsTransparent = true
+        for b in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] { panel.standardWindowButton(b)?.isHidden = true }
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.isMovableByWindowBackground = true
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.appearance = window.appearance
+        let back = NSVisualEffectView()
+        back.material = .popover
+        back.state = .active
+        panel.contentView = back
+        let head = NSTextField(labelWithString: title)
+        head.font = .boldSystemFont(ofSize: 13)
+        let sub = NSTextField(labelWithString: (offer["task"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Was it work? A call, a whiteboard…")
+        sub.font = .systemFont(ofSize: 12)
+        sub.textColor = .secondaryLabelColor
+        sub.lineBreakMode = .byTruncatingTail
+        let brk = NSButton(title: "Break", target: self, action: #selector(backBreak))
+        let log = NSButton(title: "Log This Time…", target: self, action: #selector(backLog))
+        log.keyEquivalent = "\r"   // drawn as the main button; the panel takes no keys
+        let buttons = NSStackView(views: [brk, log])
+        buttons.spacing = 8
+        let column = NSStackView(views: [head, sub, buttons])
+        column.orientation = .vertical
+        column.alignment = .leading
+        column.spacing = 4
+        column.setCustomSpacing(12, after: sub)
+        column.translatesAutoresizingMaskIntoConstraints = false
+        back.addSubview(column)
+        NSLayoutConstraint.activate([
+            column.leadingAnchor.constraint(equalTo: back.leadingAnchor, constant: 16),
+            column.trailingAnchor.constraint(lessThanOrEqualTo: back.trailingAnchor, constant: -16),
+            column.topAnchor.constraint(equalTo: back.topAnchor, constant: 14),
+            sub.widthAnchor.constraint(lessThanOrEqualToConstant: size.width - 32)])
+        let screen = (statusItem?.button?.window?.screen ?? NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? .zero
+        var origin = NSPoint(x: screen.maxX - size.width - 12, y: screen.maxY - size.height - 12)
+        if let item = statusItem?.button?.window?.frame {   // just under Pulsar's item in the menu bar
+            origin = NSPoint(x: min(max(screen.minX + 12, item.midX - size.width / 2), screen.maxX - size.width - 12),
+                             y: screen.maxY - size.height - 6)
+        }
+        panel.setFrameOrigin(origin)
+        panel.orderFrontRegardless()
+        NSAccessibility.post(element: panel, notification: .announcementRequested,
+                             userInfo: [.announcement: "Pulsar: \(title). Break or log this time.",
+                                        .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        backPanel = panel
+        backOffer = offer
+        backClose = Timer.scheduledTimer(withTimeInterval: 20, repeats: false) { [weak self] _ in self?.closeBack() }
+    }
+
+    @objc private func backBreak() { closeBack() }
+
+    @objc private func backLog() {
+        let offer = backOffer
+        closeBack()
+        showWindow()
+        runPage("awayLog", ["a": offer["a"] ?? 0, "b": offer["b"] ?? 0])
+    }
+
+    private func closeBack() {
+        backClose?.invalidate()
+        backClose = nil
+        backPanel?.orderOut(nil)
+        backPanel = nil
+    }
+
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                 withCompletionHandler done: @escaping () -> Void) {
         DispatchQueue.main.async {
@@ -1006,6 +1115,20 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
             NSApp.terminate(nil)
         case "prefs":  // the page's Settings: {set: {badge, reminder, reminderTime, login}}
             setPrefs(body["set"] as? [String: Any] ?? [:])
+        #if PULSAR_TEST
+        case "testBack":   // the test build only: the back-from-away panel with a made-up offer, drawn into PULSAR_TEST_DIR
+            showBack(body["offer"] as? [String: Any] ?? [:])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                guard let dir = ProcessInfo.processInfo.environment["PULSAR_TEST_DIR"], let view = self.backPanel?.contentView,
+                      let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+                view.cacheDisplay(in: view.bounds, to: rep)
+                try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: dir).appendingPathComponent("back.png"))
+                let frame = self.backPanel?.frame ?? .zero
+                try? "\(Int(frame.minX)) \(Int(frame.minY)) \(Int(frame.width)) \(Int(frame.height))".write(
+                    to: URL(fileURLWithPath: dir).appendingPathComponent("back.txt"), atomically: true, encoding: .utf8)
+                self.closeBack()
+            }
+        #endif
         case "openLoginItems":
             if #available(macOS 13.0, *) { SMAppService.openSystemSettingsLoginItems() }
         case "ask":    // {id, what: "prefs"}: answered with pulsarNative.answer(id, value)
@@ -1028,6 +1151,8 @@ final class PulsarWindow: NSObject, NSApplicationDelegate, NSWindowDelegate, NSM
             defaults.removeObject(forKey: "reminded")   // a later time today may still remind
         }
         if let on = set["login"] as? Bool { problem = setLogin(on) }
+        if let on = set["askBack"] as? Bool { defaults.set(on, forKey: "askBack"); if !on { closeBack() } }
+        if let m = (set["awayAsk"] as? NSNumber)?.intValue, (5...240).contains(m) { defaults.set(m, forKey: "awayAsk") }
         injectShell()
         callPage("prefs(\(Self.json(systemPrefs())), \(Self.json(nativePrefs())), \(Self.json(problem)))")
     }

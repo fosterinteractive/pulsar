@@ -258,6 +258,7 @@
     settings: () => { if (fn(window.openSettings)) openSettings(); },
     pause: () => { if (typeof PAUSE === 'object' && !PAUSE.paused) startPause(); },   // the Dock icon's menu, the menu bar
     resume: () => { if (typeof PAUSE === 'object' && PAUSE.paused) resumePause(); },
+    awayLog: arg => { if (fn(window.awayLog)) awayLog(arg); },   // the window's "back from time away" panel
     checkUpdates: () => { if (fn(window.openSettings)) openSettings('t-upd'); click('#update-check'); },
     logs: () => click('#open-logs'),
   };
@@ -413,11 +414,12 @@
   }
   window.pulsarNative = {
     app: SHELL, run, closeTop, unsaved, wake, menuPick, todayUnlogged,
+    awayBack: (from, to) => (fn(window.awayBack) ? awayBack(from, to) : null),  // awayback.js
     prefs: (prefs, native, problem) => { setPrefs(prefs, native); if (problem) toast(problem, true); },
     answer: (id, value) => { const f = asks.get(id); if (f) { asks.delete(id); f(value); } },
     /* for Settings (the page's own controls): {system, native} now, and changes to the app's own choices */
     nativePrefs: () => ask('prefs'),
-    setNativePrefs: set => send({action: 'prefs', set}),  // {badge, reminder, reminderTime: "17:30", login}
+    setNativePrefs: set => send({action: 'prefs', set}),  // {badge, reminder, reminderTime: "17:30", login, askBack, awayAsk}
     openLoginItems: () => send({action: 'openLoginItems'}),
   };
   report();
