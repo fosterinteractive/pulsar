@@ -1010,6 +1010,78 @@ class LearnWordsTest(unittest.TestCase):
         self.assertEqual(ids(learn.first_offers([{"taskId": "b"}, {"taskId": "L"}], last, None)), ["L", "b"])  # moved up
         self.assertEqual(ids(learn.first_offers([], last, fresh)), ["L", "N"])
         self.assertEqual(learn.first_offers(unsure), unsure)
+        # a session never logged (new work): the task assigned to you first, the last task second; a sure offer stays
+        self.assertEqual(ids(learn.first_offers(unsure, last, fresh, new=True)), ["N", "L", "a", "b"])
+        self.assertEqual(ids(learn.first_offers(unsure, last, None, new=True)), ["a", "L", "b"])
+        self.assertEqual(ids(learn.first_offers(named, last, fresh, new=True)), ["w", "N"])
+        # new: no vote for the session's keys, unless your new sessions mostly went on with the last task
+        self.assertTrue(learn.new_work(["k"], {}, None))
+        self.assertFalse(learn.new_work(["k"], {"k": {"1": [3.0, 10]}}, None))
+        self.assertFalse(learn.new_work([], {}, None))
+        self.assertFalse(learn.new_work(["k"], {}, (0.6, 200.0)))
+        self.assertTrue(learn.new_work(["k"], {}, (0.6, 50.0)))   # too few minutes to say
+        self.assertTrue(learn.new_work(["k"], {}, (0.2, 900.0)))
+        # a task assigned to you that the work names: first, as the plan picks it; second after a sure vote
+        asked = {"taskId": "A", "named": True}
+        self.assertEqual(ids(learn.first_offers(unsure, last, fresh, asked)), ["A", "N", "L", "a", "b"])
+        self.assertEqual(ids(learn.first_offers(unsure, last, asked, asked)), ["A", "L", "a", "b"])
+        self.assertEqual(ids(learn.first_offers(sure, last, fresh, asked)), ["a", "N", "A", "b"])
+        # a never-logged session whose work names a task assigned to you: that task first, marked for the plan
+        self.assertEqual(ids(learn.first_offers(unsure, last, fresh, asked, new=True)), ["A", "N", "L", "a", "b"])
+        got = learn.first_offers(unsure, last, asked, asked, new=True)
+        self.assertEqual(ids(got), ["A", "L", "a", "b"])
+        self.assertTrue(got[0].get("named"))
+
+    def test_assigned_named_is_the_assigned_task_whose_name_the_work_says(self):
+        from pulsar import learn
+        tasks = [{"taskId": "1", "title": "Blog feature fixes", "project": "Acme Support", "created": "2026-11-02"},
+                 {"taskId": "2", "title": "Footer links", "project": "Acme Support", "created": "2026-11-03"},
+                 {"taskId": "3", "title": "Blog listing order", "project": "Acme Support", "created": "2026-11-01"}]
+        got = learn.assigned_named(tasks, "the blog listing shows the oldest first", frozenset())
+        self.assertEqual((got["taskId"], got["assigned"], got["named"]), ("3", True, True))  # most words in common
+        self.assertIn("the work names it: blog, listing", got["why"])
+        self.assertEqual(learn.assigned_named(tasks, "blog posts", frozenset())["taskId"], "1")  # newest on a tie
+        # the project's own name says nothing: every task of the project has it
+        self.assertIsNone(learn.assigned_named(tasks, "acme support site", frozenset()))
+        self.assertIsNone(learn.assigned_named(tasks, "", frozenset()))
+        self.assertIsNone(learn.assigned_named([], "blog", frozenset()))
+
+    def test_first_offers_put_the_task_logged_before_the_last_one_third(self):
+        """Replay of 43 days (2026-11-10): the right task among the first three offers on 67.1% of rows instead of
+        64.9% (74.2% of their minutes instead of 72.5%)."""
+        from pulsar import learn
+        last, fresh, prev = {"taskId": "L"}, {"taskId": "N"}, {"taskId": "P"}
+        ids = lambda xs: [x["taskId"] for x in xs]  # noqa: E731
+        unsure = [{"taskId": "a", "why": "logged while in this Claude session: 1 h", "share": 0.4}, {"taskId": "b", "why": "x"}]
+        self.assertEqual(ids(learn.first_offers(unsure, last, fresh, previous=prev)), ["L", "N", "P", "a", "b"])
+        self.assertEqual(ids(learn.first_offers(unsure, last, None, previous=prev)), ["L", "a", "P", "b"])
+        sure = [{**unsure[0], "share": 0.7}, unsure[1]]
+        self.assertEqual(ids(learn.first_offers(sure, last, fresh, previous=prev)), ["a", "N", "P", "b"])  # a sure vote stays first
+        moved = [{"taskId": "b"}, {"taskId": "c"}, {"taskId": "P"}]
+        self.assertEqual(ids(learn.first_offers(moved, last, fresh, previous=prev)), ["L", "N", "P", "b", "c"])  # moved up
+        self.assertEqual(ids(learn.first_offers(unsure, last, fresh)), ["L", "N", "a", "b"])
+
+    def test_the_task_logged_before_the_last_one_never_depends_on_reading_order(self):
+        from pulsar import attribution
+        rows = [{"date": "2026-11-03", "taskId": "1", "project": "P", "minutes": 30, "start": 1000.0},
+                {"date": "2026-11-03", "taskId": "2", "project": "P", "minutes": 30, "start": 9000.0},  # logged later
+                {"date": "2026-11-02", "taskId": "2", "project": "P", "minutes": 300, "start": 99999.0},
+                {"date": "2026-11-02", "taskId": "3", "project": "P", "minutes": 60},
+                {"date": "2026-11-02", "taskId": "5", "project": "P", "minutes": 60},     # a tie with 3: the lower id
+                {"date": "2026-11-04", "taskId": "8", "project": "P", "minutes": 60},     # the day itself: not before it
+                {"date": "2026-11-03", "taskId": "7", "project": "P", "minutes": 90, "start": 99999.0, "meeting": True},
+                {"date": "2026-11-01", "taskId": "6", "project": "Q", "minutes": 45}]
+        for order in (rows, rows[::-1]):
+            got = attribution.latest_tasks(order, "2026-11-04")
+            self.assertEqual(got["2"], ("2026-11-03", 10800.0, "P"))
+            self.assertNotIn("8", got)
+            self.assertNotIn("7", got)
+            self.assertEqual(attribution.latest_in(got, {"P"}), ("2026-11-03", "2", "P"))
+            self.assertEqual(attribution.latest_in(got, {"P"}, {"2"}), ("2026-11-03", "1", "P"))
+            self.assertEqual(attribution.latest_in(got, {"P"}, {"2", "1"}), ("2026-11-02", "3", "P"))
+            self.assertEqual(attribution.latest_in(got, {"P", "Q"}, {"2", "1", "3", "5"}), ("2026-11-01", "6", "Q"))
+        self.assertIsNone(attribution.latest_in({}, {"P"}))
+        self.assertIsNone(attribution.latest_in(attribution.latest_tasks(rows, "2026-11-04"), {"Z"}))
 
     def test_each_projects_last_day_task_never_depends_on_reading_order(self):
         from pulsar import attribution
@@ -1045,10 +1117,32 @@ class LearnWordsTest(unittest.TestCase):
             learn.annotate(proposal, "2026-11-04", {"person_name": "Nick Example", "person_id": "77"}, self.ENTRIES, [],
                            ZoneInfo("UTC"), pool=pool)
         got = proposal["entries"][0]["learned"]
-        self.assertEqual([x["taskId"] for x in got[:2]], ["2", "9"])
-        self.assertEqual(got[0]["why"], "the task you logged last in Law Faculty (2026-11-03)")
-        self.assertTrue(got[1]["assigned"] and "assigned to you on 2026-11-02" in got[1]["why"])
-        self.assertNotIn("new", got[1])  # an offer only: the plan never picks it for being new
+        # a session never logged (no votes: new work): the task assigned to you first, the last task second
+        self.assertEqual([x["taskId"] for x in got[:2]], ["9", "2"])
+        self.assertTrue(got[0]["assigned"] and "assigned to you on 2026-11-02" in got[0]["why"])
+        self.assertNotIn("new", got[0])  # an offer only: the plan never picks it for being new
+        self.assertEqual(got[1]["why"], "the task you logged last in Law Faculty (2026-11-03)")
+        # third, the task you logged in that project before the last one
+        self.assertEqual((got[2]["taskId"], got[2]["why"]), ("3", "you logged it in Law Faculty on 2026-10-06"))
+        # a session logged before: the last task first, the assigned one second
+        proposal = {"entries": [{"s": 600, "e": 660, "project": "law-site", "titles": ["Morning work session"]}]}
+        voted = ({learn.key("Morning work session"): {"3": [5.0, 30]}}, {}, {})
+        with mock.patch.object(learn, "warm", lambda *a: None), mock.patch.object(learn, "_stored", lambda d: None), \
+             mock.patch.object(sessions, "PROJECTS_DIR", empty), mock.patch.object(learn, "votes", lambda *a: voted), \
+             mock.patch.object(learn, "work_projects", lambda at, *a: {"Law Faculty"} if at == "law-site" else set()):
+            learn.annotate(proposal, "2026-11-04", {"person_name": "Nick Example", "person_id": "77"}, self.ENTRIES, [],
+                           ZoneInfo("UTC"), pool=pool)
+        self.assertEqual([x["taskId"] for x in proposal["entries"][0]["learned"][:2]], ["2", "9"])
+        # the work names the task assigned to you (a new session too): it is first, marked for the plan to pick
+        proposal = {"entries": [{"s": 600, "e": 660, "project": "law-site", "titles": ["Hero banner autoplay"]}]}
+        with mock.patch.object(learn, "warm", lambda *a: None), mock.patch.object(learn, "_stored", lambda d: None), \
+             mock.patch.object(sessions, "PROJECTS_DIR", empty), \
+             mock.patch.object(learn, "work_projects", lambda at, *a: {"Law Faculty"} if at == "law-site" else set()):
+            learn.annotate(proposal, "2026-11-04", {"person_name": "Nick Example", "person_id": "77"}, self.ENTRIES, [],
+                           ZoneInfo("UTC"), pool=pool)
+        got = proposal["entries"][0]["learned"]
+        self.assertEqual([x["taskId"] for x in got[:2]], ["9", "2"])
+        self.assertTrue(got[0]["named"] and "the work names it: hero, banner" in got[0]["why"])
 
     def test_a_later_stretch_of_the_same_session_goes_on_with_the_task_its_work_named(self):
         """2026-11-09: "D11 db upgrade" named the task at 13:21; at 14:00 only "go on, I back up live myself" was typed,

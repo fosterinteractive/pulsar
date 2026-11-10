@@ -3,7 +3,7 @@
     ... python3 -E -s -B variants.py <worktree> name key=value [key=value ...] [--first D] [--exclude ...] [--no-seq]
 
 keys: pool (0/1: offer tasks you never logged to, from data/tasks.json), strict (1: only tasks created before the
-day), place (their place in the list), replies (0/1), newmin, pickmin (floats). Writes <PULSAR_REPLAY_DIR>/var-<name>.json.
+day), place (their place in the list), replies (0/1), newmin (float). Writes <PULSAR_REPLAY_DIR>/var-<name>.json.
 """
 import json
 import os
@@ -14,7 +14,7 @@ import replay as R
 
 name = sys.argv[2]
 sets = dict(a.split("=", 1) for a in sys.argv[3:] if "=" in a and not a.startswith("--"))
-dp, lr = R.dayplan, R.learning
+lr = R.learning
 if sets.get("pool", "0") == "1":
     tasks = json.load(open(os.path.join(R.DATA, "tasks.json")))["tasks"]
     if sets.get("strict") == "1":  # created before the day began: as if the person never made a task that day
@@ -25,7 +25,6 @@ if sets.get("pool", "0") == "1":
 lr.NEW_PLACE = int(sets.get("place", lr.NEW_PLACE))
 lr.NEW_REPLIES = sets.get("replies", "1" if lr.NEW_REPLIES else "0") == "1"
 lr.NEW_MIN = float(sets.get("newmin", lr.NEW_MIN))
-dp.NEW_PICK_MIN = float(sets.get("pickmin", dp.NEW_PICK_MIN))
 days, crashes, _ = A.run_all()
 sm = A.summary(days)
 print(f"{name:14s} {A.short(sm)} | crashes {len(crashes)}", flush=True)

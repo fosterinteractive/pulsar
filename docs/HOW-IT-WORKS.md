@@ -540,7 +540,8 @@ it out. In a company where everyone has a "Scrum - Name" task, yours is then fir
 task of the first group is picked for you; nothing is logged until you click.
 
 The service list is the task's project's services that take time on that date (`bookable_services`); the one you
-used last on that task is picked, else one with the same name in a newer budget, else the task's own. A blocked task
+used last on that task is picked, else one with the same name in a newer budget, else the task's own, else, for a task
+you have not logged to lately, the one you used last in its project. A blocked task
 says so before you log.
 
 The start is a 24-hour `HH:MM` text field, like every time in Pulsar (`9:30`, `930` and `9.30` become `09:30`; a
@@ -830,7 +831,9 @@ claim wins:
    in front (a **shared** row); then the rest of the work in front. The agents' other background time is noted, never
    placed ("Left out: pulsar 48 min (ran in parallel)");
 4. on free active minutes only: calendar meetings with no call seen, and work outside Claude, an editor or terminal
-   with no session row included (it takes the task of the work next to it, never a meeting's, and starts unticked).
+   with no session row included (it takes the task of the work right after it in the same sitting, reading the ticket
+   before the session on it, else of the work before it; never a meeting's, and it starts unticked. A glance shorter
+   than an entry joins the work right after it too, except a meeting attended, which keeps its own time).
 
 **Parallel work.** Each stretch of work has a billing class (`attribution.segment_class`): from a rule, a task link or
 a ticket key in the work itself, the class of that task; else the repository's 60 days of logged minutes (75% or more
@@ -915,7 +918,16 @@ ticket key in the title, the tasks logged in the same session in the same reposi
 project that the work names (`learn.work_match`, below; unticked, and never replaced by a new task), then the same
 repository
 (votes from the last 60 days, older days counting half every 7 days), the same session earlier that day, and task
-names that share words with the work (your own name and common words such as "not" and "the" do not count). A
+names that share words with the work (your own name and common words such as "not" and "the" do not count; one word
+in common counts only when it is part of the repository's name: a single "page" or "editor" named another client's
+task on all its minutes). Where no answer is sure, the task you logged last in the repository's project comes before
+the weaker ones, except for a session never logged before (no votes for its titles anywhere: new work), where it is
+the last alternative (it was right on 3% of such sessions' minutes, 60% of the others'), unless your own history
+shows your new sessions mostly going on with it (`attribution.new_session_habit`). A task assigned to you in the
+last three days in the repository's project, with no entry of yours yet, whose name the work names
+(`learn.assigned_named`, your project's own name words left out) goes above that last task, never above a sure
+session vote, a rule, a link or a ticket key (right on 52% of the minutes it took, where the last task was right on
+11%). A
 session's history applies per repository (`attribution.session_votes`): its votes from another repository count only
 for a task this repository is logged to (a quarter of its votes or more, once it has an hour of them, `dayplan.fits`),
 or when the session has been in this repository all day (`single`) and four fifths of its votes are one project's
@@ -925,10 +937,12 @@ databases in turn offered the first client's task on the fifth site). A path a c
 `$HOME/Sites/x` is that repository, as its full path is (`sessions.find_paths`). On internal work a
 client's task is the pick only from a rule, a link or a ticket key in that work; on a client's repository, another
 client's task from the session's history is never the pick; with no task the class admits, no task rather than a
-wrong billable one (`dayplan.admissible`; such tasks stay among the alternatives). So QA hub work for a client goes to
-that client when the work names the client's task. A task you never logged to that the work
-names (5.5) is the first alternative, and the pick where the answer is unsure and not one you gave (a rule, a link, a
-ticket key): a ticket key it names, or words it shares strongly (cosine 0.5). A repository you work in for an hour or
+wrong billable one (`dayplan.admissible`; such tasks stay among the alternatives); a task you never logged to is judged
+by its Productive project (`dayplan.task_project`), so a client's new task is never the pick on internal work either.
+So QA hub work for a client goes to that client when the work names the client's task. A task you never logged to that
+the work names (5.5) is the first alternative, and the pick where the answer is unsure and not one you gave (a rule, a
+link, a ticket key) only when the work names its ticket key: picked by shared words alone it was right on 9% of its
+minutes. A repository you work in for an hour or
 more and log under a tenth of is set aside as one you never log; days with entries that have no start time do not
 count, since they cannot be matched to the work. Confidence: high, medium or low, in words and a three-bar meter; the
 same session's votes are high from 60% (and 30 minutes), else low. **Unticked at the start**: low confidence, no task,
@@ -948,7 +962,7 @@ person or someone of their own company organized it (`calendar.outside`), and on
 not used as the note"), and so does a series whose title is not the one it had the last time you logged it
 (`server.meeting_tasks` keeps that title as `lastTitle`; "This meeting's title changed since you last logged it"). An
 event organized outside gives no note and keeps its tick: its task comes from what you logged during it before. The
-log dialog's **Log this time** on a meeting fills the note in from the same `note`. The **service** is the one last used on the task, checked against the services that take time on that
+log dialog's **Log this time** on a meeting fills the note in from the same `note`. The **service** is the one last used on the task, the day's own entries included (as in the log dialog: a task first logged that morning keeps that service), else, for a task never logged, the one used last in its project, checked against the services that take time on that
 date (`bookable_services`). With Productive unreadable, nothing is proposed. About 6 seconds for a day the first time,
 under a second after.
 
@@ -1364,7 +1378,7 @@ new session.
 | `pulsar_session` | the calling session's own minutes (Claude Code gives every MCP server `CLAUDE_CODE_SESSION_ID`; Likely rows carry their sessions' ids), by repository, with a task for each and what is not logged yet; `givenAway`: a row's minutes another session's client agent got as a shared row (never in `notLoggedYet`); a background row (`shared`) for the minutes this session's agent got that way; stretches another session also had are kept apart, and so are stretches whose task already has time logged that day with no start time (`maybeLoggedWithoutStart`, with a warning: no overlap check sees such time, and it may be this work) |
 | `pulsar_suggest` | the log dialog's task list for one stretch |
 | `pulsar_tasks` | tasks logged to lately (with the service used last), assigned ones, and a Productive search |
-| `pulsar_preview` | read only: services resolved, notes checked (`guard_note`), every entry through `server.api_log` with `dry` (overlaps, the journal); with no problem, a code of 16 hex characters (once, 10 minutes) holding exactly those entries, and `summary`, Pulsar's own text of what would be written, one line per entry: `Wed 4 Nov 2026 09:00-10:00 (60 min): Build (Acme), Dev in B, billable. Note: "Search fixed."` (an entry over a shared row of the day's plan says so before the note: "Its agent ran while you did internal work."; when the task already has time logged that day with no start time, the line ends "This task already has 120 min logged that day with no start time: check it is not this work."; the budget after "in"; names without control, format or direction characters and without double quotation marks; a note is one line, at most 200 characters, passes `guard_note`, and has no double quotation mark of any script and no character nobody sees, so it cannot pass for the summary's own words or another entry) |
+| `pulsar_preview` | read only: services resolved (as the log dialog picks them), notes checked (`guard_note`), every entry through `server.api_log` with `dry` (overlaps, the journal); with no problem, a code of 16 hex characters (once, 10 minutes) holding exactly those entries, and `summary`, Pulsar's own text of what would be written, one line per entry: `Wed 4 Nov 2026 09:00-10:00 (60 min): Build (Acme), Dev in B, billable. Note: "Search fixed."` (an entry over a shared row of the day's plan says so before the note: "Its agent ran while you did internal work."; when the task already has time logged that day with no start time, the line ends "This task already has 120 min logged that day with no start time: check it is not this work."; the budget after "in"; names without control, format or direction characters and without double quotation marks; a note is one line, at most 200 characters, passes `guard_note`, and has no double quotation mark of any script and no character nobody sees, so it cannot pass for the summary's own words or another entry) |
 | `pulsar_log` | `code` (exactly as given) and `summary` (word for word), and no other argument: writes the entries the code holds through `server.api_log`, one at a time, journalled as a Log the day run (Undo works), stopping at the first that is not logged. Each result is `logged`, `not logged` (refused, with the reason), `not known` (no clear answer, an HTTP 5xx or any unexpected error: it may be in Productive, and the journal never sends it again) or `not sent` (after the stop, or once a minute has passed: `mcptools.LOG_BUDGET`, so the answer always comes back in time, and the rest are previewed again); what was written before a failure is always returned |
 
 A read tool that had to leave a source out (Likely, the activity, meetings, repeats, your tasks, the logged entries,

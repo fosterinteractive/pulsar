@@ -509,6 +509,22 @@ class LearningCreditTest(unittest.TestCase):
         ctx, _, _ = history(extra={d: (rows, [entry(d, 600, 60, "C1")])})
         self.assertIn("C1", ctx["repo"]["brand-new"])
 
+    def test_the_habit_of_new_sessions_counts_their_minutes_on_the_projects_last_task(self):
+        """Whether a session never logged before is new work or yesterday's work in a new window, from your own days."""
+        entries = [{"date": "2026-11-02", "taskId": "A", "project": "P", "minutes": 60},
+                   {"date": "2026-11-03", "taskId": "A", "project": "P", "minutes": 30},
+                   {"date": "2026-11-03", "taskId": "B", "project": "P", "minutes": 60},
+                   {"date": "2026-11-04", "taskId": "B", "project": "P", "minutes": 45}]
+        credited = [("2026-11-03", ["k1"], "site", "A", 30.0),   # a new session on the project's last task
+                    ("2026-11-03", ["k2"], "site", "B", 60.0),   # a new session on other work
+                    ("2026-11-04", ["k2"], "site", "B", 45.0),   # known by then: not counted
+                    ("2026-11-04", [], "site", "B", 10.0)]       # no title: nothing says it is new
+        habit = attribution.new_session_habit(credited, entries, lambda t: "P", "2026-11-01")
+        self.assertEqual(habit, (30 / 90, 90.0))
+        # the days before the start only make sessions known
+        self.assertEqual(attribution.new_session_habit(credited, entries, lambda t: "P", "2026-11-04"), (None, 0.0))
+        self.assertEqual(attribution.new_session_habit([], entries, lambda t: "P", "2026-11-01"), (None, 0.0))
+
     def test_pulsars_first_name_is_pulsar(self):
         self.assertEqual(attribution.repo_key("chronodeck"), "pulsar")
         self.assertEqual(attribution.repo_key("pulsar-preview"), "pulsar")
@@ -564,6 +580,41 @@ class FailureCaseTest(unittest.TestCase):
         [e] = plan([work(600, 660)], [front(600, 660, "internal-only", single=True)], ctx=ctx)["entries"]
         self.assertIsNone(e["taskId"])
         self.assertFalse(e["checked"])
+
+
+class ClientGateTest(unittest.TestCase):
+    """A task you never logged to is judged by its project, as one you logged to (dayplan.admissible): a client's
+    task is never the pick on internal work unless the work names it."""
+
+    def setUp(self):
+        extra = {f"2026-10-{d:02d}": ([{"k": [KEY], "p": "globex-site", "s": 800, "e": 860}], [entry(f"2026-10-{d:02d}", 800, 60, "G1")])
+                 for d in (14, 15, 16)}
+        self.ctx = {**history(extra=extra)[0], "lastday": {}}
+
+    def test_a_new_task_is_judged_by_its_project(self):
+        ctx = self.ctx
+        fresh = {"taskId": "77", "title": "Clientco hero autoplay", "project": "Clientco - Ongoing Support",
+                 "why": "named in this work: hero, autoplay (no entry of yours yet)", "key": False, "score": 0.8, "new": True}
+        self.assertEqual(dayplan.task_project("77", ctx, {"learned": [fresh]}), "Clientco - Ongoing Support")
+        self.assertEqual(dayplan.task_project("78", ctx, {}, [{"taskId": "78", "project": "FI-AI Tools"}]), "FI-AI Tools")
+        r = {**front(600, 660, "house-tool", titles=["Hero autoplay"]), "learned": [fresh]}
+        # internal work: the client's new task named only by words is offered, never picked
+        [e] = plan([work(600, 660)], [r], ctx=ctx)["entries"]
+        self.assertNotEqual(e["taskId"], "77")
+        self.assertIn("77", [a["taskId"] for a in e["alts"]])
+        # its ticket key named in the work decides it
+        [e] = plan([work(600, 660)], [{**r, "learned": [{**fresh, "key": True}]}], ctx=ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("77", "new"))
+        # on the client's own repository too its words alone only offer it (a task you never logged to is picked by
+        # its ticket key), and the key picks it there
+        [e] = plan([work(600, 660)], [{**r, "project": "client-web"}], ctx=ctx)["entries"]
+        self.assertNotEqual(e["taskId"], "77")
+        self.assertIn("77", [a["taskId"] for a in e["alts"]])
+        [e] = plan([work(600, 660)], [{**r, "project": "client-web", "learned": [{**fresh, "key": True}]}], ctx=ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("77", "new"))
+        # it is judged as the client's: the same client on the client's repository, not on another client's
+        self.assertTrue(dayplan.same_client(ctx, "client-web", "77", "Clientco - Ongoing Support"))
+        self.assertFalse(dayplan.same_client(ctx, "globex-site", "77", "Clientco - Ongoing Support"))
 
 
 class SharedTest(unittest.TestCase):

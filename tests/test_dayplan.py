@@ -67,6 +67,21 @@ class ProjectServiceTest(unittest.TestCase):
         self.assertEqual(dayplan.pick_service(self.S, "1", "AI Research", None, ("2", "Meetings"))["id"], "1")
         self.assertEqual(dayplan.pick_service(self.S, task_service="1", project_last=("2", "Meetings"))["id"], "1")
 
+    def test_the_service_remembered_is_the_one_logged_last(self):
+        """By date, then start, whatever order the rows come in; an entry with no start comes first in its day."""
+        service, project = {}, {}
+        rows = [{"date": "2026-11-03", "start": T0 - 3600, "taskId": "7", "serviceId": "2", "service": "Meetings",
+                 "project": "P"},
+                {"date": "2026-11-03", "start": T0 - 7200, "taskId": "7", "serviceId": "1", "service": "AI Research",
+                 "project": "P"},
+                {"date": "2026-11-03", "start": None, "taskId": "8", "serviceId": "1", "service": "AI Research",
+                 "project": "P"},
+                {"date": "2026-11-02", "start": T0, "taskId": "9", "serviceId": "3", "service": "Build", "project": "Q"},
+                {"date": "2026-11-03", "start": T0, "taskId": None, "serviceId": "4", "service": "x", "project": "Q"}]
+        dayplan.remember_services(service, project, rows)
+        self.assertEqual(service, {"7": ("2", "Meetings"), "8": ("1", "AI Research"), "9": ("3", "Build")})
+        self.assertEqual(project, {"P": ("2", "Meetings"), "Q": ("3", "Build")})
+
 
 class PlannerTest(unittest.TestCase):
     def setUp(self):
@@ -275,6 +290,11 @@ class PlannerTest(unittest.TestCase):
         [e] = p["entries"]
         self.assertEqual((e["taskId"], e["source"], e["alts"][0]["taskId"]), ("55", "claude", "44"))
         self.assertTrue(e["alts"][0]["why"].startswith("Pulsar's guess"))
+        # Claude's other option after it, then the rest, each once (the guess took the third place again)
+        pick = {**pick, "tasks": pick["tasks"] + [{"taskId": "66", "title": "Another", "project": "Q"}]}
+        rows = [{**rows[0], "learned": [{"taskId": "77", "title": "Learned", "project": "G", "why": "x"}]}]
+        [e] = dayplan.plan(day(items=[work(700, 740)], rows=rows, picks={"700|other": pick}), ctx)["entries"]
+        self.assertEqual([a["taskId"] for a in e["alts"]], ["44", "66", "77"])
 
     def test_the_results_never_call_an_unclear_row_not_written(self):
         """A row sent with no clear answer may be in Productive: the results say so, and a journal that could not be
@@ -384,12 +404,93 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual((editor["taskId"], editor["kind"], editor["s"], editor["minutes"], editor["checked"]),
                          ("11", "outside", 640, 30, False))
 
+    def test_work_outside_claude_goes_with_the_session_it_comes_before(self):
+        # reading the ticket in a browser, then the session on it: the browser's half hour is the second task's (replay:
+        # the person logged the work after such a stretch three times as often as the work before it)
+        items = [work(540, 600), work(600, 630, app="Safari", title="Ticket"), work(630, 690)]
+        p = dayplan.plan(day(items=items, rows=[row(540, 600), row(630, 690, titles=["Hero video"])]), self.ctx)
+        at = {x: e["taskId"] for e in p["entries"] for x in range(e["s"], e["e"])}
+        self.assertEqual({at.get(x) for x in range(540, 600)}, {"11"})
+        self.assertEqual({at.get(x) for x in range(600, 690)}, {"22"}, p["entries"])
+
+    def test_work_outside_claude_at_the_end_of_a_sitting_goes_with_the_work_before_it(self):
+        # the next session comes after a break (another sitting): the browser time is the end of the work before it
+        items = [work(540, 600), work(600, 630, app="Safari", title="Ticket"), work(700, 760)]
+        p = dayplan.plan(day(items=items, rows=[row(540, 600), row(700, 760, titles=["Hero video"])]), self.ctx)
+        at = {x: e["taskId"] for e in p["entries"] for x in range(e["s"], e["e"])}
+        self.assertEqual({at.get(x) for x in range(540, 630)}, {"11"}, p["entries"])
+        self.assertEqual({at.get(x) for x in range(700, 760)}, {"22"})
+
+    def test_a_short_glance_outside_claude_joins_the_work_after_it(self):
+        items = [work(540, 600), work(600, 605, app="Safari", title="Ticket"), work(605, 665)]
+        p = dayplan.plan(day(items=items, rows=[row(540, 600), row(605, 665, titles=["Hero video"])]), self.ctx)
+        spans = {e["taskId"]: (e["s"], e["e"]) for e in p["entries"]}
+        self.assertEqual(spans, {"11": (540, 600), "22": (600, 665)})
+
+    def test_a_short_glance_before_a_call_stays_with_the_work_before_it(self):
+        # a meeting attended keeps its own time (_merge): the glance before its call is the end of the work before it
+        items = [work(540, 600), work(600, 605, app="Safari", title="Ticket"), work(605, 635, app="zoom.us", title="Zoom")]
+        p = dayplan.plan(day(items=items, rows=[row(540, 600)], calls=[{"s": 605, "e": 635}]), self.ctx)
+        session = next(e for e in p["entries"] if e["taskId"] == "11")
+        call = next(e for e in p["entries"] if e["kind"] == "meeting")
+        self.assertEqual(((session["s"], session["e"]), (call["s"], call["e"])), ((540, 605), (605, 635)))
+
     def test_a_session_vote_of_40_to_60_percent_is_low_and_unticked(self):
         key = dayplan.title_key("Fix the importer")
         ctx = {**self.ctx, "sess": {key: {"11": 55.0, "22": 45.0}}, "sr": {(key, "repo"): {"11": 55.0, "22": 45.0}},
                "lastday": {}}  # the session's vote alone (the last day's task would go above an unsure vote)
         [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600)]), ctx)["entries"]
         self.assertEqual((e["taskId"], e["confidence"], e["checked"]), ("11", "low", False))
+
+    def test_a_pick_sure_by_its_source_but_in_doubt_starts_unticked(self):
+        # replay of 43 days (2026-11-10): ticked minutes on the right task 87.8% instead of 72.6% (dayplan.doubt)
+        names = {**self.ctx["names"], "55": {"task": "Other client's ticket", "project": "Globex"}}
+        ctx = {**self.ctx, "names": names}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, tasks=["11"])]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"], e["confidence"], e["checked"]), ("11", "link", "high", True))
+        # a link when the session named other tasks too (18% right; a single link 68%)
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, tasks=["11", "22"])]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"], e["confidence"], e["checked"]), ("11", "link", "low", False))
+        self.assertIn("the session links other tasks too", e["why"])
+        # a link to a task of a project the repository is not logged to
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, tasks=["55"])]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"], e["confidence"], e["checked"]), ("55", "link", "low", False))
+        self.assertIn("repo is not logged to Globex", e["why"])
+        # a task taken from another entry of the same session today, in another repository
+        rows = [row(540, 600), row(700, 760, project="elsewhere")]
+        first, second = dayplan.plan(day(items=[work(540, 600), work(700, 760)], rows=rows), ctx)["entries"]
+        self.assertEqual((first["taskId"], first["checked"]), ("11", True))
+        self.assertEqual((second["taskId"], second["source"], second["confidence"], second["checked"]),
+                         ("11", "sameday", "low", False))
+
+    def test_a_sessions_vote_on_a_clients_work_is_sure_only_from_80_percent(self):
+        # a client's tasks are its tickets: on a client's work a vote of 60 to 79% was right on none of 332 minutes,
+        # from 80% on 72%; on internal work 60 to 79% was right on 96% (replay of 43 days, 2026-11-10)
+        key = dayplan.title_key("Fix the importer")
+
+        def entry(share: float, cls: str) -> dict:
+            votes = {"11": share * 100, "22": (1 - share) * 100}
+            ctx = {**self.ctx, "sess": {key: votes}, "sr": {(key, "repo"): votes}, "lastday": {},
+                   "classes": {"repo": cls}}
+            [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600)]), ctx)["entries"]
+            return e
+        e = entry(0.7, "client")
+        self.assertEqual((e["taskId"], e["source"], e["confidence"], e["checked"]), ("11", "session", "low", False))
+        self.assertIn("logged to other tasks of the client too", e["why"])
+        e = entry(0.85, "client")
+        self.assertEqual((e["taskId"], e["confidence"], e["checked"]), ("11", "high", True))
+        e = entry(0.7, "internal")
+        self.assertEqual((e["taskId"], e["confidence"], e["checked"]), ("11", "high", True))
+
+    def test_the_task_logged_before_the_last_one_is_the_second_alternative(self):
+        # replay of 43 days (2026-11-10): the right task is the pick or one of its three alternatives on 71.1% of the
+        # clean minutes instead of 70.1%
+        ctx = history_for({"Fix the importer": "11", "Hero video": "22", "Footer": "33"})
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600)]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("11", "session"))
+        # 33 was logged last in the project (the last day's task), 22 before it
+        self.assertEqual([a["taskId"] for a in e["alts"][:2]], ["33", "22"])
+        self.assertEqual(e["alts"][1]["why"], "you logged it in P on 2026-10-27")
 
     def test_what_the_work_names_comes_before_where_you_usually_log(self):
         # 2026-11-09: "D11 db upgrade" on a site's repository; the session's and the repository's history offered other
@@ -414,6 +515,38 @@ class PlannerTest(unittest.TestCase):
         ctx = {**ctx, "lastday": {"Initech": ("2026-11-09", "P", 60, 0.0)}}
         [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, project="initech")]), ctx)["entries"]
         self.assertEqual((e["taskId"], e["source"], e["confidence"]), ("P", "lastday", "low"))
+
+    def test_a_session_never_logged_puts_the_last_days_task_after_what_the_work_names(self):
+        # replay, 43 days: in a session with no votes anywhere (new work) the project's last task was right on 3% of
+        # the minutes, in the others on 60%. A session with history keeps it first among the weaker answers
+        names = {"P": {"task": "Initech support", "project": "Initech"}, "M": {"task": "Old work", "project": "Globex"}}
+        work_hit = [{"taskId": "W", "why": "what you typed names it: search", "work": True}]
+        ctx = {**self.ctx, "repo": {"initech": {"P": 300.0}}, "names": names,
+               "lastday": {"Initech": ("2026-11-09", "P", 60, 0.0)}}
+        new = {**row(540, 600, project="initech", titles=["Brand new thing"]), "learned": work_hit}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[new]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"], e["confidence"]), ("W", "work", "low"))
+        self.assertIn("P", [a["taskId"] for a in e["alts"]])  # still offered
+        # the same work in a session logged before (to another client's task, which says nothing here): the last
+        # day's task first
+        key = dayplan.title_key("Brand new thing")
+        ctx = {**ctx, "sess": {**ctx["sess"], key: {"M": 20.0}}}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[new]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("P", "lastday"))
+        # nothing else to go on: the last day's task is still the pick of a new session
+        ctx = {**ctx, "sess": {}}
+        bare = row(540, 600, project="initech", titles=["Brand new thing"])
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[bare]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("P", "lastday"))
+        self.assertFalse(dayplan.new_session([], ctx))  # no title: nothing says it is new
+        # a person whose new sessions mostly went on with the project's last task (a new window each morning for
+        # yesterday's work) keeps it first; a habit of too few minutes says nothing
+        ctx = {**ctx, "new_habit": (0.7, 300.0)}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[new]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("P", "lastday"))
+        ctx = {**ctx, "new_habit": (0.7, 60.0)}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[new]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("W", "work"))
 
     def test_two_tasks_worked_in_turns_are_two_entries_one_after_the_other(self):
         # 2026-11-09: a few minutes of each by turns for two hours; the short pieces folded into one entry that the
@@ -547,11 +680,57 @@ class PlannerTest(unittest.TestCase):
         r = {**row(540, 600, project="z", titles=["Something new"], tasks=["55"]), "learned": [fresh]}
         [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), self.ctx)["entries"]
         self.assertEqual(e["taskId"], "55")
-        # words that only half agree are offered, not picked
-        r = {**row(540, 600, project="z", titles=["Something new"]), "learned": [{**fresh, "key": False, "score": 0.45}]}
-        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), self.ctx)["entries"]
-        self.assertIsNone(e["taskId"])
-        self.assertEqual(e["alts"][0]["taskId"], "77")
+        # words alone, however many, are offered, not picked: by shared words the plan's pick was right on 9% of its
+        # minutes (replay, 43 days); only a ticket key named makes a task you never logged to the pick
+        for score in (0.45, 0.8):
+            r = {**row(540, 600, project="z", titles=["Something new"]), "learned": [{**fresh, "key": False, "score": score}]}
+            [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), self.ctx)["entries"]
+            self.assertIsNone(e["taskId"])
+            self.assertEqual(e["alts"][0]["taskId"], "77")
+
+    def test_a_task_assigned_to_you_lately_that_the_work_names_goes_above_the_last_days_task(self):
+        # replay of 43 days (2026-11-10): new work is mostly a new assignment; above the last day's task it was right on
+        # 52% of its minutes where that one was right on 11%
+        names = {"P": {"task": "Initech support", "project": "Initech"}}
+        ctx = {**self.ctx, "sess": {}, "sr": {}, "repo": {"initech": {"P": 300.0}}, "names": names,
+               "lastday": {"Initech": ("2026-11-09", "P", 60, 0.0)}}
+        named = {"taskId": "N", "title": "Blog feature fixes", "project": "Initech", "assigned": True, "named": True,
+                 "why": "assigned to you on 2026-11-03, the work names it: blog"}
+        r = {**row(540, 600, project="initech", titles=["Blog listing"]), "learned": [named]}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"], e["confidence"], e["checked"]), ("N", "assigned", "low", False))
+        self.assertEqual(e["alts"][0]["taskId"], "P")
+        # only offered when the work does not name it (the dialog's "assigned to you" offer is not a pick)
+        r = {**r, "learned": [{**named, "named": False}]}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("P", "lastday"))
+        # a sure vote of the session stays the pick
+        key = dayplan.title_key("Blog listing")
+        sure = {**ctx, "sess": {key: {"P": 120.0}}, "sr": {(key, "initech"): {"P": 120.0}}}
+        r = {**r, "learned": [named]}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), sure)["entries"]
+        self.assertEqual((e["taskId"], e["source"], e["alts"][0]["taskId"]), ("P", "session", "N"))
+        # on internal work, a client's task is never the pick for it
+        internal = {**ctx, "task_class": {"N": "client", "P": "internal"}, "classes": {"initech": "internal"}}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), internal)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("P", "lastday"))
+        # nor when only its project says it is a client's (a task you never logged to has no class of its own)
+        internal = {**ctx, "task_class": {"P": "internal"}, "project_class": {"Initech": "client"},
+                    "classes": {"initech": "internal"}}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), internal)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("P", "lastday"))
+        self.assertIn("N", [a["taskId"] for a in e["alts"]])
+
+    def test_one_word_in_common_names_a_task_only_when_it_is_the_repositorys_name(self):
+        # replay of 43 days: a single word like "page" or "editor" named another client's task on all its minutes
+        names = {"90": {"task": "Editor permissions cleanup", "project": "X"}, "91": {"task": "Acme hero banner", "project": "Acme"}}
+        ctx = {**self.ctx, "recent": ["90", "91"], "names": names, "sess": {}, "repo": {}}
+        rows = [row(540, 600, project="z", titles=["Editor toolbar"])]
+        self.assertIsNone(dayplan.plan(day(items=[work(540, 600)], rows=rows), ctx)["entries"][0]["taskId"])
+        rows = [row(540, 600, project="z", titles=["Editor permissions for authors"])]  # two words: a name match
+        self.assertEqual(dayplan.plan(day(items=[work(540, 600)], rows=rows), ctx)["entries"][0]["taskId"], "90")
+        rows = [row(540, 600, project="acme-site", titles=["Fix the footer"])]  # the repository's own name
+        self.assertEqual(dayplan.plan(day(items=[work(540, 600)], rows=rows), ctx)["entries"][0]["taskId"], "91")
 
     def test_your_own_name_in_titles_is_no_evidence(self):
         ctx = {**self.ctx, "recent": ["90"], "names": {"90": {"task": "Estimations - Nick", "project": "X"}},
@@ -1178,6 +1357,41 @@ class DayplanAPITest(unittest.TestCase):
                     mock.patch("pulsar.calendar.history", lambda f, n, s: []):
                 dayplan.gather(DATE)
             self.assertEqual(seen["picks"], picks if on else {}, on)
+
+    def test_the_days_own_entries_are_the_newest_use_of_a_service(self):
+        """A task logged this morning to another service than before, and a task never logged in a project logged to
+        this morning, take this morning's service; the test view that hides the day's entries learns nothing from
+        them."""
+        history = [{"date": "2026-11-02", "start": T0 - 86400, "minutes": 60, "taskId": "7", "serviceId": "1",
+                    "service": "AI Research", "task": "R&D", "project": "P"}]
+        today = [{"id": "e1", "date": DATE, "start": T0 + 9 * 3600, "minutes": 30, "taskId": "7", "serviceId": "2",
+                  "service": "Meetings", "task": "R&D", "project": "P"},
+                 {"id": "e2", "date": DATE, "start": T0 + 10 * 3600, "minutes": 30, "taskId": "8", "serviceId": "3",
+                  "service": "Build", "task": "Site", "project": "Q"}]
+        s = {"timezone": "UTC", "person_id": "1", "rules": [], "person_name": ""}
+        for ignore in (False, True):
+            seen = {}
+            with mock.patch.object(server, "current_settings", lambda: s), \
+                    mock.patch.object(server.config, "tz", lambda s: timezone.utc), \
+                    mock.patch.object(server, "api_activity", lambda q: {"items": [], "away": []}), \
+                    mock.patch.object(server, "productive_rows", lambda d0, d1, s: (today, None, "token", False)), \
+                    mock.patch.object(server, "history_rows", lambda d, s, days=28: (history, None)), \
+                    mock.patch.object(server, "api_repeats", lambda q: {"repeats": []}), \
+                    mock.patch.object(server, "api_suggest", lambda q: {"recent": [], "assigned": []}), \
+                    mock.patch.object(dayplan.config, "tz", lambda s: timezone.utc), \
+                    mock.patch.object(dayplan, "plan", lambda day, ctx, opts, **kw: seen.update(ctx) or {"entries": []}), \
+                    mock.patch("pulsar.likely.enabled", lambda s: False), \
+                    mock.patch("pulsar.calendar.day", lambda d, s, fresh=False: {"events": [], "connected": False}), \
+                    mock.patch("pulsar.calendar.history", lambda f, n, s: []):
+                dayplan.gather(DATE, ignore_logged=ignore)
+            if ignore:
+                self.assertEqual((seen["service"], seen["project_service"]),
+                                 ({"7": ("1", "AI Research")}, {"P": ("1", "AI Research")}))
+            else:
+                self.assertEqual(seen["service"], {"7": ("2", "Meetings"), "8": ("3", "Build")})
+                self.assertEqual(seen["project_service"], {"P": ("2", "Meetings"), "Q": ("3", "Build")})
+                svc = [{"id": "3", "name": "Build"}, {"id": "4", "name": "Support"}]
+                self.assertEqual(dayplan.pick_service(svc, None, "", None, seen["project_service"]["Q"])["id"], "3")
 
     def test_no_proposal_when_the_days_entries_cannot_be_read(self):
         s = {"timezone": "UTC", "person_id": "1", "rules": [], "person_name": ""}

@@ -9,6 +9,8 @@ Pure functions on plain data: learn.py and dayplan.py call them, tests/test_attr
 * A session's history applies per repository (session_votes): the votes a session earned in one repository count
   there. Its other votes count only when the session has been in one repository all along, or for a task whose project
   this repository is already logged to; never in a repository with no history.
+* A session never logged before is new work, and its project's last task seldom goes on in it, unless your own days
+  say your new sessions mostly go on with it (new_session_habit: a new window each morning for yesterday's work).
 * Billing class (repo_class, segment_class): client, internal, mixed or unknown, from a rule, a task link or a ticket
   key in the work itself, else 60 days of the repository's logged minutes, else the project its name points to.
   Internal is a non-billable service or a project of the agency's own (INTERNAL_PREFIXES); fixed-price ongoing
@@ -28,6 +30,9 @@ FIT_SHARE = 0.25     # a project with less of a repository's logged time than th
 FIT_MIN = 60         # minutes of a repository's (fading) votes before its projects say anything
 ONE_PROJECT = 0.8    # of a session's votes, the share one project needs before they carry into a repository with too
                      # little history: a session that went from client to client says nothing about the next one
+HABIT_MIN = 120      # minutes logged in sessions never logged before, before your habit with new sessions says anything
+HABIT_GOES_ON = 0.5  # the share of them on the project's last task from which a new session keeps that task first
+HABIT_SKIP = 14      # days at the start of the learning window left out of that habit: every session there looks new
 # The agency's own projects: never a client's, whatever their services say
 INTERNAL_PREFIXES = ("FI-",)
 # One repository under several names: Pulsar's first name, and its preview checkout
@@ -224,11 +229,61 @@ def last_day_tasks(entries: list, date: str) -> dict:
     return out
 
 
+def new_session_habit(credited: list, entries: list, project_of, start: str) -> tuple:
+    """(share or None, minutes): of the logged minutes of sessions with no earlier vote (credits, from day `start` on;
+    the days before it only make sessions known), the share that went to the task of the project's latest earlier day
+    (last_day_tasks). Whether a new session of yours is new work or yesterday's work in a new window (dayplan.new_session).
+    entries: as last_day_tasks takes them; project_of(task)."""
+    by_day: dict = defaultdict(list)
+    for c in credited:
+        by_day[c[0]].append(c)
+    seen: set = set()
+    total = same = 0.0
+    for d in sorted(by_day):
+        if d >= start:
+            last = None
+            for _, keys, _, task, m in by_day[d]:
+                if not keys or any(k in seen for k in keys):
+                    continue
+                last = last if last is not None else last_day_tasks(entries, d)
+                got = last.get(project_of(task) or "")
+                if got:
+                    total += m
+                    same += m if str(got[1]) == str(task) else 0
+        for c in by_day[d]:
+            seen.update(c[1])
+    return (same / total if total else None), total
+
+
 def last_of(lastday: dict, places) -> tuple | None:
     """(day, task, minutes, end, project): the latest of last_day_tasks among `places`; on the same day the one with
     more minutes, then the one logged later, then the project's name, so the pick never depends on the order of a set."""
     got = [lastday[p] + (p,) for p in places if p in lastday]
     return max(got, key=lambda x: (x[0], x[2], x[3], _neg_id(x[4]))) if got else None
+
+
+def latest_tasks(entries: list, date: str) -> dict:
+    """{task: (day, end, project)}: when each task was last logged before `date`, by its latest entry's day and end
+    (epoch seconds, 0 when unknown); meetings do not count (as in last_day_tasks). latest_in reads it."""
+    out: dict = {}
+    for r in entries:
+        if r.get("project") and r.get("taskId") and not r.get("meeting") and str(r.get("date") or "") < date:
+            end = float(r["start"]) + (r.get("minutes") or 0) * 60 if r.get("start") is not None else 0.0
+            got = (str(r["date"]), end, r["project"])
+            t = str(r["taskId"])
+            if t not in out or got[:2] > out[t][:2]:
+                out[t] = got
+    return out
+
+
+def latest_in(latest: dict, places, skip=()) -> tuple | None:
+    """(day, task, project): the task logged latest (latest_tasks) in any of `places`, the tasks in `skip` left out;
+    at the same moment the lower id, so the answer never depends on the order things were read in."""
+    got = [(d, e, _neg_id(t), t, p) for t, (d, e, p) in latest.items() if p in places and t not in skip]
+    if not got:
+        return None
+    d, _, _, t, p = max(got)
+    return d, t, p
 
 
 def _neg_id(text: str) -> tuple:

@@ -69,13 +69,15 @@ GENERIC = {"the", "and", "for", "with", "drupal", "site", "website", "issues", "
 
 CONF_WORDS = {"high": "likely right", "medium": "probably right", "low": "check"}
 WORK_CONF = "low"     # a task picked by what the work names starts unticked (replay first)
-NEW_PICK_MIN = 0.5   # the words a task you never logged to must share with the work to be picked (or a key named)
 FIT_SHARE = attribution.FIT_SHARE  # a project with less of a repository's logged time than this is another client's
 FIT_MIN = attribution.FIT_MIN      # minutes of a repository's (fading) votes before its projects say anything
 CONTEST_MIN = 10     # a client's agent takes internal work's minutes (shared) only for this long at a stretch
 PARALLEL_MIN = 15    # a client's agent beside another client's work in front gets half that time from this long a
                      # sitting (shorter: ignored; Nick, 2026-11-10)
 CLASS_ORDER = {INTERNAL: 0, "mixed": 1, "unknown": 1, CLIENT: 2}  # what the cap cuts first
+SURE_SHARE = 0.6     # a session's vote with this share (and 30 minutes) is sure: "high", ticked
+SURE_CLIENT = 0.8    # on a client's work, from this share only (doubt): a client's tasks are its tickets, and a session
+                     # that was logged to several of them moves between them
 
 
 def opts_for(settings: dict) -> dict:
@@ -115,13 +117,38 @@ def places(ctx: dict, repo: str) -> set:
     return {n["project"] for n in names.values() if n.get("project") and name in words(n.get("task") or "")}
 
 
-def same_client(ctx: dict, repo: str, task) -> bool:
+def same_client(ctx: dict, repo: str, task, project: str = "") -> bool:
     """A task of the client this repository works for: its project is logged to the repository, or shares a word of
-    four letters or more with the repository's name."""
-    if fits(ctx, repo, task) is True:
+    four letters or more with the repository's name. project: the task's project when the history does not name it
+    (a task you never logged to: task_project)."""
+    names = ctx.get("names") or {}
+    project = (names.get(str(task)) or {}).get("project") or project or ""
+    project_of = lambda t: (names.get(str(t)) or {}).get("project") or (project if str(t) == str(task) else None)  # noqa: E731
+    if attribution.fits((ctx.get("repo") or {}).get(repo_key(repo)) or {}, project_of, task) is True:
         return True
-    project = ((ctx.get("names") or {}).get(str(task)) or {}).get("project") or ""
     return bool(attribution.name_words(repo_key(repo)) & attribution.name_words(project))
+
+
+def task_project(task, ctx: dict, row: dict | None = None, assigned: list | None = None) -> str:
+    """A task's Productive project: as your entries name it, else as the work found it (a task you never logged to, in
+    row["learned"]), else as your assigned tasks name it; "" when nothing does."""
+    task = str(task or "")
+    got = ((ctx.get("names") or {}).get(task) or {}).get("project")
+    if got or not task:
+        return got or ""
+    for x in list((row or {}).get("learned") or []) + list(assigned or []):
+        if str(x.get("taskId")) == task and x.get("project"):
+            return x["project"]
+    return ""
+
+
+def project_class(project: str, ctx: dict) -> str | None:
+    """A project's class: the agency's own by name, else as your entries in it say (attribution.task_classes)."""
+    if not project:
+        return None
+    if attribution.internal_project(project):
+        return INTERNAL
+    return (ctx.get("project_class") or {}).get(project)
 
 
 def title_key(title: str) -> str:
@@ -145,6 +172,17 @@ def main_task(entries: list, a: float, b: float) -> tuple:
         return None, 0.0
     best = max(cover, key=cover.get)
     return (best if cover[best] >= min(600, (b - a) / 3) else None), sum(cover.values()) / 60
+
+
+def remember_services(service: dict, project_service: dict, rows: list) -> None:
+    """The service you used last on each task (`service`: task -> (id, name)) and in each project (`project_service`:
+    project -> (id, name), what a task never logged to takes: pick_service), moved on by `rows` (your entries) in the
+    order they were logged: by date, then start. Mutates both."""
+    for r in sorted((r for r in rows if r.get("taskId")), key=lambda r: (str(r.get("date") or ""), r.get("start") or 0)):
+        t = str(r["taskId"])
+        service[t] = (str(r.get("serviceId") or "") or None, r.get("service") or "")
+        if r.get("project"):
+            project_service[r["project"]] = service[t]
 
 
 def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_LIFE, learn_days: int = LEARN_DAYS,
@@ -199,11 +237,9 @@ def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_L
             sr[(k, at)][task] += m * w
         repo[at][task] += m * w
     service, names, last, project_service = {}, {}, {}, {}
+    remember_services(service, project_service, before)
     for r in sorted(before, key=lambda r: (r["date"], r.get("start") or 0)):
         t = str(r["taskId"])
-        service[t] = (str(r.get("serviceId") or "") or None, r.get("service") or "")
-        if r.get("project"):  # the newest per project: a task never logged to yet takes it (pick_service)
-            project_service[r["project"]] = service[t]
         names[t] = {"task": r.get("task") or "", "project": r.get("project") or ""}
         last[t] = r["date"]
     lo30 = (day0 - timedelta(days=RECENT_DAYS)).strftime("%Y-%m-%d")
@@ -213,8 +249,12 @@ def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_L
     # each project's task of its latest earlier day: the work of a repository logged to that project most often goes
     # on with it (replay, 43 days: right on 62% of the minutes it covers)
     lastday = attribution.last_day_tasks(before, date)
+    # whether your sessions never logged before went on with their project's last task (new_session)
+    habit_from = (day0 - timedelta(days=learn_days - attribution.HABIT_SKIP)).strftime("%Y-%m-%d")
+    habit = attribution.new_session_habit(credited, before, project_of.get, habit_from)
     return {"sess": sess, "repo": repo, "sr": sr, "service": service, "project_service": project_service,
-            "names": names, "recent": recent, "never_logged": never, "lastday": lastday,
+            "names": names, "recent": recent, "never_logged": never, "lastday": lastday, "new_habit": habit,
+            "latest": attribution.latest_tasks(before, date),
             "skip": set(WORD.findall((person or "").lower())),
             "task_class": task_class, "project_class": project_class,
             "classes": attribution.repo_classes(credited, task_class)}
@@ -257,6 +297,27 @@ def _keys(row: dict) -> list:
     return [k for k in (title_key(t) for t in row.get("titles") or []) if k]
 
 
+def session_vote(row: dict, ctx: dict) -> tuple | None:
+    """(task, weight, share) of the session's vote for a row: its top task among the votes that apply in the row's
+    repository (attribution.session_votes), with its share of every vote the session has there, or of every vote of
+    the session; None without one."""
+    names = ctx.get("names") or {}
+    keys = _keys(row)
+    v, here = attribution.session_votes(keys, row.get("project"), ctx.get("sess") or {}, ctx.get("sr") or {},
+                                        (ctx.get("repo") or {}).get(repo_key(row.get("project"))) or {},
+                                        lambda t: (names.get(str(t)) or {}).get("project"), bool(row.get("single")))
+    if not v:
+        return None
+    tot = (sum(v.values()) if here else sum(m for k in keys for m in ((ctx.get("sess") or {}).get(k) or {}).values())) or 1
+    t, m, _ = _ranked(v)[0]
+    return t, m, m / tot
+
+
+def links(row: dict) -> list:
+    """The task links a row's session named, each once, in their order (the first is the "link" pick)."""
+    return list(dict.fromkeys(str(t) for t in ((row.get("repoLinks") if "repoLinks" in row else row.get("tasks")) or [])))
+
+
 def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) -> list:
     """Every source's answer for a row, in ORDER: [(task, source, confidence, why)]. The first is the pick, the
     rest are the alternatives offered beside it."""
@@ -295,17 +356,13 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
         elif src == "session":
             # the session's votes in this repository; its other votes only where they may carry over
             # (attribution.session_votes: a session's history applies per repository); the share counts every vote
-            # it has here, or every vote of the session
-            v, here = attribution.session_votes(keys, row.get("project"), ctx["sess"], ctx.get("sr") or {},
-                                                (ctx.get("repo") or {}).get(repo_key(row.get("project"))) or {},
-                                                lambda t: (names.get(str(t)) or {}).get("project"), bool(row.get("single")))
-            tot = (sum(v.values()) if here else sum(m for k in keys for m in (ctx["sess"].get(k) or {}).values())) or 1
-            if v:
-                t, m, _ = _ranked(v)[0]
-                share = m / tot
+            # it has here, or every vote of the session (session_vote)
+            got = session_vote(row, ctx)
+            if got:
+                t, m, share = got
                 session_share = share
                 # 40-60% was "medium" and was right no more often than "low" (replay, 34 days): it starts unticked
-                conf = "high" if share >= 0.6 and m >= 30 else "low"
+                conf = "high" if share >= SURE_SHARE and m >= 30 else "low"
                 out.append((t, "session", conf, f"you logged it while in this Claude session ({round(share * 100)}%)"))
         elif src == "repo":
             v = ctx["repo"].get(repo_key(row.get("project"))) or {}
@@ -326,35 +383,107 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
                 out.append((str(hit["taskId"]), "work", WORK_CONF, hit.get("why") or "what you typed names it"))
         elif src == "words":
             w = words(" ".join([row.get("project") or ""] + list(row.get("titles") or [])), skip)
+            own = words(row.get("project") or "", skip)
             best = None
             for tid in list(ctx.get("recent") or []) + list(by_id):
                 shared = w & words(" ".join(name(tid)), skip)
-                if shared and (best is None or len(shared) > best[1]):
+                # one word in common that is not the repository's own name ("page", "editor") says too little: as the
+                # pick it was another client's task on all of its minutes (replay, 43 days: without it 253 minutes
+                # less over-billed, the right client's billable amount +0.9 points)
+                if len(shared) < 2 and not shared & own:
+                    continue
+                if best is None or len(shared) > best[1]:
                     best = (tid, len(shared), shared)
             if best:
                 out.append((best[0], "words", "low", "name matches: " + ", ".join(sorted(best[2]))))
+    weak = lambda c: c[1] in ("repo", "sameday", "words", "work") or (c[1] == "session" and session_share < SURE_SHARE)  # noqa: E731
     # the task you logged last in a project the repository's work goes to (places): after a sure session vote, before
-    # the weaker answers (replay, 43 days: +2.6 points of minutes on the right task)
+    # the weaker answers (replay, 43 days: +2.6 points of minutes on the right task). A session you never logged
+    # (no votes anywhere: new work) seldom goes on with it, so there it is the last alternative, after what the work
+    # names (replay, 43 days: right on 3% of such sessions' minutes, 60% of the others'; last for them, the right task
+    # +1.1 points of the clean minutes, the right billable minutes per task and day +1.6, over-billing -30 minutes)
     last = attribution.last_of(ctx.get("lastday") or {}, places(ctx, row.get("project")))
     if last:
-        weak = lambda c: c[1] in ("repo", "sameday", "words", "work") or (c[1] == "session" and session_share < 0.6)  # noqa: E731
-        at = next((i for i, c in enumerate(out) if weak(c)), len(out))
+        at = len(out) if new_session(keys, ctx) else next((i for i, c in enumerate(out) if weak(c)), len(out))
         out.insert(at, (last[1], "lastday", "low", f"the task you logged last in {last[4]} ({last[0]})"))
+    # a task assigned to you in the last days in the repository's project, no entry of yours yet, whose name the work
+    # names (learn.assigned_named): above the last day's task, never above a sure vote. New work is mostly a new
+    # assignment (replay, 43 days: right on 52% of the minutes it took, where the last day's task was right on 11%;
+    # the right task +1.6 points of the clean minutes, the right task in the same sitting +3.8)
+    named = next((x for x in row.get("learned") or [] if x.get("named")), None)
+    if named:
+        at = next((i for i, c in enumerate(out) if weak(c) or c[1] == "lastday"), len(out))
+        out.insert(at, (str(named["taskId"]), "assigned", "low", named.get("why") or "assigned to you lately"))
     return out
 
 
-def admissible(row: dict, ctx: dict, task, source: str) -> bool:
+def new_session(keys: list, ctx: dict) -> bool:
+    """Whether a row's session was never logged (none of its title keys has a vote, in any repository) and so is new
+    work. False when the row has no title (nothing says it is new), and for a person whose sessions never logged before
+    mostly went on with their project's last task (ctx["new_habit"], attribution.new_session_habit: a new window each
+    morning for yesterday's work; the replay's person: 11 to 28% of those minutes, against 60 to 75% for the others)."""
+    from .learn import new_work
+    return new_work(keys, ctx.get("sess") or {}, ctx.get("new_habit"))
+
+
+def admissible(row: dict, ctx: dict, task, source: str, assigned: list | None = None) -> bool:
     """Whether a task may be the pick for a row of this class (row["class"], attribution.segment_class): on internal
     work a client's task only from what the work itself names (a rule, a task link, a ticket key); on a client's
-    repository never another client's task from the session's history. No pick is better than a wrong billable one."""
+    repository never another client's task from the session's history. No pick is better than a wrong billable one.
+
+    A task you never logged to is judged by its project (task_project), as one you logged to: a client's task assigned
+    to you lately, or found by the work, is never the pick on internal work (replay of 43 days: 10 billable minutes
+    on one day). A wider gate (no answer from history or title words picking another client's task on a client or
+    mixed repository) helped alone, but with the one-word name rule and the new-task pick by ticket key only it cost
+    more than it saved (2026-11-10, all changes together, without it: the right billable minutes per task and day
+    37.6% -> 38.2%, over-billed 3101 -> 3072 minutes, a wrong client billed 2342 -> 2299, billable with no evidence
+    73 -> 57), so it was left out."""
     if not task:
         return False
-    cls, tc = row.get("class"), attribution.class_of_task(task, ctx)
+    project = task_project(task, ctx, row, assigned)
+    cls = row.get("class")
+    tc = attribution.class_of_task(task, ctx) or project_class(project, ctx)
     if cls == INTERNAL and tc == CLIENT and source not in ("rule", "link", "ticket"):
         return False
-    if cls == CLIENT and source in ("session", "sameday") and tc == CLIENT and not same_client(ctx, row.get("project"), task):
+    if cls == CLIENT and source in ("session", "sameday") and tc == CLIENT \
+            and not same_client(ctx, row.get("project"), task, project):
         return False
     return True
+
+
+def doubt(row: dict, ctx: dict, task, source: str) -> str:
+    """Why a pick its source calls sure starts unticked all the same (its confidence "low"), or "". Replay of 43 days:
+    the ticked minutes on the right task 87.8% instead of 72.6% of the clean minutes, 2% of the right ones unticked,
+    and 190 minutes less billed over the time worked (the cap cuts unsure entries first). Unsure:
+    - a task taken from another entry of the same session today (sameday): right on 17 to 47% of its ticked minutes;
+    - a task link, a task the session opened, a ticket key, of a project the repository is not logged to (0% right);
+    - a task link when the session named other tasks too (18% right; a single link 68%);
+    - a session's vote on a client's work under SURE_CLIENT: 60 to 79% was right on none of 332 minutes, 80% and more
+      on 72%; on internal work 60 to 79% was right on 96%, so there SURE_SHARE stays."""
+    if not task:
+        return ""
+    if source == "sameday":  # its why says so already
+        return "check it"
+    if source in ("link", "seen", "ticket"):
+        project = ((ctx.get("names") or {}).get(str(task)) or {}).get("project")
+        where = places(ctx, row.get("project"))
+        if project and where and project not in where:
+            return f"{row.get('project')} is not logged to {project}"
+        if source == "link" and len(links(row)) > 1:
+            return "the session links other tasks too"
+    if source == "session" and row.get("class") == CLIENT:
+        got = session_vote(row, ctx)
+        if got and got[2] < SURE_CLIENT:
+            return "this session was logged to other tasks of the client too"
+    return ""
+
+
+def previous(row: dict, ctx: dict) -> tuple | None:
+    """(day, task, project): the task logged latest in the projects the repository's work goes to (places), other than
+    the last day's task there (candidates' "lastday"), or None. An alternative: choose."""
+    where = places(ctx, row.get("project"))
+    last = attribution.last_of(ctx.get("lastday") or {}, where)
+    return attribution.latest_in(ctx.get("latest") or {}, where, {str(last[1])} if last else set())
 
 
 def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, assigned: list | None = None,
@@ -365,7 +494,7 @@ def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, ass
     every = candidates(row, ctx, rule_hit, sameday or {}, assigned or [])
     # where you usually log in a repository is never the pick, only an alternative: as the pick it was right on 5% of
     # its minutes (replay, 43 days), and without it the right task gained 1.2 points and over-billing fell
-    pickable = lambda t, s_: s_ != "repo" and admissible(row, ctx, t, s_)  # noqa: E731
+    pickable = lambda t, s_: s_ != "repo" and admissible(row, ctx, t, s_, assigned)  # noqa: E731
     found = [f for f in every if pickable(f[0], f[1])]
     found += [(t, s_, "low", w) for t, s_, c, w in every if not pickable(t, s_)]
     if found and pickable(found[0][0], found[0][1]):
@@ -374,31 +503,46 @@ def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, ass
         task, src, conf, why = None, "none", "low", "no match: pick the task"
         found = [(None, "none", "low", why)] + found
     # a task you never logged to that the work names (learn.new_tasks): the first alternative, and the pick over an
-    # answer that is unsure and not one you gave (a rule, a link, a ticket key): never above a sure vote
+    # answer that is unsure and not one you gave (a rule, a link, a ticket key) only when the work names its ticket
+    # key: never above a sure vote. By shared words alone it was right on 9% of the minutes it took (replay, 43 days: a
+    # client's name or a word like "qa" in the work named another of the client's tasks, or another client's; without
+    # it the right task +0.6 points, 134 minutes less over-billed); a task assigned to you lately that the work names is
+    # picked in candidates ("assigned")
     fresh = [x for x in row.get("learned") or [] if x.get("new")]
     new_alt = [(str(fresh[0]["taskId"]), "new", "low", fresh[0].get("why") or "")] if fresh else []
     weak = conf == "low" and src not in ("rule", "link", "ticket", "work")  # what the work names stays
-    if fresh and weak and (fresh[0].get("key") or fresh[0].get("score", 0) >= NEW_PICK_MIN) \
-            and admissible(row, ctx, str(fresh[0]["taskId"]), "ticket" if fresh[0].get("key") else "new"):
+    if fresh and weak and fresh[0].get("key") and admissible(row, ctx, str(fresh[0]["taskId"]), "ticket", assigned):
         if task:
             new_alt = [(task, src, conf, why)]
         task, src, conf, why = str(fresh[0]["taskId"]), "new", "low", fresh[0].get("why") or ""
+    # sure by its source, in doubt all the same: unticked, and Claude's pick replaces it as any unsure answer (doubt)
+    reason = doubt(row, ctx, task, src) if conf != "low" else ""
+    if reason:
+        conf, why = "low", f"{why}; {reason}"
     alts = []
     claude_none = bool(pick) and not pick.get("tasks") and conf != "high"  # Claude found no task: keep ours, say so
-    if pick and pick.get("tasks") and conf != "high" and admissible(row, ctx, str(pick["tasks"][0]["taskId"]), "claude"):
+    if pick and pick.get("tasks") and conf != "high" \
+            and admissible(row, ctx, str(pick["tasks"][0]["taskId"]), "claude", assigned):
         first = pick["tasks"][0]
         alts = [(task, src, conf, why)] if task else []
         alts = [(t, s, c, f"Pulsar's guess: {w}") for t, s, c, w in alts]
         task, src, conf, why = str(first["taskId"]), "claude", "medium", f"Claude: {pick.get('why') or 'its pick'}"
         alts += [(str(t["taskId"]), "claude", "low", "Claude: another option") for t in pick["tasks"][1:]]
-    seen = {task}
+    seen, out = {task}, []
     for t, s, c, w in alts + new_alt + found[1:] + [(str(x["taskId"]), "learned", "low", x.get("why") or "")
                                                     for x in row.get("learned") or []]:
         if t and t not in seen:
             seen.add(t)
-            alts.append((t, s, c, w))
+            out.append((t, s, c, w))
+    # the task logged before the last one in the repository's project: the second alternative, never above Claude's
+    # (replay, 43 days: the right task is the pick or one of its three alternatives on 71.1% of the clean minutes
+    # instead of 70.1%, and the first alternative is right as often as before)
+    prev = previous(row, ctx) if src != "claude" else None
+    if prev and prev[1] != task and prev[1] not in [x[0] for x in out[:2]]:
+        out = [x for x in out if x[0] != prev[1]]
+        out.insert(min(1, len(out)), (prev[1], "previous", "low", f"you logged it in {prev[2]} on {prev[0]}"))
     return {"task": task, "source": src, "conf": conf, "why": why, "claudeNone": claude_none,
-            "alts": [{"taskId": t, "source": s, "why": w} for t, s, c, w in alts if t and t != task][:3]}
+            "alts": [{"taskId": t, "source": s, "why": w} for t, s, c, w in out][:3]}
 
 
 # ---- the day ------------------------------------------------------------------------------------------------------
@@ -916,7 +1060,11 @@ def _outside(d: _Day) -> None:
     for a, b in short:  # a short one joins the entry beside it
         left = next((owner[x] for x in range(a - 1, max(0, a - 3), -1) if owner[x] not in (None, BLOCKED)), None)
         right = next((owner[x] for x in range(b + 1, min(N, b + 3)) if owner[x] not in (None, BLOCKED)), None)
-        pick_i = next((i for i in (left, right) if i is not None and claims[i]["kind"] not in ("logged", "skip", "shared")),
+        # the work after it first, as a long stretch (_pieces), except a meeting attended, which keeps its own time
+        # (_merge); before, the work before it took it (replay, 43 days, with _pieces: 0.9 points more minutes on the
+        # right task, 165 fewer minutes on a wrong billable client)
+        order = (left, right) if right is not None and claims[right].get("attended") else (right, left)
+        pick_i = next((i for i in order if i is not None and claims[i]["kind"] not in ("logged", "skip", "shared")),
                       None)  # never a shared stretch: that is the agent's time, not the work in front
         if pick_i is not None:
             for x in range(a, b + 1):
@@ -926,7 +1074,7 @@ def _outside(d: _Day) -> None:
 
 def _pieces(d: _Day) -> list:
     """Runs of minutes per claim, in time order, with their claim's fields; an outside stretch takes the task of the
-    work before it, else after."""
+    work right after it in the same sitting, else of the work before it, else after."""
     owner, claims = d.owner, d.claims
     pieces, cur = [], None
     for x in range(DAY_MIN):
@@ -942,9 +1090,17 @@ def _pieces(d: _Day) -> list:
     for p in pieces:
         p.update({k: v for k, v in claims[p["claim"]].items() if k not in ("s", "e")})
     pieces = [p for p in pieces if p["kind"] != "logged"]
-    for k, p in enumerate(pieces):  # outside stretches take the task of the work before them, else after
+    # outside stretches (a browser, Slack) take the task of the work right after them, when it follows within MERGE_GAP
+    # in the same sitting: reading the ticket or the message comes before the session it starts. Else the work before
+    # them (the end of a sitting), else after. Replay, 43 days: under such stretches the person logged the task of the
+    # work after them on 130 of 261 clean minutes, the one before on 39; with the short ones (_outside), 0.9 points more
+    # clean minutes on the right task, 149 fewer over-billed and 165 fewer on a wrong billable client
+    for k, p in enumerate(pieces):
         if p["kind"] == "outside" and not p.get("task"):
-            near = ([pieces[k - 1]] if k else []) + pieces[k + 1:k + 2]
+            after, before = pieces[k + 1:k + 2], [pieces[k - 1]] if k else []
+            soon = bool(after) and after[0]["s"] - p["last"] <= d.o["merge_gap"] \
+                and d.sitting[after[0]["s"]] == d.sitting[p["last"]]
+            near = after + before if soon else before + after
             nb = [q for q in near if q.get("task") and q["kind"] in ("focused", "agent")]  # never a meeting's task
             if any(q["kind"] == "skip" for q in near) and not nb:
                 p["kind"], p["why"] = "skip", "next to work in a repository you never log"
@@ -1222,12 +1378,7 @@ def class_of(task, d: "_Day") -> str | None:
     c = attribution.class_of_task(task, d.ctx)
     if c or not task:
         return c
-    project = (d.names.get(str(task)) or ("", ""))[1]
-    if not project:
-        return None
-    if attribution.internal_project(project):
-        return INTERNAL
-    return (d.ctx.get("project_class") or {}).get(project)
+    return project_class((d.names.get(str(task)) or ("", ""))[1], d.ctx)
 
 
 _CYRILLIC = re.compile(r"[\u0400-\u052F]")  # notes in English only (askclaude.english)
@@ -1663,6 +1814,12 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
     days = {d: learning._stored(d) for d in learning._days_before(date)}
     ctx = learn(date, [] if hproblem else history, {d: r for d, r in days.items() if r}, t0_of,
                 half_life=config.advanced(s)["memory"], person=str(s.get("person_name") or ""))
+    if not ignore_logged:
+        # the day's own entries are the newest use of a service, as in the log dialog (its "logged lately" list holds the
+        # day too): a task first logged this morning keeps that service in the afternoon's rows. Replayed on 43 days
+        # (each entry with the right task, and the day's entries before it already logged): the service right on 90.7%
+        # of the minutes instead of 86.3%, 70.7% instead of 54.5% on tasks not logged in the 60 days before
+        remember_services(ctx["service"], ctx["project_service"], rows)
     # Ask Claude's kept answer (askclaude.keep: on disk, 60 days) steers the plan only while the Claude Code switch is on
     answer = askclaude.latest(date) if s.get("ask_claude") else None
     day = {"items": act.get("items") or [], "away": act.get("away") or [], "rows": likely_rows, "background": bg_rows,
