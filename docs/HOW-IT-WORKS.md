@@ -864,9 +864,13 @@ yet given that time: first those with minutes in the hole, then those within 30 
 task that may be billable takes from what its project was seen and not given, rounded down, so a client is never
 given more than its work was seen, while one session's work split over a few of its tasks (7, 37 and 6 minutes) is
 not lost for being short; internal work takes what it is owed to the nearest step, and what is left of a hole where
-it was in front. A hole with a client's entry right against it is in that client's work: internal work takes none
-of it, and what is left goes to that entry when the hole is mostly work seen in front (a turn of internal work inside a
-client's work is the client's, as `3b'`). Time spent logging and an agent's time alone are never filled. A new entry
+it was in front. A hole between two entries of one client is in that client's work: internal work takes none of it,
+and what is left goes to the entry before it when the hole is mostly that client's own work or internal turns (a turn
+of internal work inside a client's work is the client's, as `3b'`); never another client's work, a repository never
+logged, an agent alone or time logging. After a client's work, or between two clients, internal work in front is its
+own (switching, Nick's rule 3). A client's crumb under 10 minutes joins a neighbour of its own client before a larger
+internal one (`_merge`). A task never logged takes its Productive project's class (`class_of`), so a new client task
+counts as a client's everywhere above. A new entry
 is never shorter than an entry (10 minutes); an entry of the same task against the hole grows instead. Never past the
 active-time cap. On 19 past days, with `3b'` by the task's class: 450 more minutes proposed (16 of the 19 days),
 the minutes per task right for 45.5% instead of 44.3%, the right task at the right minute 46.8% instead of 48.2% (a
@@ -1190,9 +1194,11 @@ not a verdict.
   repository (a quarter of its votes or more, once it has an hour of them; with less history, the projects of tasks
   whose names name the repository) narrow the tasks to that project's: the ones you logged to in the 60 days and the
   ones in the new-task pool, not closed. Of those, the task whose name shares most words with the work (its sessions'
-  titles, what you typed, your commit subjects, and the git branch of the session's folder when it is that
-  repository's, `sessions.PLAIN_BRANCH` left out, and the titles of that repository's pull requests and issues in
-  front in the row's own minutes, `sessions.GITHUB_TAB`; TF-IDF over those names only, cosine 0.3 or more) goes first in the
+  titles, what you typed, your commit subjects, and the titles of that repository's pull requests and issues in
+  front in the row's own minutes, `sessions.GITHUB_TAB`; the git branch of the session's folder, `sessions.PLAIN_BRANCH`
+  left out, only when those name no task: a checkout left on another task's branch named the wrong task, 10 November;
+  Ukrainian words for a database and an update add their English, `learn.english`; TF-IDF over those names only,
+  cosine 0.3 or more) goes first in the
   dialog's list, and one almost as good (90%) with it, yours (logged to or assigned) before the other. With fewer than
   three words in common it goes just after the same session's own vote instead. In Log the day it comes after the
   session's vote and before the repository's history. On the replay of 19 days (13 October to 6 November 2026) the
