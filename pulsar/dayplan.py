@@ -334,13 +334,23 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
             if best:
                 out.append((best[0], "words", "low", "name matches: " + ", ".join(sorted(best[2]))))
     # the task you logged last in a project the repository's work goes to (places): after a sure session vote, before
-    # the weaker answers (replay, 43 days: +2.6 points of minutes on the right task)
+    # the weaker answers (replay, 43 days: +2.6 points of minutes on the right task). A session you never logged
+    # (no votes anywhere: new work) seldom goes on with it, so there it is the last alternative, after what the work
+    # names (replay, 43 days: right on 3% of such sessions' minutes, 60% of the others'; last for them, the right task
+    # +1.1 points of the clean minutes, the right billable minutes per task and day +1.6, over-billing -30 minutes)
     last = attribution.last_of(ctx.get("lastday") or {}, places(ctx, row.get("project")))
     if last:
         weak = lambda c: c[1] in ("repo", "sameday", "words", "work") or (c[1] == "session" and session_share < 0.6)  # noqa: E731
-        at = next((i for i, c in enumerate(out) if weak(c)), len(out))
+        at = len(out) if new_session(keys, ctx) else next((i for i, c in enumerate(out) if weak(c)), len(out))
         out.insert(at, (last[1], "lastday", "low", f"the task you logged last in {last[4]} ({last[0]})"))
     return out
+
+
+def new_session(keys: list, ctx: dict) -> bool:
+    """Whether a row's session was never logged: none of its title keys has a vote, in any repository. False when the
+    row has no title (nothing says it is new)."""
+    sess = ctx.get("sess") or {}
+    return bool(keys) and not any(sess.get(k) for k in keys)
 
 
 def admissible(row: dict, ctx: dict, task, source: str) -> bool:
