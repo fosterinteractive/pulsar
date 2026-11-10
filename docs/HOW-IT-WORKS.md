@@ -918,7 +918,16 @@ ticket key in the title, the tasks logged in the same session in the same reposi
 project that the work names (`learn.work_match`, below; unticked, and never replaced by a new task), then the same
 repository
 (votes from the last 60 days, older days counting half every 7 days), the same session earlier that day, and task
-names that share words with the work (your own name and common words such as "not" and "the" do not count). A
+names that share words with the work (your own name and common words such as "not" and "the" do not count; one word
+in common counts only when it is part of the repository's name: a single "page" or "editor" named another client's
+task on all its minutes). Where no answer is sure, the task you logged last in the repository's project comes before
+the weaker ones, except for a session never logged before (no votes for its titles anywhere: new work), where it is
+the last alternative (it was right on 3% of such sessions' minutes, 60% of the others'), unless your own history
+shows your new sessions mostly going on with it (`attribution.new_session_habit`). A task assigned to you in the
+last three days in the repository's project, with no entry of yours yet, whose name the work names
+(`learn.assigned_named`, your project's own name words left out) goes above that last task, never above a sure
+session vote, a rule, a link or a ticket key (right on 52% of the minutes it took, where the last task was right on
+11%). A
 session's history applies per repository (`attribution.session_votes`): its votes from another repository count only
 for a task this repository is logged to (a quarter of its votes or more, once it has an hour of them, `dayplan.fits`),
 or when the session has been in this repository all day (`single`) and four fifths of its votes are one project's
@@ -928,10 +937,12 @@ databases in turn offered the first client's task on the fifth site). A path a c
 `$HOME/Sites/x` is that repository, as its full path is (`sessions.find_paths`). On internal work a
 client's task is the pick only from a rule, a link or a ticket key in that work; on a client's repository, another
 client's task from the session's history is never the pick; with no task the class admits, no task rather than a
-wrong billable one (`dayplan.admissible`; such tasks stay among the alternatives). So QA hub work for a client goes to
-that client when the work names the client's task. A task you never logged to that the work
-names (5.5) is the first alternative, and the pick where the answer is unsure and not one you gave (a rule, a link, a
-ticket key): a ticket key it names, or words it shares strongly (cosine 0.5). A repository you work in for an hour or
+wrong billable one (`dayplan.admissible`; such tasks stay among the alternatives); a task you never logged to is judged
+by its Productive project (`dayplan.task_project`), so a client's new task is never the pick on internal work either.
+So QA hub work for a client goes to that client when the work names the client's task. A task you never logged to that
+the work names (5.5) is the first alternative, and the pick where the answer is unsure and not one you gave (a rule, a
+link, a ticket key) only when the work names its ticket key: picked by shared words alone it was right on 9% of its
+minutes. A repository you work in for an hour or
 more and log under a tenth of is set aside as one you never log; days with entries that have no start time do not
 count, since they cannot be matched to the work. Confidence: high, medium or low, in words and a three-bar meter; the
 same session's votes are high from 60% (and 30 minutes), else low. **Unticked at the start**: low confidence, no task,

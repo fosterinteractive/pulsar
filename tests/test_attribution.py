@@ -583,30 +583,13 @@ class FailureCaseTest(unittest.TestCase):
 
 
 class ClientGateTest(unittest.TestCase):
-    """On a repository whose client the history knows, a weak answer (the session's history, the same session today,
-    title words, a new task's words) never picks another client's task; a task you never logged to is judged by its
-    project, as one you logged to (dayplan.admissible)."""
+    """A task you never logged to is judged by its project, as one you logged to (dayplan.admissible): a client's
+    task is never the pick on internal work unless the work names it."""
 
     def setUp(self):
         extra = {f"2026-10-{d:02d}": ([{"k": [KEY], "p": "globex-site", "s": 800, "e": 860}], [entry(f"2026-10-{d:02d}", 800, 60, "G1")])
                  for d in (14, 15, 16)}
         self.ctx = {**history(extra=extra)[0], "lastday": {}}
-
-    def test_title_words_never_pick_another_clients_task_on_a_clients_repository(self):
-        # two words in common (one word that is not the repository's own name never counts: candidates "words")
-        names = self.ctx["names"]
-        ctx = {**self.ctx, "names": {**names, "G1": {**names["G1"], "task": "Globex banner rollout"}}}
-        self.assertEqual(ctx["classes"].get("client-web"), "client")
-        r = front(600, 660, "client-web", titles=["Globex banner follow-up"])
-        [e] = plan([work(600, 660)], [r], ctx=ctx)["entries"]
-        self.assertIsNone(e["taskId"])                              # no pick rather than another client's
-        self.assertIn("G1", [a["taskId"] for a in e["alts"]])       # still offered
-        # on a repository with no history there is no client to check against: the words still pick
-        [e] = plan([work(600, 660)], [{**r, "project": "somewhere-new"}], ctx=ctx)["entries"]
-        self.assertEqual((e["taskId"], e["source"]), ("G1", "words"))
-        # the client's own task by its words is picked on its repository
-        [e] = plan([work(600, 660)], [front(600, 660, "client-web", titles=["Clientco QA fixes again"])], ctx=ctx)["entries"]
-        self.assertEqual((e["taskId"], e["source"]), ("C2", "words"))
 
     def test_a_new_task_is_judged_by_its_project(self):
         ctx = self.ctx

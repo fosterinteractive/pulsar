@@ -714,6 +714,12 @@ class PlannerTest(unittest.TestCase):
         internal = {**ctx, "task_class": {"N": "client", "P": "internal"}, "classes": {"initech": "internal"}}
         [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), internal)["entries"]
         self.assertEqual((e["taskId"], e["source"]), ("P", "lastday"))
+        # nor when only its project says it is a client's (a task you never logged to has no class of its own)
+        internal = {**ctx, "task_class": {"P": "internal"}, "project_class": {"Initech": "client"},
+                    "classes": {"initech": "internal"}}
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), internal)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("P", "lastday"))
+        self.assertIn("N", [a["taskId"] for a in e["alts"]])
 
     def test_one_word_in_common_names_a_task_only_when_it_is_the_repositorys_name(self):
         # replay of 43 days: a single word like "page" or "editor" named another client's task on all its minutes

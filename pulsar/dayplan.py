@@ -39,7 +39,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 from . import attribution, commits as git_commits, config, pause, sessions as sessions_mod, trackers
-from .attribution import CLIENT, INTERNAL, MIXED, repo_key
+from .attribution import CLIENT, INTERNAL, repo_key
 
 GRID = 5             # entry boundaries on this grid, in minutes (Settings: "Round entries to", opts_for)
 MIN_ENTRY = 10       # shorter pieces join a neighbour (never shorter than the grid)
@@ -75,9 +75,6 @@ CONTEST_MIN = 10     # a client's agent takes internal work's minutes (shared) o
 PARALLEL_MIN = 15    # a client's agent beside another client's work in front gets half that time from this long a
                      # sitting (shorter: ignored; Nick, 2026-11-10)
 CLASS_ORDER = {INTERNAL: 0, "mixed": 1, "unknown": 1, CLIENT: 2}  # what the cap cuts first
-# answers from the history or from words alone, not from the work naming the task (a rule, a link, a ticket key, a task
-# Claude opened): on a repository whose client the history knows, they never pick another client's task (admissible)
-WEAK_SOURCES = ("session", "sameday", "words", "new")
 SURE_SHARE = 0.6     # a session's vote with this share (and 30 minutes) is sure: "high", ticked
 SURE_CLIENT = 0.8    # on a client's work, from this share only (doubt): a client's tasks are its tickets, and a session
                      # that was logged to several of them moves between them
@@ -130,15 +127,6 @@ def same_client(ctx: dict, repo: str, task, project: str = "") -> bool:
     if attribution.fits((ctx.get("repo") or {}).get(repo_key(repo)) or {}, project_of, task) is True:
         return True
     return bool(attribution.name_words(repo_key(repo)) & attribution.name_words(project))
-
-
-def voted_here(row: dict, ctx: dict, task) -> bool:
-    """The session's own votes in this repository name the task (attribution.session_votes' first answer), and the
-    repository has too little history to weigh its projects (fits: None): what little history it has says this task."""
-    key = repo_key(row.get("project"))
-    if fits(ctx, row.get("project"), task) is not None:
-        return False
-    return any(str(task) in {str(t) for t in ((ctx.get("sr") or {}).get((k, key)) or {})} for k in _keys(row))
 
 
 def task_project(task, ctx: dict, row: dict | None = None, assigned: list | None = None) -> str:
@@ -440,18 +428,16 @@ def new_session(keys: list, ctx: dict) -> bool:
 
 def admissible(row: dict, ctx: dict, task, source: str, assigned: list | None = None) -> bool:
     """Whether a task may be the pick for a row of this class (row["class"], attribution.segment_class): on internal
-    work a client's task only from what the work itself names (a rule, a task link, a ticket key); on a repository
-    whose client the history knows (client or mixed), a task that may be billable from a weak answer (WEAK_SOURCES)
-    only when it is that client's (same_client). A task you never logged to is judged by its project (task_project),
-    as one you logged to. The session's own votes in this repository still pick when the repository has too little
-    history to weigh its projects (voted_here). No pick is better than a wrong billable one.
+    work a client's task only from what the work itself names (a rule, a task link, a ticket key); on a client's
+    repository never another client's task from the session's history. No pick is better than a wrong billable one.
 
-    Replay of 43 days (2026-11-10): on a mixed or client repository, a weak answer of another client's task was right
-    on almost none of its minutes; without them clean minutes on the right task 50.5% -> 50.9%, over-billed 3746 ->
-    3526 minutes, a wrong client billed 2755 -> 2500, billable with no evidence 49 -> 40, client-day billable 68.2% ->
-    68.5%, task-day billable 35.6% -> 35.5%. On a repository with no history (unknown) there is no client to check
-    against: testing title words there too lost 1.1 points of client-day billable and 0.4 of task-day billable, so it
-    is left alone."""
+    A task you never logged to is judged by its project (task_project), as one you logged to: a client's task assigned
+    to you lately, or found by the work, is never the pick on internal work (replay of 43 days: 10 billable minutes
+    on one day). A wider gate (no answer from history or title words picking another client's task on a client or
+    mixed repository) helped alone, but with the one-word name rule and the new-task pick by ticket key only it cost
+    more than it saved (2026-11-10, all changes together, without it: the right billable minutes per task and day
+    37.6% -> 38.2%, over-billed 3101 -> 3072 minutes, a wrong client billed 2342 -> 2299, billable with no evidence
+    73 -> 57), so it was left out."""
     if not task:
         return False
     project = task_project(task, ctx, row, assigned)
@@ -459,9 +445,8 @@ def admissible(row: dict, ctx: dict, task, source: str, assigned: list | None = 
     tc = attribution.class_of_task(task, ctx) or project_class(project, ctx)
     if cls == INTERNAL and tc == CLIENT and source not in ("rule", "link", "ticket"):
         return False
-    if cls in (CLIENT, MIXED) and source in WEAK_SOURCES and tc != INTERNAL \
-            and not same_client(ctx, row.get("project"), task, project) \
-            and not (source == "session" and voted_here(row, ctx, task)):
+    if cls == CLIENT and source in ("session", "sameday") and tc == CLIENT \
+            and not same_client(ctx, row.get("project"), task, project):
         return False
     return True
 
