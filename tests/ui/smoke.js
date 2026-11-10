@@ -368,21 +368,21 @@ try {
   // how much of an estimate and a budget is left, before going over: the log dialog, a Log the day row, the Tasks box
   {
     const f = logForm.elements, minsWas = f.minutes.value, svcWas = logServices, selWas = f.service.innerHTML, valWas = f.service.value;
-    logServices = [{id: 's1', name: 'Development', budgetTime: {budgeted: 3000, worked: 2400}}];
+    logServices = [{id: 's1', name: 'Development', budgetTime: {budgeted: 3000, worked: 2380}}];
     f.service.innerHTML = '<option value="s1">Development</option>'; f.service.value = 's1';
     f.minutes.value = '30';
     showFlags({taskId: '1'}, [], {estimate: 600, worked: 450});
-    const near = [...q('#log-burn').children].map(x => `${x.className}:${x.textContent}`).join(' | ');
+    const near = [...q('#log-burn').querySelectorAll('span')].map(x => `${x.className}:${x.textContent}`).join(' | ');
     f.minutes.value = '5'; f.minutes.dispatchEvent(new Event('input'));
-    const quiet = [...q('#log-burn').children].map(x => x.className).join(',');
+    const quiet = [...q('#log-burn').querySelectorAll('span')].map(x => x.className).join(',');
     f.minutes.value = '700'; f.minutes.dispatchEvent(new Event('input'));
     const over = q('#log-burn .over')?.textContent || '';
     showFlags(null); logServices = svcWas; f.service.innerHTML = selWas; f.service.value = valWas; f.minutes.value = minsWas;
     const row = ticketLine({taskId: '1', ticket: [{kind: 'nearestimate', text: '8 h of the 10 h estimate with this entry, 2 h left'}]});
     const box = estimateLine({estimate: 600, worked: 500});
     check('what is left of an estimate and a budget shows before going over',
-      near === 'near:Estimate: 8 h of 10 h with this entry, 2 h left | near:Budget: 40 h 30 min of 50 h with this entry, 9 h 30 min left'
-        && quiet === ',' && over === "Budget: +1 h 40 min over the service's 50 h" && row.includes('e-flags near') && !row.includes('! ')
+      near === 'near:Estimate: 8 h of 10 h with this entry, 2 h left | near:Budget: 40 h 10 min of 50 h with this entry, 9 h 50 min left'
+        && quiet === ',' && over === "Budget: +1 h 20 min over the service's 50 h" && row.includes('e-flags near') && !row.includes('! ')
         && box.near && !box.over,
       `${near} / ${quiet} / ${over} / row ${row.includes('near')} / box ${box.near}`);
   }
