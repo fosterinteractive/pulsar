@@ -432,9 +432,11 @@ class SessionLifetimeTest(unittest.TestCase):
 
 
 class SecurityReviewTest(unittest.TestCase):
-    """A release waits for the security review (.github/workflows/security.yml) before anything is built or signed, and
-    the review can read only: its token, its tools and its actions pinned to a commit."""
+    """A release waits for the security review before anything is built or signed: on this Mac
+    (macos/security_review.sh) by default, on GitHub (.github/workflows/security.yml) with PULSAR_SECURITY_ON=github.
+    Both run .github/security-review.md with read-only tools, and only a last line "VERDICT: pass" passes."""
     REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    READ_ONLY = ("--allowedTools Read", "Grep", "Glob")
 
     def read(self, *path):
         with open(os.path.join(self.REPO, *path), encoding="utf-8") as fh:
@@ -442,19 +444,30 @@ class SecurityReviewTest(unittest.TestCase):
 
     def test_the_release_stops_on_the_review_before_building(self):
         sh = self.read("macos", "release.sh")
-        self.assertLess(sh.index("\n  security_review\n"), sh.index("# --- build"))
+        gate = sh.index('case "${PULSAR_SECURITY_ON:-local}" in')
+        self.assertLess(gate, sh.index("# --- build"))
+        self.assertIn('local) "$ROOT/macos/security_review.sh" ||\n             die "the security review did not pass', sh)
         self.assertIn('= success ] ||\n    die "the security review stopped the release', sh)
 
-    def test_the_review_reads_only(self):
-        wf = self.read(".github", "workflows", "security.yml")
+    def test_both_runs_read_only_with_the_shared_prompt(self):
+        local, wf = self.read("macos", "security_review.sh"), self.read(".github", "workflows", "security.yml")
+        for text in (local, wf):
+            self.assertRegex(text, r"--allowedTools Read,?\s?Grep,?\s?Glob")
+            self.assertRegex(text, r"--disallowedTools Bash,?\s?Write,?\s?Edit,?\s?MultiEdit,?\s?NotebookEdit,?\s?WebFetch,?\s?WebSearch")
+            self.assertIn(".github/security-review.md", text)
+            self.assertIn("rm -rf", text)  # the files that steer agents are gone before Claude starts
         self.assertIn("\npermissions:\n  contents: read\n", wf)
         self.assertIn("github_token: ${{ github.token }}", wf)
-        self.assertIn("--allowedTools Read,Grep,Glob", wf)
-        self.assertRegex(wf, r"--disallowedTools Bash,Write,Edit,[^\n]*WebFetch,WebSearch")
         uses = re.findall(r"uses: (\S+)", wf)
         self.assertTrue(uses and all(re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", u) for u in uses), uses)
-        # no verdict line is no pass
-        self.assertIn('[ "$VERDICT" = pass ] ||', wf)
+        self.assertIn('[ "$VERDICT" = "VERDICT: pass" ] ||', wf)
+        self.assertIn('sys.exit(0 if last == "VERDICT: pass" else 1)', local)
+
+    def test_the_prompt_lists_its_inputs_and_asks_for_a_verdict(self):
+        prompt = self.read(".github", "security-review.md")
+        self.assertIn("{{INPUTS}}", prompt)
+        self.assertIn("0c6a49f1fa56a1d472575da86a94dbc1edb78eda", prompt)  # Anthropic's prompt it starts from
+        self.assertTrue(prompt.rstrip().endswith("VERDICT: pass    (otherwise)"))
 
 
 if __name__ == "__main__":

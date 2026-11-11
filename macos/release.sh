@@ -83,11 +83,15 @@ if [ "$PUBLISH" = 1 ]; then
   ! gh release view "v$VERSION" --repo "$REPO" >/dev/null 2>&1 || die "release v$VERSION already exists on $REPO"
 fi
 
-# A security review of what changed since the last release (.github/workflows/security.yml): Claude reads the diff on
-# GitHub, and a finding it marks "block" stops the release (agreed 2026-11-11). It reads the commit on GitHub, which
-# on_main has checked is this one; a review that already passed for this range is used again. Only when GitHub or
-# Claude is down: PULSAR_SKIP_SECURITY="<why>" releases without it, and says so.
-security_review() {
+# A security review of what changed since the last release, with .github/security-review.md: a finding Claude marks
+# "block" stops the release (agreed 2026-11-11). It runs on this Mac (macos/security_review.sh) while the repository
+# is public, since a run on GitHub would publish its findings; once the repository is private, on GitHub too
+# (PULSAR_SECURITY_ON=github, .github/workflows/security.yml), where colleagues see each review. Only when Claude or
+# GitHub is down: PULSAR_SKIP_SECURITY="<why>" releases without it, and says so.
+#
+# On GitHub it reads the commit there, which on_main has checked is this one; a review that already passed for this
+# range is used again.
+security_review_github() {
   command -v gh >/dev/null || die "the security review needs the GitHub CLI (gh); nothing was signed"
   local head base title since run=""
   head="$(git rev-parse HEAD)"
@@ -120,7 +124,12 @@ security_review() {
 if [ -n "${PULSAR_SKIP_SECURITY:-}" ]; then
   echo "Security review SKIPPED: $PULSAR_SKIP_SECURITY"
 else
-  security_review
+  case "${PULSAR_SECURITY_ON:-local}" in
+    local) "$ROOT/macos/security_review.sh" ||
+             die "the security review did not pass (dist/security-review.md); nothing was signed" ;;
+    github) security_review_github ;;
+    *) die "PULSAR_SECURITY_ON is local or github, not ${PULSAR_SECURITY_ON}" ;;
+  esac
 fi
 
 if [ -z "$NOTES" ]; then

@@ -7,7 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
-- A security review before every release: Claude reads what changed since the last one on GitHub, with read-only tools, and a finding it marks "block" stops the release before anything is built or signed.
+- A security review before every release: Claude reads what changed since the last one with Anthropic's /security-review method and Pulsar's own boundaries, with read-only tools, and a finding it marks "block" stops the release before anything is built or signed. It runs on the releasing Mac for now, and on GitHub too once the repository is private, where everyone can see each review. Tried on a copy with four holes planted among 3,000 changed lines: three runs found 11 of the 12, every one stopped the release, and a clean release passed.
 
 ## 1.6.17 (2026-11-11)
 - No entry shorter than 10 minutes, whichever way it is logged: the log dialog makes a shorter stretch 10 minutes and says why when one is typed, a dragged edge stops at 10, Log the day lists a shorter piece under "not placed" instead of proposing it, and entries from Claude Code follow the same rule. An entry already shorter may still move or keep its length, and Undo puts one back as it was. Project managers had found entries of 2 to 9 minutes in their projects. On 40 replayed days the plan barely changes (12 minutes less in all).

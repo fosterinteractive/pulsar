@@ -31,13 +31,18 @@ signs only `main` exactly as it is on GitHub: it refuses when HEAD is not `origi
 pushed) or the tree has changes, at the start and again right before the first signature, so what protects `main`
 on GitHub also decides what the release key signs. It refuses as well a version
 that is not newer than `__version__` in `pulsar/__init__.py`, a version with no `CHANGELOG.md` entry, and failing
-tests. Then it waits for the **security review** (`.github/workflows/security.yml`, a few minutes on GitHub): Claude
-reads what changed since the last release, with read-only tools, and a finding it marks "block" stops the release
-before anything is built or signed (the review is in the run's summary and printed by `release.sh`). It needs the
-repository secret `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`, then `gh secret set CLAUDE_CODE_OAUTH_TOKEN
---repo fosterinteractive/pulsar`); a review that already passed for the same commit is used again. Only when GitHub
-or Claude is down: `PULSAR_SKIP_SECURITY="<why>" macos/release.sh …` releases without it and says so. Then it sets
-the version, builds into `dist/`, shows what it will do and asks before it:
+tests. Then it runs the **security review** (`macos/security_review.sh`, about a minute, on your Claude Code
+subscription): Claude reads what changed since the last release with `.github/security-review.md` (Anthropic's
+`/security-review` method plus Pulsar's own boundaries), with read-only tools, and a finding it marks "block" stops
+the release before anything is built or signed. The review is printed and kept in `dist/security-review.md`; the
+script also runs on its own (`macos/security_review.sh [<base tag> [<commit>]]`). It runs on this Mac while the
+repository is public, since a run on GitHub would publish its findings. Once the repository is private,
+`PULSAR_SECURITY_ON=github macos/release.sh …` runs the same review on GitHub (`.github/workflows/security.yml`),
+where colleagues see each one; it needs the repository secret `CLAUDE_CODE_OAUTH_TOKEN` (`claude setup-token`, then
+`gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo fosterinteractive/pulsar`), and a review that already passed for the
+same commit is used again. Only when Claude or GitHub is down: `PULSAR_SKIP_SECURITY="<why>" macos/release.sh …`
+releases without it and says so. Then it sets the version, builds into `dist/`, shows what it will do and asks
+before it:
 
 1. commits the version change as "Pulsar 1.1.0" on top of `origin/main` and pushes it to `main`;
 2. creates the public release `v1.1.0` on `fosterinteractive/pulsar` at that commit, with five files:

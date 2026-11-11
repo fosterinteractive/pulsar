@@ -2,6 +2,11 @@
 
 Agreed next steps, newest first. Done items go to `CHANGELOG.md`.
 
+- **The security review on GitHub too, once the repository is private.** So colleagues can see each review in
+  Actions: add the secret `CLAUDE_CODE_OAUTH_TOKEN`, make `PULSAR_SECURITY_ON=github` the default in
+  `macos/release.sh`, run it once by hand on the last release, and test it once on a copy with a planted hole
+  (agreed 2026-11-12). Until then the review runs on the releasing Mac (`macos/security_review.sh`).
+
 - **Parallel time, in Settings.** How time is split when two sessions run at once (two clients: half of the shared
   minutes to the one in the background, from 15 minutes; a client's agent over internal work: its minutes, from 10)
   is the same for everyone now. Asked at the team demo, agreed 2026-11-11: each person can change the share and the
