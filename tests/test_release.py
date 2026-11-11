@@ -462,6 +462,7 @@ class SecurityReviewTest(unittest.TestCase):
         self.assertTrue(uses and all(re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", u) for u in uses), uses)
         self.assertIn('[ "$VERDICT" = "VERDICT: pass" ] ||', wf)
         self.assertIn('sys.exit(0 if last == "VERDICT: pass" else 1)', local)
+        self.assertIn("--restricted --strict-mcp-config", local)  # none of the person's settings or MCP servers
 
     def test_the_prompt_lists_its_inputs_and_asks_for_a_verdict(self):
         prompt = self.read(".github", "security-review.md")

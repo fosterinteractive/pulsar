@@ -9,7 +9,7 @@
 # Prints the review and keeps it in dist/security-review.md; exits 0 on "VERDICT: pass", 1 on "block" or no verdict.
 # The base is the last release tag before the commit (HEAD). Claude reads a copy of the commit (git archive) without
 # the files that steer agents (CLAUDE.md, .claude, …) and the changes as files, with Read, Grep and Glob only: no
-# shell, no network, no writes. It runs on this person's Claude Code subscription.
+# shell, no network, no writes, none of this person's settings or MCP servers. It runs on their Claude Code subscription.
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -46,7 +46,9 @@ PY
 )"
 
 echo "Security review of $BASE..${HEAD_SHA:0:7} with Claude Code (about a minute)" >&2
-(cd "$TMP/src" && claude -p "$PROMPT" --model sonnet --max-turns 60 --allowedTools Read Grep Glob \
+# --restricted: no tool that runs code, none of this person's settings, allow rules or hooks, file tools inside these
+# folders only; --strict-mcp-config with none given: none of their MCP servers (Productive, Pulsar, …) either
+(cd "$TMP/src" && claude -p "$PROMPT" --restricted --strict-mcp-config --model sonnet --max-turns 60 --allowedTools Read Grep Glob \
   --disallowedTools Bash Write Edit MultiEdit NotebookEdit WebFetch WebSearch --add-dir "$TMP/in" \
   --output-format json) > "$TMP/out.json" 2> "$TMP/err.txt" ||
   { tail -5 "$TMP/err.txt" >&2; die "Claude Code did not finish the review"; }
