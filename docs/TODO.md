@@ -2,6 +2,10 @@
 
 Agreed next steps, newest first. Done items go to `CHANGELOG.md`.
 
+- **Close the repository, around 2026-11-18.** First check that everyone moved: downloads of 1.6.15 and later, and
+  the sign-ins to GitHub (Settings > Updates). Check that README's install line still works for a private
+  repository, and change it if not. Then make it private, and then the security review on GitHub (next item).
+
 - **The security review on GitHub too, once the repository is private.** So colleagues can see each review in
   Actions: add the secret `CLAUDE_CODE_OAUTH_TOKEN`, make `PULSAR_SECURITY_ON=github` the default in
   `macos/release.sh`, run it once by hand on the last release, and test it once on a copy with a planted hole
