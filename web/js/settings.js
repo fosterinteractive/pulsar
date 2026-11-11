@@ -431,15 +431,69 @@ function paintUpdate(u) {
   $('#upd-checked').textContent = u.checked || 'not yet';
   const st = $('#update-status');
   st.textContent = u.message || (u.installed ? 'Up to date as far as Pulsar knows.' : 'This copy runs from source, so it does not update itself.');
-  st.classList.toggle('warn', u.status === 'failed' || u.status === 'expired' || u.status === 'stale');
   const now = $('#update-now');
   now.hidden = !offer;
   now.textContent = u.status === 'ready' ? `Restart into ${u.latest}` : `Update to ${u.latest}`;
+  st.classList.toggle('warn', ['failed', 'expired', 'stale', 'signin'].includes(u.status));
+  const g = u.github || {};
+  // an installed copy not signed in to GitHub (or refused): its updates stop once the repository is private
+  const signin = !!(u.installed && g.available && (!g.signedIn || g.problem === 'refused'));
   const chip = $('#ver-chip');
-  chip.textContent = `v${u.current}` + (offer || (u.status === 'available') ? ` · ${u.latest} available` : '');
-  chip.classList.toggle('has-update', u.status === 'available' || u.status === 'ready');
-  $('#open-settings').classList.toggle('has-update', u.status === 'available' || u.status === 'ready');
+  chip.textContent = `v${u.current}` + (offer || (u.status === 'available') ? ` · ${u.latest} available`
+    : signin ? ' · sign in to GitHub' : '');
+  chip.classList.toggle('has-update', u.status === 'available' || u.status === 'ready' || signin);
+  $('#open-settings').classList.toggle('has-update', u.status === 'available' || u.status === 'ready' || signin);
+  paintGithub(g);
 }
+/* Settings > Updates > GitHub: signing in once per Mac, so updates keep arriving from a private repository
+   (pulsar/github.py). GitHub's device flow: a code to enter on GitHub's page, while Pulsar waits. */
+function paintGithub(g) {
+  $('#gh').hidden = !g?.available;
+  if (!g?.available) return;
+  $('#gh-who').textContent = g.signedIn ? (g.login || 'signed in') : 'not signed in';
+  const st = $('#gh-status');
+  st.textContent = g.message || '';
+  st.classList.toggle('warn', !!g.warn);
+  const p = g.pending;
+  $('#gh-code').hidden = $('#gh-link').hidden = !p;
+  if (p) {
+    $('#gh-code-val').textContent = p.code;
+    $('#gh-link').innerHTML = `<a href="${esc(httpsOnly(p.url))}" target="_blank" rel="noopener noreferrer">Open GitHub's page</a>`
+      + ' if no browser window opened.';
+  }
+  $('#gh-signin').hidden = !!p || (g.signedIn && g.problem !== 'refused');
+  $('#gh-signout').hidden = !g.signedIn || !!p;
+}
+let githubWait = null;
+$('#gh-signin').onclick = async () => {
+  const btn = $('#gh-signin'); btn.disabled = true;
+  const r = await postJSON('/api/github/signin', {});
+  btn.disabled = false;
+  if (r.error) { const st = $('#gh-status'); st.textContent = r.error; st.classList.add('warn'); return; }
+  paintGithub(r.github);
+  clearInterval(githubWait);
+  const t0 = Date.now();
+  githubWait = setInterval(async () => {  // the answer arrives on GitHub's page; this page learns of it here
+    const g = await getJSON('/api/github');
+    if (g.error && !g.message) return;  // the server did not answer: ask again
+    if (g.pending && Date.now() - t0 < 31 * 60 * 1000) { paintGithub(g); return; }
+    clearInterval(githubWait);
+    if (CONFIG?.update) { CONFIG.update.github = g; paintUpdate(CONFIG.update); } else paintGithub(g);
+    if (g.signedIn) toast(`Signed in to GitHub${g.login ? ' as ' + g.login : ''}.`);
+  }, 2500);
+};
+$('#gh-copy').onclick = async () => {
+  const code = $('#gh-code-val').textContent;
+  try { await navigator.clipboard.writeText(code); toast('Code copied.'); }
+  catch { toast(`Type the code on GitHub's page: ${code}`); }
+};
+$('#gh-signout').onclick = async () => {
+  const btn = $('#gh-signout'); btn.disabled = true;
+  const r = await postJSON('/api/github/signout', {});
+  btn.disabled = false;
+  if (r.error) { toast(r.error, true); return; }
+  CONFIG.update = r.update; paintUpdate(r.update);
+};
 /* the server restarts within seconds, into the expected version or a newer one: any version other than the one
    this page started with means it is back. A minute without that, and it is time to say so. */
 let waitingForVersion = null;

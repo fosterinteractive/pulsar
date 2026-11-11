@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, appupdate, askclaude, awsetup, calendar, claudelink, claudeuses, config, daymarks, dayplan, dayreview, flags, learn, likely, logbook, mcptools, newtask, productive, pause, ranges, report, selfcheck, sessions, trackers, trackhealth, updater, names
+from . import __version__, appupdate, askclaude, awsetup, calendar, claudelink, claudeuses, config, daymarks, dayplan, dayreview, flags, github, learn, likely, logbook, mcptools, newtask, productive, pause, ranges, report, selfcheck, sessions, trackers, trackhealth, updater, names
 from .mcp import whoami_proof
 
 UPDATER = updater.Updater()
@@ -2079,6 +2079,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(trackhealth.health(s["activitywatch_url"], config.tz(s)))
             if url.path == "/api/selfcheck":  # Settings > Self-check: a Check's progress, and percents (never names)
                 return self.send_json(selfcheck.view(config.load()))
+            if url.path == "/api/github":  # polled by Settings while the person signs in to GitHub (github.py)
+                return self.send_json(github.status())
             if url.path == "/api/calendar/status":  # polled by Settings while the person signs in to Google
                 return self.send_json(calendar.status(config.load()))
             routes = {"/api/activity": api_activity, "/api/entries": api_entries, "/api/proposal": api_proposal,
@@ -2202,6 +2204,16 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception:
                     opened = False
                 return self.send_json({"url": url, "opened": opened})
+            if urlparse(self.path).path == "/api/github/signin":  # Settings > Updates: the GitHub device flow
+                got = github.start()
+                try:
+                    opened = bool(calendar.open_browser(got["url"]))  # the default browser; the page also offers the link
+                except Exception:
+                    opened = False
+                return self.send_json({"opened": opened, "github": github.status()})
+            if urlparse(self.path).path == "/api/github/signout":
+                github.sign_out()
+                return self.send_json({"update": UPDATER.public()})
             if urlparse(self.path).path == "/api/calendar/disconnect":
                 return self.send_json(calendar.disconnect(config.load()))
             if urlparse(self.path).path == "/api/quit":

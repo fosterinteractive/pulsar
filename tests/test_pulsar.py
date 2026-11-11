@@ -2547,8 +2547,10 @@ class UpdaterTest(unittest.TestCase):
         def gone(*a, **k):
             raise urllib.error.HTTPError("u", 404, "Not Found", {}, None)
         seen = []
+        from pulsar import github  # signed in to GitHub with access, so the release itself is gone (test_github.py)
         with mock.patch.object(updater, "fetch", gone), mock.patch.object(updater, "installed", lambda root=None: True), \
-             mock.patch.object(logbook, "record", lambda *a, **k: seen.append(k.get("kind"))):
+             mock.patch.object(logbook, "record", lambda *a, **k: seen.append(k.get("kind"))), \
+             mock.patch.object(github, "update_hint", lambda: ""):
             u = updater.Updater(manifest_url="https://example.invalid/latest.json")
             self.assertEqual(u.check(install=True)["status"], "latest")
         self.assertEqual(seen, ["warning"])

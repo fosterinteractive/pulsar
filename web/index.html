@@ -278,7 +278,7 @@
           <label class="check"><input type="checkbox" name="preview_writes"> Allow this preview to write to Productive</label>
           <p class="hint">Off: logging, changing, deleting entries and creating tasks stop before Productive. Switch it on to test writing for real, then off again.</p>
         </section>
-        <section data-k="version update updates changelog release warp animation codename error log logs errors restart reinstall app window" id="updates">
+        <section data-k="version update updates changelog release warp animation codename error log logs errors restart reinstall app window github sign in signin login private repository" id="updates">
           <h3>Version and updates</h3>
           <div class="kv"><span>Version</span><span id="upd-version" class="num"></span></div>
           <div class="kv"><span>Installed</span><span id="upd-since"></span></div>
@@ -288,6 +288,17 @@
           <div class="btnrow"><button type="button" class="btn bordered" id="update-check">Check for updates</button>
             <button type="button" class="btn primary" id="update-now" hidden>Update</button></div>
           <p class="hint">Checks every hour and when the Mac wakes; installs only when you click Update.</p>
+          <div id="gh" hidden>
+            <div class="kv"><span>GitHub</span><span id="gh-who"></span></div>
+            <p class="status" id="gh-status" role="status"></p>
+            <div class="gh-code" id="gh-code" hidden><span class="num" id="gh-code-val"></span>
+              <button type="button" class="btn bordered" id="gh-copy">Copy</button></div>
+            <p class="hint" id="gh-link" hidden></p>
+            <div class="btnrow"><button type="button" class="btn bordered" id="gh-signin">Sign in to GitHub</button>
+              <button type="button" class="btn bordered" id="gh-signout" hidden>Sign out</button></div>
+            <p class="hint">Once per Mac. Pulsar may only read its own releases with it. Sign out forgets it here; GitHub
+              lists it under Settings → Applications → Authorized GitHub Apps.</p>
+          </div>
           <label class="check"><input type="checkbox" id="warp-on"> Warp animation on refresh and updates</label>
           <p class="hint" id="warp-hint">Option-click the version at the top to see it.</p>
           <div class="btnrow"><button type="button" class="btn bordered" id="settings-logs">Error log</button></div>

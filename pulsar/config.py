@@ -458,6 +458,38 @@ def delete_google_token() -> None:
     _delete_secret(KEYCHAIN_GOOGLE, GOOGLE_TOKEN_FILE)
 
 
+# ---- GitHub sign-in ------------------------------------------------------------------------
+# The GitHub user token that lets updates arrive from a private repository (pulsar/github.py). Kept like the Google
+# token: in the keychain on macOS, elsewhere in a file only its owner can read; never in settings.json, the page or
+# the log.
+
+GITHUB_TOKEN_FILE = os.path.join(CONFIG_DIR, "github-token")
+KEYCHAIN_GITHUB = "github"
+GITHUB_TOKEN_RE = re.compile(r"^[A-Za-z0-9_]{20,255}$")  # ghu_…: nothing that could break out of `security -i`'s quotes
+_github_cache: list = [0.0, None, False]  # time, token, filled
+
+
+def get_github_token() -> str | None:
+    if _github_cache[2] and time.time() - _github_cache[0] < 60:
+        return _github_cache[1]
+    token = _read_secret(KEYCHAIN_GITHUB, GITHUB_TOKEN_FILE, "GitHub sign-in")
+    _github_cache[:] = [time.time(), token, True]
+    return token
+
+
+def set_github_token(token: str) -> None:
+    _github_cache[2] = False
+    token = (token or "").strip()
+    if not GITHUB_TOKEN_RE.match(token):
+        raise ValueError("GitHub answered with a token Pulsar does not recognise; nothing was saved.")
+    _write_secret(KEYCHAIN_GITHUB, GITHUB_TOKEN_FILE, token, "GitHub sign-in")
+
+
+def delete_github_token() -> None:
+    _github_cache[2] = False
+    _delete_secret(KEYCHAIN_GITHUB, GITHUB_TOKEN_FILE)
+
+
 # ---- the keychain, or a private file -----------------------------------------------------
 
 _keychain_stuck_at = [0.0]  # when the keychain last did not answer

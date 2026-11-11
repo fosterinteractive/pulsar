@@ -71,6 +71,10 @@ first time, macOS says it cannot verify Pulsar: click **Done**, open **System Se
 down to the line about Pulsar, click **Open Anyway** and confirm (on macOS 14 and older: right-click Pulsar, **Open**,
 then **Open** again). Only once.
 
+**Once the repository is private**, the install line answers 404 (it downloads without a GitHub sign-in): sign in to
+GitHub in your browser with an account that can see `fosterinteractive/pulsar`, download **Pulsar.zip** from its
+Releases page and install it as **Without Terminal** says. Then sign in to GitHub in Pulsar (see [Updates](#updates)).
+
 **Reinstalling by hand**: quit Pulsar (Cmd+Q), then run the install line again. A Pulsar left running keeps its old
 window until it quits.
 
@@ -116,8 +120,13 @@ Pulsar again. Only releases signed with the maintainer's release key are accepte
 - Two or more releases behind, Pulsar reminds you once every two days; **Skip this release** stops the reminder until
   a newer one is out.
 - What changed: [CHANGELOG.md](CHANGELOG.md), also under **Settings → Updates → Changelog**.
-- The repository must stay public: Pulsar downloads without signing in to GitHub, so from a private repository it gets
-  nothing, and the Pulsar.zip link stops working too.
+- **Sign in to GitHub, once per Mac** (**Settings → Updates → Sign in to GitHub**): Pulsar's repository is going
+  private, and then updates arrive only through a GitHub account that can see it. Pulsar shows a code; enter it on
+  GitHub's page that opens and approve. Until you do, the version at the top says **sign in to GitHub**. The sign-in
+  lets Pulsar read its own releases and nothing else, and it does not expire: you sign in again only if GitHub
+  removes your access to the repository, you revoke it in GitHub's settings, or Pulsar goes unused for a year.
+  Settings says when the account cannot see the repository: then ask a GitHub admin at Foster for access to
+  `fosterinteractive/pulsar`.
 
 ## Connect Productive
 
@@ -412,6 +421,7 @@ Finder: **Go → Go to Folder…**, paste `~/Library/Logs`).
 | What the app wrote while starting | `~/Library/Logs/Pulsar.log` |
 | Your Productive API token | the login keychain, item `pulsar` (open Keychain Access to see it) |
 | Your Google Calendar access | the login keychain, item `pulsar`, account `google-calendar` |
+| Your GitHub sign-in (for updates) | the login keychain, item `pulsar`, account `github`; who signed in in `~/.config/pulsar/github.json` |
 | The window's own data (its sign-in, theme, size, This Mac choices) | `~/Library/WebKit/com.fosterinteractive.pulsar/`, `~/Library/Caches/com.fosterinteractive.pulsar/`, `~/Library/Preferences/com.fosterinteractive.pulsar.plist` |
 
 Everything in `~/.config/pulsar` and `~/.cache/pulsar` is readable by you alone. Pulsar Preview, if you have it, keeps the same things under its own
@@ -447,7 +457,7 @@ Code switched on, what goes to Anthropic.
      ~/Library/WebKit/com.fosterinteractive.pulsar.preview ~/Library/Caches/com.fosterinteractive.pulsar.preview
    defaults delete com.fosterinteractive.pulsar
    defaults delete com.fosterinteractive.pulsar.preview
-   for s in pulsar pulsar-preview; do for a in productive google-calendar; do
+   for s in pulsar pulsar-preview; do for a in productive google-calendar github; do
      security delete-generic-password -s $s -a $a; done; done
    ```
 
@@ -506,6 +516,7 @@ pulsar/
   newtask.py           a new task from the log dialog: its draft and where it can go
   flags.py             ticket flags: closed, no budget, no estimate (read only)
   calendar.py          Google Calendar: sign-in (OAuth, PKCE), a day's meetings, their history
+  github.py            GitHub sign-in (device flow) for updates from a private repository
   google_client.json   the Google sign-in client: placeholders in git, the real one only in releases
   changelog.py         CHANGELOG.md for Settings and release.sh
   names.py             each minor version's pulsar name

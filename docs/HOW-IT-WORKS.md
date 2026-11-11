@@ -187,7 +187,7 @@ yours.
 - **The page itself** is served with a strict Content Security Policy: scripts only from Pulsar
   (`script-src 'self'`), no inline scripts, nothing loaded from the internet.
 - **Secrets** go to the macOS login keychain, service `pulsar`: account `productive` (your API token) and account
-  `google-calendar` (the Google refresh token). Elsewhere they go in files only their owner can read. They never go
+  `google-calendar` (the Google refresh token) and account `github` (the GitHub sign-in for updates). Elsewhere they go in files only their owner can read. They never go
   in `settings.json`, never reach the page, and are cut out of the error log (`logbook.scrub`: tokens, keys and codes
   by their labels and shapes, fields named as keys or secrets, bare lowercase hex of 32 characters or more except a
   40-character git commit id, UUIDs standing alone, long opaque strings; paths and file names stay).
@@ -1796,7 +1796,7 @@ view and every 30 seconds; left out in a window narrower than 820 pixels.
 | (memory only) | SHA-256 of each signed-in browser's token, for as long as that server runs. Older versions kept them in `~/.config/pulsar/sessions.json`, which start-up now removes. |
 | `~/.config/pulsar/signin-code` | The one-time code (two minutes). |
 | `~/.config/pulsar/google_client.json` | Only on the releaser's Mac: the real Google client. |
-| Keychain, service `pulsar` | `productive` (API token), `google-calendar` (refresh token). |
+| Keychain, service `pulsar` | `productive` (API token), `google-calendar` (refresh token), `github` (GitHub sign-in). |
 | `~/.cache/pulsar/days/<person>/` | The last copy of each day's entries (120 days). |
 | `~/.cache/pulsar/names.json` | Names of projects, budgets, services, tasks; billing types; how many of a project's recent tasks have an estimate (5.3); when each was read. |
 | `~/.cache/pulsar/likely-days/` | Past days' Likely rows for learning: times, repository, title hashes. |
@@ -1848,8 +1848,29 @@ sequenceDiagram
   memory only.
 - **Never automatic.** A check only looks; installing needs the **Update** button. A stolen release key alone cannot
   reach everyone's Mac the same hour.
-- **Downloads** come only from `github.com/fosterinteractive/pulsar/releases/download/` (the repository must stay
-  public). The zip must match the signed SHA-256, have one top folder, and no path may leave it.
+- **Downloads** come only from `github.com/fosterinteractive/pulsar/releases/download/`, or the same files through
+  GitHub's API when signed in (below). The zip must match the signed SHA-256, have one top folder, and no path may
+  leave it.
+- **Signed in to GitHub** (`pulsar/github.py`), so updates keep arriving from a private repository. Foster's GitHub
+  App ("Pulsar updates", `github.CLIENT_ID`) may only read the contents of `fosterinteractive/pulsar`, for people who
+  can see that repository themselves; its user tokens do not expire. **Sign in to GitHub** (Settings > Updates) runs
+  GitHub's device flow: `POST /api/github/signin` asks `github.com/login/device/code` for a code, opens
+  `github.com/login/device`, and a thread asks `github.com/login/oauth/access_token` every 5 s (more on `slow_down`)
+  until the person approved, cancelled, or the code expired (15 min); the page polls `GET /api/github`. The token goes
+  into the keychain (account `github`), never into settings, the page or the log. `github.json` in the config folder
+  keeps the login, whether the account sees the repository and when that was asked: no secret.
+  - With a token, `updater.fetch` reads a release file through the API (`/repos/…/releases/latest` or
+    `/releases/tags/vX`, then the asset with `Accept: application/octet-stream`). The token is an unredirected header,
+    so urllib does not carry it to the file storage GitHub redirects to, and it is sent to `api.github.com` only. A
+    refused token (401), a 404 or an API that does not answer falls back to the public link, so nothing changes while
+    the repository is public; the signature check is the same either way.
+  - Whether the account sees the repository is GitHub's list of the repositories the App's token may read
+    (`/user/installations`, then that installation's `/repositories`), which needs explicit access (a team or an
+    invitation): it answers the same before and after the repository goes private. Asked after signing in and once a
+    day from the hourly check; Settings warns when the answer is no.
+  - When the manifest answers 404 on an installed copy that is not signed in (or refused, or without access), the
+    check says to sign in (status `signin`) instead of "no release is published", and the version at the top asks
+    for it too (`sign in to GitHub`).
 - **A version that fails** its self-test twice in a row is marked bad and never tried again; the running copy stays.
   A self-test that could not finish (a timeout on a busy or sleeping Mac, its own or one of its requests to the
   page, exit status 75) marks nothing: the next Update tries again.

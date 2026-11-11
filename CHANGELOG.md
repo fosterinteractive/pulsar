@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Sign in to GitHub, once per Mac (Settings > Updates): Pulsar's repository is going private, and then updates arrive only through a GitHub account that can see it. Until you sign in, the version at the top says so. The sign-in reads Pulsar's releases and nothing else, does not expire, and Settings says when your account cannot see the repository.
 - Log the day leaves fewer holes with work by turns: an entry pushed behind the entries proposed before it is laid out up to 30 minutes after its own work instead of being listed as not placed (12 minutes had been dropped as "no room" and left a 15-minute hole). An entry's reason comes from its own task, never from a crumb of other work joined to it.
 
 ## 1.6.14 (2026-11-10)

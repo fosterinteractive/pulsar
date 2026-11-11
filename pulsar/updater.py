@@ -146,9 +146,37 @@ def read_version(copy: str) -> str:
 
 
 def fetch(url: str, limit: int, timeout: float = 30) -> bytes:
-    req = urllib.request.Request(url, headers={"User-Agent": f"Pulsar/{__version__}"})
     if config.tests_offline():
         raise OSError("A test tried to reach the network; tests must fake it.")
+    return _fetch(url, limit, timeout)
+
+
+def _fetch(url: str, limit: int, timeout: float) -> bytes:
+    """Signed in to GitHub (github.py), a release file comes through GitHub's API, which also serves a private
+    repository; otherwise, or when that fails, from the public link."""
+    from . import github
+    token = github.token_for(url)
+    if token:
+        try:
+            return github.fetch(url, limit, timeout, token)
+        except github.SignInProblem:
+            pass  # GitHub refused the sign-in: the public link, as before signing in (Settings says to sign in again)
+        except urllib.error.HTTPError as exc:
+            if exc.code != 404:
+                raise
+            # not found through the API (no such release, or this account cannot see the repository): the public link
+            # decides, so a missing access never hides a release a public repository still serves
+        except ValueError:
+            raise  # larger than expected: the same from either way
+        except Exception as exc:  # GitHub's API not answering: the public link may still
+            from . import logbook
+            logbook.record("updater", f"GitHub's API did not answer for an update ({exc}); trying the public link.",
+                           kind="warning", once_per=3600)
+    return _anonymous(url, limit, timeout)
+
+
+def _anonymous(url: str, limit: int, timeout: float) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": f"Pulsar/{__version__}"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = resp.read(limit + 1)
     if len(data) > limit:
@@ -240,7 +268,8 @@ class Updater:
             since = ""
         from . import appupdate
         app = {**(self.state.get("app") or {}), **appupdate.status(self.root)}  # the app itself (appupdate.py)
-        return {**self.state, "installed": installed(self.root), "since": since, "app": app}
+        from . import github
+        return {**self.state, "installed": installed(self.root), "since": since, "app": app, "github": github.status()}
 
     def _set(self, status: str, message: str = "", **extra) -> dict:
         self.state.update(status=status, message=message, **extra)
@@ -256,13 +285,22 @@ class Updater:
             self._set("checking", "Checking for a new version…")
             self.state["checked"] = time.strftime("%d %b %Y, %H:%M")  # an attempt counts as a check, whatever comes back
             try:
+                from . import github
+                github.maybe_recheck()  # once a day: whether the GitHub sign-in still sees the repository
+            except Exception:
+                pass
+            try:
                 raw = fetch(self.manifest_url, 64 * 1024, timeout=15)
             except urllib.error.HTTPError as exc:
                 if exc.code == 404:
                     if installed(self.root):  # an installed copy came from a release, so one existed: say so in the log
+                        from . import github
+                        hint = github.update_hint()  # a private repository: the GitHub sign-in is missing or refused
+                        if hint:
+                            return self._set("signin", hint)
                         from . import logbook
                         logbook.record("updater", "The update address answers 404: the release is gone or the "
-                                       "repository is private (it must be public). No updates arrive until it is fixed.",
+                                       "repository is private and this copy cannot read it. No updates arrive until it is fixed.",
                                        kind="warning", once_per=86400)
                     return self._set("latest", f"No release of Pulsar is published yet; {__version__} is the latest.")
                 return self._set("failed", f"The update server answered HTTP {exc.code}.")

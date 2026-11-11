@@ -163,6 +163,9 @@ aside { display: flex; flex-direction: column; gap: 12px; overflow-y: auto; min-
 .kv { display: flex; justify-content: space-between; align-items: baseline; padding: 3px 0; gap: 12px; }
 .kv span:first-child { color: var(--muted); }
 .kv.big span:last-child { font-size: 15px; font-weight: 600; }
+/* the GitHub sign-in code (Settings > Updates): read off the screen and typed on GitHub's page */
+.gh-code { display: flex; align-items: center; gap: 12px; margin: 6px 0 2px; }
+.gh-code .num { font: 600 22px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .12em; user-select: all; }
 .kv.gap span:last-child { color: var(--gap-text); }
 .kv > .num { white-space: nowrap; }  /* a long name beside it wraps; "1 min" never breaks in two */
 .bar { height: 4px; border-radius: 2px; background: var(--seg); margin: 10px 0 2px; overflow: hidden; }

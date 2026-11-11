@@ -75,9 +75,17 @@ the account cannot change the app in /Applications, the page shows the install l
 Click-only updates also limit the damage of a stolen release key: a forged release reaches only the people who
 click Update, not everyone within six hours.
 
-**Keep the repository public.** Installed copies and the Pulsar.zip link download without a GitHub sign-in. In a
-private repository every download answers 404: Settings then says no release is published, and an installed
-copy writes a warning to its error log once a day.
+**The repository and the GitHub sign-in.** Installed copies download the release files from the public links, or,
+signed in to GitHub (**Settings → Updates → Sign in to GitHub**, `pulsar/github.py`), through GitHub's API, which also
+serves a private repository. Before making the repository private, everyone using Pulsar must run a release that
+has the sign-in (1.6.15 or newer) and sign in; a copy that does not reads every download as 404, and Settings then
+asks it to sign in (an older copy says no release is published). Whoever installs later needs an account that can
+see the repository: the Pulsar.zip link and the install line work only while it is public.
+
+The sign-in is Foster's GitHub App **Pulsar updates** (organization settings → Developer settings → GitHub Apps),
+whose client id is `CLIENT_ID` in `pulsar/github.py`: no webhook, repository permission **Contents: read-only**,
+**Enable Device Flow** on, **Expire user authorization tokens** off, installable only on this organization and
+installed there on `pulsar` alone. It has no secret Pulsar needs; never commit its private key if one is made.
 
 **The release keys.** Installed copies trust only releases signed with one of the ECDSA P-256 keys listed in
 `PUBLIC_KEYS` in `pulsar/release_sig.py`. Since 1.5.1 there are three: the old key file (until the move below is
@@ -430,4 +438,4 @@ Pulsar's Google client and a revoke would end Pulsar's access too. Neither app's
   `~/Library/Logs/Pulsar-Preview.log`, `~/Library/WebKit/com.fosterinteractive.pulsar.preview` and
   `~/Library/Caches/com.fosterinteractive.pulsar.preview`, run `defaults delete com.fosterinteractive.pulsar.preview`,
   and remove its keychain items (`security delete-generic-password -s pulsar-preview -a productive`, and
-  `-a google-calendar`). Pulsar's own folders and items stay. A checkout older than `PULSAR_INSTANCE` used Pulsar's.
+  `-a google-calendar`, `-a github`). Pulsar's own folders and items stay. A checkout older than `PULSAR_INSTANCE` used Pulsar's.
