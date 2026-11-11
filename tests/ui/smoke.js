@@ -112,6 +112,10 @@ try {
     const want = `${hm(Math.round(x.s) + by)}–${hm(clockAfter(state.date, Math.round(x.s) + by, x.minutes))}`;
     check('a logged card dragged whole asks to move it', head === 'Move this entry?' && sub === want,
       `${head || 'no question'} ${sub} (wanted ${want})`);
+    render(); await wait(100);  // a redraw while the question is open: the card stays where it was dropped
+    const held = q(`#lane-logged .card.logged[data-i="${card.dataset.i}"]`), heldTop = (Math.round(x.s) + by) * ppm + 1;
+    check('the dropped card stays there until Move or Cancel', !!held && Math.abs(parseFloat(held.style.top) - heldTop) < 2,
+      held ? `top ${held.style.top}, wanted ${heldTop}px` : 'no card');
     q('#pop [data-rz-no]')?.click();
     await wait(200);
     const back = q(`#lane-logged .card.logged[data-i="${card.dataset.i}"]`);

@@ -335,6 +335,11 @@ function place(x, ppm, minPx, inset = 3) {
 
 /* ---------- render ---------- */
 let blocksCache = [], likelyCache = [], loggedCache = [], repeatCache = [];
+/* a dragged card's new place, {id, s, e}, while its "Move/Change this entry?" is open: drawn there until Move or Cancel
+   (a redraw in between put it back at its old time while the question still asked about the new one) */
+let heldMove = null;
+const heldNow = () => heldMove && pop.classList.contains('on') && popEntry?.id === heldMove.id
+  && pop.querySelector('[data-rz-yes]') ? heldMove : null;
 function render() {
   const Z = state.zoom, ppm = ppmOf(Z);
   const act = state.act, likely = state.likely, logged = state.logged;
@@ -461,7 +466,8 @@ function render() {
     const done = new Set(logged.entries.map(x => x.taskId));
     // in Log the day the proposals share the lanes (logday.js), and stand in for the repeats
     const review = ldActive();
-    const laid = lanes([...(review && LD.plan?.ignoreLogged ? [] : logged.entries).map(x => ({...x})),
+    const held = heldNow();
+    const laid = lanes([...(review && LD.plan?.ignoreLogged ? [] : logged.entries).map(x => held && x.id === held.id ? {...x, s: held.s, e: held.e} : {...x}),
                         ...(review ? [] : (state.repeats || []).filter(r => !done.has(r.taskId)).map(r => ({...r, repeat: true}))),
                         ...(review ? ldLaneItems() : [])], ppm, 18);
     loggedCache = laid.filter(x => !x.repeat && !x.prop); repeatCache = laid.filter(x => x.repeat);
@@ -750,6 +756,7 @@ document.addEventListener('click', ev => {
 function closePop(refocus = false) {
   const was = pop.classList.contains('on');
   pop.classList.remove('on'); popEntry = null;
+  if (heldMove) { heldMove = null; forgetHTML($('#lane-logged')); drawSoon(); }  // a dragged card goes where its entry is
   if (refocus && was && popFrom) {  // the card may have been redrawn since: find it again by its place
     const el = popFrom.isConnected ? popFrom : document.querySelector(`.card[data-k="${popFrom.dataset.k}"][data-i="${popFrom.dataset.i}"]`);
     el?.focus();
@@ -993,7 +1000,7 @@ async function undoDelete(x, date) {
   const MOVED = 4;  // pixels: a card pressed and let go nearer than this was clicked (its popover), not moved
   let drag = null, justDone = 0;
   lane.addEventListener('pointerdown', ev => {
-    if (ev.button !== 0) return;
+    if (ev.button !== 0 || heldNow()) return;  // a dropped card's question is open: Move or Cancel it first
     const h = ev.target.closest('.rz'), card = (h || ev.target).closest('.card.logged');
     const x = card && loggedCache[+card.dataset.i];
     if (!x || x.s == null) return;  // an entry with no start is on no timeline
@@ -1029,9 +1036,11 @@ async function undoDelete(x, date) {
     forgetHTML(lane);  // the card was moved by hand: the next redraw puts it where its entry is
     if (Math.round(d.s) === Math.round(d.x.s) && Math.round(d.e) === Math.round(d.x.e)) { forgetHTML(lane); render(); return; }
     const r = d.card.getBoundingClientRect(), at = {clientX: r.right - 8, clientY: r.top + 10};
-    if (d.edge === 'move') { askResize(d.x, d.s, d.x.minutes, at, null, true); return; }
+    if (d.edge === 'move') askResize(d.x, d.s, d.x.minutes, at, null, true);
     // only the edge that moved changes: the other keeps its exact time (an entry's start can hold seconds)
-    askResize(d.x, d.s === d.x.s ? null : d.s, realMinutes(state.date, d.s, d.e), at);
+    else askResize(d.x, d.s === d.x.s ? null : d.s, realMinutes(state.date, d.s, d.e), at);
+    heldMove = {id: d.x.id, s: d.s, e: d.e};  // the card stays where it was dropped until Move, Change or Cancel
+    forgetHTML(lane); render();
   });
   lane.addEventListener('pointercancel', () => { if (drag) { const on = drag.on; drag.card.classList.remove('moving'); drag = null; if (on) { forgetHTML(lane); render(); } } });
   // the click that ends a drag must not open the card's popover over the question
@@ -1055,6 +1064,10 @@ async function saveResize(btn, force) {
   const r = await postJSON('/api/entry/update', {id: x.id, date: state.date, ...(start == null ? {} : {start: hm24(start)}),
                                                  minutes, force, seen: seenOf(x)});
   if (r.overlap) { const at = btn.getBoundingClientRect(); askResize(x, start, minutes, {clientX: at.left, clientY: at.top - 60}, r.overlap, btn.dataset.move === '1'); return; }
+  if (!r.error) {  // drawn at its new time at once, not back at the old one until Productive is read again
+    const e = (state.logged?.entries || []).find(y => y.id === x.id), s0 = start ?? x.s;
+    if (e) Object.assign(e, {s: s0, e: clockAfter(state.date, s0, minutes), minutes});
+  }
   closePop();
   if (r.error) { toast(r.error, true); refreshLogged(); return; }
   const s = start ?? x.s, d = state.date;
