@@ -100,6 +100,6 @@ function ldReapply(fresh, kept, logged) {
 /* the review's suggestions (ldreview.js SG.items): one is known by its kind, the row it was for as it was then, and
    what it says; its state (accepted, rejected) goes back on the same suggestion */
 function sgItemKey(s) {
-  const {key, state, at, ...what} = s;
+  const {key, state, at, answer, ...what} = s;  // the same suggestion, however it was answered
   return JSON.stringify([s.source || '', s.kind, at ? [at.s, at.taskId] : null, what]);
 }

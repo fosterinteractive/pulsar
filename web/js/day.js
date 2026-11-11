@@ -755,7 +755,7 @@ document.addEventListener('click', ev => {
 });
 function closePop(refocus = false) {
   const was = pop.classList.contains('on');
-  pop.classList.remove('on'); popEntry = null;
+  pop.classList.remove('on'); popEntry = null; resizeDone = null;
   if (heldMove) { heldMove = null; forgetHTML($('#lane-logged')); drawSoon(); }  // a dragged card goes where its entry is
   if (refocus && was && popFrom) {  // the card may have been redrawn since: find it again by its place
     const el = popFrom.isConnected ? popFrom : document.querySelector(`.card[data-k="${popFrom.dataset.k}"][data-i="${popFrom.dataset.i}"]`);
@@ -1046,6 +1046,9 @@ async function undoDelete(x, date) {
   // the click that ends a drag must not open the card's popover over the question
   lane.addEventListener('click', ev => { if (Date.now() - justDone < 400) { ev.stopPropagation(); ev.preventDefault(); } }, true);
 })();
+/* what to do once "Change"/"Move" has written the change (Log the day's "Add to that entry…", ldreview.js); a closed
+   question forgets it */
+let resizeDone = null;
 /* start: the new start, or null when only the end moved (the start stays exactly as it is); move: the card was dragged
    whole, so only its start changes */
 function askResize(x, start, minutes, at, overlap = null, move = false) {
@@ -1058,12 +1061,13 @@ function askResize(x, start, minutes, at, overlap = null, move = false) {
       <button class="btn bordered sm" data-rz-no>Cancel</button></div>`, at);
 }
 async function saveResize(btn, force) {
-  const x = popEntry, start = btn.dataset.start === '' ? null : +btn.dataset.start, minutes = +btn.dataset.minutes;
+  const x = popEntry, start = btn.dataset.start === '' ? null : +btn.dataset.start, minutes = +btn.dataset.minutes, done = resizeDone;
   if (!x) return;
   btn.disabled = true;
   const r = await postJSON('/api/entry/update', {id: x.id, date: state.date, ...(start == null ? {} : {start: hm24(start)}),
                                                  minutes, force, seen: seenOf(x)});
   if (r.overlap) { const at = btn.getBoundingClientRect(); askResize(x, start, minutes, {clientX: at.left, clientY: at.top - 60}, r.overlap, btn.dataset.move === '1'); return; }
+  if (!r.error) done?.();
   if (!r.error) {  // drawn at its new time at once, not back at the old one until Productive is read again
     const e = (state.logged?.entries || []).find(y => y.id === x.id), s0 = start ?? x.s;
     if (e) Object.assign(e, {s: s0, e: clockAfter(state.date, s0, minutes), minutes});

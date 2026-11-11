@@ -273,7 +273,7 @@ dialog.dlg::backdrop { background: rgba(0,0,0,.35); }
 .sg-t { font-weight: 600; }
 .sg-p { color: var(--muted); font-weight: 400; }
 .sg-w { display: block; color: var(--muted); }
-.sg-a { display: flex; gap: 4px; grid-column: 2; }
+.sg-a { display: flex; flex-wrap: wrap; gap: 4px; grid-column: 2; }
 .sg-done { grid-column: 2; }
 .sg-a .btn.sm, .sg-head .btn.sm { padding: 3px 9px; font-size: 12px; min-height: 0; }
 .sg-done { color: var(--muted); font-size: 11.5px; white-space: nowrap; }

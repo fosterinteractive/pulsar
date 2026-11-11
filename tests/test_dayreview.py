@@ -185,6 +185,50 @@ class Checks(unittest.TestCase):
         self.assertEqual(len(dropped), len(raw))
 
 
+class ButtonsThatDoIt(unittest.TestCase):
+    """2026-11-12: a question came with "Noted" and Reject, and a call that ran on after a meeting already logged could
+    only be fixed by hand. A question now brings answers that each make their change, and "extend" adds a row's minutes
+    to the entry logged right next to it."""
+    rows = [{"id": "r0", "s": 1120, "e": 1145, "minutes": 25, "taskId": None, "source": "call", "services": []},
+            {"id": "r1", "s": 1380, "e": 1410, "minutes": 30, "taskId": "5", "services": []}]
+    known = {"5": {"title": "DB upgrade - site A", "project": "ACME"}, "6": {"title": "DB upgrade - site B", "project": "ACME"}}
+    logged = [{"id": "900", "s": 1055, "e": 1120, "task": "Team jam"}, {"id": "901", "s": 600, "e": 660, "task": "Scrum"}]
+
+    def test_extend_names_an_entry_logged_right_next_to_the_row(self):
+        raw = [{"row": "r0", "kind": "extend", "entryId": "900", "why": "the jam ran over"},
+               {"row": "r0", "kind": "extend", "entryId": "901", "why": "hours apart"},
+               {"row": "r0", "kind": "extend", "entryId": "999", "why": "no such entry"}]
+        got, dropped = dayreview.validate(raw, self.rows, self.known, self.logged)
+        self.assertEqual([(g["entryId"], g["entryTask"], g["entryS"], g["entryE"]) for g in got], [("900", "Team jam", 1055, 1120)])
+        self.assertEqual(len(dropped), 2)
+
+    def test_a_questions_answers_each_make_a_change_and_bad_ones_are_left_out(self):
+        raw = [{"row": "r1", "kind": "question", "question": "Split the 30 min across the sites, or all to site A?",
+                "why": "no per-site time",
+                "answers": [{"label": "Split across both", "kind": "split",
+                             "split": [{"taskId": "5", "minutes": 15}, {"taskId": "6", "minutes": 15}]},
+                            {"label": "All to site A", "kind": "keep"},
+                            {"label": "Made-up task", "kind": "task", "taskId": "777"}]}]
+        got, dropped = dayreview.validate(raw, self.rows, self.known, self.logged)
+        self.assertEqual([(a["label"], a["kind"]) for a in got[0]["answers"]], [("Split across both", "split"), ("All to site A", "keep")])
+        self.assertEqual([p["title"] for p in got[0]["answers"][0]["split"]], ["DB upgrade - site A", "DB upgrade - site B"])
+        self.assertEqual(len(dropped), 1)
+
+    def test_a_call_that_starts_as_a_logged_meeting_ends_goes_on_that_meeting(self):
+        entries = [dict(self.rows[0])]
+        calls = [{"s": 1060, "e": 1110}, {"s": 1120, "e": 1121}, {"s": 1139, "e": 1143}]
+        got = dayreview.continued_calls(entries, self.logged, calls)
+        self.assertEqual([(g["row"], g["kind"], g["entryId"], g["source"]) for g in got], [("r0", "extend", "900", "rule")])
+        # no call during that entry: another call, left to the person
+        self.assertEqual(dayreview.continued_calls(entries, self.logged, [{"s": 1120, "e": 1145}]), [])
+        # a row with a task, or not a call, is not touched
+        self.assertEqual(dayreview.continued_calls([{**self.rows[0], "taskId": "5"}], self.logged, calls), [])
+
+    def test_the_digest_gives_the_logged_entries_ids(self):
+        doc = {"logged": [{"id": "900", "time": "17:35", "min": 65, "task": "Team jam"}, {"id": "7", "time": "no start", "min": 5}]}
+        self.assertEqual(dayreview.logged_of(doc), [{"id": "900", "s": 1055, "e": 1120, "task": "Team jam"}])
+
+
 class Running(unittest.TestCase):
     def test_claude_code_starts_isolated_with_the_digest_and_productives_read_tools_only(self):
         seen = {}

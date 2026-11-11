@@ -940,7 +940,7 @@ def _meetings(d: _Day) -> None:
         if len(free) < CALL_MIN:
             continue  # a glance at a call window, or the edges of a meeting already placed
         i, got = claim({"kind": "meeting", "source": "call", "task": None, "conf": "low", "attended": True,
-                        "why": "a call the tracker saw, with no calendar entry: pick the task", "note": "", "noteFrom": "",
+                        "why": "a call the tracker saw, with nothing in your calendar then: which task was it for?", "note": "", "noteFrom": "",
                         "titles": []}, free)
         if got:
             attended.append([free[0], free[-1] + 1, i])
@@ -2196,6 +2196,9 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
         e["id"] = f"r{i}"
     known = {tid: {**((b or {}).get("task") or {}), "taskId": tid} for tid, (b, _) in found.items() if b}
     result["suggestions"] = dayreview.fi_rules(result["entries"], date, got["fresh"] or [], known)
+    # a call that went on after a meeting already logged: its minutes on that entry, not a new one
+    named = [{**x, "task": r.get("task") or ""} for x, r in zip(logged, rows)]
+    result["suggestions"] += dayreview.continued_calls(result["entries"], named, calls)
     for e in result["entries"]:
         for a in e["alts"]:
             if not a["title"] and a["taskId"] in found and found[a["taskId"]][0]:

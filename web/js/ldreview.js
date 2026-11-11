@@ -4,8 +4,11 @@
    the review only: nothing is written until Log the day's own confirm step, one entry at a time, journalled. */
 
 const SG = {items: [], asking: false, note: ''};
-const SG_KIND = {task: 'Task', service: 'Service', minutes: 'Minutes', split: 'Split', create_task: 'New task',
-                 question: 'Question', untick: 'Leave out'};
+/* each suggestion is one sentence saying what its button does, and the button is named for that (2026-11-12: "Leave
+   out not this entry" with Accept and Reject, and a question answered with "Noted", were not understood); a question
+   comes with answers that each make their change */
+const SG_KIND = {task: 'task', service: 'service', minutes: 'length', split: 'split', create_task: 'new task',
+                 question: 'question', untick: "don't log", extend: 'add to an entry'};
 
 /* the plan's own suggestions (FI's rules), when Log the day opens */
 function sgFromPlan(plan) {
@@ -17,8 +20,8 @@ function sgSnapshot() { return {items: SG.items.map(s => ({...s})), note: SG.not
 /* back on a fresh plan: FI's rules recomputed take the state they had (the same suggestion, ldkeep.js sgItemKey);
    Claude's come back as they were, matched to the rows again by time and task */
 function sgRestore(k) {
-  const was = new Map((k.items || []).map(s => [sgItemKey(s), s.state]));
-  for (const s of SG.items) if (was.has(sgItemKey(s))) s.state = was.get(sgItemKey(s));
+  const was = new Map((k.items || []).map(s => [sgItemKey(s), s]));
+  for (const s of SG.items) if (was.has(sgItemKey(s))) Object.assign(s, {state: was.get(sgItemKey(s)).state, answer: was.get(sgItemKey(s)).answer});
   SG.items = SG.items.concat((k.items || []).filter(s => s.source === 'claude').map((s, i) => ({...s, key: 'k' + i})));
   SG.note = k.note || '';
 }
@@ -65,27 +68,43 @@ async function sgAsk() {
   renderReview(); render();
 }
 
-function sgText(s) {
-  if (s.kind === 'task') return `${esc(s.title || 'task ' + s.taskId)}${s.project ? ` <span class="sg-p">· ${esc(s.project)}</span>` : ''}`;
-  if (s.kind === 'service') return esc(s.service);
-  if (s.kind === 'minutes') return `${dur(s.minutes)}`;
-  if (s.kind === 'split') return s.split.map(p => `${esc(p.title || 'task ' + p.taskId)} ${dur(p.minutes)}`).join(' + ');
-  if (s.kind === 'create_task') return `“${esc(s.title)}”${s.parentTitle ? ` under ${esc(s.parentTitle)}` : ''} <span class="sg-p">· ${esc(s.project)}</span>`;
-  if (s.kind === 'question') return esc(s.question);
-  return 'not this entry';
+/* an entry already in the Logged column, by its id (extend) */
+const sgLogged = id => (state.logged?.entries || []).find(x => String(x.id) === String(id) && x.s != null) || null;
+/* extend: that entry's time once the row's minutes are added to it */
+function sgSpan(x, r) { return {a: Math.min(x.s, r.s), b: Math.max(x.e ?? x.s + x.minutes, r.e ?? r.s + r.minutes)}; }
+/* {text, ok}: the sentence (HTML) and the label of the button that does it (none: nothing to do but read it) */
+function sgSay(s, r) {
+  const t = (title, id, project) => `<b>${esc(title || 'task ' + id)}</b>${project ? ` <span class="sg-p">· ${esc(project)}</span>` : ''}`;
+  if (s.kind === 'task') return {text: `${r?.taskId ? 'Change the task to' : 'Log it to'} ${t(s.title, s.taskId, s.project)}`, ok: 'Use this task'};
+  if (s.kind === 'service') return {text: `Change the service to <b>${esc(s.service)}</b>`, ok: 'Use this service'};
+  if (s.kind === 'minutes') return {text: `Make it <b>${dur(s.minutes)}</b>${r ? ` instead of ${dur(r.minutes)}` : ''}`, ok: `Make it ${dur(s.minutes)}`};
+  if (s.kind === 'split') return {text: `Split it: ${s.split.map(p => `${t(p.title, p.taskId)} ${dur(p.minutes)}`).join(' + ')}`, ok: 'Split it'};
+  if (s.kind === 'untick') return {text: "Don't log this entry (it stays in the list, unticked)", ok: "Don't log it"};
+  if (s.kind === 'extend') {
+    const x = sgLogged(s.entryId), name = esc(x?.task || s.entryTask || 'the entry next to it');
+    if (!x || !r) return {text: `Add these minutes to <b>${name}</b>, already logged`, ok: null};
+    const {a, b} = sgSpan(x, r);
+    return {text: `Add these ${dur(r.minutes)} to <b>${name}</b>, already logged: ${hm(x.s)}–${hm(x.e ?? x.s + x.minutes)} becomes <b>${hm(a)}–${hm(b)}</b>, with no new entry`, ok: 'Add to that entry…'};
+  }
+  if (s.kind === 'create_task') return {text: `No task fits: create ${t(s.title, '', s.project)}${s.parentTitle ? ` under ${esc(s.parentTitle)}` : ''}`, ok: r ? 'Create it…' : null};
+  if (s.kind === 'question') return {text: `<b>${esc(s.question)}</b>`, ok: null};
+  return {text: '', ok: null};
 }
 function sgItemHTML(s, row) {
   const mark = s.source === 'claude' ? CLAUDE_MARK.split('<span')[0] : '<span class="sg-rule" aria-hidden="true">FI</span>';
   const who = s.source === 'claude' ? 'Claude' : "FI's rule";
-  const gone = s.row && !row;
-  const ok = s.kind === 'question' || s.kind === 'create_task' ? 'Noted' : 'Accept';
-  const done = s.state === 'accepted' ? `<span class="sg-done">${s.kind === 'question' || s.kind === 'create_task' ? 'Noted' : 'Accepted'}</span>`
-    : s.state === 'rejected' ? '<span class="sg-done">Rejected</span>' : '';
-  return `<li class="sg ${s.state}${gone ? ' gone' : ''}" data-sg="${s.key}">${mark}
-    <div class="sg-b"><span class="sg-k">${SG_KIND[s.kind]}</span> <span class="sg-t">${sgText(s)}</span>
-      <span class="sg-w"><span class="vh">${who}: </span>${esc(s.why)}${gone ? ' · the row changed since' : ''}</span></div>
-    ${done || (gone ? '' : `<span class="sg-a"><button type="button" class="btn sm" data-sg-ok="${s.key}">${ok}</button>
-      <button type="button" class="btn sm bordered" data-sg-no="${s.key}" aria-label="Reject: ${esc(SG_KIND[s.kind])}">Reject</button></span>`)}</li>`;
+  const gone = s.row && !row, say = sgSay(s, row), answers = s.kind === 'question' ? s.answers || [] : [];
+  const done = s.state === 'accepted' ? `<span class="sg-done">${s.answer ? `Answered: ${esc(s.answer)}` : 'Done'}</span>`
+    : s.state === 'rejected' ? `<span class="sg-done">${s.kind === 'question' ? (answers.length ? 'Skipped' : 'Seen') : s.kind === 'create_task' ? 'Not now' : 'Kept as it is'}</span>` : '';
+  const acts = done || gone ? ''
+    : answers.length ? answers.map((a, i) => `<button type="button" class="btn sm" data-sg-ans="${s.key}" data-i="${i}">${esc(a.label)}</button>`).join('')
+      + `<button type="button" class="btn sm bordered" data-sg-no="${s.key}">Skip</button>`
+    : say.ok ? `<button type="button" class="btn sm" data-sg-ok="${s.key}">${esc(say.ok)}</button><button type="button" class="btn sm bordered" data-sg-no="${s.key}">${s.kind === 'create_task' ? 'Not now' : 'Keep as it is'}</button>`
+    : `<button type="button" class="btn sm bordered" data-sg-no="${s.key}">Got it</button>`;
+  return `<li class="sg ${s.state}${gone ? ' gone' : ''}" data-sg="${s.key}" aria-label="${esc(`${who} ${s.kind === 'question' ? 'asks' : 'suggests'}: ${SG_KIND[s.kind]}`)}">${mark}
+    <div class="sg-b"><span class="sg-k">${who} ${s.kind === 'question' ? 'asks' : 'suggests'}:</span> <span class="sg-t">${say.text}</span>
+      <span class="sg-w">${esc(s.why)}${gone ? ' · the row changed since' : ''}</span></div>
+    ${done || (acts ? `<span class="sg-a">${acts}</span>` : '')}</li>`;
 }
 /* under a row: its open suggestions (and the ones just decided, so the click shows) */
 function sgRowHTML(r) {
@@ -129,20 +148,19 @@ function sgDayHTML() {
   return day.length ? `<li class="sg-day"><ul class="sg-list day" aria-label="For the whole day">${day.map(s => sgItemHTML(s, null)).join('')}</ul></li>` : '';
 }
 
-/* accepting: the row changes in the review, as if changed by hand; still nothing is written */
-async function sgAccept(s) {
-  const r = sgRowFor(s);
-  s.state = 'accepted';
-  if (s.kind === 'task' && r) await ldSetTask(r, {taskId: s.taskId, title: s.title, project: s.project});
-  else if (s.kind === 'service' && r) {
-    const x = (r.services || []).find(v => v.id === s.serviceId);
+/* a change to a row (a suggestion, or the answer given to a question): the row changes in the review, as if changed by
+   hand; still nothing is written */
+async function sgApply(r, c) {
+  if (c.kind === 'task') await ldSetTask(r, {taskId: c.taskId, title: c.title, project: c.project});
+  else if (c.kind === 'service') {
+    const x = (r.services || []).find(v => v.id === c.serviceId);
     if (x) Object.assign(r, {serviceId: x.id, service: x.name, billable: x.billable, budget: x.budget || ''});
     ldChanged(r);
-  } else if (s.kind === 'minutes' && r) { r.minutes = s.minutes; r.e = r.s + s.minutes; ldChanged(r); }
-  else if (s.kind === 'untick' && r) { r.checked = false; ldChanged(r); }
-  else if (s.kind === 'split' && r) {
+  } else if (c.kind === 'minutes') { r.minutes = c.minutes; r.e = r.s + c.minutes; ldChanged(r); }
+  else if (c.kind === 'untick') { r.checked = false; ldChanged(r); }
+  else if (c.kind === 'split') {
     let at = r.s;
-    const parts = s.split.map((p, j) => {
+    const parts = c.split.map((p, j) => {
       const n = {...r, id: `${r.id}.${j}`, s: at, e: at + p.minutes, minutes: p.minutes, alts: [], edited: true};
       at += p.minutes;
       return [n, p];
@@ -150,15 +168,55 @@ async function sgAccept(s) {
     LD.rows.splice(LD.rows.indexOf(r), 1, ...parts.map(x => x[0]));
     for (const [n, p] of parts) await ldSetTask(n, {taskId: p.taskId, title: p.title, project: r.project});
   }
+}
+async function sgAccept(s) {
+  const r = sgRowFor(s);
+  if (s.kind === 'extend') return sgExtend(s, r, s);
+  if (s.kind === 'create_task') return sgCreate(s, r);
+  s.state = 'accepted';
+  if (r) await sgApply(r, s);
   renderReview(); render();
+}
+async function sgAnswer(s, i) {
+  const a = (s.answers || [])[i], r = sgRowFor(s);
+  if (!a) return;
+  if (a.kind === 'extend') return sgExtend(s, r, a, a.label);
+  s.state = 'accepted'; s.answer = a.label;
+  if (r && a.kind !== 'keep') await sgApply(r, a);
+  renderReview(); render();
+}
+/* extend: the entry already logged gets the row's minutes, asked as a dragged edge is ("Change this entry?", with
+   Undo); once changed, the row is left out of this run */
+function sgExtend(s, r, c, label = null) {
+  const x = sgLogged(c.entryId);
+  if (!x || !r) { toast('That entry is not in the Logged column any more: nothing changed.', true); return; }
+  const {a, b} = sgSpan(x, r), at = document.querySelector(`[data-sg="${s.key}"] .sg-a`)?.getBoundingClientRect();
+  resizeDone = () => {  // day.js: after "Change" wrote it
+    s.state = 'accepted'; if (label) s.answer = label;
+    const rr = ldRow(r.id); if (rr) { rr.checked = false; ldChanged(rr); }
+    renderReview(); render();
+  };
+  askResize(x, a < x.s ? a : null, realMinutes(state.date, a, b), {clientX: at?.left ?? 240, clientY: at?.top ?? 200});
+}
+/* create_task: the new-task form, filled with the suggested title (newtask.js); the task created is the row's */
+function sgCreate(s, r) {
+  if (!r) { s.state = 'accepted'; renderReview(); return; }
+  return openNewTask({date: LD.date, s: r.s, e: r.s + r.minutes, project: s.project || r.project, title: s.title,
+                      description: s.description || '',
+                      onCreated: (task, serviceHint) => {
+                        s.state = 'accepted';
+                        if (ldRow(r.id)) ldSetTask(ldRow(r.id), {...task, serviceHint});
+                        renderReview(); render();
+                      }});
 }
 
 $('#review').addEventListener('click', ev => {
   const t = ev.target.closest('button'); if (!t || LD.writing) return;
   if (t.id === 'sg-ask') { ev.stopPropagation(); sgCheck(); return; }
-  const k = t.dataset.sgOk || t.dataset.sgNo; if (!k) return;
+  const k = t.dataset.sgOk || t.dataset.sgNo || t.dataset.sgAns; if (!k) return;
   ev.stopPropagation();
   const s = SG.items.find(x => x.key === k); if (!s || s.state !== 'open') return;
   if (t.dataset.sgNo) { s.state = 'rejected'; renderReview(); return; }
+  if (t.dataset.sgAns) { sgAnswer(s, +t.dataset.i); return; }
   sgAccept(s);
 });

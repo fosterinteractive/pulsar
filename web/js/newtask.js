@@ -87,11 +87,14 @@ async function loadFields() {
   fillFields(r);
 }
 
-/* from: {date, s, e, project, onCreated(task, serviceHint)} for a row of Log the day; nothing from the log dialog */
+/* from: {date, s, e, project, title?, description?, onCreated(task, serviceHint)} for a row of Log the day; nothing
+   from the log dialog */
 async function openNewTask(from = null) {
   taskFor = from && from.onCreated ? from : null;
   const mine = ++taskOpened, f = taskForm.elements, {date, s, e} = taskRange();
   f.title.value = ''; f.description.value = ''; f.estimate.value = ''; taskTyped = {...TYPED}; taskPlaces = null;
+  // a title suggested for it (Log the day's "Create it…"): kept as if typed, so no draft replaces it
+  if (from?.title) { f.title.value = from.title; f.description.value = from.description || ''; taskTyped.title = taskTyped.description = true; }
   fillFields(null);
   f.project.innerHTML = '<option value="">Loading your projects…</option>'; f.project.disabled = true;
   f.place.innerHTML = '<option value="">Pick a project first</option>'; f.place.disabled = true;
