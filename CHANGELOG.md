@@ -7,6 +7,9 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Log the day's suggestions say what they do, in one sentence, and their button is named for it: "Use this task", "Make it 15 min", "Split it", "Don't log it", "Create it…", with "Keep as it is" instead of Reject. A question comes with answers to click, each making its change ("All to site A", "Split across both"), instead of "Noted".
+- A call that went on after a meeting already logged is offered as "Add to that entry…": the meeting's entry gets the minutes, after the usual "Change this entry?", instead of a new row asking for a task.
+- Two entries of one task laid out back to back are one entry, with one note; in the review, two rows of one task that end up back to back offer "Join into one entry".
 - A security review before every release: Claude reads what changed since the last one with Anthropic's /security-review method and Pulsar's own boundaries, with read-only tools, and a finding it marks "block" stops the release before anything is built or signed. It runs on the releasing Mac for now, and on GitHub too once the repository is private, where everyone can see each review. Tried on a copy with four holes planted among 3,000 changed lines: three runs found 11 of the 12, every one stopped the release, and a clean release passed.
 
 ## 1.6.17 (2026-11-11)
