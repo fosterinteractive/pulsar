@@ -346,6 +346,7 @@ function rowHTML(r, overlaps) {
   }
   const warn = [];
   if (r.status === 'refused' || r.status === 'unknown') warn.push(`<b>Not written.</b> ${esc(r.reason || '')}`);
+  else if (r.minutes < minEntry()) warn.push(`Under ${minEntry()} minutes: Pulsar does not log it. Join it to a row of the same task, or make it ${minEntry()}.`);
   for (const o of overlaps || []) warn.push(`Overlaps ${esc(o.with)} for ${dur(o.minutes)}`);
   const quiet = [];
   if (!r.taskId) quiet.push('No task yet.');
@@ -460,7 +461,7 @@ function editorHTML(r) {
       ${svcs.map(x => `<option value="${esc(x.id)}"${x.id === r.serviceId ? ' selected' : ''}>${esc(x.name)}${x.budget ? ' · ' + esc(x.budget) : ''}${x.billable ? ' · billable' : x.billable === false ? ' · not billable' : ''}</option>`).join('')}
     </select></label>
     <div class="tl"><label class="field"><span>Start</span><input type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="9" placeholder="HH:MM" title="A time: 14:30, or 2:30 pm" data-ld-start value="${hm24(r.s)}"></label>
-      <label class="field"><span>Minutes</span><input type="number" min="${CONFIG?.roundTo || 5}" max="720" step="${CONFIG?.roundTo || 5}" data-ld-min value="${r.minutes}"></label>
+      <label class="field"><span>Minutes</span><input type="number" min="${Math.max(CONFIG?.roundTo || 5, minEntry())}" max="720" step="${CONFIG?.roundTo || 5}" data-ld-min value="${r.minutes}"></label>
       <span class="endt">until ${hm(r.s + r.minutes)}</span></div>
     <label class="field"><span>Note</span><textarea rows="2" data-ld-note placeholder="What was done: the outcome, in a sentence">${esc(r.note || '')}</textarea></label>
     <p class="hint ld-note-hint">${noteHint(r)}</p>
@@ -653,6 +654,9 @@ function openConfirm(dry = null) {
   const T = ldTotals(), ov = ldOverlaps();
   const unopened = live.filter(r => r.confidence === 'low' && !r.opened);
   const warns = [];
+  // entries under the shortest: none is sent, since the first would stop the run (2026-11-12: a split into 8 + 8 + 7 + 7)
+  const short = live.filter(r => r.minutes < minEntry());
+  if (short.length) warns.push(`Under ${minEntry()} minutes, so Productive takes none of these: ${short.map(r => `${hm(r.s)} ${r.title} ${dur(r.minutes)}`).join(', ')}. Go back, and join each to a row of the same task or make it ${minEntry()}.`);
   if (ov.size) warns.push(`${[...ov.entries()].filter(([id]) => live.some(r => r.id === id)).map(([id, os]) => `${hm(ldRow(id).s)} ${ldRow(id).title} overlaps ${os.map(o => o.with).join(', ')}`).join('; ')}.`);
   const untimed = LD.plan?.ignoreLogged ? [] : (state.logged?.entries || []).filter(x => x.s == null && live.some(r => r.taskId === String(x.taskId)));
   if (untimed.length) warns.push(`Already logged with no start time, on a task below: ${untimed.map(x => `${x.task || x.project} ${dur(x.minutes)}`).join(', ')}. Check it is not the same work.`);
@@ -676,7 +680,7 @@ function openConfirm(dry = null) {
     <div class="df"><p class="hint">Sent one at a time; stops at the first problem.</p>
       <button type="button" class="btn bordered" data-ld-dry>Dry run</button>
       <button type="button" class="btn bordered" data-ld-x>Back to the review</button>
-      <button type="button" class="btn primary" data-ld-write autofocus>Log ${live.length} ${live.length === 1 ? 'entry' : 'entries'}</button></div>`;
+      <button type="button" class="btn primary" data-ld-write${short.length ? ' disabled' : ' autofocus'}>Log ${live.length} ${live.length === 1 ? 'entry' : 'entries'}</button></div>`;
   if (!ldDlg.open) ldDlg.showModal();
 }
 ldDlg.addEventListener('click', ev => {

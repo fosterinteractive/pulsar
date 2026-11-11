@@ -424,6 +424,7 @@ KINDS = ("task", "service", "minutes", "split", "create_task", "question", "unti
 # what a question's answers may do, one click each: a change of the kinds above, or "keep" (the row stays as it is)
 ANSWERS = ("task", "minutes", "split", "untick", "extend", "keep")
 NEAR = 15  # minutes: an entry this close before or after a row is "right next to it" (extend)
+SHORTEST = 10  # minutes: the shortest entry Pulsar writes (dayplan.MIN_ENTRY, server.too_short); no change goes below it
 MAX_SUGGESTIONS = 25
 SCHEMA = {"type": "object", "required": ["suggestions"], "properties": {"suggestions": {
     "type": "array", "maxItems": MAX_SUGGESTIONS, "items": {
@@ -476,8 +477,10 @@ service used last; "periodTasks": period tasks open on this day). Suggest a chan
 plan is wrong or a rule above is broken, and say why in at most 15 words. Kinds:
 - "task": another task for the row (taskId from the digest, or one you found with the read-only Productive tools).
 - "service": another service line for the row, by its name in the row's "services".
-- "minutes": the row's minutes should be this number (less: the person was not at it; more: only with evidence).
-- "split": the row is work for several tasks: up to 4 parts, taskId and minutes each, adding up to the row's minutes.
+- "minutes": the row's minutes should be this number (less: the person was not at it; more: only with evidence), \
+never under 10: no entry is shorter.
+- "split": the row is work for several tasks: up to 4 parts, taskId and minutes each, adding up to the row's minutes, \
+each part at least 10 minutes (no entry is shorter), so a 30-minute row splits into 3 parts at most.
 - "create_task": no task fits and one should exist (a new period's task, a subtask for an issue under the period's \
 contingency task): title in the company's pattern, the project, parentTaskId when it is a subtask, one-line \
 description of the issue. Never for a task that exists.
@@ -614,14 +617,15 @@ def _change(k: str, s: dict, r: dict, known: dict, entries: dict) -> tuple:
         return {"serviceId": str(svc["id"]), "service": name}, ""
     if k == "minutes":
         m = s.get("minutes")
-        if not isinstance(m, int) or not 5 <= m <= 720 or m == r.get("minutes") or r["s"] + m > 1440:
+        if not isinstance(m, int) or not SHORTEST <= m <= 720 or m == r.get("minutes") or r["s"] + m > 1440:
             return None, "minutes out of range"
         return {"minutes": m}, ""
     if k == "split":
         parts = [p for p in s.get("split") or [] if isinstance(p, dict)]
+        # 2026-11-12: a 30-minute row split into 8 + 8 + 7 + 7 was accepted, and Productive got none of it
         if len(parts) < 2 or any(str(p.get("taskId")) not in known or not isinstance(p.get("minutes"), int)
-                                 or p["minutes"] < 5 for p in parts) or sum(p["minutes"] for p in parts) != r["minutes"]:
-            return None, "split does not add up or names an unknown task"
+                                 or p["minutes"] < SHORTEST for p in parts) or sum(p["minutes"] for p in parts) != r["minutes"]:
+            return None, "split does not add up, has a part under 10 minutes, or names an unknown task"
         return {"split": [{"taskId": str(p["taskId"]), "minutes": p["minutes"],
                            "title": known[str(p["taskId"])].get("title") or ""} for p in parts]}, ""
     if k == "extend":

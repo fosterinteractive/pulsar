@@ -224,6 +224,20 @@ class ButtonsThatDoIt(unittest.TestCase):
         # a row with a task, or not a call, is not touched
         self.assertEqual(dayreview.continued_calls([{**self.rows[0], "taskId": "5"}], self.logged, calls), [])
 
+    def test_no_change_makes_an_entry_under_ten_minutes(self):
+        # 2026-11-12: a 30-minute row split into 8 + 8 + 7 + 7 was accepted, and Productive took none of it
+        from pulsar import dayplan
+        self.assertEqual(dayreview.SHORTEST, dayplan.MIN_ENTRY)
+        four = [{"taskId": "5", "minutes": 8}, {"taskId": "6", "minutes": 8}, {"taskId": "5", "minutes": 7},
+                {"taskId": "6", "minutes": 7}]
+        raw = [{"row": "r1", "kind": "split", "split": four, "why": "four sites"},
+               {"row": "r1", "kind": "minutes", "minutes": 8, "why": "short"},
+               {"row": "r1", "kind": "split", "split": [{"taskId": "5", "minutes": 15}, {"taskId": "6", "minutes": 15}],
+                "why": "two sites"}]
+        got, dropped = dayreview.validate(raw, self.rows, self.known, self.logged)
+        self.assertEqual([g["kind"] for g in got], ["split"])
+        self.assertEqual(len(dropped), 2)
+
     def test_the_digest_gives_the_logged_entries_ids(self):
         doc = {"logged": [{"id": "900", "time": "17:35", "min": 65, "task": "Team jam"}, {"id": "7", "time": "no start", "min": 5}]}
         self.assertEqual(dayreview.logged_of(doc), [{"id": "900", "s": 1055, "e": 1120, "task": "Team jam"}])
