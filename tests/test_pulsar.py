@@ -702,6 +702,18 @@ class RepeatsTest(unittest.TestCase):
                 r["note"] = "Щоденна зустріч"
         self.assertEqual(server.repeating(rows, self.TZ, "2026-11-11")[0]["note"], "")
 
+    def test_work_that_started_at_the_same_time_three_times_is_no_meeting(self):
+        # a feature worked on in the evening, three times from about 19:47, for 62, 3 and 56 minutes: lengths that far
+        # apart are work, not a meeting; the same three days at a meeting's steady length are one
+        days = ["2026-11-02", "2026-11-04", "2026-11-05"]
+        work = [self.entry(d, "19:47", m, task="9", note="dev") for d, m in zip(days, (62, 3, 56))]
+        self.assertEqual(server.repeating(work, self.TZ, "2026-11-11"), [])
+        meeting = [self.entry(d, "19:47", m, task="9") for d, m in zip(days, (30, 20, 40))]
+        self.assertEqual(len(server.repeating(meeting, self.TZ, "2026-11-11")), 1)
+        # a task logged many times a day, one of them at 19:02 on each of three days, is work too
+        busy = meeting + [self.entry(d, t, 20, task="9", note="dev") for d in days for t in ("10:00", "13:30")]
+        self.assertEqual(server.repeating(busy, self.TZ, "2026-11-11"), [])
+
     def test_a_repeat_not_seen_for_ten_days_has_stopped(self):
         self.assertEqual(server.repeating(self.history(), self.TZ, "2026-11-25"), [])
 

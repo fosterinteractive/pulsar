@@ -915,6 +915,7 @@ REPEAT_MIN_DAYS = 3
 REPEAT_SHARE = 0.5  # of the days a task was logged, how many must be at that time: work logged all day is not a repeat
 REPEAT_STRICT = (5, 0.7)  # Advanced > Daily meeting cards: Strict (days, share)
 REPEAT_STALE = 10   # days: a repeat not seen this long has stopped (a meeting that was cancelled)
+REPEAT_ENTRIES = 2  # entries of the task in a day, at most, for that day to count: a meeting is one entry, or two
 CALL_WINDOW = 75    # minutes around the usual time to look for the call (wide enough for an hour's clock change)
 CALL_GAP = 20       # minutes: the call goes on while its window shows again within this; people work during calls
 _repeats = config.Newest(8)  # (date, person, Advanced > Daily meeting cards) -> (when, patterns)
@@ -958,6 +959,17 @@ def repeating(rows: list, tz, date: str, strict: bool = False) -> list:
             d = x[2]["date"]
             if d not in per_day or x[2]["minutes"] > per_day[d][2]["minutes"]:
                 per_day[d] = x
+        # a meeting is one entry a day of about its usual length; work that only started at that time on three days is
+        # not (2026-11-11: a feature's evening work, 62, 3 and 56 minutes long, came back as a 15-minute call; a task
+        # logged 9 to 15 times a day had started at 19:02 on three of them)
+        entries: dict = {}
+        for x in xs:
+            entries[x[2]["date"]] = entries.get(x[2]["date"], 0) + 1
+        per_day = {d: x for d, x in per_day.items() if entries[d] <= REPEAT_ENTRIES}
+        if per_day:
+            spread = sorted(x[2]["minutes"] for x in per_day.values())
+            usual = spread[len(spread) // 2]
+            per_day = {d: x for d, x in per_day.items() if usual / 2 <= x[2]["minutes"] <= usual * 2}
         logged_days = {x[2]["date"] for x in xs}
         min_days, share = REPEAT_STRICT if strict else (REPEAT_MIN_DAYS, REPEAT_SHARE)
         if len(per_day) < max(min_days, share * len(logged_days)):
