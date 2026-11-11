@@ -123,6 +123,29 @@ try {
       back ? `top ${back.style.top}, wanted ${x.s * ppm + 1}px` : 'no card');
   } else check('a logged entry offers Not an example', true, 'skipped: nothing logged in the last 7 days');
   if (state.date !== today) { go(today); await until(() => state.logged && state.date === today); }
+  // Log the day's suggestions say what their buttons do (2026-11-12: "Leave out not this entry", Accept, Reject and
+  // "Noted" were not understood): no such words, and a button named for each change
+  {
+    const row = {id: 'x1', s: 600, e: 625, minutes: 25, taskId: null, project: 'P', services: []};
+    const kinds = [
+      {kind: 'task', taskId: '1', title: 'Task one', project: 'P'}, {kind: 'minutes', minutes: 15}, {kind: 'untick'},
+      {kind: 'split', split: [{taskId: '1', title: 'A', minutes: 10}, {taskId: '2', title: 'B', minutes: 15}]},
+      {kind: 'question', question: 'Which one?', answers: [{label: 'All to A', kind: 'keep'}]},
+      {kind: 'question', question: 'Was it a call?'}, {kind: 'create_task', title: 'New one', project: 'P'}];
+    const html = kinds.map((k, i) => sgItemHTML({...k, why: 'w', key: 't' + i, state: 'open', source: 'claude', row: 'x1'}, row)).join('');
+    const bad = ['>Accept<', '>Reject<', '>Noted<', 'Leave out'].filter(w => html.includes(w));
+    const missing = ['Use this task', 'Make it 15 min', "Don't log it", 'Split it', 'All to A', 'Skip', 'Got it', 'Create it…',
+                     'Keep as it is', 'Claude asks:', 'Claude suggests:'].filter(w => !html.includes(w) && !html.includes(esc(w)));
+    check('suggestions say what their buttons do', !bad.length && !missing.length,
+      bad.concat(missing.map(m => 'missing ' + m)).join(', ') || 'no Accept, Reject or Noted');
+    const saved = LD.rows;
+    const a = {id: 'j1', s: 1360, e: 1385, minutes: 25, taskId: '7', flags: [], status: null};
+    const b = {id: 'j2', s: 1385, e: 1410, minutes: 25, taskId: '7', flags: [], status: null};
+    LD.rows = [a, b];
+    const line = joinLine(b);
+    LD.rows = saved;
+    check('two rows of one task back to back offer to join', line.includes('Join into one entry (50 min)'), line ? 'offered' : 'nothing offered');
+  }
 
   // the log dialog's over-estimate line follows the length typed
   const f = logForm.elements, before = f.minutes.value;
