@@ -511,7 +511,7 @@ def api_activity(q: dict) -> dict:
     return {"source": source, "minutes": minutes, "items": items, "problems": dict(trackers.PROBLEMS), "away": gaps}
 
 
-AWAY_LONG = 60  # minutes: a gap from Away after up to this is a pause; from this long the person was away (Nick, 2026-11-07)
+AWAY_LONG = 60  # minutes: a gap from Away after up to this is a pause; from this long the person was away (2026-11-07)
 OFF_MIN = 180   # from this long it is time off (a night, an afternoon off), not a break: shown, never added up
 
 
@@ -822,7 +822,7 @@ def api_settings(body: dict) -> dict:
 
 
 def sync_activitywatch(s: dict):
-    """One away time everywhere (Nick, 2026-11-10): when ActivityWatch's AFK timeout is not Away after, Save sets it and
+    """One away time everywhere (2026-11-10): when ActivityWatch's AFK timeout is not Away after, Save sets it and
     restarts ActivityWatch (awsetup.fix). Not from Pulsar Preview, whose settings are its own while ActivityWatch is the
     real Pulsar's too; not in a test or read-only run. None when nothing was to change."""
     minutes = config.away_after(s)

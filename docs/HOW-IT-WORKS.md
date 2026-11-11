@@ -305,7 +305,7 @@ Both readers return the same items: `{s, e, app, title, host, url, cat, icon}`, 
   timeout is not in its data and no threshold in Pulsar can see it. Settings → Time and activity → **Away** reads that
   one key, line by line with the standard library (`scan`; `[aw-watcher-afk-testing]` and every other section are
   never read or changed; a form it cannot read for sure, such as a dotted key, the key twice or a value that is not a
-  number, is said and left alone). One away time everywhere (Nick, 2026-11-10): a timeout other than Away after,
+  number, is said and left alone). One away time everywhere (2026-11-10): a timeout other than Away after,
   longer or shorter, offers **Fix**, and **Save** does the same by itself (`server.sync_activitywatch`; not from
   Pulsar Preview, whose settings are its own while ActivityWatch is the real Pulsar's). Fix keeps a copy of the file next
   to it (`aw-watcher-afk.toml.pulsar-<date-time>.bak`, never over another file), changes that one line, or adds the
@@ -647,7 +647,7 @@ the next yellow-rail stretch after it, else the first one left in the day, with 
 many stretches are left. Stretches logged from the page in the last ten minutes are left out even before Productive
 shows them. **Skip**, on a dialog opened on a stretch while others are left, leaves that stretch unlogged and opens
 the next one the same way (skipped stretches are left out of the next ones for ten minutes; the rails stay). It is offered for new entries in the day on screen only. Clicks to log a whole day again, entry by entry
-(Nick's own entries, on a simulated empty day): 4 Nov 2026, 21 entries, 57 clicks before and 38 with it; 3 Nov,
+(one person's own entries, on a simulated empty day): 4 Nov 2026, 21 entries, 57 clicks before and 38 with it; 3 Nov,
 38 entries, 108 and 71 (with ⌘⇧↩, 17 and 33). Entries away from the computer (calls) still need their start typed.
 
 **Create a task** (`web/js/newtask.js`, `pulsar/newtask.py`). Under the task list a small link, **No task fits this
@@ -785,7 +785,7 @@ chips of the summary) show one quiet line when Productive says something about a
   worked already); Log the day adds, per row, the plan's earlier rows on the same task (`flags.over_estimate`;
   `GET /api/services` takes `minutes=N`). A write drops the task from the 5-minute cache, so the next check reads
   the new time worked.
-- **What is left, before going over** (Nick, 2026-11-10, as Timely shows it). With this entry the task reaches 80% of
+- **What is left, before going over** (2026-11-10, as Timely shows it). With this entry the task reaches 80% of
   its estimate (`flags.NEAR`) but not over it: "8 h of the 10 h estimate with this entry, 2 h left"
   (`flags.near_estimate`), amber, on the Log the day row and nothing to fix (it is not counted in "to fix in
   Productive"). The log dialog always says it while the task has an estimate, under the flags ("Estimate: 8 h 30 min of
@@ -869,7 +869,7 @@ named as the fi-time-from-activity script names it (4.4). With Pulsar's own weig
 turns that run commands in clients' checkouts read as those clients' work. Shared rows were rare (45 minutes in the 52
 days): most work in front had no settled class yet, or the client's agent was not attended.
 
-**Two clients at once** (`3d` in `_rows`, Nick, 2026-11-10). The work in front comes first. Another client's agent
+**Two clients at once** (`3d` in `_rows`, 2026-11-10). The work in front comes first. Another client's agent
 that ran attended beside it (a different task and repository, both judged by the task's class) is ignored for under
 15 minutes of a sitting (`PARALLEL_MIN`); from 15, every other minute of that overlap is its, so it gets half and the
 work in front the rest: 60 minutes in front with the agent running 40 of them is 40 and 20, never more than the time
@@ -890,7 +890,7 @@ it was in front. A hole between two entries of one client is in that client's wo
 and what is left goes to the entry before it when the hole is mostly that client's own work or internal turns (a turn
 of internal work inside a client's work is the client's, as `3b'`); never another client's work, a repository never
 logged, an agent alone or time logging. After a client's work, or between two clients, internal work in front is its
-own (switching, Nick's rule 3). A client's crumb under 10 minutes joins a neighbour of its own client before a larger
+own (switching, rule 3). A client's crumb under 10 minutes joins a neighbour of its own client before a larger
 internal one (`_merge`). A task never logged takes its Productive project's class (`class_of`), so a new client task
 counts as a client's everywhere above. A new entry
 is never shorter than an entry (10 minutes); an entry of the same task against the hole grows instead. Never past the
@@ -1257,7 +1257,7 @@ same days. **Copy** copies `selfcheck.share_text`: the same percents in one line
   client's task this way). With no history to tell them apart, the row in front learns, as before. The stored days
   keep the background rows for this. Repositories with two names are one (`attribution.REPO_ALIASES`: chronodeck,
   Pulsar's first name, and pulsar-preview are pulsar).
-- **Tasks you never logged to** (`learn.new_tasks`, after Aidan's habit of looking up all the tickets): 14% of one
+- **Tasks you never logged to** (`learn.new_tasks`, for people who look up every ticket): 14% of one
   person's logged minutes, and 41% of the client work, went to tasks with no entry in the 60 days before, which the
   votes cannot know. The pool is the tasks worked on in the last 30 days (`productive.recent_tasks`, one read kept ten
   minutes, `server.new_task_source`), of them the ones that are not closed before the day and not created after it,
@@ -1654,7 +1654,7 @@ and the whole day every hour while the page shows. The app's window sends `pulsa
   the log dialog opened on a stretch or on a Log the day row, marks that time as not work: it counts nowhere (no rail,
   not in "Active, not logged", not proposed by Log the day, less in Earlier days) and shows as a quiet hatched rail; a
   click on it says what it is, and its **Count as work again** (then Undo in the note at the bottom) counts it as work
-  again: a stray click changes nothing (Nick, 2026-11-10). `GET /api/daymarks?date=` (or `from=&to=`),
+  again: a stray click changes nothing (2026-11-10). `GET /api/daymarks?date=` (or `from=&to=`),
   `POST /api/daymarks` `{date, done | undone | add: [a, b] | remove: [a, b] | nolearn: id | learn: id}`, the page's
   session only.
 - **Pause** (`pulsar/pause.py`, `web/js/pause.js`, `~/.cache/pulsar/pause.json` `{since, asked}`). Pause at the top
@@ -1910,7 +1910,7 @@ sequenceDiagram
 
 ### What the maintainer must do (by hand, not in code)
 
-The signatures above hold only as long as the key and the repository do. These steps are for Nick, or whoever
+The signatures above hold only as long as the key and the repository do. These steps are for whoever
 publishes; none of them is done yet unless noted in section 13.
 
 1. **Protect `main`** on GitHub: a branch protection rule (or ruleset) that requires a pull request and a review, and

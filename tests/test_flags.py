@@ -67,7 +67,7 @@ class FlagsTest(unittest.TestCase):
         self.assertIsNone(flags.over_estimate({**task(), "worked": 900}, 600))  # no estimate: noestimate's business
 
     def test_near_the_estimate_from_80_percent_with_this_entry(self):
-        # Nick, 2026-11-10 (as Timely shows it): see how much is left before going over, not only after
+        # 2026-11-10 (as Timely shows it): see how much is left before going over, not only after
         t = {**task(estimate=600), "worked": 450}
         self.assertIsNone(flags.near_estimate(t, 20))                       # 470 of 600: 78%
         self.assertEqual(flags.near_estimate(t, 30)["text"], "8 h of the 10 h estimate with this entry, 2 h left")

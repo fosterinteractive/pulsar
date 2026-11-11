@@ -7,7 +7,7 @@ Productive.
 * overestimate: with this entry (and the plan's earlier ones on the task), the time worked on the task, by everyone,
   goes over its estimate;
 * nearestimate: with this entry (and the plan's earlier ones on the task) the task reaches NEAR (80%) of its estimate
-  but not over it: how much is left, before it is too late to tell the PM (Nick, 2026-11-10, as Timely shows it);
+  but not over it: how much is left, before it is too late to tell the PM (2026-11-10, as Timely shows it);
 * overbudget, nearbudget: the same for the row's service's time budget, only where Productive lets the person read it;
 * noestimate: the task has no estimate, while at least a quarter (and at least two) of the project's 100 most recently
   active tasks have one. Estimates are rare in most projects (on one person's 14 projects, 0 to 35% of recent tasks

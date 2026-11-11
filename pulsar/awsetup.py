@@ -169,7 +169,7 @@ def longer(seconds, minutes: int) -> bool:
 
 
 def differs(seconds, minutes: int) -> bool:
-    """Whether ActivityWatch's timeout is not "Away after": one away time everywhere (Nick, 2026-11-10), so Settings
+    """Whether ActivityWatch's timeout is not "Away after": one away time everywhere (2026-11-10), so Settings
     offers Fix and Save sets it. Unreadable: never touched."""
     return isinstance(seconds, (int, float)) and not isinstance(seconds, bool) and seconds != minutes * 60
 

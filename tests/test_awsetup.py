@@ -85,7 +85,7 @@ class ReadTimeoutTest(unittest.TestCase):
 class DecisionTest(unittest.TestCase):
     def test_a_timeout_other_than_away_after_needs_a_fix(self):
         self.assertTrue(awsetup.differs(1200, 15))     # 20 minutes hides the pauses of 15 to 20
-        self.assertTrue(awsetup.differs(180, 15))      # shorter: one away time everywhere (Nick, 2026-11-10)
+        self.assertTrue(awsetup.differs(180, 15))      # shorter: one away time everywhere (2026-11-10)
         self.assertFalse(awsetup.differs(900, 15))     # the same: nothing to fix
         self.assertFalse(awsetup.differs(None, 15))    # unreadable: never touched
         self.assertFalse(awsetup.differs(True, 0))

@@ -890,17 +890,17 @@ class LearnWordsTest(unittest.TestCase):
     ENTRIES = [
         {"date": "2026-11-02", "taskId": "1", "task": "Checkout bugs", "project": "Acme Support",
          "note": "Fixed the checkout button on the cart page"},
-        {"date": "2026-11-03", "taskId": "2", "task": "Blog feature", "project": "Law Faculty",
-         "note": "Blog listing shows the newest posts first; Nick Example reviewed the editor"},
-        {"date": "2026-10-06", "taskId": "3", "task": "Old blog import", "project": "Law Faculty",
+        {"date": "2026-11-03", "taskId": "2", "task": "Blog feature", "project": "Globex Law",
+         "note": "Blog listing shows the newest posts first; Dana Example reviewed the editor"},
+        {"date": "2026-10-06", "taskId": "3", "task": "Old blog import", "project": "Globex Law",
          "note": "Imported the old blog posts"},
-        {"date": "2026-11-03", "taskId": "4", "task": "Nick Example - meetings", "project": "Internal",
+        {"date": "2026-11-03", "taskId": "4", "task": "Dana Example - meetings", "project": "Internal",
          "note": "Weekly meeting"},
     ]
 
     def test_words_of_the_work_find_the_task_by_its_notes_recent_first(self):
         from pulsar import learn
-        skip = frozenset(w for _, w in learn.words("Nick Example"))
+        skip = frozenset(w for _, w in learn.words("Dana Example"))
         index = learn.note_index(self.ENTRIES, skip)
         got = learn.text_match(index, "The blog listing order is wrong", "2026-11-04", skip)
         self.assertEqual(max(got, key=lambda t: got[t][0]), "2")     # its notes say blog and listing
@@ -908,7 +908,7 @@ class LearnWordsTest(unittest.TestCase):
         self.assertGreater(got["2"][0], got["3"][0])                 # "blog" in both; the one logged a month ago fades
         self.assertNotIn("1", got)                                   # no word in common
         # your own name is in many task names and notes: it finds nothing
-        self.assertEqual(learn.text_match(index, "Nick Example", "2026-11-04", skip), {})
+        self.assertEqual(learn.text_match(index, "Dana Example", "2026-11-04", skip), {})
         self.assertEqual(learn.words("Updates"), [("updat", "updates")])  # a light stem: update and updates agree
         self.assertEqual({w for w, _ in learn.words("upgrade upgrades upgraded upgrading")}, {"upgrad"})
         self.assertEqual([w for w, _ in learn.words("site sites")], ["site", "site"])  # short words keep their e
@@ -997,7 +997,7 @@ class LearnWordsTest(unittest.TestCase):
                                  "commits": ["Blog listing: newest first"]}]}
         with mock.patch.object(learn, "warm", lambda *a: None), mock.patch.object(learn, "_stored", lambda d: None), \
              mock.patch.object(sessions, "PROJECTS_DIR", empty):
-            learn.annotate(proposal, "2026-11-04", {"person_name": "Nick Example"}, self.ENTRIES, [], ZoneInfo("UTC"))
+            learn.annotate(proposal, "2026-11-04", {"person_name": "Dana Example"}, self.ENTRIES, [], ZoneInfo("UTC"))
         got = proposal["entries"][0]["learned"]
         self.assertEqual(got[0]["taskId"], "2")
         self.assertTrue(got[0]["why"].startswith("your notes on it share words with this work: "))
@@ -1104,38 +1104,38 @@ class LearnWordsTest(unittest.TestCase):
         from pulsar import learn, sessions
         empty = tempfile.mkdtemp()
         proposal = {"entries": [{"s": 600, "e": 660, "project": "law-site", "titles": ["Morning work session"]}]}
-        pool = [{"taskId": "9", "title": "Hero banner", "project": "Law Faculty", "assignee": "77", "created": "2026-11-02"},
-                {"taskId": "10", "title": "Footer", "project": "Law Faculty", "assignee": "77", "created": "2026-10-20"},
-                {"taskId": "11", "title": "Menu", "project": "Law Faculty", "assignee": "5", "created": "2026-11-03"},
+        pool = [{"taskId": "9", "title": "Hero banner", "project": "Globex Law", "assignee": "77", "created": "2026-11-02"},
+                {"taskId": "10", "title": "Footer", "project": "Globex Law", "assignee": "77", "created": "2026-10-20"},
+                {"taskId": "11", "title": "Menu", "project": "Globex Law", "assignee": "5", "created": "2026-11-03"},
                 {"taskId": "12", "title": "Search", "project": "Acme Support", "assignee": "77", "created": "2026-11-03"}]
         with mock.patch.object(learn, "warm", lambda *a: None), mock.patch.object(learn, "_stored", lambda d: None), \
              mock.patch.object(sessions, "PROJECTS_DIR", empty), \
-             mock.patch.object(learn, "work_projects", lambda at, *a: {"Law Faculty"} if at == "law-site" else set()):
-            learn.annotate(proposal, "2026-11-04", {"person_name": "Nick Example", "person_id": "77"}, self.ENTRIES, [],
+             mock.patch.object(learn, "work_projects", lambda at, *a: {"Globex Law"} if at == "law-site" else set()):
+            learn.annotate(proposal, "2026-11-04", {"person_name": "Dana Example", "person_id": "77"}, self.ENTRIES, [],
                            ZoneInfo("UTC"), pool=pool)
         got = proposal["entries"][0]["learned"]
         # any session, logged before or not (one logic for everyone): the last task first, the assigned one second
         self.assertEqual([x["taskId"] for x in got[:2]], ["2", "9"])
         self.assertTrue(got[1]["assigned"] and "assigned to you on 2026-11-02" in got[1]["why"])
         self.assertNotIn("new", got[1])  # an offer only: the plan never picks it for being new
-        self.assertEqual(got[0]["why"], "the task you logged last in Law Faculty (2026-11-03)")
+        self.assertEqual(got[0]["why"], "the task you logged last in Globex Law (2026-11-03)")
         # third, the task you logged in that project before the last one
-        self.assertEqual((got[2]["taskId"], got[2]["why"]), ("3", "you logged it in Law Faculty on 2026-10-06"))
+        self.assertEqual((got[2]["taskId"], got[2]["why"]), ("3", "you logged it in Globex Law on 2026-10-06"))
         # a session logged before: the last task first, the assigned one second
         proposal = {"entries": [{"s": 600, "e": 660, "project": "law-site", "titles": ["Morning work session"]}]}
         voted = ({learn.key("Morning work session"): {"3": [5.0, 30]}}, {}, {})
         with mock.patch.object(learn, "warm", lambda *a: None), mock.patch.object(learn, "_stored", lambda d: None), \
              mock.patch.object(sessions, "PROJECTS_DIR", empty), mock.patch.object(learn, "votes", lambda *a: voted), \
-             mock.patch.object(learn, "work_projects", lambda at, *a: {"Law Faculty"} if at == "law-site" else set()):
-            learn.annotate(proposal, "2026-11-04", {"person_name": "Nick Example", "person_id": "77"}, self.ENTRIES, [],
+             mock.patch.object(learn, "work_projects", lambda at, *a: {"Globex Law"} if at == "law-site" else set()):
+            learn.annotate(proposal, "2026-11-04", {"person_name": "Dana Example", "person_id": "77"}, self.ENTRIES, [],
                            ZoneInfo("UTC"), pool=pool)
         self.assertEqual([x["taskId"] for x in proposal["entries"][0]["learned"][:2]], ["2", "9"])
         # the work names the task assigned to you (a new session too): it is first, marked for the plan to pick
         proposal = {"entries": [{"s": 600, "e": 660, "project": "law-site", "titles": ["Hero banner autoplay"]}]}
         with mock.patch.object(learn, "warm", lambda *a: None), mock.patch.object(learn, "_stored", lambda d: None), \
              mock.patch.object(sessions, "PROJECTS_DIR", empty), \
-             mock.patch.object(learn, "work_projects", lambda at, *a: {"Law Faculty"} if at == "law-site" else set()):
-            learn.annotate(proposal, "2026-11-04", {"person_name": "Nick Example", "person_id": "77"}, self.ENTRIES, [],
+             mock.patch.object(learn, "work_projects", lambda at, *a: {"Globex Law"} if at == "law-site" else set()):
+            learn.annotate(proposal, "2026-11-04", {"person_name": "Dana Example", "person_id": "77"}, self.ENTRIES, [],
                            ZoneInfo("UTC"), pool=pool)
         got = proposal["entries"][0]["learned"]
         self.assertEqual([x["taskId"] for x in got[:2]], ["9", "2"])
@@ -1154,8 +1154,8 @@ class LearnWordsTest(unittest.TestCase):
         proposal = {"entries": rows}
         with mock.patch.object(learn, "warm", lambda *a: None), mock.patch.object(learn, "_stored", lambda d: None), \
              mock.patch.object(sessions, "PROJECTS_DIR", empty), \
-             mock.patch.object(learn, "work_projects", lambda at, *a: {"Law Faculty"} if at == "law-site" else set()):
-            learn.annotate(proposal, "2026-11-04", {"person_name": "Nick Example"}, self.ENTRIES, [], ZoneInfo("UTC"))
+             mock.patch.object(learn, "work_projects", lambda at, *a: {"Globex Law"} if at == "law-site" else set()):
+            learn.annotate(proposal, "2026-11-04", {"person_name": "Dana Example"}, self.ENTRIES, [], ZoneInfo("UTC"))
         first, later, elsewhere = (r["learned"] for r in proposal["entries"][:3])
         short = proposal["entries"][3].get("learned") or []  # under 5 minutes: not read for words, still carried
         self.assertEqual((short[0]["taskId"], short[0].get("carried")) if short else None, ("2", True))
@@ -1512,7 +1512,7 @@ class ClaudeNoteTest(unittest.TestCase):
         cases = {"Event pages show the right time zone again.": "",
                  "Event pages fixed, as on Globex.": "a name from another project",
                  "Initech events copied into Acme.": "a name from another project",
-                 "Events reviewed with Nick.": "a name from another project",
+                 "Events reviewed with Dana.": "a name from another project",
                  "Support pages fixed; the ongoing work goes on.": "",   # words every project has
                  "globex-style menu built.": ""}                        # lower case: not the name as written
         for draft, why in cases.items():
@@ -1520,7 +1520,7 @@ class ClaudeNoteTest(unittest.TestCase):
             askclaude._cache.clear()
             __import__("shutil").rmtree(askclaude.PICKS_DIR, ignore_errors=True)
             with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/bin/claude"), \
-                    mock.patch.object(askclaude.config, "load", lambda: {"person_name": "Nick Example"}):
+                    mock.patch.object(askclaude.config, "load", lambda: {"person_name": "Dana Example"}):
                 got = askclaude.ask("2026-11-04", self.ROWS, 0, entries, history=[],
                                     run=lambda cmd, **kw: mock.Mock(stdout=json.dumps(out), stderr="", returncode=0))
             pick = got["picks"]["540|acme-site"]
@@ -1581,7 +1581,7 @@ class NoteGuardTest(unittest.TestCase):
     def test_plain_outcomes_pass(self):
         from pulsar import askclaude
         for note in ["Event pages show the right time zone again.",
-                     "Faculty blog: summary is optional again, so editors can save posts (PR #290).",
+                     "Blog: summary is optional again, so editors can save posts (PR #12).",
                      "MariaDB 10.6 upgrade prepared and rehearsed on the test copy. Deploy plan agreed.",
                      "Astro/Next.js project setup reviewed; estimate of 24 h for the rebuild.",
                      "Accessibility fixes on the e.g. search form, v1.2 released.",
@@ -1693,8 +1693,8 @@ class MeetingTasksTest(unittest.TestCase):
         # "students" did not count as "upgrade" and "student")
         from pulsar import server
         meeting = {"title": "Acme Students: D11 db upgrade", "s": 50400, "e": 54000}
-        offered = [{"taskId": "1", "title": "Music - D11 Upgrade", "project": "Music Support"},
-                   {"taskId": "2", "title": "Stu-D11 Upgrades - Dev work", "project": "Student Recruitment Support"}]
+        offered = [{"taskId": "1", "title": "Shop - D11 Upgrade", "project": "Shop Support"},
+                   {"taskId": "2", "title": "Stu-D11 Upgrades - Dev work", "project": "Student Portal Support"}]
         got = server.meeting_tasks(meeting, [], [], offered)
         self.assertEqual(got[0]["taskId"], "2")
         self.assertIn("“upgrade”", got[0]["why"])                      # the title's own word, not its stem
@@ -1708,30 +1708,30 @@ class MeetingTasksTest(unittest.TestCase):
         past = [{"s": self.at(d, "16:25"), "e": self.at(d, "17:25"), "uid": "scrum", "title": "Daily Scrum", "declined": False}
                 for d in (2, 3, 4)]
         past.append({"s": self.at(5, "16:25"), "e": self.at(5, "17:25"), "uid": "scrum", "title": "Daily Scrum", "declined": True})
-        rows = [{"start": self.at(d, "16:25"), "minutes": 55, "taskId": "7", "task": "[FIP-72] Scrum - Nick", "project": "FI-PM"}
+        rows = [{"start": self.at(d, "16:25"), "minutes": 55, "taskId": "7", "task": "[FIP-72] Scrum - Dana", "project": "FI-PM"}
                 for d in (2, 3)]
         rows.append({"start": self.at(4, "16:00"), "minutes": 15, "taskId": "9", "task": "Dev", "project": "X"})  # 0 min in
-        offered = [{"taskId": "7", "title": "[FIP-72] Scrum - Nick", "project": "FI-PM"},
-                   {"taskId": "8", "title": "Scrum notes - Nick", "project": "FI-PM"}]
-        got = server.meeting_tasks({"uid": "scrum", "title": "Daily Scrum"}, past, rows, offered, skip={"nick"})
+        offered = [{"taskId": "7", "title": "[FIP-72] Scrum - Dana", "project": "FI-PM"},
+                   {"taskId": "8", "title": "Scrum notes - Dana", "project": "FI-PM"}]
+        got = server.meeting_tasks({"uid": "scrum", "title": "Daily Scrum"}, past, rows, offered, skip={"dana"})
         self.assertEqual([(t["taskId"], t["why"]) for t in got],
                          [("7", "logged during 2 of the last 3 like it"), ("8", "the title says “scrum”")])
         self.assertEqual(got[0]["lastTitle"], "Daily Scrum")  # the latest earlier meeting it was logged in
         # the organizer renamed the series on the 3rd: the series' task says so, and Log the day starts it unticked
         past[1]["title"] = "Scrum (new room)"
-        got = server.meeting_tasks({"uid": "scrum", "title": "Scrum (new room)"}, past, rows, offered, skip={"nick"})
+        got = server.meeting_tasks({"uid": "scrum", "title": "Scrum (new room)"}, past, rows, offered, skip={"dana"})
         self.assertEqual((got[0]["taskId"], got[0]["lastTitle"]), ("7", "Scrum (new room)"))
         past[1]["title"], past[0]["title"] = "Daily Scrum", "Old name"
-        got = server.meeting_tasks({"uid": "scrum", "title": "Daily Scrum"}, past, rows, offered, skip={"nick"})
+        got = server.meeting_tasks({"uid": "scrum", "title": "Daily Scrum"}, past, rows, offered, skip={"dana"})
         self.assertEqual(got[0]["lastTitle"], "Daily Scrum")  # the newest one counts, not an older name
 
     def test_names_and_words_every_meeting_has_do_not_match(self):
-        offered = [{"taskId": "1", "title": "Estimations - Nick", "project": "FI-PR"},
+        offered = [{"taskId": "1", "title": "Estimations - Dana", "project": "FI-PR"},
                    {"taskId": "2", "title": "Acme Internal Meetings", "project": "Acme - Ongoing Support"},
                    {"taskId": "3", "title": "Team and Company page revisions", "project": "Acme - Ongoing Support"}]
-        got = server.meeting_tasks({"uid": "x", "title": "Nick <> Acme weekly sync"}, [], [], offered, skip={"nick"})
+        got = server.meeting_tasks({"uid": "x", "title": "Dana <> Acme weekly sync"}, [], [], offered, skip={"dana"})
         self.assertEqual([t["taskId"] for t in got], ["2", "3"])   # the one about meetings first
-        self.assertEqual(server.meeting_tasks({"uid": "y", "title": "Weekly team sync"}, [], [], offered, skip={"nick"}), [])
+        self.assertEqual(server.meeting_tasks({"uid": "y", "title": "Weekly team sync"}, [], [], offered, skip={"dana"}), [])
 
 
 class ReviewFixesTest(unittest.TestCase):

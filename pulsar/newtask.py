@@ -26,7 +26,7 @@ DESC_MAX = 700     # characters in a drafted description
 DESC_LIMIT = 5000  # what the page may send
 # FI's maintenance projects get, per period, a "service request and contingency" task, and each issue is a subtask
 # of it (fi-productive-process: "create a subtask per issue"). Their names vary: "ACME - Contingency Hours Nov 2026",
-# "GX-OS - Service Request/Contingency - Nov/Dec 2026", "INI - Service Request & Contingency - Oct/Nov 2026".
+# "GLOBEX-OS - Service Request/Contingency - Nov/Dec 2026", "INITECH - Service Request & Contingency - Oct/Nov 2026".
 PERIOD_TASK = re.compile(r"contingenc|service request|support request", re.I)
 # a remark on the time itself, which a task never carries ("The review time is logged as billable work"): such a
 # sentence is left out of a drafted description, and a title with one is refused

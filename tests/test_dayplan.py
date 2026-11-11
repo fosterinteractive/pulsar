@@ -43,7 +43,7 @@ def history_for(title_key_task: dict, project="repo", days=8, minutes=60):
             hist.append({"date": d, "start": t0 + s * 60, "minutes": minutes, "taskId": task, "serviceId": "s" + task,
                          "service": "Dev", "task": f"Task {task}", "project": "P"})
     t0_of = lambda d: datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()  # noqa: E731
-    return dayplan.learn(DATE, hist, stored, t0_of, person="Nick Example")
+    return dayplan.learn(DATE, hist, stored, t0_of, person="Dana Example")
 
 
 def day(**kw):
@@ -718,9 +718,9 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual(dayplan.plan(day(items=[work(540, 600)], rows=rows), ctx)["entries"][0]["taskId"], "91")
 
     def test_your_own_name_in_titles_is_no_evidence(self):
-        ctx = {**self.ctx, "recent": ["90"], "names": {"90": {"task": "Estimations - Nick", "project": "X"}},
+        ctx = {**self.ctx, "recent": ["90"], "names": {"90": {"task": "Estimations - Dana", "project": "X"}},
                "sess": {}, "repo": {}}
-        p = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, project="z", titles=["Nick's notes"])]), ctx)
+        p = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, project="z", titles=["Dana's notes"])]), ctx)
         self.assertIsNone(p["entries"][0]["taskId"])
 
     def test_the_service_is_the_last_one_used_if_it_still_takes_time(self):

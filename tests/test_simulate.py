@@ -52,16 +52,16 @@ SAFE_NOTES = ["Checkout totals fixed", "Search keeps every letter", "Reports: we
 
 # the tasks a person might log to: id -> (title, project, repository it is usually for)
 TASKS = {
-    "101": ("Checkout fixes - Nick Example", "Acme", "acme-site"),
+    "101": ("Checkout fixes - Dana Example", "Acme", "acme-site"),
     "102": ("Hero video", "Acme", "acme-site"),
     "201": ("API sync [BETA-12]", "Beta", "beta-app"),
     "301": ("Pulsar development", "FI Internal", "pulsar"),
     "401": ("Skills upkeep", "FI Internal", "claude-rules"),
     "501": ("Acme commands", "Acme - Ongoing Support", "acme-web"),
-    "701": ("[FIP-72] Scrum - Nick Example", "FI-PM", None),
+    "701": ("[FIP-72] Scrum - Dana Example", "FI-PM", None),
     "702": ("Client review meetings", "Acme", None),
     "703": ("Internal meetings", "FI-PM", None),
-    "999": ("Estimations - Nick Example", "FI-PR", None),
+    "999": ("Estimations - Dana Example", "FI-PR", None),
 }
 # repository -> (folder under the repos root, origin url): "repo" folders are named from their origin
 REPOS = {"acme-site": ("checkouts/repo", "git@github.com:acme/acme-site.git"),
@@ -509,7 +509,7 @@ class Run:
         hist28 = [r for r in d.history if r["date"] >= first28]
         offered = self.recent() + self.assigned()
         for m in meetings:
-            m["tasks"] = server.meeting_tasks(m, d.past_events, hist28, offered, {"nick", "example"})
+            m["tasks"] = server.meeting_tasks(m, d.past_events, hist28, offered, {"dana", "example"})
             self.check_meeting_tasks(m)
         self.patterns = server.repeating(d.history, d.tz, d.date)
         repeats = server.repeat_suggestions(self.patterns, items, d.weekday)
@@ -529,7 +529,7 @@ class Run:
         if d.malformed:
             day = self.spoil(day)
         t0_of = lambda x: server.day_bounds(x, d.tz)[0]  # noqa: E731
-        ctx = dayplan.learn(d.date, d.history, d.stored, t0_of, person="Nick Example")
+        ctx = dayplan.learn(d.date, d.history, d.stored, t0_of, person="Dana Example")
         return day, ctx
 
     def spoil(self, day: dict) -> dict:
@@ -844,7 +844,7 @@ class Run:
         no-network guard."""
         d = self.day
         base = config.load()
-        settings = {**base, "timezone": d.tzname, "person_id": "7", "org_id": "2", "person_name": "Nick Example",
+        settings = {**base, "timezone": d.tzname, "person_id": "7", "org_id": "2", "person_name": "Dana Example",
                     "rules": d.rules, "likely": "on"}
         self.created: list = []
         self.records: list = []

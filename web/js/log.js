@@ -307,7 +307,7 @@ function showFlags(task, flags, nums) {
   burnLine();
 }
 /* how much of the task's estimate and of the service's time budget is used with this entry, always while they are
-   known, so it shows before going over (Nick, 2026-11-10, as Timely does): "8 h 30 min of 10 h with this entry, 1 h 30
+   known, so it shows before going over (2026-11-10, as Timely does): "8 h 30 min of 10 h with this entry, 1 h 30
    min left", amber from flags.NEAR (80%). Over the estimate is the flag line's (overEstimate); over the budget is said
    here, as nothing else says it. The budget only where Productive lets this person read it (productive.budget_time). */
 const BURN_NEAR = 0.8;

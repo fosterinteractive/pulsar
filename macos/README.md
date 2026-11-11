@@ -417,11 +417,11 @@ Pulsar's Google client and a revoke would end Pulsar's access too. Neither app's
 - **Set up once:** a checkout for it, and the app:
 
   ```bash
-  git worktree add ~/Sites/pulsar-preview -b preview main
-  PULSAR_PREVIEW_DIR="$HOME/Sites/pulsar-preview" macos/build_app.sh
+  git worktree add ~/pulsar-preview -b preview main
+  PULSAR_PREVIEW_DIR="$HOME/pulsar-preview" macos/build_app.sh
   ditto "dist/Pulsar Preview.app" "/Applications/Pulsar Preview.app"
   ```
-- **Put new work in it:** merge the branches to try into `preview` (in `~/Sites/pulsar-preview`, so the main checkout
+- **Put new work in it:** merge the branches to try into `preview` (in `~/pulsar-preview`, so the main checkout
   is not touched), then quit Pulsar Preview (Cmd+Q) and open it again: quitting stops its server, and opening it runs the
   code as it is now. Page files (`web/`) also reload with ↻; Python changes need the reopen.
 - **Release** only what was tried in Preview: merge it into `main` and run `release.sh` as below.

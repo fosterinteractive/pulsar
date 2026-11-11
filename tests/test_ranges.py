@@ -51,7 +51,7 @@ def ctx_for(tasks: dict):
             hist.append({"date": d, "start": t0 + s * 60, "minutes": 60, "taskId": task, "serviceId": "s" + task,
                          "service": "Dev", "task": f"Task {task}", "project": "P"})
     t0_of = lambda d: datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()  # noqa: E731
-    return dayplan.learn(DATE, hist, stored, t0_of, person="Nick Example")
+    return dayplan.learn(DATE, hist, stored, t0_of, person="Dana Example")
 
 
 def analyse(d, ctx, s, e):

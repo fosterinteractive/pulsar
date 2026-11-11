@@ -91,7 +91,7 @@ class RefillTest(Ctx):
         self.assertEqual(of_project(p, CLIENTCO), 0)
 
     def test_internal_work_after_a_clients_work_is_its_own(self):
-        # Nick, 2026-11-10: internal work goes to a client only inside that client's work (between two of its turns);
+        # 2026-11-10: internal work goes to a client only inside that client's work (between two of its turns);
         # after a client's work, or between two clients, internal work in front is its own (switching): here T1 and Q1,
         # 14 minutes together after Globex and Clientco
         p = plan([work(540, 590)], rows((540, 570, "G1"), (570, 576, "C2"), (576, 582, "T1"), (582, 590, "Q1")), ctx=self.ctx)
@@ -309,7 +309,7 @@ class RandomDaysTest(Ctx):
 
 
 class NewTaskAndWordsTest(unittest.TestCase):
-    """2026-11-10, Nick's evening: a session titled "Оновлення бази даних Drupal 11" in a checkout on the branch
+    """2026-11-10: a session titled "Оновлення бази даних Drupal 11" in a checkout on the branch
     event-listings-cta went to Event Listings (the branch named it, the Ukrainian words named nothing), and Pulsar turns
     between turns of a client's new "Drupal 11 – DB Upgrade" task stayed Pulsar's (a task never logged had no class)."""
 

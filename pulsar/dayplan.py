@@ -73,7 +73,7 @@ FIT_SHARE = attribution.FIT_SHARE  # a project with less of a repository's logge
 FIT_MIN = attribution.FIT_MIN      # minutes of a repository's (fading) votes before its projects say anything
 CONTEST_MIN = 10     # a client's agent takes internal work's minutes (shared) only for this long at a stretch
 PARALLEL_MIN = 15    # a client's agent beside another client's work in front gets half that time from this long a
-                     # sitting (shorter: ignored; Nick, 2026-11-10)
+                     # sitting (shorter: ignored; 2026-11-10)
 # A rule tried only in the self-check (selfcheck.py), never in a plan anyone sees: ctx["touched"] is set there alone.
 # Your own Productive activity (a comment, a to-do, a file, a status change: productive.my_activity) near a row: a
 # guess gives way to the alternative you updated there (choose). Minutes either side of the row; a moment you touched
@@ -998,7 +998,7 @@ def _rows(d: _Day) -> None:
             claim(c, span_of(r, c))
     # 3d. a client's agent that ran attended beside another client's work in front: the work in front comes first; a
     # run of under PARALLEL_MIN in a sitting is ignored; from that long, half of those minutes are the agent's, taken
-    # from the work in front, so the clients together get no more than the time sat (Nick, 2026-11-10)
+    # from the work in front, so the clients together get no more than the time sat (2026-11-10)
     beside: dict = {}  # (task, sitting) -> (claim, minutes)
     for r in back:
         if not r.get("qualifies") or (repo_key(r.get("project")) in never and not r.get("tasks")):
@@ -1408,7 +1408,7 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
 
         # a client's entries right against the hole (not shared ones): a hole between two of one client's entries is in
         # that client's work, so internal work takes none of it (a turn of internal work inside a client's work is the
-        # client's, 3b'; Nick, 2026-11-10); between two clients, or beside one, internal work there is its own
+        # client's, 3b'; 2026-11-10); between two clients, or beside one, internal work there is its own
         beside = [x for x in out if x.get("kind") != "shared" and (x["e"] == a or x["s"] == b)
                   and x.get("taskId") and billable.get(str(x["taskId"]), class_of(str(x["taskId"]), d) != INTERNAL)]
         before = next((x for x in beside if x["e"] == a), None)

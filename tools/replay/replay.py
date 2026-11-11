@@ -203,7 +203,7 @@ def dialog_lead(a: float, b: float, day: dict, ex: dict, blocks: list) -> tuple:
 
 
 def dialog(a: float, b: float, day: dict, ex: dict, blocks: list) -> tuple:
-    """(the ordered task ids the dialog offers for [a, b), which lead group): the lead, then rules (Nick has none),
+    """(the ordered task ids the dialog offers for [a, b), which lead group): the lead, then rules (the person has none),
     "You logged to these lately" (10), "Assigned to you" (10), each task once."""
     lead, kind = dialog_lead(a, b, day, ex, blocks)
     order = list(dict.fromkeys(lead + [t["taskId"] for t in ex["recent"][:10]] + [t["taskId"] for t in ex["assigned"][:10]]))

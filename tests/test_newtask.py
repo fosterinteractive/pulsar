@@ -442,7 +442,7 @@ class DraftTest(unittest.TestCase):
         history = [{"task": "ACME - Contingency Hours Nov 2026", "project": "P", "date": "2026-11-03"},
                    {"task": "[ACME-12] Search fixes", "project": "P", "date": "2026-11-02"},
                    {"task": "Hero images", "project": "Q", "date": "2026-11-04"},
-                   {"task": "Scrum - Nick", "project": "Q", "date": "2026-11-01"}]
+                   {"task": "Scrum - Dana", "project": "Q", "date": "2026-11-01"}]
         self.assertEqual(newtask.examples(history, "P"), ["Search fixes", "Hero images"])
 
     def test_claude_runs_isolated_and_its_answer_is_checked(self):
@@ -498,10 +498,10 @@ class DraftTest(unittest.TestCase):
         steps = [{"typed": "fix the lists", "reply": "Numbering restarts per list now."}]
         with mock.patch.object(productive, "_claude_binary", lambda: "/bin/claude-fake"), \
                 mock.patch.object(askclaude, "steps", lambda *a, **k: steps), \
-                mock.patch.object(askclaude, "_person", lambda: "Nick Example"):
+                mock.patch.object(askclaude, "_person", lambda: "Dana Example"):
             for title, desc, want in (("Lists: numbering for Globex", "Numbering fixed.", ("", "Numbering fixed.")),
                                       ("Lists: numbering in Firefox", "Same fix as on Globex.", ("Lists: numbering in Firefox", "")),
-                                      ("Lists: numbering in Firefox", "Reviewed with Nick.", ("Lists: numbering in Firefox", "")),
+                                      ("Lists: numbering in Firefox", "Reviewed with Dana.", ("Lists: numbering in Firefox", "")),
                                       ("Acme lists: numbering", "Numbering fixed.", ("Acme lists: numbering", "Numbering fixed."))):
                 newtask._cache.clear()
                 got = newtask.claude_draft("2026-10-15", self.ROWS, 0, history, "Acme Support", run=run_with(title, desc))

@@ -419,7 +419,7 @@ def history(days=8, extra=None):
     for d, (rows, entries) in (extra or {}).items():
         stored[d] = rows
         hist += entries
-    return dayplan.learn(DATE, hist, stored, t0_of, person="Nick Example"), hist, stored
+    return dayplan.learn(DATE, hist, stored, t0_of, person="Dana Example"), hist, stored
 
 
 def work(s, e, app="Cursor", title="Mixed session", cat="work"):
@@ -427,7 +427,7 @@ def work(s, e, app="Cursor", title="Mixed session", cat="work"):
 
 
 class ParallelClientsTest(unittest.TestCase):
-    """Two clients at once (Nick, 2026-11-10): the work in front comes first; another client's agent that ran attended
+    """Two clients at once (2026-11-10): the work in front comes first; another client's agent that ran attended
     beside it for under 15 minutes of a sitting is ignored; from 15, half of those minutes are its, taken from the
     work in front, so the two together get no more than the time sat."""
 

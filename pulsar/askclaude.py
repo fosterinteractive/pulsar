@@ -201,7 +201,7 @@ def guard_note(note) -> tuple:
     return text, None
 
 
-# Notes are written in English, always (Nick, 2026-11-10: "все пишемо англійською"): a Cyrillic letter in an offered note
+# Notes are written in English, always (2026-11-10): a Cyrillic letter in an offered note
 # (a draft, a commit subject, a meeting's title, an earlier entry's note) means it is not
 _CYRILLIC = re.compile(r"[\u0400-\u04FF\u0500-\u052F]")
 
