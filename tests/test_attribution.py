@@ -186,6 +186,22 @@ class TurnRepositoryTest(Fixture):
         [s] = sessions.load(T0, T0 + 86400, self.projects, namer, logging_name="time logging")
         self.assertEqual([t["project"] for t in s["turns"]], ["acme-site", "time logging", "acme-site"])
 
+    def test_a_sessions_time_logging_is_shown_apart_and_never_among_the_rows_to_log(self):
+        """Nick, 2026-11-11: the session must show in Likely even while it logged time. Its logging minutes come as
+        loggingRows (the page draws them, quieter, and offers no logging); entries, which Log the day reads, keep
+        only the work."""
+        self.write("aaaa0008", [typed(10, "move those entries", "/nowhere"),
+                                call(11, "mcp__productive__update_resource", resource="time_entries"),
+                                typed(30, "fix the form", "/nowhere"),
+                                call(31, "Edit", file_path=os.path.join(self.acme, "src", "a.js"))], title="Form fix")
+        namer = lambda p: "time logging" if p == "tool:mcp__productive__time_entries" else sessions.project_of_path(p)  # noqa: E731
+        got = sessions.propose(T0, T0 + 86400, [self.editor(10, 50, "Form fix")], "ActivityWatch", self.projects,
+                               namer=namer, logging_name="time logging")
+        self.assertEqual([(r["project"], r["s"], r["e"]) for r in got["entries"]], [("acme-site", 30, 50)])
+        self.assertEqual([(r["project"], r["kind"], r["s"], r["e"], r["titles"]) for r in got["loggingRows"]],
+                         [("time logging", "logging", 10, 30, ["Form fix"])])
+        self.assertEqual(got["logging"], 20)
+
     def test_with_the_skills_naming_a_turn_is_named_as_the_skill_counts_it(self):
         """With the fi-time-from-activity script, each turn is named as it names it: every string of the turn's calls
         and what was typed counted, words too (one person's 52 days: the right task 33.9% of minutes, 30.4% with the

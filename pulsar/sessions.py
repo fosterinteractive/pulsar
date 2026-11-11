@@ -706,6 +706,7 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
     projects_of = [{t["project"] for t in s["turns"]} for s in sessions]
     owner: list = [None] * n
     logged_turn = 0  # minutes of a turn that was time logging (logging_name)
+    logging_by: list = [None] * n  # the session whose turn that was: shown in Likely, never proposed for logging
     tab = None  # (sitting, session) of the last session tab in front: the work a browser or Slack minute comes from
     for x in range(n):
         if not present[x]:
@@ -739,6 +740,7 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
             project = project_at(sessions[cands[0]], t0 + x * 60 + 59)
             if logging_name and project == logging_name:
                 logged_turn += 1  # time spent logging time, in a Claude session: no session's work
+                logging_by[x] = cands[0]
                 continue
             owner[x] = (cands[0], project)
 
@@ -809,19 +811,26 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
                 "taskPages": pages_of(int(e["s"]), int(e["e"]), e["_sessions"], e["project"]),
                 "github": github_of(int(e["s"]), int(e["e"]), e["_sessions"], e["project"])}
 
-    entries: list = []
-    for x in range(n):
-        if owner[x] is None:
-            continue
-        i, project = owner[x]
-        e = entries[-1] if entries else None
-        if e and e["project"] == project and x - e["_last"] <= 2:
-            e["_last"], e["e"] = x, x + 1
-            e["_minutes"] += 1
-            e["_sessions"].add(i)
-        else:
-            entries.append({"s": x, "e": x + 1, "_last": x, "_minutes": 1, "project": project, "_sessions": {i}})
-    rows = [row_of(e, "focused") for e in entries]
+    def runs(owned: list) -> list:
+        """Minutes of the same project, a gap of up to two minutes inside, as rows being built."""
+        out: list = []
+        for x in range(n):
+            if owned[x] is None:
+                continue
+            i, project = owned[x]
+            e = out[-1] if out else None
+            if e and e["project"] == project and x - e["_last"] <= 2:
+                e["_last"], e["e"] = x, x + 1
+                e["_minutes"] += 1
+                e["_sessions"].add(i)
+            else:
+                out.append({"s": x, "e": x + 1, "_last": x, "_minutes": 1, "project": project, "_sessions": {i}})
+        return out
+
+    rows = [row_of(e, "focused") for e in runs(owner)]
+    # a session's turns spent logging time: shown in Likely as such, so the session does not vanish (2026-11-11), but
+    # only here, never among the rows Log the day, the task picks or Self-check read (time spent logging is not logged)
+    logging_rows = [row_of(e, "logging") for e in runs([(i, logging_name) if i is not None else None for i in logging_by])]
 
     # the background: agents that ran while another session (or none) had the minute, in another repository. A
     # minute counts as attended (qualifies) on a chain started by a typed message with no silence of over SILENCE, in a
@@ -860,7 +869,7 @@ def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str
         bg_rows.append(r)
     return {"tracker": tracker, "working": sum(present), "proposed": sum(r["minutes"] for r in rows),
             "unplaced": [], "logging": sum(1 for x in range(n) if logging_at[x] and owner[x] is None) + logged_turn,
-            "entries": rows, "background": bg_rows}
+            "entries": rows, "background": bg_rows, "loggingRows": logging_rows}
 
 
 # ---- Productive tasks named in a session ------------------------------------------------------------------

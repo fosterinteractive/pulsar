@@ -250,14 +250,18 @@ function rowTasks(rows) {
 }
 
 /* the proposal, by slot too: the project with most minutes in a slot, equal neighbours joined */
+/* entries: the focused rows, then a session's time-logging rows (kind 'logging', sessions.py loggingRows). A row
+   of the slot's main work takes the slot, as everywhere in the column; a time-logging block is only shown (never
+   logged, never a pick), and its minutes never count in another block's. */
 function likelyBlocks(entries, Z, end) {
-  const slots = Array.from({length: Math.ceil(end / Z)}, () => ({tot: 0, projects: new Map(), entries: new Set()}));
+  const slots = Array.from({length: Math.ceil(end / Z)}, () => ({tot: 0, log: 0, projects: new Map(), entries: new Set()}));
   entries.forEach((x, idx) => {
     let s = x.s;
     while (s < x.e) {
       const i = Math.floor(s / Z), stop = Math.min(x.e, (i + 1) * Z), sl = slots[i];
       if (!sl) break;
       sl.tot += stop - s; sl.projects.set(x.project, (sl.projects.get(x.project) || 0) + stop - s); sl.entries.add(idx);
+      if (x.kind === 'logging') sl.log += stop - s;
       s = stop;
     }
   });
@@ -270,9 +274,12 @@ function likelyBlocks(entries, Z, end) {
     else blocks.push({project, start: i, end: i + 1, slots: [sl]});
   });
   for (const b of blocks) {
-    const idx = new Set(); b.total = 0;
-    for (const sl of b.slots) { b.total += sl.tot; sl.entries.forEach(j => idx.add(j)); }
-    b.entries = [...idx].sort((p, q) => p - q).map(j => entries[j]);
+    const idx = new Set();
+    for (const sl of b.slots) sl.entries.forEach(j => idx.add(j));
+    const all = [...idx].sort((p, q) => p - q).map(j => entries[j]);
+    b.logging = all.some(e => e.kind === 'logging' && e.project === b.project);
+    b.entries = all.filter(e => (e.kind === 'logging') === b.logging);
+    b.total = b.slots.reduce((n, sl) => n + (b.logging ? sl.log : sl.tot - sl.log), 0);
     const titles = new Map();
     for (const e of b.entries) if (e.project === b.project) for (const t of e.titles) titles.set(t, (titles.get(t) || 0) + e.minutes);
     b.title = [...titles].sort((p, q) => q[1] - p[1])[0]?.[0] || '';
@@ -420,7 +427,7 @@ function render() {
   else if (likely.disabled) { setHTML(laneLikely, ''); setText($('#h-likely'), ''); }
   else if (likely.error) { setHTML(laneLikely, `<div class="state err">${esc(likely.error)}</div>`); setText($('#h-likely'), 'error'); }
   else {
-    likelyCache = likelyBlocks(likely.entries, Z, end);
+    likelyCache = likelyBlocks([...likely.entries, ...(likely.loggingRows || [])], Z, end);
     setText($('#h-likely'), `Claude sessions · ${dur(likely.proposed || 0)}`);
     // with the Claude Code switch on: a task from Claude for each block, as "Check my day with Claude" asks first; the
     // same blocks asked about again (also after a restart) give the kept answer, and Claude is not run
@@ -429,6 +436,12 @@ function render() {
         role="img" aria-label="${esc(`In the background ${hm(x.s)}–${hm(x.e)}: ${x.what}`)}" title="${esc(`In the background ${hm(x.s)}–${hm(x.e)}: ${x.what}`)}"></div>`).join('');
     setHTML(laneLikely, likelyCache.length ? rails + likelyCache.map((b, i) => {
       const x = {s: b.start * Z, e: b.end * Z}, h = (x.e - x.s) * ppm;
+      if (b.logging) {  // a session's time spent logging time: shown, so the session is there, and never offered to log
+        const said = `Time logging ${hm(x.s)}–${hm(x.e)}${b.title ? ', ' + b.title : ''}, ${dur(b.total)}: not offered for logging`;
+        return `<div class="card likely logging" style="${place(x, ppm, 18)}" role="img" aria-label="${esc(said)}" title="${esc(said)}">
+          <div class="row"><span class="t">Time logging</span><span class="m num">${dur(b.total)}</span></div>
+          ${h > 34 && b.title ? `<div class="d">${esc(b.title)}</div>` : ''}</div>`;
+      }
       return `<div class="card likely" data-k="likely" data-i="${i}" style="${place(x, ppm, 18)}"
         tabindex="0" role="button" aria-label="${esc(`Likely ${hm(x.s)}–${hm(x.e)}: ${b.project}${b.title ? ', ' + b.title : ''}, ${dur(b.total)}`)}">
         <div class="row"><span class="t">${esc(b.project)}</span><span class="m num">${dur(b.total)}</span></div>
