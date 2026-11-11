@@ -218,7 +218,9 @@ _repo_of = Newest(5000)  # folder -> its repository (None outside one)
 def project_of_path(path: str) -> str | None:
     """The name of the git repository a path is in (the folder holding .git), or None outside one."""
     d = path.rstrip("/")
-    if d == TOOLING or d.startswith(TOOLING + "/"):
+    if d == TOOLING or d.startswith(TOOLING + "/") or "/node_modules/" in d + "/":
+        # a package folder is a tool a command borrowed, not its repository's work (2026-11-11: a site's deploy ran a
+        # browser test with another client's node_modules, and its hour went to that client)
         return None
     seen, name = [], None
     while d and d not in ROOTS:

@@ -579,6 +579,13 @@ class SessionsTest(unittest.TestCase):
     def test_claude_codes_own_files_are_no_project(self):
         self.assertIsNone(self.sessions.project_of_path(os.path.join(self.sessions.HOME, ".claude", "skills", "x", "SKILL.md")))
 
+    def test_a_package_borrowed_from_another_repository_names_no_project(self):
+        other = os.path.join(self.root, "other-client")
+        os.makedirs(os.path.join(other, ".git"))
+        os.makedirs(os.path.join(other, "node_modules", "playwright"))
+        self.assertIsNone(self.sessions.project_of_path(os.path.join(other, "node_modules", "playwright")))
+        self.assertEqual(self.sessions.project_of_path(os.path.join(other, "src", "app.js")), "other-client")
+
     def test_an_odd_line_is_skipped_not_the_session_or_the_day(self):
         import json
         from pulsar import askclaude
