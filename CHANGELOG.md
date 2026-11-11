@@ -6,10 +6,10 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
-## Unreleased
+## 1.6.15 (2026-11-11)
+- Sign in to GitHub, once per Mac (Settings > Updates): Pulsar's repository is going private, and then updates arrive only through a GitHub account that can see it. Until you sign in, the version at the top says so. The sign-in reads Pulsar's releases and nothing else, does not expire, and Settings says when your account cannot see the repository.
 - Likely no longer loses a session's work after it logged time: a turn that names nothing takes its neighbours' work or the session's title, never "time logging" (45 minutes of a database upgrade had vanished after a few turns moving entries). The minutes a session spent logging time show too, as a quiet "Time logging" card with the session's name: Log the day leaves them out (also as work outside Claude), and a click logs them by hand.
 - No false ActivityWatch alarm when a day starts during a pause: its AFK watcher writes "away" only after its own timeout, so the minutes after midnight had windows and no AFK event yet.
-- Sign in to GitHub, once per Mac (Settings > Updates): Pulsar's repository is going private, and then updates arrive only through a GitHub account that can see it. Until you sign in, the version at the top says so. The sign-in reads Pulsar's releases and nothing else, does not expire, and Settings says when your account cannot see the repository.
 - Log the day leaves fewer holes with work by turns: an entry pushed behind the entries proposed before it is laid out up to 30 minutes after its own work instead of being listed as not placed (12 minutes had been dropped as "no room" and left a 15-minute hole). An entry's reason comes from its own task, never from a crumb of other work joined to it.
 
 ## 1.6.14 (2026-11-10)

@@ -187,7 +187,7 @@ class TurnRepositoryTest(Fixture):
         self.assertEqual([t["project"] for t in s["turns"]], ["acme-site", "time logging", "acme-site"])
 
     def test_a_sessions_time_logging_is_shown_apart_and_never_among_the_rows_to_log(self):
-        """Nick, 2026-11-11: the session must show in Likely even while it logged time. Its logging minutes come as
+        """2026-11-11: the session must show in Likely even while it logged time. Its logging minutes come as
         loggingRows (the page draws them, quieter, and offers no logging); entries, which Log the day reads, keep
         only the work."""
         self.write("aaaa0008", [typed(10, "move those entries", "/nowhere"),

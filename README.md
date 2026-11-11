@@ -196,8 +196,9 @@ session you were most likely working in: the one whose title your editor showed,
 the one you used last in that sitting. Each row is named after the git repository the session worked in, so a session
 that worked in two repositories gives a row for each; another session's agent working meanwhile is a thin dashed rail.
 Meetings and personal windows go to no session. Time in Pulsar or Productive counts as the work around it, like any
-other window. Nothing is sent anywhere unless you switch on Claude Code, and nothing is logged by
-itself.
+other window. A session's turns spent logging time show as a quieter dashed **Time logging** card with the session's
+name: Log the day leaves them out, and a click on the card logs them by hand when they were work. Nothing is sent
+anywhere unless you switch on Claude Code, and nothing is logged by itself.
 
 **Log this time** on a row offers first a Productive task you pasted into that session in the three hours before, then
 the tasks you logged in the same session, then in the same repository, over the last 60 days, then tasks whose words
