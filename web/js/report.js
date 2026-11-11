@@ -1,5 +1,5 @@
 /* ================= Report: a range of days ================= */
-const RANGES = ['today', 'this-week', 'last-week', 'this-month', 'last-month', '30d'];
+const RANGES = ['today', 'yesterday', 'this-week', 'last-week', 'this-month', 'last-month', '30d'];
 const DEFAULT_RANGE = 'this-week';  // what the Report opens on
 const MAX_DAYS = 93;
 /* the problem with a custom range, or '' when it can load */
@@ -31,6 +31,7 @@ function rangeDates(key) {
   const t = todayLocal(), base = new Date(t + 'T12:00:00Z'), wd = (base.getUTCDay() + 6) % 7;
   const at = n => { const x = new Date(base); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
   if (key === 'today') return [t, t];
+  if (key === 'yesterday') return [at(-1), at(-1)];
   if (key === 'this-week') return [at(-wd), t];
   if (key === 'last-week') return [at(-wd - 7), at(-wd - 1)];
   if (key === 'this-month') return [t.slice(0, 8) + '01', t];

@@ -405,6 +405,10 @@ class PageTest(unittest.TestCase):
         self.assertIn("const DEFAULT_RANGE = 'this-week'", js)
         self.assertIn("if (key === 'today') return [t, t];", js)
         self.assertIn('data-v="today">Today</button>', html)
+        # and Yesterday, right after it (2026-11-12): yesterday to yesterday
+        self.assertIn("'today', 'yesterday',", js)
+        self.assertIn("if (key === 'yesterday') return [at(-1), at(-1)];", js)
+        self.assertIn('data-v="today">Today</button><button data-v="yesterday">Yesterday</button>', html)
 
     def test_a_drag_keeps_its_minutes_and_old_windows_sign_in_again(self):
         """log.js: a stretch dragged in the Logged column opens the dialog with the minutes dragged, not rounded to

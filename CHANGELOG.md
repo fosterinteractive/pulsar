@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- The Report has a Yesterday range, next to Today.
 - No suggestion makes an entry under 10 minutes: Claude's splits and lengths below it are left out (a 30-minute row had been split into 8 + 8 + 7 + 7 and none of it was written), a row under 10 minutes says so in the review, and the confirm step names such rows and waits for them to be fixed instead of stopping a run at the first one. After Log, the summary adds up and gives the reason a row was not written.
 - Log the day's suggestions say what they do, in one sentence, and their button is named for it: "Use this task", "Make it 15 min", "Split it", "Don't log it", "Create it…", with "Keep as it is" instead of Reject. A question comes with answers to click, each making its change ("All to site A", "Split across both"), instead of "Noted".
 - A call that went on after a meeting already logged is offered as "Add to that entry…": the meeting's entry gets the minutes, after the usual "Change this entry?", instead of a new row asking for a task.
