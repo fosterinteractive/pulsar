@@ -502,6 +502,37 @@ class ParallelClientsTest(unittest.TestCase):
         p = plan([work(600, 660)], [front(600, 660, "house-tool")], [back(600, 660, "both-repo", titles=["Mixed session"])], ctx=ctx)
         self.assertEqual(self.minutes(p).get("C1"), 60, p["entries"])
 
+    def test_mixed_work_in_front_goes_to_a_client_from_history_only_when_that_client_worked_that_day(self):
+        """2026-11-07: a day on an internal tool whose repository was logged to a client too (parallel time moved
+        there) went to that client, 505 minutes, though the client did not work at all that day. A guess from the
+        days before (the last task, the session's or the repository's vote) gives mixed work in front to a client only
+        when that client's own work, as a session's main work, shows that day (CLIENT_SEEN minutes)."""
+        days = (("2026-10-28", "T1"), ("2026-10-29", "T1"), ("2026-10-30", "C1"), ("2026-10-31", "C1"), ("2026-11-01", "C1"))
+        ctx = history(extra={d: ([{"k": [KEY], "p": "both-repo", "s": 800, "e": 860}], [entry(d, 800, 60, t)])
+                             for d, t in days})[0]
+        self.assertEqual(ctx["classes"].get("both-repo"), "mixed")  # the client's task logged last there
+        mixed = lambda p: {e["taskId"]: e["minutes"] for e in p["entries"] if e["repo"] == "both-repo"}  # noqa: E731
+        tool_day = front(600, 700, "both-repo", titles=["Tool day"], sessions=["cccc0003"])
+        self.assertEqual(mixed(plan([work(600, 700, title="Tool day")], [tool_day], ctx=ctx)), {"T1": 100})
+        # a few minutes named after the client in the same session's turns are not the client's work
+        crumb = front(700, 712, "client-web", titles=["Tool day"], sessions=["cccc0003"])
+        self.assertEqual(mixed(plan([work(600, 712, title="Tool day")], [tool_day, crumb], ctx=ctx)), {"T1": 100})
+        # the client's own session that day (its main work, CLIENT_SEEN minutes or more): the guess may go to it
+        client_day = front(720, 760, "client-web", titles=["Client day"], sessions=["dddd0004"])
+        p = plan([work(600, 700, title="Tool day"), work(720, 760, title="Client day")], [tool_day, client_day], ctx=ctx)
+        self.assertEqual(mixed(p), {"C1": 100})
+
+    def test_a_repository_logged_mostly_to_internal_work_takes_its_last_task_from_internal_projects(self):
+        """The last task of a repository logged mostly to the agency's own work comes from those projects, though a
+        client's was logged there later (parallel time moved to the client): a client's repository keeps them all."""
+        days = ("2026-10-28", "2026-10-29", "2026-10-30", "2026-10-31")
+        ctx = history(extra={d: ([{"k": [KEY], "p": "house-tool", "s": 800, "e": 860}], [entry(d, 800, 60, "C1")])
+                             for d in days})[0]
+        self.assertEqual(set(dayplan.places(ctx, "house-tool")), {"FI-AI Tools", "Clientco - Ongoing Support"})
+        self.assertEqual(attribution.last_of(ctx["lastday"], dayplan.places(ctx, "house-tool"))[1], "C1")  # latest
+        self.assertEqual(dayplan.last_places(ctx, "house-tool"), {"FI-AI Tools"})
+        self.assertEqual(attribution.last_of(ctx["lastday"], dayplan.last_places(ctx, "house-tool"))[1], "T1")
+
     def test_an_entry_already_logged_or_a_meeting_inside_the_stretch_is_left_alone(self):
         # 2026-11-10: a claim with no class (time already logged, a meeting) inside a client agent's stretch stopped the
         # plan (KeyError 'class'); found by the replay of 52 days, not by a test

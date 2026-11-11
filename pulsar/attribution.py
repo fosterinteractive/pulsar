@@ -260,18 +260,23 @@ def _neg_id(text: str) -> tuple:
     return tuple(-ord(c) for c in str(text))
 
 
-def projects_of(votes: dict, project_of) -> set:
-    """The projects a repository is logged to (FIT_SHARE of its votes, {task: weight}); none with too little history
-    (FIT_MIN)."""
+def project_weights(votes: dict, project_of) -> dict:
+    """{project: its share of a repository's votes ({task: weight})} for the projects it is logged to (FIT_SHARE of
+    them or more); none with too little history (FIT_MIN)."""
     total = sum(votes.values()) if votes else 0
     if total < FIT_MIN:
-        return set()
+        return {}
     by: dict = defaultdict(float)
     for t, w in votes.items():
         p = project_of(t)
         if p:
             by[p] += w
-    return {p for p, w in by.items() if w / total >= FIT_SHARE}
+    return {p: w / total for p, w in by.items() if w / total >= FIT_SHARE}
+
+
+def projects_of(votes: dict, project_of) -> set:
+    """The projects a repository is logged to (project_weights)."""
+    return set(project_weights(votes, project_of))
 
 
 def one_project(votes: dict, project_of) -> bool:

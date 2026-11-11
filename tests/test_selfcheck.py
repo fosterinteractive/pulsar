@@ -425,6 +425,19 @@ class ShareTest(unittest.TestCase):
             self.assertIn(part, line)
         self.assertNotRegex(line, r"\bmin\b|\bh\b|\d{4}-\d{2}-\d{2}")
 
+    def test_the_line_says_how_often_each_way_of_picking_is_right(self):
+        """2026-11-11: one rule picked a client's task for a whole day of internal work, which only the days showed.
+        The line now says, per rule, how often it was right and how much of the plan it made: percents only."""
+        days = [{"logged": 100, "bySource": {"session": [60, 45, 50], "lastday": [30, 6, 25], "none": [10, 0, 10],
+                                             "sameday": [0, 0, 0]}},
+                {"logged": 100, "bySource": {"session": [40, 35, 50], "repeat": [5, 5, 5]}}]
+        t = selfcheck.totals(days)
+        self.assertEqual(selfcheck.picks(t), [("session", 80, 69), ("last task in project", 24, 21), ("repeat", 100, 3)])
+        line = selfcheck.share_text("9.9", t, {})
+        self.assertIn("Picks by rule: session 80% right (69% of minutes), last task in project 24% right (21% of "
+                      "minutes), repeat 100% right (3% of minutes).", line)
+        self.assertNotRegex(line, r"\bmin\b|\bh\b|\d{4}-\d{2}-\d{2}")
+
 
 class BlindGatherTest(unittest.TestCase):
     """dayplan.gather(blind=...): the day's own entries never vote or block, nothing is read from Productive, and the

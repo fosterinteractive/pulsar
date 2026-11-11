@@ -259,9 +259,11 @@ task, service, start, length and note, or remove an entry.
 **Self-check** (Settings → Self-check → **Check**). Pulsar works out, on your Mac, the plan Log the day would have made
 for each of your last 30 days without that day's entries, compares it with what you logged, and shows a few percents:
 the right task, the right client and no task (of the minutes you logged), and billable time on another client, over
-and under (of the billable minutes). Then, when there is data, how often Log the day's rows went in as proposed, and
-two rules being tried. The first Check takes a few minutes; after that only new or changed days are worked out. It
-uses your own entries and is never sent anywhere; **Copy** copies the percents, to share if you choose.
+and under (of the billable minutes). Then, when there is data, how often Log the day's rows went in as proposed, two
+rules being tried, and for each way Log the day picks a task (the session, the last task in the project, a repeat, a
+task link…) how often it was right and how much of the plan it made. The first Check takes a few minutes; after that
+only new or changed days are worked out, and a new version of Pulsar works them all out again. It uses your own
+entries and is never sent anywhere; **Copy** copies the percents, to share if you choose.
 
 **Day done, and time that was not work.** A day whose logged time reaches your daily target is done (or click **Mark the
 day done** under Work time): its yellow rails turn grey and it leaves Earlier days; **Not done** undoes it. **Not work**,

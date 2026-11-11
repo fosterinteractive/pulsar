@@ -55,6 +55,11 @@ LOG_COUNTS = ("entries", "byHand", "viaLogTheDay", "asProposed", "taskChanged", 
               "unknown")
 SHADOWS = ("activity", "clients")
 RULES = (("activity", "Productive activity"), ("clients", "Client tasks by window"))
+# how a plan picked each task (dayplan.candidates' sources), as the line to share names them
+PICKS = {"session": "session", "lastday": "last task in project", "repeat": "repeat", "link": "task link",
+         "meeting": "meeting", "words": "name words", "seen": "task page", "assigned": "assigned to you",
+         "neighbour": "neighbour", "sameday": "same day", "new": "new task", "ticket": "ticket key", "rule": "rule",
+         "work": "work words", "repo": "repository", "context": "window"}
 N = 1440
 
 _lock = threading.Lock()
@@ -358,6 +363,12 @@ def totals(docs: list) -> dict:
     same days ("base")."""
     t: dict = {k: sum(int(x.get(k) or 0) for x in docs) for k in MEASURES}
     t["days"] = len(docs)
+    t["bySource"] = {}
+    for x in docs:
+        for k, v in (x.get("bySource") or {}).items():
+            b = t["bySource"].setdefault(k, [0, 0, 0])
+            for i in range(3):
+                b[i] += int(v[i] or 0)
     t["shadow"] = {}
     for name in SHADOWS:
         have = [x for x in docs if isinstance((x.get("shadow") or {}).get(name), dict)]
@@ -377,6 +388,20 @@ def percents(t: dict | None) -> dict | None:
     return {"rightTask": pc(t["rightTask"], t["logged"]), "rightClient": pc(t["rightClient"], t["logged"]),
             "noTask": pc(t["noTask"], t["logged"]), "otherClient": pc(t["wrongClient"], t["billableLogged"]),
             "over": pc(t["over"], t["billableLogged"]), "under": pc(t["under"], t["billableLogged"])}
+
+
+def picks(t: dict | None) -> list:
+    """[(rule, % right, % of the plan's minutes)] for each way the plan picked a task (PICKS), the most minutes first:
+    right of the minutes it picked that you logged at all. A rule under 1% of the minutes is left out, and so are the
+    minutes with no task (no task, above, says how many)."""
+    by = (t or {}).get("bySource") or {}
+    total = sum(b[0] for b in by.values())
+    out = []
+    for k, (proposed, right, logged) in by.items():
+        if k == "none" or not total or not logged or 100 * proposed / total < 1:
+            continue
+        out.append((PICKS.get(k, k), round(100 * right / logged), round(100 * proposed / total)))
+    return sorted(out, key=lambda x: (-x[2], x[0]))
 
 
 def log_percents(log: dict) -> dict | None:
@@ -409,6 +434,12 @@ def share_text(version: str, month: dict | None, log: dict) -> str:
             a, b = percents(sh), percents(sh["base"])
             out.append(f"Rule being tried, {label}: right task {a['rightTask']}% (now {b['rightTask']}%), "
                        f"right client {a['rightClient']}% (now {b['rightClient']}%).")
+    # which way of picking a task is right how often, so a rule that fails for someone shows in their line too
+    # (2026-11-11: one rule picked a client's task for a whole day of internal work; only the days showed it)
+    by = picks(month)
+    if by:
+        out.append("Picks by rule: " + ", ".join(f"{name} {right}% right ({share}% of minutes)"
+                                                 for name, right, share in by) + ".")
     return " ".join(out)
 
 

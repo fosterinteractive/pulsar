@@ -39,7 +39,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 from . import attribution, commits as git_commits, config, context as context_mod, pause, sessions as sessions_mod, trackers
-from .attribution import CLIENT, INTERNAL, repo_key
+from .attribution import CLIENT, INTERNAL, MIXED, repo_key
 
 GRID = 5             # entry boundaries on this grid, in minutes (Settings: "Round entries to", opts_for)
 MIN_ENTRY = 10       # shorter pieces join a neighbour (never shorter than the grid)
@@ -112,16 +112,65 @@ def fits(ctx: dict, repo: str, task) -> bool | None:
                             lambda t: (names.get(str(t)) or {}).get("project"), task)
 
 
-def places(ctx: dict, repo: str) -> set:
-    """The projects a repository's work goes to: those it is logged to (attribution.projects_of); with too little
-    history, the projects of tasks whose names name it ("… - acme - Maintenance"), as learn.work_projects does."""
+def place_weights(ctx: dict, repo: str) -> dict:
+    """{project: share of the repository's votes} of the projects it is logged to (attribution.project_weights)."""
     names = ctx.get("names") or {}
-    got = attribution.projects_of((ctx.get("repo") or {}).get(repo_key(repo)) or {},
-                                  lambda t: (names.get(str(t)) or {}).get("project"))
+    return attribution.project_weights((ctx.get("repo") or {}).get(repo_key(repo)) or {},
+                                       lambda t: (names.get(str(t)) or {}).get("project"))
+
+
+def places(ctx: dict, repo: str) -> set:
+    """The projects a repository's work goes to: those it is logged to (place_weights); with too little history, the
+    projects of tasks whose names name it ("… - acme - Maintenance"), as learn.work_projects does."""
+    names = ctx.get("names") or {}
+    got = set(place_weights(ctx, repo))
     name = (repo_key(repo) or "").lower()
     if got or len(name) < 3:
         return got
     return {n["project"] for n in names.values() if n.get("project") and name in words(n.get("task") or "")}
+
+
+CLIENT_SEEN = 30  # minutes of a client's own work on a day (clients_today) before a guess may give mixed work to it
+GUESSES = ("lastday", "session", "repo")  # picks from the days before only: nothing of the day itself names the task
+
+
+def clients_today(day: dict, ctx: dict) -> set:
+    """The client projects whose own work shows on the day: the projects the repositories of Likely's rows and of the
+    agents in the background are logged to, for a client's repository with CLIENT_SEEN minutes or more that day in
+    sessions it is the main work of, and the projects of the day's meetings' tasks. Only a session's main work counts:
+    a few turns of another session named after a client (its name in a command or an output) are no client's work
+    (2026-11-07: 52 such minutes in sessions on an internal tool, on logging time and on QA)."""
+    rows = (day.get("rows") or []) + (day.get("background") or [])
+    by_session: dict = {}
+    for r in rows:
+        for sid in r.get("sessions") or [""]:
+            got = by_session.setdefault(sid, {})
+            got[r.get("project")] = got.get(r.get("project"), 0) + (r.get("minutes") or 0)
+    main = {sid: max(ps, key=lambda k: (ps[k], str(k))) for sid, ps in by_session.items() if ps}
+    minutes: dict = {}
+    for r in rows:
+        if attribution.segment_class(r.get("project"), ctx) == CLIENT \
+                and any(main.get(sid) == r.get("project") for sid in r.get("sessions") or [""]):
+            minutes[r.get("project")] = minutes.get(r.get("project"), 0) + (r.get("minutes") or 0)
+    out = {p for repo, m in minutes.items() if m >= CLIENT_SEEN for p in places(ctx, repo)}
+    for m in day.get("meetings") or []:
+        out |= {str(t["project"]) for t in m.get("tasks") or [] if t.get("project")}
+    return out
+
+
+def last_places(ctx: dict, repo: str, background: bool = False) -> set:
+    """Where the last-task rule (candidates' "lastday", previous) looks: the repository's places, but only the agency's
+    own projects among them when it is logged mostly to the agency's own work. 2026-11-11: an internal tool's work
+    logged a few times to a client (parallel time moved there, as the person does) made the client's task "the last
+    one" for a whole day on the tool, 505 billable minutes; a client's repository keeps every place (by weight there,
+    the 43 replayed days lost 0.4 points and over-billed 152 minutes more)."""
+    where = places(ctx, repo)
+    w = place_weights(ctx, repo)
+    if w and attribution.internal_project(max(w, key=lambda p: (w[p], p))):
+        return {p for p in where if attribution.internal_project(p)}
+    if "clients_today" in ctx and attribution.segment_class(repo, ctx) == MIXED and not background:  # admissible
+        return {p for p in where if attribution.internal_project(p) or p in ctx["clients_today"]}
+    return where
 
 
 def same_client(ctx: dict, repo: str, task, project: str = "") -> bool:
@@ -407,7 +456,8 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
     # the weaker answers (replay, 43 days: +2.6 points of minutes on the right task). The same for every session: a
     # rule for sessions never logged before, switched by each person's habit, was left out (2026-11-10: one logic for
     # everyone, so a colleague's case can be reproduced)
-    last = attribution.last_of(ctx.get("lastday") or {}, places(ctx, row.get("project")))
+    last = attribution.last_of(ctx.get("lastday") or {},
+                               last_places(ctx, row.get("project"), row.get("kind") == "background"))
     if last:
         at = next((i for i, c in enumerate(out) if weak(c)), len(out))
         out.insert(at, (last[1], "lastday", "low", f"the task you logged last in {last[4]} ({last[0]})"))
@@ -440,6 +490,13 @@ def admissible(row: dict, ctx: dict, task, source: str, assigned: list | None = 
     cls = row.get("class")
     tc = attribution.class_of_task(task, ctx) or project_class(project, ctx)
     if cls == INTERNAL and tc == CLIENT and source not in ("rule", "link", "ticket"):
+        return False
+    # mixed work in front (a repository logged both to the agency's own work and to a client, as parallel time moved
+    # to the client teaches it) goes to a client from the days before only when that client's own work shows that
+    # day (2026-11-11: a whole day on an internal tool went to a client that did not work at all that day, 505
+    # minutes). A mixed repository's agent in the background stays the client's, as rule 1 has it
+    if cls == MIXED and tc == CLIENT and source in GUESSES and "clients_today" in ctx \
+            and row.get("kind") != "background" and project not in ctx["clients_today"]:
         return False
     if cls == CLIENT and source in ("session", "sameday") and tc == CLIENT \
             and not same_client(ctx, row.get("project"), task, project):
@@ -477,7 +534,7 @@ def doubt(row: dict, ctx: dict, task, source: str) -> str:
 def previous(row: dict, ctx: dict) -> tuple | None:
     """(day, task, project): the task logged latest in the projects the repository's work goes to (places), other than
     the last day's task there (candidates' "lastday"), or None. An alternative: choose."""
-    where = places(ctx, row.get("project"))
+    where = last_places(ctx, row.get("project"), row.get("kind") == "background")
     last = attribution.last_of(ctx.get("lastday") or {}, where)
     return attribution.latest_in(ctx.get("latest") or {}, where, {str(last[1])} if last else set())
 
@@ -696,6 +753,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     The steps, each a function below, in this order: who has each minute (_logged, _meetings, _rows, time spent
     logging blocked, _unattended, _outside), the pieces they make (_pieces), entries from them (_merge), laid out on
     the grid (_layout), then the caps (_caps) and what is left uncovered (_result)."""
+    ctx = {**ctx, "clients_today": clients_today(day, ctx)}
     d = _Day(day, ctx, {"grid": GRID, "min_entry": MIN_ENTRY, "merge_gap": MERGE_GAP, "out_min": OUT_MIN, **(opts or {})})
     _logged(d)
     _meetings(d)
