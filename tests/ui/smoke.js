@@ -117,6 +117,7 @@ try {
     const back = q(`#lane-logged .card.logged[data-i="${card.dataset.i}"]`);
     check('Cancel puts the card back', !q('#pop.on') && !!back && Math.abs(parseFloat(back.style.top) - (x.s * ppm + 1)) < 2,
       back ? `top ${back.style.top}, wanted ${x.s * ppm + 1}px` : 'no card');
+  } else check('a logged entry offers Not an example', true, 'skipped: nothing logged in the last 7 days');
   if (state.date !== today) { go(today); await until(() => state.logged && state.date === today); }
 
   // the log dialog's over-estimate line follows the length typed
