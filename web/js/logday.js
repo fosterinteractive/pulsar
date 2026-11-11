@@ -375,7 +375,35 @@ function rowHTML(r, overlaps) {
     ${sharedLine(r)}
     ${ticketLine(r)}
     ${sgRowHTML(r)}
+    ${joinLine(r)}
     ${open ? editorHTML(r) : ''}</li>`;
+}
+
+/* the row right before this one when it is the same task and ends where this one starts: two stretches of one task
+   that the layout put back to back, or a row whose task was just changed to its neighbour's (2026-11-12: two Pulsar
+   rows of 25 minutes with the same note); null otherwise */
+function ldJoinable(r) {
+  if (!r.taskId || r.halfOf || !ldPending(r)) return null;
+  return LD.rows.find(p => p !== r && p.taskId === r.taskId && !p.halfOf && ldPending(p)
+                      && Math.abs((p.e ?? p.s + p.minutes) - r.s) < 0.5) || null;
+}
+function joinLine(r) {
+  const p = ldJoinable(r);
+  return p && !LD.writing ? `<div class="ld-join">Same task as the row before it, right after it.
+    <button type="button" class="btn sm" data-ld-join="${r.id}">Join into one entry (${dur(p.minutes + r.minutes)})</button></div>` : '';
+}
+/* one entry from the two: the first takes the second's minutes, its note when it says something else, and its doubts */
+function ldJoin(r) {
+  const p = ldJoinable(r);
+  if (!p) return;
+  p.minutes += r.minutes; p.e = r.e ?? r.s + r.minutes;
+  p.note = [...new Set([p.note, r.note].map(n => (n || '').trim()).filter(Boolean))].join(' ');
+  if (r.noteFrom === 'claude') p.noteFrom = 'claude';
+  p.flags = [...new Set([...(p.flags || []), ...(r.flags || [])])];
+  p.checked = p.checked && r.checked;
+  LD.rows = LD.rows.filter(x => x !== r);
+  if (LD.open === r.id) LD.open = p.id;
+  ldChanged(p);
 }
 
 /* a shared row's note and its choice (ldkeep.js ldChoice), outside the row's button */
@@ -579,6 +607,7 @@ $('#review').addEventListener('click', ev => {
   if (t.dataset.ldOpen) return ldOpen(t.dataset.ldOpen);
   if (t.dataset.ldTick) { const r = ldRow(t.dataset.ldTick); r.checked = t.checked; r.edited = true; renderReview(); render(); return; }
   if (t.dataset.ldTask) return ldPickTask(ldRow(t.dataset.ldTask), t);
+  if (t.dataset.ldJoin) return ldJoin(ldRow(t.dataset.ldJoin));
   if (t.dataset.ldNewtask) {  // newtask.js: the same form as the log dialog's; the new task is then this row's
     const r = ldRow(t.dataset.ldNewtask);
     return openNewTask({date: LD.date, s: r.s, e: r.s + r.minutes, project: r.project,

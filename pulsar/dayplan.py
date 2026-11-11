@@ -802,6 +802,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
             u["minutes"] -= back_
             given_back[str(u["task"])] -= back_
     unplaced[:] = [u for u in unplaced if u["minutes"] > 0]
+    out = _join_touching(out)
     # no entry under the shortest Pulsar writes (server.too_short), whatever let it through above (a crumb right by its
     # task's entry, a short call): listed, so its minutes can go on that entry by hand (2026-11-11: project managers
     # found entries of 2 to 9 minutes in their projects)
@@ -1750,6 +1751,35 @@ def _caps(d: _Day, out: list, unplaced: list, evidence: dict) -> tuple:
             e["checked"] = False
             e["untimed"] = d.untimed[str(e["taskId"])]
     return out, {"logged": logged_total, "active": active, "meetings": sum(att), "cap": cap}
+
+
+def _join_touching(out: list) -> list:
+    """Two entries of one task laid out back to back are one: the work came in two stretches (another task's block in
+    between kept them apart), and the layout put them next to each other. 2026-11-12: Pulsar 22:40-23:05 and
+    23:05-23:30, picked two ways, came out as two entries with the same note. The joined entry is as sure as the less
+    sure of the two (ticked only if both were), keeps both reasons, and the notes that differ."""
+    joined: list = []
+    for e in sorted(out, key=lambda e: e["s"]):
+        p = joined[-1] if joined else None
+        if p and p.get("taskId") and p["taskId"] == e.get("taskId") and p["kind"] == e["kind"] == "focused" \
+                and abs(p["e"] - e["s"]) < 0.5:
+            surer, other = (p, e) if RANK[p["confidence"]] >= RANK[e["confidence"]] else (e, p)
+            p.update(e=e["e"], minutes=p["minutes"] + e["minutes"], parts=(p.get("parts") or 0) + (e.get("parts") or 0),
+                     checked=p["checked"] and e["checked"], confidence=other["confidence"],
+                     confidenceWords=other.get("confidenceWords") or p.get("confidenceWords"),
+                     flags=list(dict.fromkeys((p.get("flags") or []) + (e.get("flags") or []))),
+                     why="; ".join(dict.fromkeys(w for w in (surer.get("why"), other.get("why")) if w)),
+                     note=" ".join(dict.fromkeys(n.strip() for n in (p.get("note"), e.get("note")) if n and n.strip()))[:2000],
+                     # a note Claude drafted, in either, keeps the entry Claude's (never ticked by itself)
+                     noteFrom="claude" if "claude" in (p.get("noteFrom"), e.get("noteFrom"))
+                     else p.get("noteFrom") or e.get("noteFrom") or "",
+                     own=(p.get("own") or []) + (e.get("own") or []),
+                     sessions=sorted(set(p.get("sessions") or []) | set(e.get("sessions") or [])),
+                     alts=list({a["taskId"]: a for a in (e.get("alts") or []) + (p.get("alts") or [])
+                                if a.get("taskId") != str(p["taskId"])}.values())[:3])
+            continue
+        joined.append(e)
+    return joined
 
 
 def _result(d: _Day, out: list, unplaced: list, totals: dict) -> dict:

@@ -289,3 +289,6 @@ dialog.dlg::backdrop { background: rgba(0,0,0,.35); }
 .gr.fold .btn:hover { text-decoration: underline; background: none; }
 .gr.fold { background: color-mix(in srgb, var(--logged) 7%, transparent); }
 .gr.fold::before { background: var(--logged); }
+/* two rows of one task back to back: the offer to join them (logday.js joinLine) */
+.ld-join { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 2px 0 6px 34px; font-size: 12px; color: var(--muted); }
+.ld-join .btn.sm { padding: 3px 9px; font-size: 12px; min-height: 0; }
