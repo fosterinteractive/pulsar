@@ -99,7 +99,24 @@ try {
     check('a logged entry offers Not an example', !!q('#pop [data-nolearn]'),
       `${state.date}: ${q('#pop [data-nolearn]')?.textContent || 'no button'}`);
     closePop();
-  } else check('a logged entry offers Not an example', true, 'skipped: nothing logged in the last 7 days');
+    // dragged whole, a logged card asks "Move this entry?" with its new time, the same length; Cancel puts it back
+    const lane = q('#lane-logged'), x = loggedCache[+card.dataset.i], ppm = ppmOf(state.zoom);
+    const at = {bubbles: true, cancelable: true, clientX: c.left + 10, pointerId: 1};
+    const by = Math.max(5, Math.min(60, Math.floor((1440 - x.e) * 0.5))) * (x.e > 1380 ? -1 : 1);
+    card.dispatchEvent(new PointerEvent('pointerdown', {...at, clientY: c.top + 10, button: 0}));
+    lane.dispatchEvent(new PointerEvent('pointermove', {...at, clientY: c.top + 10 + by * ppm / 2}));
+    lane.dispatchEvent(new PointerEvent('pointermove', {...at, clientY: c.top + 10 + by * ppm}));
+    lane.dispatchEvent(new PointerEvent('pointerup', {...at, clientY: c.top + 10 + by * ppm}));
+    await wait(200);
+    const head = q('#pop.on h3')?.textContent || '', sub = q('#pop.on .sub b')?.textContent || '';
+    const want = `${hm(Math.round(x.s) + by)}–${hm(clockAfter(state.date, Math.round(x.s) + by, x.minutes))}`;
+    check('a logged card dragged whole asks to move it', head === 'Move this entry?' && sub === want,
+      `${head || 'no question'} ${sub} (wanted ${want})`);
+    q('#pop [data-rz-no]')?.click();
+    await wait(200);
+    const back = q(`#lane-logged .card.logged[data-i="${card.dataset.i}"]`);
+    check('Cancel puts the card back', !q('#pop.on') && !!back && Math.abs(parseFloat(back.style.top) - (x.s * ppm + 1)) < 2,
+      back ? `top ${back.style.top}, wanted ${x.s * ppm + 1}px` : 'no card');
   if (state.date !== today) { go(today); await until(() => state.logged && state.date === today); }
 
   // the log dialog's over-estimate line follows the length typed

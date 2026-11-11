@@ -986,48 +986,66 @@ async function undoDelete(x, date) {
   if (r.error || r.overlap) return toast(r.error || 'Not logged again: the time is taken by another entry now.', true);
   toast(`Logged again: ${hm(Math.floor(x.s))}, ${dur(x.minutes)}, ${x.task || x.project}.`);
 }
-/* drag the top or bottom edge of a logged card: 1-minute steps, the card follows, then "Change to …?" */
+/* drag the top or bottom edge of a logged card to change its start or end, or the card itself to move it (the same
+   length, at another time): 1-minute steps, the card follows, then "Change to …?" or "Move to …?" */
 (function resizeEntries() {
   const lane = $('#lane-logged');
+  const MOVED = 4;  // pixels: a card pressed and let go nearer than this was clicked (its popover), not moved
   let drag = null, justDone = 0;
   lane.addEventListener('pointerdown', ev => {
-    const h = ev.target.closest('.rz'); if (!h || ev.button !== 0) return;
-    const card = h.closest('.card'), x = loggedCache[+card.dataset.i];
-    ev.preventDefault(); ev.stopPropagation();
-    // the edge moves by as much as the pointer does: grabbed anywhere on the handle (or on a short card drawn taller
-    // than its minutes), it does not jump to the pointer first
-    drag = {card, x, edge: h.dataset.rz, s: x.s, e: x.e, y0: ev.clientY - lane.getBoundingClientRect().top};
-    lane.setPointerCapture(ev.pointerId);
+    if (ev.button !== 0) return;
+    const h = ev.target.closest('.rz'), card = (h || ev.target).closest('.card.logged');
+    const x = card && loggedCache[+card.dataset.i];
+    if (!x || x.s == null) return;  // an entry with no start is on no timeline
+    // the edge or the card moves by as much as the pointer does: grabbed anywhere on it (or on a short card drawn
+    // taller than its minutes), it does not jump to the pointer first
+    drag = {card, x, edge: h ? h.dataset.rz : 'move', s: x.s, e: x.e, y0: ev.clientY - lane.getBoundingClientRect().top,
+            cy: ev.clientY, id: ev.pointerId, on: !!h};
+    if (h) { ev.preventDefault(); ev.stopPropagation(); lane.setPointerCapture(ev.pointerId); }
   });
   lane.addEventListener('pointermove', ev => {
     if (!drag) return;
+    if (!drag.on) {  // the card: a move only once the pointer has really gone somewhere
+      if (Math.abs(ev.clientY - drag.cy) < MOVED) return;
+      drag.on = true; drag.card.classList.add('moving');
+      try { lane.setPointerCapture(drag.id); } catch (e) { /* the pointer is gone: the lane's own events carry on */ }
+    }
+    if (drag.edge === 'move') getSelection()?.removeAllRanges();  // a press on the note's text would select it
     const ppm = ppmOf(state.zoom), d = Math.round((ev.clientY - lane.getBoundingClientRect().top - drag.y0) / ppm);
-    if (drag.edge === 't') drag.s = Math.max(0, Math.min(drag.e - 1, Math.round(drag.x.s) + d));
+    if (drag.edge === 'move') {  // whole minutes, inside the day, the length kept
+      const len = drag.x.e - drag.x.s;
+      drag.s = Math.max(0, Math.min(1440 - Math.ceil(len), Math.round(drag.x.s) + d)); drag.e = drag.s + len;
+    } else if (drag.edge === 't') drag.s = Math.max(0, Math.min(drag.e - 1, Math.round(drag.x.s) + d));
     else drag.e = Math.min(1440, Math.max(drag.s + 1, Math.round(drag.x.e) + d));
     drag.card.style.top = (drag.s * ppm + 1) + 'px'; drag.card.style.height = Math.max((drag.e - drag.s) * ppm - 2, 18) + 'px';
-    drag.card.title = `${hm(drag.s)}–${hm(drag.e)} · ${dur(drag.e - drag.s)}`;
+    drag.card.title = `${hm(drag.s)}–${hm(drag.e)} · ${dur(drag.edge === 'move' ? drag.x.minutes : drag.e - drag.s)}`;
   });
   lane.addEventListener('pointerup', ev => {
     if (!drag) return;
-    const d = drag; drag = null; justDone = Date.now();
+    const d = drag; drag = null;
+    if (!d.on) return;  // a click on the card: its popover opens as before
+    justDone = Date.now();
+    d.card.classList.remove('moving');
     forgetHTML(lane);  // the card was moved by hand: the next redraw puts it where its entry is
     if (Math.round(d.s) === Math.round(d.x.s) && Math.round(d.e) === Math.round(d.x.e)) { forgetHTML(lane); render(); return; }
-    const r = d.card.getBoundingClientRect();
+    const r = d.card.getBoundingClientRect(), at = {clientX: r.right - 8, clientY: r.top + 10};
+    if (d.edge === 'move') { askResize(d.x, d.s, d.x.minutes, at, null, true); return; }
     // only the edge that moved changes: the other keeps its exact time (an entry's start can hold seconds)
-    askResize(d.x, d.s === d.x.s ? null : d.s, realMinutes(state.date, d.s, d.e), {clientX: r.right - 8, clientY: r.top + 10});
+    askResize(d.x, d.s === d.x.s ? null : d.s, realMinutes(state.date, d.s, d.e), at);
   });
-  lane.addEventListener('pointercancel', () => { if (drag) { drag = null; forgetHTML(lane); render(); } });
+  lane.addEventListener('pointercancel', () => { if (drag) { const on = drag.on; drag.card.classList.remove('moving'); drag = null; if (on) { forgetHTML(lane); render(); } } });
   // the click that ends a drag must not open the card's popover over the question
   lane.addEventListener('click', ev => { if (Date.now() - justDone < 400) { ev.stopPropagation(); ev.preventDefault(); } }, true);
 })();
-/* start: the new start, or null when only the end moved (the start stays exactly as it is) */
-function askResize(x, start, minutes, at, overlap = null) {
+/* start: the new start, or null when only the end moved (the start stays exactly as it is); move: the card was dragged
+   whole, so only its start changes */
+function askResize(x, start, minutes, at, overlap = null, move = false) {
   popEntry = x;
-  const s = start ?? x.s;
-  openPop(`<h3>Change this entry?</h3><div class="sub">${hm(x.s)}–${hm(x.e)} → <b>${hm(s)}–${hm(clockAfter(state.date, s, minutes))}</b> · ${dur(minutes)}</div>
+  const s = start ?? x.s, verb = move ? 'Move' : 'Change';
+  openPop(`<h3>${verb} this entry?</h3><div class="sub">${hm(x.s)}–${hm(x.e)} → <b>${hm(s)}–${hm(clockAfter(state.date, s, minutes))}</b> · ${dur(minutes)}</div>
     <p>${esc(x.task || x.project)}</p>
     ${overlap ? `<p class="sub warnish">It would overlap ${esc(overlap.map(o => `${o.start} ${dur(o.minutes)} ${o.project}`).join('; '))}.</p>` : ''}
-    <div class="btnrow"><button class="btn primary sm" data-rz-yes data-start="${start ?? ''}" data-minutes="${minutes}" data-force="${overlap ? 1 : 0}">${overlap ? 'Change anyway' : 'Change'}</button>
+    <div class="btnrow"><button class="btn primary sm" data-rz-yes data-start="${start ?? ''}" data-minutes="${minutes}" data-force="${overlap ? 1 : 0}"${move ? ' data-move="1"' : ''}>${overlap ? `${verb} anyway` : verb}</button>
       <button class="btn bordered sm" data-rz-no>Cancel</button></div>`, at);
 }
 async function saveResize(btn, force) {
@@ -1036,7 +1054,7 @@ async function saveResize(btn, force) {
   btn.disabled = true;
   const r = await postJSON('/api/entry/update', {id: x.id, date: state.date, ...(start == null ? {} : {start: hm24(start)}),
                                                  minutes, force, seen: seenOf(x)});
-  if (r.overlap) { const at = btn.getBoundingClientRect(); askResize(x, start, minutes, {clientX: at.left, clientY: at.top - 60}, r.overlap); return; }
+  if (r.overlap) { const at = btn.getBoundingClientRect(); askResize(x, start, minutes, {clientX: at.left, clientY: at.top - 60}, r.overlap, btn.dataset.move === '1'); return; }
   closePop();
   if (r.error) { toast(r.error, true); refreshLogged(); return; }
   const s = start ?? x.s, d = state.date;
@@ -1048,6 +1066,6 @@ async function saveResize(btn, force) {
     if (back.overlap) return toast(`Not changed back: it would overlap ${back.overlap.map(o => `${o.start} ${o.project}`).join(', ')}.`, true);
     toast(back.error ? back.error : `Back to ${hm(x.s)}–${hm(x.e)}, ${dur(x.minutes)}.`, !!back.error);
   };
-  toast(`Changed to ${hm(s)}–${hm(s + minutes)}, ${dur(minutes)}.`, false, {label: 'Undo', run: undo});
+  toast(`${btn.dataset.move ? 'Moved' : 'Changed'} to ${hm(s)}–${hm(s + minutes)}, ${dur(minutes)}.`, false, {label: 'Undo', run: undo});
   refreshLogged();
 }
