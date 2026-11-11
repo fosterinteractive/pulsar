@@ -188,7 +188,7 @@ def public_config(s: dict) -> dict:
         "timezone": config.timezone_name(s), "timezoneSystem": config.system_timezone(), "timezoneSetting": s["timezone"],
         "targetMinutes": config.target_minutes(s), "targetHours": s["target_hours"], "personDayHours": s["person_day_hours"],
         "personalPatterns": s["personal_patterns"], "activitywatchUrl": s["activitywatch_url"], "rules": s["rules"],
-        "roundTo": s["round_to"], "awayAfter": config.away_after(s), "workingDays": s["working_days"],
+        "roundTo": s["round_to"], "minEntry": dayplan.MIN_ENTRY, "awayAfter": config.away_after(s), "workingDays": s["working_days"],
         "advanced": config.advanced(s),
         "activitywatch": awsetup.status(config.away_after(s)),  # its AFK timeout, read from its file; no program started
         "update": {**UPDATER.public(), "skip": s["update_skip"], "asked": s["update_asked"]},
@@ -1468,6 +1468,15 @@ def api_services(q: dict) -> dict:
     return got
 
 
+def too_short(minutes: int) -> str:
+    """Why an entry of `minutes` is not written, or "": none is shorter than Log the day's shortest (dayplan.MIN_ENTRY),
+    whichever way it comes (the dialog, a dragged edge, Claude Code). 2026-11-11: project managers found entries of 2 to
+    9 minutes in their projects. Only Undo may put a shorter entry back as it was ("restore")."""
+    least = dayplan.MIN_ENTRY
+    return (f"An entry is at least {least} minutes: make it {least}, or add these minutes to the entry of the same "
+            f"task before or after it.") if minutes < least else ""
+
+
 def api_log(body: dict, via: str = "") -> dict:
     """One time entry, written from a click in the page, or from Pulsar in Claude Code (mcptools.pulsar_log, which
     passes via="claude-code": its rows say so in the journal). Re-reads the day first: other sessions log too, and an
@@ -1479,6 +1488,8 @@ def api_log(body: dict, via: str = "") -> dict:
         raise ValueError("Pick a task and a service.")
     if isinstance(minutes, bool) or not isinstance(minutes, int) or not 1 <= minutes <= 24 * 60:
         raise ValueError("Minutes must be a whole number from 1 to 1440.")
+    if too_short(minutes) and not body.get("restore"):
+        raise ValueError(too_short(minutes))
     m = re.fullmatch(r"([01][0-9]|2[0-3]):([0-5][0-9])", start)
     if not (DATE.match(date) and m):
         raise ValueError("Pick a date and a start time (HH:MM).")
@@ -1602,6 +1613,8 @@ def api_entry_update(body: dict) -> dict:
             _real_time(when, tz)
             change["started_at"] = when.isoformat(timespec="seconds")
         if minutes is not None and minutes != int(mine["minutes"]):
+            if too_short(minutes) and not body.get("restore"):  # a short entry may still move, or keep its length
+                raise ValueError(too_short(minutes))
             change["minutes"] = minutes
         if note is not None and str(note).strip() != str(mine.get("note") or "").strip():
             if len(str(note)) > 2000:

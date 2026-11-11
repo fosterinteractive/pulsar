@@ -802,6 +802,13 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
             u["minutes"] -= back_
             given_back[str(u["task"])] -= back_
     unplaced[:] = [u for u in unplaced if u["minutes"] > 0]
+    # no entry under the shortest Pulsar writes (server.too_short), whatever let it through above (a crumb right by its
+    # task's entry, a short call): listed, so its minutes can go on that entry by hand (2026-11-11: project managers
+    # found entries of 2 to 9 minutes in their projects)
+    for e in [e for e in out if e["minutes"] < MIN_ENTRY]:
+        unplaced.append({"minutes": e["minutes"], "task": e["taskId"], "project": e["project"],
+                         "why": f"under {MIN_ENTRY} minutes, the shortest entry: add it to the entry next to it if it was work"})
+    out = [e for e in out if e["minutes"] >= MIN_ENTRY]
     return _result(d, out, unplaced, totals)
 
 

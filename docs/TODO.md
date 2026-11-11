@@ -2,6 +2,16 @@
 
 Agreed next steps, newest first. Done items go to `CHANGELOG.md`.
 
+- **A security check on every release, by Claude in a GitHub Action.** As the QA hub reviews pull requests: first
+  look at how it runs, then build a light security checker for Pulsar's pull requests and releases (agreed
+  2026-11-11, after the team demo; not started).
+- **Parallel time, in Settings.** How time is split when two sessions run at once (two clients: half of the shared
+  minutes to the one in the background, from 15 minutes; a client's agent over internal work: its minutes, from 10)
+  is the same for everyone now. Asked at the team demo, agreed 2026-11-11: each person can change the share and the
+  thresholds in Settings > Advanced.
+- **Names from words.** A turn is named by the words in its commands (the fi-time-from-activity script's naming), so
+  a client's name or "time logging" shows up in work on Pulsar itself when a command only mentions them. To fix.
+
 - **Release keys: make the fingerprint count.** The old key (a file on the release Mac, no fingerprint) still signs
   `latest.json`, so copies older than 1.5.1, which know only that key, keep getting updates. But every copy still
   trusts it too, so whoever gets that file can sign an update all of them accept: until the old key is gone, the

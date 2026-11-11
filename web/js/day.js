@@ -987,7 +987,7 @@ async function deleteEntry(x, btn) {
   refreshLogged();
 }
 async function undoDelete(x, date) {
-  const r = await postJSON('/api/log', {date, start: hm24(Math.floor(x.s)), minutes: x.minutes, taskId: x.taskId,
+  const r = await postJSON('/api/log', {date, start: hm24(Math.floor(x.s)), minutes: x.minutes, taskId: x.taskId, restore: true,
                                         serviceId: x.serviceId, note: x.note || ''});
   if (date === state.date) refreshLogged();
   if (r.error || r.overlap) return toast(r.error || 'Not logged again: the time is taken by another entry now.', true);
@@ -1022,8 +1022,8 @@ async function undoDelete(x, date) {
     if (drag.edge === 'move') {  // whole minutes, inside the day, the length kept
       const len = drag.x.e - drag.x.s;
       drag.s = Math.max(0, Math.min(1440 - Math.ceil(len), Math.round(drag.x.s) + d)); drag.e = drag.s + len;
-    } else if (drag.edge === 't') drag.s = Math.max(0, Math.min(drag.e - 1, Math.round(drag.x.s) + d));
-    else drag.e = Math.min(1440, Math.max(drag.s + 1, Math.round(drag.x.e) + d));
+    } else if (drag.edge === 't') drag.s = Math.max(0, Math.min(drag.e - minEntry(), Math.round(drag.x.s) + d));  // never below the shortest entry
+    else drag.e = Math.min(1440, Math.max(drag.s + minEntry(), Math.round(drag.x.e) + d));
     drag.card.style.top = (drag.s * ppm + 1) + 'px'; drag.card.style.height = Math.max((drag.e - drag.s) * ppm - 2, 18) + 'px';
     drag.card.title = `${hm(drag.s)}–${hm(drag.e)} · ${dur(drag.edge === 'move' ? drag.x.minutes : drag.e - drag.s)}`;
   });
@@ -1074,7 +1074,7 @@ async function saveResize(btn, force) {
   // Undo puts the start and the length back as they were (the server checks the entry is still as just changed)
   const undo = async () => {
     const back = await postJSON('/api/entry/update', {id: x.id, date: d, ...(start == null ? {} : {start: hm24(Math.floor(x.s))}),
-      minutes: x.minutes, seen: {...seenOf(x), start: hm24(Math.floor(s)), minutes}});
+      minutes: x.minutes, restore: true, seen: {...seenOf(x), start: hm24(Math.floor(s)), minutes}});
     if (d === state.date) refreshLogged();
     if (back.overlap) return toast(`Not changed back: it would overlap ${back.overlap.map(o => `${o.start} ${o.project}`).join(', ')}.`, true);
     toast(back.error ? back.error : `Back to ${hm(x.s)}–${hm(x.e)}, ${dur(x.minutes)}.`, !!back.error);

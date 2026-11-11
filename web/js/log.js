@@ -250,7 +250,7 @@ async function openLog({date = state.date, start = 9 * 60, minutes = 30, hint = 
     const free = freeStart(date, start);  // a block that starts inside a logged entry starts where that entry ends
     if (free > start && minutes - (free - start) >= 1) { minutes -= free - start; start = free; }
     minutes = roundMinutes(date, start, minutes);
-  }
+  } else if (!edit) minutes = Math.max(minutes, Math.min(minEntry(), realMinutes(date, start, 1440)));  // a short drag: the shortest entry
   f.date.value = date; f.start.value = hm24(start); f.minutes.value = minutes; f.note.value = note || '';
   if (edit) edit.orig = {start: f.start.value, minutes, note: f.note.value};
   logDrafted = drafted?.note && drafted.note === note ? drafted : null;
@@ -283,12 +283,16 @@ function freeStart(date, start) {
    to an entry already logged that day it runs up to that entry instead, whenever rounding would run into it or leave
    less than a step before it: those minutes are taken in, never left as a crumb "not logged". Minutes typed in the
    dialog are never rounded. */
+/* the shortest entry Pulsar writes (server.too_short): the page says it before the server has to */
+const minEntry = () => CONFIG?.minEntry || 10;
+const shortMsg = () => `An entry is at least ${minEntry()} minutes: make it ${minEntry()}, or add these minutes to the entry of the same task before or after it.`;
 function roundMinutes(date, start, minutes) {
-  const step = CONFIG?.roundTo || 5;
-  let m = Math.max(step, Math.round(minutes / step) * step);
+  const step = CONFIG?.roundTo || 5, least = Math.max(step, minEntry());
+  let m = Math.max(least, Math.round(minutes / step) * step);
   const next = date === state.date ? Math.min(1440, ...(state.logged?.entries || []).filter(x => x.s != null && x.s > start).map(x => x.s)) : 1440;
   const room = Math.floor(next - start);
-  if (next < 1440 && room >= 1 && (m > room || room - m < step)) m = room;
+  // up to the next entry when it is that close, never below the shortest entry (an overlap is then shown, not a crumb)
+  if (next < 1440 && room >= least && (m > room || room - m < step)) m = room;
   return Math.max(1, Math.min(m, 1440 - start));
 }
 
@@ -432,6 +436,10 @@ logForm.addEventListener('submit', async ev => {
   if (!(Number.isInteger(mins) && mins >= 1 && mins <= 1440)) {
     f.minutes.setAttribute('aria-invalid', 'true'); f.minutes.focus();
     return setLogMsg('Minutes are a whole number from 1 to 1440.', true);
+  }
+  if (mins < minEntry() && !(logEdit && mins === logEdit.orig?.minutes)) {  // an entry that was shorter may keep its length
+    f.minutes.setAttribute('aria-invalid', 'true'); f.minutes.focus();
+    return setLogMsg(shortMsg(), true);
   }
   f.minutes.removeAttribute('aria-invalid');
   if (!startHHMM(f.start.value)) { f.start.setAttribute('aria-invalid', 'true'); f.start.focus(); return setLogMsg('Write the start as a time: 09:30, 14:05 or 2:05 pm.', true); }

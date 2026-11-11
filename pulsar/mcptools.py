@@ -141,6 +141,7 @@ def post(path: str, body: dict) -> dict:
     from . import server
     if path != "/api/log":
         raise ToolError("Pulsar in Claude Code writes only new entries.")
+    body = {k: v for k, v in body.items() if k != "restore"}  # Undo's alone: Claude Code keeps the shortest entry
     try:
         return _copy(server.api_log(body, via=VIA))
     except ValueError as exc:

@@ -208,6 +208,33 @@ class LogBodyTest(unittest.TestCase):
             [{**item, "time": "60 min", "started_at": "2026-11-04T00:00:00-05:00"}],
             [{**item, "time": "70 min", "started_at": "2026-11-04T01:30:00-05:00"}]])
 
+    def test_no_entry_under_ten_minutes_is_written_except_by_undo(self):
+        # 2026-11-11: project managers found entries of 2 to 9 minutes in their projects
+        wire = Wire()
+        with connected("token"), mock.patch.object(productive, "https", wire):
+            with self.assertRaisesRegex(ValueError, "at least 10 minutes"):
+                server.api_log(dict(self.BODY, minutes=9))
+            self.assertEqual(wire.writes(), [])
+            self.assertEqual(server.api_log(dict(self.BODY, minutes=9, restore=True)), {"created": {"id": "901"}})
+        # an entry's length cannot be cut below it either; a short entry may still move, keeping its length
+        t = server.day_bounds(DATE, config.tz(SETTINGS))[0] + (14 * 60 + 10) * 60
+        self.existing = [{"id": "7", "date": DATE, "start": t, "minutes": 6, "taskId": "5", "serviceId": "6", "note": "",
+                          "personId": "1", "project": "Globex"}]
+        seen = {"start": "14:10", "minutes": 6, "taskId": "5", "serviceId": "6", "note": ""}
+        with self.assertRaisesRegex(ValueError, "at least 10 minutes"):
+            server.api_entry_update({"id": "7", "date": DATE, "minutes": 8, "seen": seen})
+        moved = {}
+        with mock.patch.object(server.productive, "update_entry", lambda i, change, s: moved.update(change) or {"id": i}):
+            server.api_entry_update({"id": "7", "date": DATE, "start": "15:00", "minutes": 6, "seen": seen})
+        self.assertEqual(set(moved), {"started_at"})
+
+    def test_claude_code_cannot_pass_as_undo(self):
+        from pulsar import mcptools
+        got = {}
+        with mock.patch.object(server, "api_log", lambda body, via="": got.update(body) or {"created": {"id": "1"}}):
+            mcptools.post("/api/log", dict(self.BODY, minutes=5, restore=True))
+        self.assertNotIn("restore", got)
+
     def test_a_journalled_row_sends_the_same_entry(self):
         wire = Wire()
         with connected("claude-code"), mock.patch.object(productive, "https", wire):

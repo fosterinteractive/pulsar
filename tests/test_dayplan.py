@@ -768,7 +768,17 @@ class PlannerTest(unittest.TestCase):
     def test_a_short_piece_never_joins_work_across_a_break(self):
         rows = [row(540, 545), row(700, 760, titles=["Hero video"])]
         p = dayplan.plan(day(items=[work(540, 545), work(700, 760)], away=[{"s": 545, "e": 700}], rows=rows), self.ctx)
-        self.assertEqual([(e["s"], e["e"], e["taskId"]) for e in p["entries"]], [(540, 545, "11"), (700, 760, "22")])
+        self.assertEqual([(e["s"], e["e"], e["taskId"]) for e in p["entries"]], [(700, 760, "22")])
+        # under the shortest entry (10 minutes) it is no entry either: listed, for its minutes to go on an entry by hand
+        self.assertIn((5, "11"), [(u["minutes"], u.get("task")) for u in p["unplaced"]])
+
+    def test_no_entry_is_shorter_than_ten_minutes(self):
+        # 2026-11-11: project managers found entries of 2 to 9 minutes in their projects. A crumb right by its task's
+        # entry and a short call used to be offered however short; now listed, never proposed
+        rows = [row(540, 547), row(600, 660, titles=["Hero video"])]
+        p = dayplan.plan(day(items=[work(540, 547), work(600, 660)], away=[{"s": 547, "e": 600}], rows=rows,
+                             logged=[{"s": 547, "e": 590, "minutes": 43, "taskId": "11"}]), self.ctx)
+        self.assertTrue(all(e["minutes"] >= dayplan.MIN_ENTRY for e in p["entries"]), p["entries"])
 
     def test_an_attended_meeting_keeps_its_own_time(self):
         meet = {"s": 600, "e": 630, "title": "Client review", "uid": "u", "declined": False, "all_day": False,
