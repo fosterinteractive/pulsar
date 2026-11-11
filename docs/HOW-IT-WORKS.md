@@ -932,7 +932,14 @@ names that share words with the work (your own name and common words such as "no
 in common counts only when it is part of the repository's name: a single "page" or "editor" named another client's
 task on all its minutes). Where no answer is sure, the task you logged last in the repository's project comes before
 the weaker ones, for every session alike (a rule for sessions never logged before, switched by each person's own
-habit, was left out: one logic for everyone, so a colleague's case can be reproduced). A task assigned to you in the
+habit, was left out: one logic for everyone, so a colleague's case can be reproduced). It looks only in the internal
+projects of a repository logged mostly to internal work, and for mixed work in front (a repository logged both to
+internal work and to a client, as parallel time moved to the client teaches it) only in the internal projects and
+those of the clients whose own work shows that day (`dayplan.clients_today`: a client's repository with 30 minutes
+or more that day in sessions it is the main work of, or a meeting's task); `admissible` refuses that client also to
+the session's and the repository's votes, and leaves an agent in the background as it is. A Saturday on an internal
+tool had gone to a client that did not work that day (505 minutes); on 26 days the right task rose from 37% to 41%
+of minutes and billable time on another client fell from 30% to 20%. A task assigned to you in the
 last three days in the repository's project, with no entry of yours yet, whose name the work names
 (`learn.assigned_named`, your project's own name words left out) goes above that last task, never above a sure
 session vote, a rule, a link or a ticket key (right on 52% of the minutes it took, where the last task was right on
