@@ -176,6 +176,13 @@ class SignInTest(Base):
         self.assertEqual((s["login"], s["access"], s["warn"]), ("dana", True, False))
         self.assertNotIn(TOKEN, json.dumps(s))  # never the token
 
+    def test_an_expiring_token_says_the_app_is_set_up_wrong(self):
+        self.flow([{"access_token": TOKEN, "expires_in": 28800, "refresh_token": "ghr_" + "b" * 60}])
+        s = github.status()
+        self.assertTrue(s["signedIn"])
+        self.assertIn("Expire user authorization tokens", s["message"])
+        self.assertTrue(s["warn"])
+
     def test_a_cancelled_sign_in_says_so_and_keeps_nothing(self):
         self.flow([{"error": "access_denied"}])
         s = github.status()

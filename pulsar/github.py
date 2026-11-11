@@ -29,7 +29,7 @@ from typing import Optional
 
 from . import __version__, config
 
-CLIENT_ID = ""  # the GitHub App's client id (Iv…); empty: signing in is not offered
+CLIENT_ID = "Iv23lidixAJsNlsRvNr1"  # the GitHub App "Pulsar updates" (pulsar-updates); empty: signing in is not offered
 OWNER, REPO = "fosterinteractive", "pulsar"
 API = "https://api.github.com"
 DEVICE_URL = "https://github.com/login/device/code"
@@ -211,7 +211,10 @@ def _wait(device: str, interval: int, until: float, gen: int) -> None:
             config.set_github_token(str(got.get("access_token") or ""))
         except (ValueError, RuntimeError) as exc:
             return _end(gen, str(exc))
-        _note(login="", access=None, problem="", checked=0)
+        # a token that expires (8 hours) means the App still has "Expire user authorization tokens" on: Pulsar cannot
+        # renew it without a secret it does not have, so the sign-in would last a working day
+        _note(login="", access=None, problem="expires" if got.get("expires_in") or got.get("refresh_token") else "",
+              checked=0)
         check()
         return _end(gen)
     _end(gen, SAY["expired_token"])
@@ -243,7 +246,8 @@ def check(token: Optional[str] = None) -> None:
                           token=token).get("repositories") or []
             access = any(isinstance(r, dict) and str(r.get("full_name") or "").lower() == f"{OWNER}/{REPO}"
                          for r in repos)
-        _note(login=login, access=access, problem="", checked=time.time())
+        _note(login=login, access=access, checked=time.time(),
+              problem="expires" if _state().get("problem") == "expires" else "")
     except urllib.error.HTTPError as exc:
         if exc.code == 401:
             _note(problem="refused", checked=time.time())
@@ -284,6 +288,9 @@ def status() -> dict:
                    "a GitHub sign-in, once per Mac.")
     elif problem == "refused":
         message = "GitHub no longer accepts this sign-in. Sign in to GitHub again."
+    elif problem == "expires":
+        message = ("This sign-in ends in 8 hours: Pulsar's GitHub App still has \"Expire user authorization tokens\" "
+                   "on. Tell the maintainer, then sign in again.")
     elif access is False:
         message = (f"Signed in as {login or 'your account'}, but it cannot see Pulsar's repository, so updates will "
                    f"not arrive once it is private. Ask a GitHub admin at Foster for access to {OWNER}/{REPO}.")
@@ -295,7 +302,7 @@ def status() -> dict:
             "problem": problem, "checked": _stamp(s.get("checked")), "worked": _stamp(s.get("worked")),
             "pending": {"code": flow["code"], "url": flow["url"]} if pending else None,
             "error": str(flow.get("error") or ""), "message": message,
-            "warn": bool(flow.get("error")) or problem == "refused" or (signed and access is False)}
+            "warn": bool(flow.get("error")) or problem in ("refused", "expires") or (signed and access is False)}
 
 
 def update_hint() -> str:
