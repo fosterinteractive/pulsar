@@ -6,7 +6,7 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
-## Unreleased
+## 1.6.17 (2026-11-11)
 - No entry shorter than 10 minutes, whichever way it is logged: the log dialog makes a shorter stretch 10 minutes and says why when one is typed, a dragged edge stops at 10, Log the day lists a shorter piece under "not placed" instead of proposing it, and entries from Claude Code follow the same rule. An entry already shorter may still move or keep its length, and Undo puts one back as it was. Project managers had found entries of 2 to 9 minutes in their projects. On 40 replayed days the plan barely changes (12 minutes less in all).
 - Drag a logged entry to move it: the card follows the pointer in 1-minute steps, keeps its length, and stays where you drop it while Pulsar asks "Move this entry?" with the new time; Cancel puts it back, and nothing changes in Productive before Move (an overlap is shown first, and Undo puts it back). A click still opens the card; its edges still change the start or the end.
 - A package another repository holds (its node_modules) no longer names the work: a site's deploy that ran a browser test with Playwright from another client's folder was named after that client for an hour, merged with an internal session into one row, and Log the day put 45 minutes of it on the internal tool.
