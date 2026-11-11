@@ -6,6 +6,10 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- A package another repository holds (its node_modules) no longer names the work: a site's deploy that ran a browser test with Playwright from another client's folder was named after that client for an hour, merged with an internal session into one row, and Log the day put 45 minutes of it on the internal tool.
+- Log the day: a browser page that names a client, in front while internal work is the focus, goes to that client when its session was in use in the same sitting (within 30 minutes). Over a client's work it stays with that work, and a client's Slack channel stays with the work in front. On 40 replayed days a little better: billable time on the wrong client 18 minutes less, the right task for the day 0.3 points more.
+
 ## 1.6.16 (2026-11-11)
 - Log the day no longer puts a day of internal work on a client from your history alone: work in a repository logged both to internal work and to a client (parallel time you moved to the client teaches it that) goes to the client from the days before only when that client's own work shows that day, and the last task of a repository logged mostly to internal work comes from its internal projects. On the last 26 days: the right task 41% of minutes instead of 37%, billable time on another client 20% instead of 30%, over 10% instead of 21%; on 43 replayed days a little better too. One Saturday on an internal tool had gone to a client that did not work at all that day (505 minutes).
 - Self-check's line to share says, for each way Log the day picks a task, how often it was right and how much of the plan it made (percents only), so a rule that fails for someone shows in their line.

@@ -593,6 +593,22 @@ class PlannerTest(unittest.TestCase):
         p = dayplan.plan(day(items=[work(540, 600)], rows=[site(540, 560), tool(560, 575), site(575, 600)]), ctx)
         self.assertIn("B", [e["taskId"] for e in p["entries"]])
 
+    def test_a_clients_page_over_internal_work_is_the_clients_never_over_another_clients(self):
+        # 2026-11-11: a site's backups in the hosting dashboard, open while asking the internal tool's session
+        # questions, went to the tool. Over another client's work the page stays with that work
+        ctx = {**self.ctx, "names": {"A": {"task": "Site work", "project": "Initech"}, "B": {"task": "Tool", "project": "FI-AI"},
+                                     "C": {"task": "Other site", "project": "Globex"}},
+               "task_class": {"A": "client", "B": "internal", "C": "client"}}
+        site = {**row(540, 560, project="acme-site", titles=["Site work"]), "tasks": ["A"]}
+        items = [work(540, 575), work(575, 590, app="Google Chrome", title="Acme - Live / Backups - Hosting Dashboard"),
+                 work(590, 600)]
+        for task, project, owner in (("B", "tool", "A"), ("C", "globex-site", "C")):
+            other = {**row(560, 600, project=project, titles=["Other"]), "tasks": [task]}
+            p = dayplan.plan(day(items=items, rows=[site, other]), ctx)
+            mins = {t: sum(e["minutes"] for e in p["entries"] if e["taskId"] == t) for t in ("A", task)}
+            self.assertEqual(mins, {"A": 20 + (15 if owner == "A" else 0), task: 40 - (15 if owner == "A" else 0)},
+                             p["entries"])
+
     def test_internal_turns_inside_a_clients_work_in_a_mixed_repository_are_the_clients(self):
         # 2026-11-10: Pulsar turns of 1 to 8 minutes between turns of a client's tasks in a repository logged to
         # both clients' and internal tasks ("mixed"): the rule went by the repository's class, so they stayed Pulsar's

@@ -317,6 +317,20 @@ def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_L
 
 # ---- a task for one Likely row -------------------------------------------------------------------------------------
 
+SLACK = re.compile(r"slack", re.I)
+# words of a repository's name that say nothing about which client it is: an environment, a copy, a platform
+PAGE_GENERIC = GENERIC | {"main", "live", "test", "stage", "staging", "prod", "www", "web", "app", "copy", "clone", "repo",
+                          "wordpress", "theme", "module"}
+
+
+def _page_words(project: str | None) -> set:
+    """The words of a repository's name that a page naming that client shows ("acme-site": acme), four letters up; none
+    for a row named by its session's title (words, not a repository)."""
+    if not project or re.search(r"[\s/]", project):
+        return set()
+    return {w for w in WORD.findall(project.lower()) if len(w) >= 4 and w not in PAGE_GENERIC}
+
+
 def _runs(minutes: list, gap: int = 2) -> list:
     """[(first, last)] of sorted minutes, joined across gaps of up to `gap` minutes."""
     out: list = []
@@ -1058,6 +1072,37 @@ def _rows(d: _Day) -> None:
         if d.sitting[max(0, a)] is None or d.sitting[max(0, a)] != d.sitting[min(N - 1, b)]:
             continue
         claim(before[1], [x for x in span_of(r, before[1]) if owner[x] is None])
+    # 3b''. a browser page that names a client whose session was in use around then (its row in this sitting, within
+    # MERGE_GAP), over internal work in front, is that client's (2026-11-11: a site's backups in the hosting dashboard,
+    # open while asking an internal tool's session questions, went to the tool). Over a client's work the page stays
+    # with that work. A browser tab only: a client's Slack channel during internal work stays with that work
+    # (replay of 40 days: with Slack, 0.7 h more billed to a client than was logged, for 0.1 h found)
+    named = [(r, c, words) for r, c in front if client(c) and c.get("task") and (words := _page_words(r.get("project")))]
+    pages: dict = defaultdict(lambda: defaultdict(float))  # minute -> index in named -> seconds of its pages
+    for it in d.items if named else ():
+        what = " ".join((it.get("app") or "", it.get("title") or "", it.get("host") or "", it.get("url") or ""))
+        if it.get("cat") != "work" or sessions_mod.CLAUDE_APPS.search(it.get("app") or "") or LOGGING.search(what) \
+                or sessions_mod.MEETING.search(what) or SLACK.search(it.get("app") or ""):
+            continue
+        words = set(WORD.findall(" ".join((it.get("title") or "", it.get("url") or "")).lower()))
+        hits = [k for k, (_, _, w) in enumerate(named) if w & words]
+        for x in range(max(0, int(it["s"])), min(N, int(math.ceil(it["e"])))) if hits else ():
+            if in_front[x] is None or owner[x] is not None or not internal(in_front[x]) or not present(x, False):
+                continue
+            # the client's row nearest in time, in this sitting and within MERGE_GAP: its session was in use around
+            # then (a client's site open during an internal tool's work on it, a QA run, is that tool's work)
+            near = [(gap, k) for k in hits if d.sitting[x] is not None
+                    and d.sitting[max(0, min(N - 1, int(named[k][0]["s"])))] == d.sitting[x]
+                    and (gap := max(named[k][0]["s"] - x, x - named[k][0]["e"], 0)) <= d.o["merge_gap"]]
+            if near:
+                pages[x][min(near)[1]] += (min(it["e"], x + 1) - max(it["s"], x)) * 60
+    took: dict = defaultdict(list)
+    for x, by in pages.items():
+        k = max(by, key=by.get)
+        if by[k] >= 30:  # most of the minute
+            took[k].append(x)
+    for k, xs in took.items():
+        claim({**named[k][1]}, sorted(xs))
     for r, c in front:  # 3c. the rest of the work in front
         if not client(c):
             claim(c, span_of(r, c))
