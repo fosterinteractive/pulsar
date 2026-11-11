@@ -758,14 +758,20 @@ function ldResultsBox() {
   const left = LD.rows.filter(r => r.checked && ldPending(r) && !failed.includes(r)).length;
   const n = LD.undo?.length || 0;
   // "unknown": sent, and no clear answer came: it may be in Productive, so it is never called "not written"
-  const head = `<b>${mine} of ${LD.lastRun.total} logged.</b>` + (refused ? ` ${refused} ${refused === 1 ? 'was' : 'were'} refused and ${refused === 1 ? 'is' : 'are'} still here, with the reason.` : '')
+  // what happened, in numbers that add up to the run (2026-11-12: "1 of 3 logged. 1 was refused… 2 not sent yet" made
+  // four of three, and the reason was only on the row): the row it stopped at, with Productive's reason, then the rest
+  const st = LD.lastRun.stopped && typeof LD.lastRun.stopped === 'object' ? LD.lastRun.stopped : null;
+  const rest = Math.max(0, LD.lastRun.total - mine - failed.length);
+  const head = `<b>${mine} of ${LD.lastRun.total} written.</b>`
+    + (st && st.status === 'refused' ? ` Not written: ${hm(st.s)} ${esc(st.title || 'this row')}. ${esc(st.reason || '')}`
+      : refused ? ` ${refused} not written: the reason is on ${refused === 1 ? 'its row' : 'their rows'}.` : '')
     + (unknown ? ` ${unknown} may or may not be in Productive: check the Logged column; Pulsar will not send ${unknown === 1 ? 'it' : 'them'} again.` : '')
-    + (left ? ` ${left} not sent yet.` : '')
+    + (rest ? ` A run stops at the first row not written, so ${rest === 1 ? 'the row' : `the ${rest} rows`} after it ${rest === 1 ? 'was' : 'were'} not sent.` : '')
     + (LD.journalError ? ` Pulsar could not read its journal of this run (${LD.journalError}), so these rows and Undo may be out of date: open Log the day again.` : '');
   return `<div class="rv-res${failed.length ? ' warn' : ''}" tabindex="-1" role="status"><p>${head}</p>
     ${LD.undoAsk ? `<p>Delete the ${n} ${n === 1 ? 'entry' : 'entries'} this run logged? ${n === 1 ? 'It goes' : 'They go'} to Productive's Recycle Bin.</p>
       <div class="btnrow"><button type="button" class="btn bordered sm" id="ld-undo-no">Cancel</button><button type="button" class="btn danger sm" id="ld-undo-yes">Delete the ${n}</button></div>`
-    : `<div class="btnrow">${failed.length + left ? `<button type="button" class="btn bordered sm" id="ld-retry">Try the ${failed.filter(r => r.status === 'refused').length + left} again</button>` : ''}
+    : `<div class="btnrow">${refused + left ? `<button type="button" class="btn bordered sm" id="ld-retry">Send the ${refused + left} ticked again</button>` : ''}
       ${n ? `<button type="button" class="btn bordered sm" id="ld-undo">Undo this run (${n})</button>` : ''}</div>`}</div>`;
 }
 async function undoRun() {
