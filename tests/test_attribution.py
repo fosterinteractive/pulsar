@@ -164,6 +164,28 @@ class TurnRepositoryTest(Fixture):
         [s] = sessions.load(T0, T0 + 86400, self.projects, namer)
         self.assertEqual(s["turns"][0]["project"], "time logging")
 
+    def test_time_logging_is_never_handed_on_to_a_turn_nothing_names(self):
+        """2026-11-11: a session moved some entries in Productive, then went back to its database upgrade for 45
+        minutes with commands that named no repository. Those turns took their neighbour's "time logging" and the
+        work vanished from Likely. Such a turn takes its neighbours' work, else the title, never logging."""
+        self.write("aaaa0007", [typed(10, "move those entries", "/nowhere"),
+                                call(11, "mcp__productive__update_resource", resource="time_entries"),
+                                typed(20, "back to the upgrade: run it on test", "/nowhere"),
+                                call(21, "Bash", command="terminus env:deploy site.test"),
+                                typed(40, "now live", "/nowhere"), call(41, "Bash", command="terminus env:deploy site.live")],
+                   title="Database upgrade")
+        namer = lambda p: "time logging" if p == "tool:mcp__productive__time_entries" else sessions.project_of_path(p)  # noqa: E731
+        [s] = sessions.load(T0, T0 + 86400, self.projects, namer, logging_name="time logging")
+        self.assertEqual([t["project"] for t in s["turns"]], ["time logging", "Database upgrade", "Database upgrade"])
+        # work on either side still wins over the title
+        self.write("aaaa0007", [typed(10, "fix the form", "/nowhere"),
+                                call(11, "Edit", file_path=os.path.join(self.acme, "src", "a.js")),
+                                typed(20, "log that", "/nowhere"),
+                                call(21, "mcp__productive__create_resource", resource="time_entries"),
+                                typed(30, "and deploy", "/nowhere")], title="Form fix")
+        [s] = sessions.load(T0, T0 + 86400, self.projects, namer, logging_name="time logging")
+        self.assertEqual([t["project"] for t in s["turns"]], ["acme-site", "time logging", "acme-site"])
+
     def test_with_the_skills_naming_a_turn_is_named_as_the_skill_counts_it(self):
         """With the fi-time-from-activity script, each turn is named as it names it: every string of the turn's calls
         and what was typed counted, words too (one person's 52 days: the right task 33.9% of minutes, 30.4% with the

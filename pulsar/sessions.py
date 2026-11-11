@@ -419,7 +419,7 @@ def _read_subagents(path: str, lo: float, hi: float, calls: list, events: list) 
             continue  # that subagent only
 
 
-def analyse(s: dict, namer=None, turns=None) -> None:
+def analyse(s: dict, namer=None, turns=None, logging_name: str | None = None) -> None:
     """The project of every turn (weighted by its tool calls), the spans the agent was running, and the stretches of
     attended agent work. namer(path) -> a project name or None (default: the git repository, project_of_path).
     turns: another naming of turns (likely.skill_turns: the fi-time-from-activity script's own), used in place of
@@ -461,11 +461,16 @@ def analyse(s: dict, namer=None, turns=None) -> None:
         projects, title, folder, last = named_by
         for t, project in zip(out, projects):
             t["project"] = project
+    # a turn nothing names takes its neighbours' work; time logging is never handed on: a session that logged time
+    # and then went back to its work (2026-11-11: 45 minutes of a database upgrade after a few turns moving entries)
+    # would otherwise vanish as logging, which no column shows
+    work = [bool(t["project"]) and t["project"] != logging_name for t in out]
     for i, t in enumerate(out):
         if t["project"] is None:
-            before = next((out[j]["project"] for j in range(i - 1, -1, -1) if out[j]["project"]), None)
-            after = next((out[j]["project"] for j in range(i + 1, len(out)) if out[j]["project"]), None)
+            before = next((out[j]["project"] for j in range(i - 1, -1, -1) if work[j]), None)
+            after = next((out[j]["project"] for j in range(i + 1, len(out)) if work[j]), None)
             t["project"] = before or after or title or folder or last
+            work[i] = t["project"] != logging_name
         if named_by is not None and t["hard"]:  # its hard calls count for the project the other naming gave it
             t["hard"] = {t["project"]: max(t["hard"].values())}
     s["turns"] = out
@@ -565,8 +570,10 @@ def read_day(path: str, t0: float, t1: float) -> dict | None:
     return _day_reads[k]
 
 
-def load(t0: float, t1: float, projects_dir: str = PROJECTS_DIR, namer=None, turns=None) -> list:
-    """The sessions someone typed in during [t0, t1), each read with its subagents and analysed (turns: analyse)."""
+def load(t0: float, t1: float, projects_dir: str = PROJECTS_DIR, namer=None, turns=None,
+         logging_name: str | None = None) -> list:
+    """The sessions someone typed in during [t0, t1), each read with its subagents and analysed (turns, logging_name:
+    analyse)."""
     sessions = []
     for path in glob.glob(os.path.join(projects_dir, "*", "*.jsonl")):
         try:
@@ -576,7 +583,7 @@ def load(t0: float, t1: float, projects_dir: str = PROJECTS_DIR, namer=None, tur
             s = read_session(path, t0, t1, subagents=True, strings_of=(turns or {}).get("strings"))
             _day_reads[(path, st.st_size, st.st_mtime, t0, t1)] = s
             if s:
-                analyse(s, namer, turns)
+                analyse(s, namer, turns, logging_name)
                 sessions.append(s)
         except (OSError, ValueError, TypeError, AttributeError):  # a file that cannot be read: that session only
             continue
@@ -591,7 +598,8 @@ def propose(t0: float, t1: float, items: list, tracker: str, projects_dir: str =
     tracker. namer, turns: see analyse. logging_name: a project name that means time spent logging time (the
     fi-time-from-activity script's): its minutes go to no session, as Pulsar's own window does. away: the minutes
     without a sign of work that end a sitting, Settings' "Away after" (config.away_after) when not given."""
-    return propose_from(load(t0, t1, projects_dir, namer, turns), t0, t1, items, tracker, logging_name, away)
+    return propose_from(load(t0, t1, projects_dir, namer, turns, logging_name), t0, t1, items, tracker, logging_name,
+                        away)
 
 
 def propose_from(sessions: list, t0: float, t1: float, items: list, tracker: str, logging_name: str | None = None,
