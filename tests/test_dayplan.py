@@ -404,6 +404,17 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual((editor["taskId"], editor["kind"], editor["s"], editor["minutes"], editor["checked"]),
                          ("11", "outside", 640, 30, False))
 
+    def test_a_sessions_time_logging_is_never_proposed_even_as_work_outside_claude(self):
+        """2026-11-11: Likely shows a session's turns spent logging time (loggingRows), loggable by hand; here they
+        are not proposed. Their minutes have no session row, so without this the editor in front would pass as work
+        outside Claude."""
+        items = [work(540, 600), work(640, 670)]
+        p = dayplan.plan(day(items=items, rows=[row(540, 600)]), self.ctx)
+        self.assertEqual([(e["s"], e["kind"]) for e in p["entries"]], [(540, "focused"), (640, "outside")])
+        logging = [{"s": 640, "e": 670, "minutes": 30, "project": "time logging", "kind": "logging", "titles": ["Fix"]}]
+        p = dayplan.plan(day(items=items, rows=[row(540, 600)], loggingRows=logging), self.ctx)
+        self.assertEqual([e["s"] for e in p["entries"]], [540])
+
     def test_work_outside_claude_goes_with_the_session_it_comes_before(self):
         # reading the ticket in a browser, then the session on it: the browser's half hour is the second task's (replay:
         # the person logged the work after such a stretch three times as often as the work before it)

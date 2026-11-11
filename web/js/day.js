@@ -436,9 +436,10 @@ function render() {
         role="img" aria-label="${esc(`In the background ${hm(x.s)}–${hm(x.e)}: ${x.what}`)}" title="${esc(`In the background ${hm(x.s)}–${hm(x.e)}: ${x.what}`)}"></div>`).join('');
     setHTML(laneLikely, likelyCache.length ? rails + likelyCache.map((b, i) => {
       const x = {s: b.start * Z, e: b.end * Z}, h = (x.e - x.s) * ppm;
-      if (b.logging) {  // a session's time spent logging time: shown, so the session is there, and never offered to log
-        const said = `Time logging ${hm(x.s)}–${hm(x.e)}${b.title ? ', ' + b.title : ''}, ${dur(b.total)}: not offered for logging`;
-        return `<div class="card likely logging" style="${place(x, ppm, 18)}" role="img" aria-label="${esc(said)}" title="${esc(said)}">
+      if (b.logging) {  // a session's time spent logging time: shown and loggable by hand, never put in Log the day
+        return `<div class="card likely logging" data-k="likely" data-i="${i}" style="${place(x, ppm, 18)}" tabindex="0" role="button"
+          aria-label="${esc(`Likely ${hm(x.s)}–${hm(x.e)}: time logging${b.title ? ', ' + b.title : ''}, ${dur(b.total)}, not in Log the day`)}"
+          title="Time spent logging time: not in Log the day; click to log it yourself">
           <div class="row"><span class="t">Time logging</span><span class="m num">${dur(b.total)}</span></div>
           ${h > 34 && b.title ? `<div class="d">${esc(b.title)}</div>` : ''}</div>`;
       }
@@ -724,7 +725,8 @@ document.addEventListener('click', ev => {
       }).join(''), ev);
   } else if (card.dataset.k === 'likely') {
     const b = likelyCache[i];
-    openPop(`<div class="ph"><div><h3>${hm(b.start * Z)}–${hm(b.end * Z)}</h3><div class="sub">${dur(b.total)} from Claude sessions</div></div>
+    openPop(`<div class="ph"><div><h3>${hm(b.start * Z)}–${hm(b.end * Z)}</h3><div class="sub">${dur(b.total)} ${b.logging
+      ? 'of time logging in Claude sessions: not in Log the day, log it here if it was work' : 'from Claude sessions'}</div></div>
       <button class="btn bordered sm" data-log-a="${b.start * Z}" data-log-b="${b.end * Z}" data-likely="${i}">Log this time</button></div>` +
       b.entries.map(x => `<div class="li"><div class="t"><div><b>${esc(x.project)}</b> · ${esc(x.titles.join(', ') || '(untitled)')}</div>
         <small>${hm(x.s)}–${hm(x.e)} · ${esc(x.messages)} messages${x.first_message ? ' · ' + esc(x.first_message) : ''}</small></div>

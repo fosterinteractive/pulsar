@@ -685,7 +685,8 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
           declined, all_day, tasks: [{taskId, title, project, n, of}]}], "repeats": repeats seen today [{s, e, minutes,
           taskId, title, project, serviceId, service, note, days}], "calls": call windows [{s, e}], "rules",
           "assigned": [{taskId, title, project}], "picks": Ask Claude's answer {"<s>|<project>": {tasks, why, note}},
-          "gone": the clock's minutes that do not exist that day (server.missing_hour), never placed}
+          "gone": the clock's minutes that do not exist that day (server.missing_hour), never placed,
+          "loggingRows": a Claude session's turns spent logging time (sessions.py), never placed}
     ctx: learn(...).
     keep: a dict that, when given, receives who has each minute before the layout joins and moves them (ranges.py).
     Returns {"entries", "unplaced", "skipped", "uncovered", "totals"}; each entry
@@ -704,6 +705,12 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     for x in range(DAY_MIN):
         if d.work[x] and d.owner[x] is None and d.logging[x]:
             d.owner[x] = BLOCKED
+    # a Claude session's turns spent logging time: Likely shows them and they can be logged by hand, but not here
+    # (2026-11-11); their minutes have no session row, so they would otherwise pass as work outside Claude
+    for r in day.get("loggingRows") or []:
+        for x in range(max(0, int(r["s"])), min(DAY_MIN, int(math.ceil(r["e"])))):
+            if d.owner[x] is None:
+                d.owner[x] = BLOCKED
     _unattended(d)
     _outside(d)
     _context(d)
@@ -2011,7 +2018,7 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
     # Ask Claude's kept answer (askclaude.keep: on disk, 60 days) steers the plan only while the Claude Code switch is on
     answer = askclaude.latest(date) if s.get("ask_claude") and blind is None else None
     day = {"items": act.get("items") or [], "away": act.get("away") or [], "rows": likely_rows, "background": bg_rows,
-           "logged": logged,
+           "loggingRows": got["likely"].get("loggingRows") or [], "logged": logged,
            "meetings": meetings, "repeats": [x for x in got["repeats"].get("repeats") or [] if not inside(x)], "calls": calls,
            "rules": s.get("rules") or [], "assigned": got["assigned"], "picks": (answer or {}).get("picks") or {},
            "gone": server.missing_hour(t0, t1, tz)}

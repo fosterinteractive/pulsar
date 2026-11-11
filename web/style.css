@@ -119,9 +119,8 @@ input[type=date] {
 .pop .li.bg .t > div { color: var(--muted); }
 .likely .t { font-weight: 600; font-size: 12px; }
 .likely .d.pick { color: var(--text); }
-/* a session's time spent logging time (day.js likelyBlocks): there to see, never to log, so quieter than work */
-.likely.logging { background: transparent; border-style: dashed; cursor: default; }
-.likely.logging:hover { box-shadow: none; }
+/* a session's time spent logging time (day.js likelyBlocks): logged only by hand, so quieter than work */
+.likely.logging { background: transparent; border-style: dashed; }
 .likely.logging .t { color: var(--muted); font-weight: 500; }
 /* Claude's mark (core.js): Claude's orange, a little darker on the light theme for contrast */
 .cl-mark { width: 11px; height: 11px; vertical-align: -1px; margin-right: 4px; color: #c96442; flex: none; }
