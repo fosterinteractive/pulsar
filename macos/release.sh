@@ -6,7 +6,7 @@
 #
 # Refuses anything but main exactly as it is on GitHub (HEAD must be origin/main, the tree clean, checked again right
 # before the first signature), a version that is not newer than pulsar/__init__.py, a version with no entry in
-# CHANGELOG.md, and failing tests.
+# CHANGELOG.md, failing tests, and a security review that did not pass (.github/workflows/security.yml).
 # Then it sets __version__ and builds, in dist/:
 #   release/pulsar-<version>.zip   the code, one top folder pulsar-<version>/ (what the in-app updater downloads)
 #   release/latest.json            {version, url, sha256, notes, published, expires, versions, app}, signed (.sig);
@@ -81,6 +81,46 @@ if [ "$PUBLISH" = 1 ]; then
   gh auth status >/dev/null 2>&1 || die "gh is not signed in: run gh auth login"
   gh repo view "$REPO" >/dev/null 2>&1 || die "cannot see the repository $REPO"
   ! gh release view "v$VERSION" --repo "$REPO" >/dev/null 2>&1 || die "release v$VERSION already exists on $REPO"
+fi
+
+# A security review of what changed since the last release (.github/workflows/security.yml): Claude reads the diff on
+# GitHub, and a finding it marks "block" stops the release (agreed 2026-11-11). It reads the commit on GitHub, which
+# on_main has checked is this one; a review that already passed for this range is used again. Only when GitHub or
+# Claude is down: PULSAR_SKIP_SECURITY="<why>" releases without it, and says so.
+security_review() {
+  command -v gh >/dev/null || die "the security review needs the GitHub CLI (gh); nothing was signed"
+  local head base title since run=""
+  head="$(git rev-parse HEAD)"
+  base="$(gh release view --repo "$REPO" --json tagName -q .tagName 2>/dev/null || true)"
+  [[ "$base" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "could not read the last release tag from $REPO ($base); nothing was signed"
+  title="Security review $base..$head"
+  run="$(gh run list --repo "$REPO" --workflow security.yml --commit "$head" --limit 20 --json databaseId,displayTitle,conclusion \
+         -q "[.[] | select(.displayTitle == \"$title\" and .conclusion == \"success\")][0].databaseId // empty" 2>/dev/null || true)"
+  if [ -z "$run" ]; then
+    echo "Security review of $base..${head:0:7} on GitHub (a few minutes)"
+    since="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    gh workflow run security.yml --repo "$REPO" -f base="$base" -f head="$head" >/dev/null ||
+      die "could not start the security review; nothing was signed"
+    for _ in $(seq 1 30); do
+      sleep 4
+      run="$(gh run list --repo "$REPO" --workflow security.yml --commit "$head" --limit 20 --json databaseId,displayTitle,createdAt \
+             -q "[.[] | select(.displayTitle == \"$title\" and .createdAt >= \"$since\")][0].databaseId // empty" 2>/dev/null || true)"
+      [ -n "$run" ] && break
+    done
+    [ -n "$run" ] || die "the security review did not start on GitHub; nothing was signed"
+    gh run watch "$run" --repo "$REPO" --exit-status >/dev/null 2>&1 || true
+  fi
+  local out; out="$(mktemp -d)"
+  gh run download "$run" --repo "$REPO" -n security-review -D "$out" >/dev/null 2>&1 && cat "$out/review.md" 2>/dev/null || true
+  rm -rf "$out"
+  [ "$(gh run view "$run" --repo "$REPO" --json conclusion -q .conclusion)" = success ] ||
+    die "the security review stopped the release: https://github.com/$REPO/actions/runs/$run; nothing was signed"
+  echo "Security review passed: https://github.com/$REPO/actions/runs/$run"
+}
+if [ -n "${PULSAR_SKIP_SECURITY:-}" ]; then
+  echo "Security review SKIPPED: $PULSAR_SKIP_SECURITY"
+else
+  security_review
 fi
 
 if [ -z "$NOTES" ]; then

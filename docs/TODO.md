@@ -2,9 +2,6 @@
 
 Agreed next steps, newest first. Done items go to `CHANGELOG.md`.
 
-- **A security check on every release, by Claude in a GitHub Action.** As the QA hub reviews pull requests: first
-  look at how it runs, then build a light security checker for Pulsar's pull requests and releases (agreed
-  2026-11-11, after the team demo; not started).
 - **Parallel time, in Settings.** How time is split when two sessions run at once (two clients: half of the shared
   minutes to the one in the background, from 15 minutes; a client's agent over internal work: its minutes, from 10)
   is the same for everyone now. Asked at the team demo, agreed 2026-11-11: each person can change the share and the

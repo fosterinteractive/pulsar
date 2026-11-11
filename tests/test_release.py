@@ -431,5 +431,31 @@ class SessionLifetimeTest(unittest.TestCase):
         self.assertFalse(os.path.exists(config.SESSIONS_FILE))
 
 
+class SecurityReviewTest(unittest.TestCase):
+    """A release waits for the security review (.github/workflows/security.yml) before anything is built or signed, and
+    the review can read only: its token, its tools and its actions pinned to a commit."""
+    REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    def read(self, *path):
+        with open(os.path.join(self.REPO, *path), encoding="utf-8") as fh:
+            return fh.read()
+
+    def test_the_release_stops_on_the_review_before_building(self):
+        sh = self.read("macos", "release.sh")
+        self.assertLess(sh.index("\n  security_review\n"), sh.index("# --- build"))
+        self.assertIn('= success ] ||\n    die "the security review stopped the release', sh)
+
+    def test_the_review_reads_only(self):
+        wf = self.read(".github", "workflows", "security.yml")
+        self.assertIn("\npermissions:\n  contents: read\n", wf)
+        self.assertIn("github_token: ${{ github.token }}", wf)
+        self.assertIn("--allowedTools Read,Grep,Glob", wf)
+        self.assertRegex(wf, r"--disallowedTools Bash,Write,Edit,[^\n]*WebFetch,WebSearch")
+        uses = re.findall(r"uses: (\S+)", wf)
+        self.assertTrue(uses and all(re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", u) for u in uses), uses)
+        # no verdict line is no pass
+        self.assertIn('[ "$VERDICT" = pass ] ||', wf)
+
+
 if __name__ == "__main__":
     unittest.main()
