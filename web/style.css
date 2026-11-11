@@ -396,7 +396,7 @@ header { flex-wrap: wrap; row-gap: 8px; }
 .settings-btn.has-update::after { content: ""; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 .check { display: flex; gap: 8px; align-items: center; font-size: 12.5px; margin: 10px 0 2px; }
 .ver { border: 0; background: var(--seg); color: var(--muted); font: inherit; font-size: 11px; padding: 2px 7px; border-radius: 6px;
-  cursor: pointer; font-variant-numeric: tabular-nums; }
+  cursor: pointer; font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
 .ver:hover { color: var(--text); }
 .ver:empty { display: none; }
 /* Pulsar Preview: the branch and commit, in amber; it turns red while the preview may write to Productive */
