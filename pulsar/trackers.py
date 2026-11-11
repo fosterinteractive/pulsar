@@ -333,12 +333,37 @@ def activity_aw(base: str, t0: float, t1: float, classify: Classifier, away: flo
     raw = activitywatch_raw(base, t0, t1) if raw is False else raw
     if not raw:
         return []
-    present = present_spans(raw["afk"], (config.away_after() if away is None else away) * 60)
-    if not raw["afk"]:  # windows, but the AFK watcher recorded nothing at all: it stopped, or lacks access
-        PROBLEMS["aw"] = ("ActivityWatch saw windows but its AFK watcher recorded nothing, so Pulsar cannot tell when "
-                          "you were at the computer. Check that the AFK watcher runs and has Accessibility access.")
+    minutes = config.away_after() if away is None else away
+    present = present_spans(raw["afk"], minutes * 60)
+    if not raw["afk"]:  # windows, but the AFK watcher recorded nothing: it stopped or lacks access, or a pause goes on
+        if afk_silent(base, t0, raw["window"], minutes * 60 + AFK_GRACE):
+            PROBLEMS["aw"] = ("ActivityWatch saw windows but its AFK watcher recorded nothing, so Pulsar cannot tell "
+                              "when you were at the computer. Check that the AFK watcher runs and has Accessibility access.")
         return []
     return compact(clip_to_present(raw["window"], present, t0, t1, classify))
+
+
+AFK_GRACE = 15 * 60  # seconds past ActivityWatch's own AFK timeout (Away after) before its silence means trouble
+
+
+def afk_silent(base: str, t0: float, windows: list, grace: float) -> bool:
+    """Windows went on for longer than `grace` after the AFK watcher's last event: it stopped, or lacks access. The
+    watcher writes "away" only once its timeout has passed, dated back to the last input, so a day that starts inside
+    a pause has windows and no AFK event yet (2026-11-11 00:01: away since 23:42, written at 00:12); its events just
+    before the day count, so that is no alarm."""
+    last_window = max((parse_ts(e["timestamp"]) + float(e.get("duration") or 0) for e in windows
+                       if isinstance(e, dict) and e.get("timestamp")), default=t0)
+    api = base.rstrip("/") + "/api/0"
+    a = datetime.fromtimestamp(t0 - grace, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    b = datetime.fromtimestamp(t0, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        before = [ev for x in http_json(f"{api}/buckets/", timeout=1.5) if x.startswith("aw-watcher-afk_")
+                  for ev in http_json(f"{api}/buckets/{x}/events?start={a}&end={b}&limit=-1", timeout=10)]
+    except Exception:
+        before = []
+    last_afk = max((parse_ts(e["timestamp"]) + float(e.get("duration") or 0) for e in before
+                    if isinstance(e, dict) and e.get("timestamp")), default=float("-inf"))
+    return last_window - last_afk > grace
 
 
 def clip_to_present(window_events: list, present: list, t0: float, t1: float, classify: Classifier) -> list:

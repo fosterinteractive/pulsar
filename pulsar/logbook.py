@@ -78,6 +78,9 @@ def record(where: str, message: str, kind: str = "error", detail: str = "", once
             line = json.dumps({"time": datetime.now().astimezone().isoformat(timespec="seconds"), "kind": kind,
                                "where": where, "message": message, "detail": detail, "version": __version__},
                               ensure_ascii=False)
+            if config.read_only():  # a script or test server reading the real data: its errors are not the app's
+                print("Pulsar (read only): " + line, file=sys.stderr)  # (2026-11-11: three in the log, from a script)
+                return
             with open(os.path.join(LOG_DIR, f"errors-{datetime.now().strftime('%Y-%m-%d')}.jsonl"), "a",
                       encoding="utf-8") as fh:
                 fh.write(line + "\n")

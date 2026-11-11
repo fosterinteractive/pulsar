@@ -4,6 +4,7 @@
 """
 
 import json
+import io
 import os
 import stat
 import sys
@@ -147,6 +148,28 @@ class TrackersTest(unittest.TestCase):
             with mock.patch.object(trackers, "http_json", answer(afk)):
                 self.assertEqual(trackers.activity_aw("http://localhost:5600", 0, 3600, trackers.classifier([])), [])
             self.assertEqual("AFK watcher recorded nothing" in trackers.PROBLEMS.get("aw", ""), warned, afk)
+
+    def test_a_day_that_starts_inside_a_pause_is_no_alarm(self):
+        """2026-11-11 00:01: away since 23:42, which the AFK watcher writes only at 00:12 (its 30-minute timeout,
+        dated back). The new day had windows and no AFK event yet: not a stopped watcher. Hours of windows after the
+        watcher's last event are."""
+        day = 86400
+
+        def answer(window_end, afk_before_end):
+            def http_json(url, timeout=0):
+                if url.endswith("/buckets/"):
+                    return {"aw-watcher-window_mac": {}, "aw-watcher-afk_mac": {}}
+                if "window" in url:
+                    return [{"timestamp": "1970-01-02T00:00:00Z", "duration": window_end, "data": {"app": "Cursor", "title": "x"}}]
+                if "start=1970-01-02T00:00:00Z" in url:
+                    return []  # nothing yet inside the day
+                return [{"timestamp": "1970-01-01T23:30:00Z", "duration": 1800 + afk_before_end, "data": {"status": "not-afk"}}]
+            return http_json
+        for window_end, afk_before_end, warned in ((60, -18 * 60, False), (5 * 3600, -18 * 60, True)):
+            trackers.PROBLEMS.clear()
+            with mock.patch.object(trackers, "http_json", answer(window_end, afk_before_end)):
+                trackers.activity_aw("http://localhost:5600", day, day + 86400, trackers.classifier([]), away=30)
+            self.assertEqual("AFK watcher recorded nothing" in trackers.PROBLEMS.get("aw", ""), warned, window_end)
 
     def test_personal_words_match_app_title_or_site_in_any_case(self):
         classify = trackers.classifier(["telegram", "YouTube"])
@@ -3344,6 +3367,22 @@ class CapTest(unittest.TestCase):
         b = config.Newest(2)
         b["a"], b["b"], b["a"], b["c"] = 1, 2, 3, 4
         self.assertEqual(list(b.items()), [("a", 3), ("c", 4)])    # "a" set again was newest, so "b" went
+        logbook._last.clear()
+
+    def test_a_read_only_run_keeps_out_of_the_error_log(self):
+        """A script or test server on the real data (PULSAR_READ_ONLY): its errors go to its own stderr, never into
+        the log the person sends (2026-11-11: three errors there came from an analysis script)."""
+        from pulsar import logbook
+        logbook._last.clear()
+        folder = tempfile.mkdtemp()
+        with mock.patch.object(logbook, "LOG_DIR", folder), mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "1"}), \
+                mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            logbook.record("test", "from a script", once_per=0)
+        self.assertEqual(os.listdir(folder), [])
+        self.assertIn("from a script", err.getvalue())
+        with mock.patch.object(logbook, "LOG_DIR", folder), mock.patch.dict(os.environ, {"PULSAR_READ_ONLY": "preview"}):
+            logbook.record("test", "from Preview", once_per=0)  # Pulsar Preview is the app: it keeps its log
+        self.assertEqual(len(os.listdir(folder)), 1)
         logbook._last.clear()
 
 
