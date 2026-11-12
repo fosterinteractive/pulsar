@@ -208,6 +208,19 @@ class LogBodyTest(unittest.TestCase):
             [{**item, "time": "60 min", "started_at": "2026-11-04T00:00:00-05:00"}],
             [{**item, "time": "70 min", "started_at": "2026-11-04T01:30:00-05:00"}]])
 
+    def test_a_log_the_day_row_refused_before_sending_goes_in_logs(self):
+        # 2026-11-12: the reason lived only in the open window, so the cause could not be found afterwards
+        got = []
+        with mock.patch.object(server.logbook, "record", lambda where, msg, **k: got.append((where, msg, k))):
+            with self.assertRaises(ValueError):
+                server.api_log(dict(self.BODY, minutes=9, run="ld-2026-11-04-abcdef12", row="c3"))
+            with self.assertRaises(ValueError):  # a click in the Log dialog says it there and then: not logged
+                server.api_log(dict(self.BODY, minutes=9))
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0][0], "log the day")
+        self.assertIn("Not sent: 2026-11-04 14:10, 9 min, task 5, row 'c3': ", got[0][1])
+        self.assertIn("at least 10 minutes", got[0][1])
+
     def test_no_entry_under_ten_minutes_is_written_except_by_undo(self):
         # 2026-11-11: project managers found entries of 2 to 9 minutes in their projects
         wire = Wire()

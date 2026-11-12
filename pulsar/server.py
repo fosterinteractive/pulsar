@@ -1478,6 +1478,20 @@ def too_short(minutes: int) -> str:
 
 
 def api_log(body: dict, via: str = "") -> dict:
+    """One time entry (_api_log). A Log the day row Pulsar refuses itself, before anything is sent, also goes in Logs:
+    its reason was only in the open window, so once that closed nothing told why (2026-11-12: every part of a split
+    was refused for its row name, and the cause could not be found afterwards)."""
+    try:
+        return _api_log(body, via)
+    except ValueError as exc:
+        if body.get("run") is not None and not body.get("dry"):
+            logbook.record("log the day", f"Not sent: {str(body.get('date') or '')[:10]} {str(body.get('start') or '')[:5]}, "
+                           f"{body.get('minutes')} min, task {str(body.get('taskId') or '')[:15]}, row "
+                           f"{str(body.get('row') or '')[:40]!r}: {exc}", kind="warning")
+        raise
+
+
+def _api_log(body: dict, via: str = "") -> dict:
     """One time entry, written from a click in the page, or from Pulsar in Claude Code (mcptools.pulsar_log, which
     passes via="claude-code": its rows say so in the journal). Re-reads the day first: other sessions log too, and an
     entry on top of another one is shown to you before anything is written."""
