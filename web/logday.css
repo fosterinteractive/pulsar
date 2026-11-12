@@ -23,6 +23,7 @@
 .card.prop.fail { border-color: var(--gap); }
 .card.prop.writing { opacity: .6; }
 .card .m.chk, .card .m.fl { color: var(--gap-text); font-weight: 600; }
+.card .n.why { color: var(--gap-text); }
 
 /* the review panel */
 section.rv { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; flex: 1; }

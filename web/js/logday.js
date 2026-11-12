@@ -166,19 +166,27 @@ function ldHead(loggedSum) {
   const n = LD.rows.filter(r => r.status !== 'logged').length;
   return `${n} proposed · ${dur(LD.plan?.ignoreLogged ? 0 : loggedSum)} logged`;
 }
+/* why a row was not written (or got no answer), as the server said it; never blank */
+const ldWhy = r => String(r.reason || '').trim()
+  || (r.status === 'unknown' ? 'No answer came. Check the Logged column; Pulsar will not send it again.'
+                             : 'No reason came back. Open the row and send it again, or log it by hand.');
 function ldLaneItems() { return LD.rows.filter(r => r.status !== 'logged').map(r => ({...r, prop: true})); }
 function ldCards(ppm, list) {
   return list.map(x => {
     const h = (x.e - x.s) * ppm, lines = Math.max(0, Math.floor((h - 36) / 15));
     const cls = ['card', 'prop', LD.open === x.id ? 'on' : '', x.checked ? '' : 'off', x.taskId ? '' : 'notask',
                  ['refused', 'unknown'].includes(x.status) ? 'fail' : '', x.status === 'writing' ? 'writing' : ''].filter(Boolean).join(' ');
-    const right = x.status === 'refused' || x.status === 'unknown' ? '<span class="m fl">not written</span>'
+    // a row not written says why on the card itself, in place of its note (2026-11-12: "not written" alone, and the
+    // reason only inside the row in the list)
+    const failed = x.status === 'refused' || x.status === 'unknown', why = failed ? ldWhy(x) : '';
+    const right = failed ? `<span class="m fl" title="${esc(why)}">${x.status === 'unknown' ? 'no answer' : 'not written'}</span>`
       : x.confidence === 'low' ? `<span class="m chk">check · ${dur(x.minutes)}</span>` : `<span class="m num">${dur(x.minutes)}</span>`;
+    const text = failed ? why : x.note;
     return `<div class="${cls}" data-k="prop" data-row="${x.id}" data-i="0" style="--c:${color(x.project)};${place(x, ppm, 18)}"
-      tabindex="0" role="button" aria-label="${esc(`Proposed ${hm(x.s)}–${hm(x.e)}: ${x.title || 'no task yet'}, ${dur(x.minutes)}${x.checked ? '' : ', unticked'}. Open it in the review`)}">
+      tabindex="0" role="button" aria-label="${esc(`Proposed ${hm(x.s)}–${hm(x.e)}: ${x.title || 'no task yet'}, ${dur(x.minutes)}${x.checked ? '' : ', unticked'}${failed ? `. ${why}` : ''}. Open it in the review`)}">
       <div class="row"><span class="t">${esc(x.title || 'Pick a task')}</span>${right}</div>
       ${h > 34 ? `<div class="d">${esc([x.project, x.service].filter(Boolean).join(' · '))}</div>` : ''}
-      ${lines && x.note ? `<div class="n" style="-webkit-line-clamp:${lines}">${esc(x.note)}</div>` : ''}</div>`;
+      ${lines && text ? `<div class="n${failed ? ' why' : ''}" style="-webkit-line-clamp:${lines}">${esc(text)}</div>` : ''}</div>`;
   }).join('');
 }
 
@@ -257,7 +265,8 @@ function renderReview() {
     toCheck.length ? `<button type="button" class="iss" data-ld-goto="${ldNextCheck(toCheck).id}" title="Open the next row to check"><span class="g" aria-hidden="true">!</span>${toCheck.length} to check</button>`
       : LD.rows.some(ldPending) ? '<span class="iss ok all" role="status"><span class="g" aria-hidden="true">✓</span>All checked</span>' : '',
     ov.size ? `<button type="button" class="iss" data-ld-goto="${[...ov.keys()][0]}"><span class="g" aria-hidden="true">!</span>${Math.ceil(ov.size / 2)} ${ov.size > 2 ? 'overlaps' : 'overlap'}, ${dur(Math.round(ovMin))}</button>` : '',
-    nFlags ? `<button type="button" class="iss" data-ld-goto="${flagged[0].id}" title="A closed task, no budget on this date, over or without an estimate"><span class="g" aria-hidden="true">!</span>${nFlags} to fix in Productive</button>` : '',
+    // the flags themselves, row by row, never a list of what a flag can be
+    nFlags ? `<button type="button" class="iss" data-ld-goto="${flagged[0].id}" title="${esc(flagged.map(r => `${hm(r.s)} ${r.title || 'no task'}: ${fixes(r).map(f => f.text).join('; ')}`).join('\n'))}"><span class="g" aria-hidden="true">!</span>${nFlags} to fix in Productive</button>` : '',
     T.notCovered ? `<span class="iss ok" title="Active time no entry covers, logged or proposed">${dur(T.notCovered)} not logged</span>` : '',
     T.over ? `<span class="iss ok" title="More than your active time and meetings: shown, never placed">${dur(T.over)} over the day</span>` : '',
     T.parallel ? `<span class="iss ok" title="${esc(`Agents ran while you did other work: ${dur(T.shared)} went to a client first, ${dur(T.leftOut)} left out`)}">Parallel ${dur(T.parallel)}</span>` : '',
@@ -345,7 +354,7 @@ function rowHTML(r, overlaps) {
       <span class="e-st">✓ ${r.thisRun ? 'logged now' : 'logged'} · ${dur(r.minutes)}</span></div></li>`;
   }
   const warn = [];
-  if (r.status === 'refused' || r.status === 'unknown') warn.push(`<b>Not written.</b> ${esc(r.reason || '')}`);
+  if (r.status === 'refused' || r.status === 'unknown') warn.push(`<b>${r.status === 'unknown' ? 'No answer.' : 'Not written.'}</b> ${esc(ldWhy(r))}`);
   else if (r.minutes < minEntry()) warn.push(`Under ${minEntry()} minutes: Pulsar does not log it. Join it to a row of the same task, or make it ${minEntry()}.`);
   for (const o of overlaps || []) warn.push(`Overlaps ${esc(o.with)} for ${dur(o.minutes)}`);
   const quiet = [];
@@ -767,7 +776,7 @@ function ldResultsBox() {
   const st = LD.lastRun.stopped && typeof LD.lastRun.stopped === 'object' ? LD.lastRun.stopped : null;
   const rest = Math.max(0, LD.lastRun.total - mine - failed.length);
   const head = `<b>${mine} of ${LD.lastRun.total} written.</b>`
-    + (st && st.status === 'refused' ? ` Not written: ${hm(st.s)} ${esc(st.title || 'this row')}. ${esc(st.reason || '')}`
+    + (st && st.status === 'refused' ? ` Not written: <button type="button" class="linkbtn" data-ld-goto="${esc(st.id)}">${hm(st.s)} ${esc(st.title || 'this row')}</button>. ${esc(ldWhy(st))}`
       : refused ? ` ${refused} not written: the reason is on ${refused === 1 ? 'its row' : 'their rows'}.` : '')
     + (unknown ? ` ${unknown} may or may not be in Productive: check the Logged column; Pulsar will not send ${unknown === 1 ? 'it' : 'them'} again.` : '')
     + (rest ? ` A run stops at the first row not written, so ${rest === 1 ? 'the row' : `the ${rest} rows`} after it ${rest === 1 ? 'was' : 'were'} not sent.` : '')

@@ -145,6 +145,17 @@ try {
     const line = joinLine(b);
     LD.rows = saved;
     check('two rows of one task back to back offer to join', line.includes('Join into one entry (50 min)'), line ? 'offered' : 'nothing offered');
+
+    // a row not written says why on its card, and the run's box names it with the reason
+    const no = {id: 'f1', s: 600, e: 625, minutes: 25, taskId: '7', title: 'Task F', project: 'P', checked: true,
+                status: 'refused', reason: 'Productive said no: the budget is closed.', thisRun: true, note: 'n'};
+    const card = ldCards(3, [no]), keep = [LD.rows, LD.lastRun, LD.writing, LD.undo];
+    LD.rows = [no]; LD.lastRun = {stopped: no, total: 3}; LD.writing = false; LD.undo = [];
+    const box = ldResultsBox();
+    [LD.rows, LD.lastRun, LD.writing, LD.undo] = keep;
+    const said = esc('Productive said no: the budget is closed.');
+    check('a row not written says why, on the card and in the box', card.includes(said) && box.includes(said)
+      && box.includes('data-ld-goto="f1"') && !box.includes('with the reason'), card.includes(said) ? box : card);
   }
 
   // the log dialog's over-estimate line follows the length typed
