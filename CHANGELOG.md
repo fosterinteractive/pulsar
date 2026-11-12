@@ -6,7 +6,7 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
-## Unreleased
+## 1.6.19 (2026-11-12)
 - Task search finds every word typed, in any order and in part, in the title or the project: "drupal shop" or "upgr SHOP" finds "Drupal 11 – DB Upgrade – Shop".
 
 ## 1.6.18 (2026-11-12)
