@@ -161,7 +161,9 @@ async function sgApply(r, c) {
   else if (c.kind === 'split') {
     let at = r.s;
     const parts = c.split.map((p, j) => {
-      const n = {...r, id: `${r.id}.${j}`, s: at, e: at + p.minutes, minutes: p.minutes, alts: [], edited: true};
+      // the server's journal takes row names of letters, digits, "-" and "_" only (dayplan.ROW): "c3.0" was refused,
+      // so no part of a split was ever written (2026-11-12)
+      const n = {...r, id: `${r.id}-${j}`, s: at, e: at + p.minutes, minutes: p.minutes, alts: [], edited: true};
       at += p.minutes;
       return [n, p];
     });

@@ -5,6 +5,7 @@
 
 import json
 import os
+import re
 import stat
 import sys
 import tempfile
@@ -939,6 +940,17 @@ class JournalTest(unittest.TestCase):
 
     def tearDown(self):
         self.p.stop()
+
+    def test_every_row_name_the_page_makes_is_taken(self):
+        """2026-11-12: the parts of a split were named "c3.0", which the journal refused, so none was ever written."""
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "js", "ldreview.js"),
+                  encoding="utf-8") as fh:
+            js = fh.read()
+        sep = re.search(r"id: `\$\{r\.id\}(.)\$\{j\}`", js).group(1)
+        for name in ("r0", "c12", f"c3{sep}0", f"c3{sep}1{sep}0"):
+            dayplan.check(self.run, name, DATE, "10:00", 30, "5", "6")
+        with self.assertRaisesRegex(ValueError, "Nothing was sent.*'c3.0'"):
+            dayplan.check(self.run, "c3.0", DATE, "10:00", 30, "5", "6")
 
     def test_a_row_sent_or_logged_is_never_sent_again_by_any_run(self):
         dayplan.check(self.run, "r1", DATE, "10:00", 30, "5", "6")

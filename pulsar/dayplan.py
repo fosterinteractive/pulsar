@@ -2439,8 +2439,12 @@ def check(run: str, row: str, date: str, start: str, minutes: int, task: str, se
           present: set | None = None) -> None:
     """Refuses a row this run already sent, or the same entry any run of that day sent and that still stands as sent
     (still_sent): a restart, a second tab or a retry never writes it twice."""
-    if not RUN.match(run or "") or not ROW.match(row or "") or run[3:13] != date:
-        raise ValueError("A Log the day run needs its run and row names.")
+    if not RUN.match(run or "") or run[3:13] != date:
+        raise ValueError(f"Nothing was sent: this Log the day run has no name Pulsar's journal takes ({str(run)[:60]!r}). "
+                         "Open Log the day again.")
+    if not ROW.match(row or ""):
+        raise ValueError(f"Nothing was sent: Pulsar gave this row a name its journal does not take ({str(row)[:60]!r}). "
+                         "Log it with the Log button instead.")
     mine = sig(date, start, minutes, task, service)
     for r in journal()["runs"]:
         for x in r.get("rows") or []:
