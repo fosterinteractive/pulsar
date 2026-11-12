@@ -1116,8 +1116,37 @@ def my_activity(d0: str, d1: str, settings: dict) -> list:
     return sorted(out, key=lambda x: x["at"])
 
 
+SEARCH_WORD = re.compile(r"[^\W_]+")
+
+
+def search_words(text: str) -> list:
+    """The words of a search, longest first, as typed: dashes, "#", "/" and the like are not words, and a single letter
+    is too short to narrow anything (a number is kept)."""
+    words = dict.fromkeys(w for w in SEARCH_WORD.findall(str(text or "")) if len(w) >= 2 or w.isdigit())
+    return sorted(words, key=len, reverse=True)
+
+
+def has_words(words: list, *texts) -> bool:
+    """Whether every word is somewhere in the texts, whole or in part, in any order and any case."""
+    hay = " ".join(SEARCH_WORD.findall(" ".join(str(t or "") for t in texts).lower()))
+    return all(w.lower() in hay for w in words)
+
+
 def search_tasks(q: str, settings: dict) -> list:
-    return _task_rows([{"field": "title", "operator": "contains", "value": q}], settings, limit=25)
+    """The tasks whose title, or title and project, hold every word of `q`, in any order and in part: "drupal shop" and
+    "upgr SHOP" find "Drupal 11 – DB Upgrade – Shop" (2026-11-12: only the exact run of characters was found).
+    Productive filters a title on one piece of text, so it is asked for the longest word, and the rest are checked here;
+    when that word was the project's, the next longest is tried (three at most)."""
+    words = search_words(q)
+    if len(words) < 2:
+        return _task_rows([{"field": "title", "operator": "contains", "value": words[0] if words else q.strip()}],
+                          settings, limit=25)
+    for word in words[:3]:
+        rows = _task_rows([{"field": "title", "operator": "contains", "value": word}], settings, limit=200)
+        hits = [t for t in rows if has_words(words, t.get("title"), t.get("project"))]
+        if hits:
+            return hits[:25]
+    return []
 
 
 def bookable_services(task_id: str, date: str, settings: dict, names: Optional[Names] = None) -> dict:

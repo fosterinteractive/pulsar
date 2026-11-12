@@ -1993,6 +1993,23 @@ class TokenTasksTest(unittest.TestCase):
         self.assertEqual([t["title"] for t in got], ["Fix the menu", "Old menu work (closed)", "Menu, done (closed)"])
         self.assertEqual(self.asked[0][1]["filter[title][contains]"], "MENU")
 
+    def test_a_search_finds_the_words_in_any_order_and_in_part(self):
+        # 2026-11-12: only the exact run of characters was found, so "drupal shop" missed "Drupal 11 – DB Upgrade – Shop"
+        for q in ("menu fix", "Fix – MENU", "fi men"):
+            self.asked.clear()
+            got = productive.search_tasks(q, self.s)
+            self.assertEqual([t["title"] for t in got], ["Fix the menu"], q)
+            self.assertEqual(self.asked[0][1]["filter[title][contains]"], productive.search_words(q)[0])
+        self.assertEqual([t["title"] for t in productive.search_tasks("menu acme", self.s)][:1], ["Fix the menu"])
+        self.assertEqual(productive.search_tasks("menu nowhere", self.s), [])
+
+    def test_the_words_of_a_search(self):
+        self.assertEqual(productive.search_words("DB Upgrade – Shop #240"), ["Upgrade", "Shop", "240", "DB"])
+        self.assertEqual(productive.search_words("a D 11"), ["11"])
+        self.assertTrue(productive.has_words(["drupal", "SHOP", "upgr"], "Drupal 11 – DB Upgrade – Shop"))
+        self.assertTrue(productive.has_words(["acme", "shop"], "Drupal 11 – DB Upgrade – Shop", "ACME-OS Ongoing Support"))
+        self.assertFalse(productive.has_words(["drupal", "blog"], "Drupal 11 – DB Upgrade – Shop"))
+
 
 class PreviewTest(unittest.TestCase):
     """Pulsar Preview writes nothing to Productive until its own setting allows it."""

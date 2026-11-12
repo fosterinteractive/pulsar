@@ -1243,12 +1243,12 @@ SEARCH_MAX = 30
 def rank_search(found: list, text: str, recent: list, assigned: list) -> list:
     """Search results in the order a person looks for them: tasks you logged to lately (most recent first), then open
     tasks assigned to you, then everyone else's, closed tasks last; otherwise Productive's order. Your own tasks whose
-    title holds the words are added when Productive's first page left them out. Each of yours says so: "yours" is
+    title or project holds every word (productive.has_words) are added when Productive's answer left them out. Each of yours says so: "yours" is
     "logged" or "assigned"."""
-    words = text.lower().strip()
+    words = productive.search_words(text) or [text.strip()]
     logged = {t["taskId"]: i for i, t in enumerate(recent) if t.get("taskId")}
     mine = {t["taskId"] for t in assigned if t.get("taskId")}
-    extra = [t for t in [*recent, *assigned] if words in (t.get("title") or "").lower()]
+    extra = [t for t in [*recent, *assigned] if productive.has_words(words, t.get("title"), t.get("project"))]
     out, seen = [], set()
     for t in [*found, *extra]:
         tid = t.get("taskId")
