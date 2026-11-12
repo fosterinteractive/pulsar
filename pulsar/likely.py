@@ -181,12 +181,14 @@ def _with_tasks(result: dict, date: str, settings: dict, commits: bool = True) -
         # rows from sessions.py carry their own links (repoLinks); only older ones need every session read again
         sessions.attach_tasks(rows, t0, sessions.task_links(t0) if any("repoLinks" not in r for r in rows) else [])
     except Exception as exc:
-        logbook.record("likely", f"Task links in Claude sessions: {type(exc).__name__}: {exc}", kind="warning")
+        logbook.record("likely", f"Pulsar could not read the task links in Claude sessions: {exc}", kind="warning",
+                       detail=type(exc).__name__)
     if commits:
         try:
             git_commits.attach(result.get("entries") or [], t0)
         except Exception as exc:
-            logbook.record("likely", f"Commits for the notes: {type(exc).__name__}: {exc}", kind="warning")
+            logbook.record("likely", f"Pulsar could not read your commits for the notes: {exc}", kind="warning",
+                           detail=type(exc).__name__)
 
 
 def _built_in(date: str, settings: dict, names: tuple = (None, None), turns: dict | None = None) -> dict:
@@ -245,8 +247,8 @@ def _skill() -> tuple:
         turns = {"strings": strings_of, "count": projects_in} if callable(strings_of) else None
         got = ((namer, logging_name if isinstance(logging_name, str) else None), turns)
     except Exception as exc:  # the script changed shape: Pulsar's own names, and Logs says why
-        logbook.record("likely", f"The fi-time-from-activity script's names could not be read, so Pulsar's own are "
-                                 f"used: {type(exc).__name__}: {exc}", kind="warning", once_per=3600)
+        logbook.record("likely", f"The fi-time-from-activity skill's project names could not be read, so Pulsar names "
+                                 f"the projects itself: {exc}", kind="warning", detail=type(exc).__name__, once_per=3600)
     _kept.clear()
     _kept[mtime] = got
     return got

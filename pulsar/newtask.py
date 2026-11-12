@@ -211,7 +211,7 @@ def claude_draft(date: str, rows: list, t0: float, history: list = (), project: 
         title, bad_t = "", "a name from another project"
     if desc and askclaude.foreign_name(desc, own, others, person):
         desc, bad_d = "", "a name from another project"
-    why = "; ".join(f"the {what} had {bad}, so it was left out" for what, bad in (("title", bad_t), ("description", bad_d))
+    why = "; ".join(f"the {what} was left out ({bad})" for what, bad in (("title", bad_t), ("description", bad_d))
                     if bad)
     answer = {"title": title, "description": desc, "why": why, "cost": res.get("total_cost_usd")}
     with _lock:
@@ -373,7 +373,7 @@ def _service(kind: str, parent: dict, services, date: str):
         return services[0], "The only service that takes time on that date."
     if not services:
         return None, "No service of this project takes time on that date: ask its PM."
-    return None, "Nothing here says which."
+    return None, "Several services take time on that date: pick one."
 
 
 def propose(statuses, kind: str, parent, services, sizes, date: str) -> dict:

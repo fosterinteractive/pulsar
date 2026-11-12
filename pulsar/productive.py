@@ -216,7 +216,7 @@ def rest_get(path: str, query: dict, token: str, org: Optional[str]) -> Tuple[in
     try:
         return status, json.loads(raw) if raw else None
     except ValueError:
-        return 0, "the answer was not JSON"
+        return 0, "its answer could not be read"
 
 
 def network_reason(exc: BaseException) -> str:
@@ -238,7 +238,7 @@ def why(status: int, doc) -> str:
     if status == 0:
         return doc if isinstance(doc, str) and doc else "no answer"
     if status == 429:
-        return "HTTP 429: Productive is limiting requests; try again in a minute"
+        return "Productive is limiting requests; try again in a minute"
     return f"HTTP {status}"
 
 
@@ -262,8 +262,8 @@ def rest_detect(token: str, org_hint: str = "", get: Get = rest_get) -> dict:
     for org in ([org_hint] if org_hint else []) + [None]:
         status, doc = get("/organization_memberships", {"include": "organization,person"}, token, org)
         if status in (401, 403) and (org_hint or org is None):
-            raise ProductiveError(f"Productive refused the token (HTTP {status}). Check that the whole token was pasted"
-                                  + (" and that the organization ID is right." if org_hint else
+            raise ProductiveError(f"Productive refused the API token (HTTP {status}). Check that the whole token was "
+                                  "pasted" + (" and that the organization ID is right." if org_hint else
                                      "; if it is right, type your organization ID in Settings."))
         if status == 200 and isinstance(doc, dict) and len(doc.get("data") or []) > 1:
             break  # several people (an admin token?): never guess; Settings asks for the person ID
@@ -295,7 +295,7 @@ def rest_entries(d0: str, d1: str, token: str, org: str, person: str, names: Nam
             includes, page, rows, inc = includes[1:], 1, [], {}
             continue
         if status in (401, 403):
-            raise ProductiveError("Productive refused the token (HTTP %d). Check it in Settings." % status)
+            raise ProductiveError("Productive refused the API token (HTTP %d). Check it in Settings." % status)
         if status != 200 or not isinstance(doc, dict):
             raise ProductiveError(f"Productive did not give the time entries ({why(status, doc)}).")
         rows += [d for d in doc.get("data") or [] if isinstance(d, dict)]
@@ -395,7 +395,7 @@ def _claude_code_token() -> tuple:
     """(token, problem, connected, expired, server name): connected says Claude Code has a Productive connection at
     all, so its problem (an expired token) is worth showing even when Pulsar was not asked to use it."""
     if sys.platform != "darwin" or config.tests_offline():
-        return None, "Claude Code's Productive connection is read from the macOS keychain; use a token instead.", False, False, ""
+        return None, "Claude Code's Productive connection is read from the macOS keychain; use your API token instead.", False, False, ""
     try:
         run = subprocess.run(["/usr/bin/security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
                              capture_output=True, text=True, timeout=15)
@@ -410,7 +410,7 @@ def _claude_code_token() -> tuple:
         return _token_in(doc)
     except (AttributeError, TypeError, ValueError):  # Claude Code keeps it in a shape this Pulsar does not know
         return None, ("Claude Code keeps its Productive connection in a form this Pulsar cannot read. Update Pulsar, "
-                      "or use a token in Settings."), True, False, ""
+                      "or use your API token in Settings."), True, False, ""
 
 
 def _token_in(doc) -> tuple:
@@ -421,12 +421,12 @@ def _token_in(doc) -> tuple:
             continue
         if key.split("|")[0] == "productive":  # the key itself contains a pipe
             if urllib.parse.urlparse(value.get("serverUrl") or MCP_URL).hostname != "mcp.productive.io":
-                return None, "Claude Code's \"productive\" connection points somewhere else than Productive; use a token.", True, False, ""
+                return None, "Claude Code's \"productive\" connection points somewhere other than Productive; use your API token.", True, False, ""
             token, expires = value.get("accessToken"), int(value.get("expiresAt") or 0)
             if token is not None and not isinstance(token, str):
                 raise TypeError("accessToken")
             if not token:
-                return None, "Claude Code's Productive connection is not authorised (/mcp in Claude Code).", True, False, ""
+                return None, "Claude Code's Productive connection is not signed in. Run /mcp in Claude Code and connect Productive.", True, False, ""
             if expires and expires < time.time() * 1000:
                 at = time.strftime("%H:%M", time.localtime(expires / 1000))
                 return None, (f"Claude Code's Productive token expired at {at} and Claude Code could not renew it. "
@@ -526,7 +526,7 @@ def mcp_text(tool: str, args: dict, token: str, session: Optional[str] = None) -
                            "Productive.")
     if status != 200:
         if tool in WRITE_TOOLS and status >= 500:  # a server error after a write was sent: it may have happened
-            raise ProductiveUnclear(f"Productive answered HTTP {status}, so the change may or may not have happened.")
+            raise ProductiveUnclear(UNCLEAR_SAID.format(f"HTTP {status}"))
         raise ProductiveError(f"Productive answered HTTP {status}.")
     text = raw.decode("utf-8", "replace")
     msg = None
@@ -535,7 +535,7 @@ def mcp_text(tool: str, args: dict, token: str, session: Optional[str] = None) -
             msg = json.loads(line[5:])
     msg = msg or json.loads(text)
     if msg.get("error"):
-        said = str(msg["error"].get("message") or "MCP error")
+        said = str(msg["error"].get("message") or "Productive gave an error without saying why.")
         if tool in WRITE_TOOLS and msg["error"].get("code") not in NEVER_RAN:  # it may have run before it failed
             raise ProductiveUnclear(UNCLEAR_SAID.format(said[:300]))
         raise ProductiveError(said)
@@ -584,7 +584,7 @@ def parse_mcp(content: str) -> dict:
         return doc  # load_resource answers ({"item", "included": [objects]}) stay as they are
     if re.match(r"\s*Loaded 0 ", content):
         return {"items": {"columns": [], "rows": []}, "pagination": {"total": 0}}
-    raise ProductiveError(content[:300] or "empty answer")
+    raise ProductiveError(content[:300] or "Productive gave an empty answer.")
 
 
 def _as_table(objects: list) -> dict:
@@ -760,7 +760,7 @@ def connection(settings: dict) -> dict:
         return {"kind": "token", "token": token}
     if want == "token":
         return {"kind": None, "problem": config.KEYCHAIN_STUCK if config.keychain_stuck() else
-                "No Productive token saved yet: add one in Settings."}
+                "No Productive API token saved yet: add one in Settings."}
     cc, problem, connected = claude_code_token()
     if cc:
         return {"kind": "claude-code", "token": cc}
@@ -801,7 +801,7 @@ def entries(d0: str, d1: str, settings: dict, names: Optional[Names] = None,
     except ProductiveError as exc:
         return [], str(exc), conn["kind"]
     except Exception as exc:  # network and the like
-        return [], f"Productive: {type(exc).__name__}: {exc}", conn["kind"]
+        return [], f"Your entries could not be read from Productive ({type(exc).__name__}: {exc}).", conn["kind"]
     return rows, None, conn["kind"]
 
 
@@ -865,7 +865,7 @@ def task_details(ids: list, settings: dict, reasons: Optional[dict] = None, tran
                                        "Check it in Settings."), True
                 if status != 200 or not isinstance(doc, dict):
                     down = status == 0 or status == 429 or status >= 500
-                    return tid, None, (f"Productive could not be asked ({why(status, doc)})" if down else
+                    return tid, None, (f"Productive could not answer ({why(status, doc)})" if down else
                                        f"HTTP {status}: deleted, or not visible to you"), down
                 d = doc.get("data") or {}
                 proj = _index(doc).get(("projects", _rel(d, "project") or ""))
@@ -1117,7 +1117,7 @@ def bookable_services(task_id: str, date: str, settings: dict, names: Optional[N
     task = task_details([task_id], settings, reasons).get(task_id)  # raises when the connection is the reason
     if not task or not task.get("projectId"):
         reason = reasons.get(task_id) or ("it has no project" if task else "")
-        raise ProductiveError("Productive did not return that task" + (f" ({reason})." if reason else "."))
+        raise ProductiveError("That task's services could not be read" + (f" ({reason})." if reason else "."))
     return {"task": task, "services": project_services(task["projectId"], date, settings, names)}
 
 

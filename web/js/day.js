@@ -579,7 +579,7 @@ function renderAside(gapMin) {
       : `<div class="kv gap${done ? ' done' : ''}"><span>Active, not logged</span><span class="num">${dur(gapMin)}</span></div>`) : ''}
     ${logged && !logged.error ? `<div class="daydone">${done
       ? `<span>✓ Day done${done === 'target' ? ': target reached' : ''}</span><button type="button" class="linkbtn" data-day-mark="notdone" title="Show the time not logged as still to do">Not done</button>`
-      : gapMin >= 1 ? `<button type="button" class="linkbtn" data-day-mark="done" title="The rest of today's active time stays unlogged, and this day leaves Earlier days">Mark the day done</button>` : ''}</div>` : ''}
+      : gapMin >= 1 ? `<button type="button" class="linkbtn" data-day-mark="done" title="The rest of this day's active time stays unlogged, and the day leaves Earlier days">Mark the day done</button>` : ''}</div>` : ''}
     ${act?.away?.some(x => !x.off) ? `<div class="kv"><span>Away, breaks</span><span class="num">${dur(act.away.filter(x => !x.off).reduce((s, x) => s + x.e - x.s, 0))}</span></div>` : ''}
     <div class="bar"><i style="width:${Math.min(100, (sum || 0) / TARGET * 100)}%"></i></div>
     <div class="kv"><span>Daily target</span><span class="num">${dur(TARGET)}</span></div>`);
@@ -604,7 +604,7 @@ function renderAside(gapMin) {
             `<div class="ti" title="${esc([...r.tasks].join('\n'))}"><span>${esc(r.budget)}${r.service ? ` <small>· ${esc(r.service)}</small>` : ''}${r.billable ? `<span class="bill" title="Billable: ${esc(r.billing)}">$</span>` : ''}</span><span class="num">${dur(r.min)}</span></div>`).join('')}
         </details>`
       ).join('') || '<div class="note">Nothing logged.</div>')
-      + (noStart.length ? `<div class="note">No start time: ${noStart.length} (${dur(noStart.reduce((s, x) => s + x.minutes, 0))}), not on the timeline.</div>` : ''));
+      + (noStart.length ? `<div class="note">Not on the timeline, no start time: ${noStart.length} ${noStart.length === 1 ? 'entry' : 'entries'}, ${dur(noStart.reduce((s, x) => s + x.minutes, 0))}.</div>` : ''));
   }
 
   const box = $('#tasksbox');
@@ -633,7 +633,7 @@ function renderAside(gapMin) {
     for (const e of likely.entries) byProject.set(e.project, (byProject.get(e.project) || 0) + e.minutes);
     setHTML($('#likelybox'), `<h2>Likely, from Claude sessions</h2>` +
       [...byProject].sort((a, b) => b[1] - a[1]).map(([p, m]) => `<div class="kv"><span>${esc(p)}</span><span class="num">${dur(m)}</span></div>`).join('') +
-      (likely.learning ? `<div class="note">Learning your tasks: ${likely.learning.done} of ${likely.learning.of}.</div>` : ''));
+      (likely.learning ? `<div class="note">Learning your tasks from past days: ${likely.learning.done} of ${likely.learning.of}.</div>` : ''));
   }
 }
 
@@ -822,7 +822,7 @@ $('#ask-claude').onclick = async () => {
   render();
   // the blocks on screen that show a pick: the picks are per row, and a block joins several rows
   const n = likelyCache.filter(b => claudePick(b)).length;
-  const said = n ? `Claude picked a task for ${n} ${n === 1 ? 'block' : 'blocks'}. Log one to see them first.` : 'Claude found no task for these blocks.';
+  const said = n ? `Claude picked a task for ${n} ${n === 1 ? 'block' : 'blocks'}. Its pick is on the card, and first in the task list when you log it.` : 'Claude found no task for these blocks.';
   toast(r.warning ? `${said} ${r.warning}` : said, !!r.warning);
   askEnd(n ? 'picked' : 'none');
 };

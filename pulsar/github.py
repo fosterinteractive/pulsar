@@ -46,8 +46,8 @@ RECHECK = 24 * 3600  # how often the hourly update check also asks whether the a
 SAY = {  # what GitHub's device flow errors mean to the person
     "expired_token": "The code expired before it was entered on GitHub. Click Sign in to GitHub again.",
     "access_denied": "The sign-in was cancelled on GitHub. Click Sign in to GitHub to try again.",
-    "device_flow_disabled": "Signing in is not switched on for Pulsar's GitHub App. Tell the maintainer.",
-    "incorrect_client_credentials": "GitHub does not know Pulsar's GitHub App. Tell the maintainer.",
+    "device_flow_disabled": "Signing in is not switched on for Pulsar's GitHub App. Tell whoever maintains Pulsar.",
+    "incorrect_client_credentials": "GitHub does not know Pulsar's GitHub App. Tell whoever maintains Pulsar.",
 }
 
 _lock = threading.Lock()
@@ -163,7 +163,7 @@ def start() -> dict:
     try:
         got = _call(DEVICE_URL, data={"client_id": CLIENT_ID}, accept="application/json", timeout=20)
     except (OSError, ValueError) as exc:
-        raise RuntimeError(f"GitHub did not answer ({exc}). Check the connection and try again.") from exc
+        raise RuntimeError("GitHub did not answer. Check your internet connection and try again.") from exc
     code, device = str(got.get("user_code") or ""), str(got.get("device_code") or "")
     if not code or not device:
         why = str(got.get("error") or "")
@@ -290,7 +290,7 @@ def status() -> dict:
         message = "GitHub no longer accepts this sign-in. Sign in to GitHub again."
     elif problem == "expires":
         message = ("This sign-in ends in 8 hours: Pulsar's GitHub App still has \"Expire user authorization tokens\" "
-                   "on. Tell the maintainer, then sign in again.")
+                   "on. Tell whoever maintains Pulsar, then sign in again.")
     elif access is False:
         message = (f"Signed in as {login or 'your account'}, but it cannot see Pulsar's repository, so updates will "
                    f"not arrive once it is private. Ask a GitHub admin at Foster for access to {OWNER}/{REPO}.")

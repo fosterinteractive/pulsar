@@ -68,7 +68,7 @@ JOIN = re.compile(r"https://(?:[A-Za-z0-9-]+\.)*(?:zoom\.us|meet\.google\.com|te
                   r"webex\.com)(?:/[^\s\"'<>\\]*)?", re.I)
 
 NOT_SET_UP = ("Google Calendar is not set up in this copy of Pulsar yet: it needs the organization's Google sign-in "
-              "client first (pulsar/google_client.json).")
+              "first. Tell whoever maintains Pulsar.")
 LAPSED = ("Google no longer lets Pulsar read your calendar (the access was removed or has lapsed). Connect Google "
           "Calendar again in Settings.")
 
@@ -117,12 +117,12 @@ def _net_reason(exc: BaseException) -> str:
     import socket
     reason = getattr(exc, "reason", exc)
     if isinstance(reason, socket.gaierror):
-        return "Google could not be looked up: offline, or a DNS problem"
+        return "Google's address could not be found, so this Mac may be offline"
     if isinstance(reason, (socket.timeout, TimeoutError)):
         return "Google took too long to answer"
     if isinstance(reason, ssl.SSLError):
         return "the secure connection to Google failed"
-    return f"no answer from Google ({type(reason).__name__})"
+    return "Google did not answer"
 
 
 def _google_reason(status: int, doc: dict) -> str:
@@ -231,7 +231,8 @@ def finish(query: dict) -> dict:
                     "you chose not to allow it." if refused else f"Google said “{str(query['error'])[:80]}”.")}
     code, c = str(query.get("code") or ""), client()
     if not code or len(code) > 2048 or not c:
-        return {"ok": False, "known": True, "message": NOT_SET_UP if not c else "Google sent no code. Start again."}
+        return {"ok": False, "known": True, "message": NOT_SET_UP if not c else "Google's answer was incomplete, so Google Calendar "
+                                                                  "was not connected. Start again from Settings."}
     got, doc = http("POST", TOKEN_URL, {"code": code, "client_id": c["id"], "client_secret": c["secret"],
                                         "redirect_uri": pending["redirect"], "grant_type": "authorization_code",
                                         "code_verifier": pending["verifier"]})
@@ -359,9 +360,10 @@ def _list(day: str, tz, token: str, days: int = 1) -> dict:
 def _api_problem(got: int, doc: dict) -> str:
     reason = _google_reason(got, doc)
     if got == 0:
-        return f"Google Calendar could not be reached ({reason})."
+        return f"Google Calendar could not be reached: {reason}."
     if "accessNotConfigured" in reason or "SERVICE_DISABLED" in reason:
-        return "The Google Calendar API is not enabled in Pulsar's Google Cloud project. Foster needs to enable it."
+        return ("The Google Calendar API is not enabled in Pulsar's Google Cloud project. Tell whoever maintains "
+                "Pulsar.")
     if "insufficientPermissions" in reason or "ACCESS_TOKEN_SCOPE_INSUFFICIENT" in reason:
         return "Pulsar's access does not include your calendar events. Disconnect and connect Google Calendar again."
     if got == 429 or "rateLimitExceeded" in reason:

@@ -128,7 +128,7 @@ async function openNewTask(from = null) {
   if (mine !== taskOpened || !taskDlg.open) return;
   const changed = (c.title || c.description) && !(taskTyped.title && taskTyped.description);
   if (changed) fillDraft(c, CLAUDE_MARK.split('<span')[0] + esc('Drafted by Claude. Clients may see tasks.'));
-  else fillDraft({}, esc(c.error ? `No draft from Claude: ${c.error}` : (DRAFT_FROM[draft.from] || '') + (c.why ? ` (Claude's draft: ${c.why}.)` : '')));
+  else fillDraft({}, esc(c.error ? `No draft from Claude: ${c.error}` : (DRAFT_FROM[draft.from] || '') + (c.why ? ` Claude's draft: ${c.why}.` : '')));
   setTimeout(() => { if (mine === taskOpened) save.disabled = false; }, changed ? 1000 : 0);
 }
 
@@ -189,7 +189,7 @@ taskForm.addEventListener('submit', async ev => {
   // stays off until the dialog opens again (Pulsar refuses the same title for ten minutes too); search for it first
   if (r.error && (r.unclear || /^Pulsar is not responding/.test(r.error)))
     return setTaskMsg(/search for it/i.test(r.error) ? r.error
-      : `${r.error} The task may exist: search for it in the task list before creating it again.`, true);
+      : `${r.error} The task may exist: search for it before creating it again.`, true);
   btn.disabled = false;
   if (r.error) return setTaskMsg(r.error, true);
   taskDlg.close();

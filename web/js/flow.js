@@ -112,7 +112,7 @@ function syncTimes(from, left) {
     if (b > a) { setMinutes(realMinutes(date, a, b)); say = ''; }
     else if (left) {
       bad = true;
-      say = !e ? 'Write the end as HH:MM, 24-hour: 17:30, or 24:00 for midnight.' : b === a ? 'End is the same as Start.'
+      say = !e ? 'Write the end as a time: 17:30 or 5:30 pm, or 24:00 for midnight.' : b === a ? 'End is the same as Start.'
         : 'End is before Start. To go past midnight, end at 24:00 and log the rest the next day.';
     }
   } else if (Number.isInteger(m) && m >= 1) {

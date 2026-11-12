@@ -535,7 +535,7 @@ def doubt(row: dict, ctx: dict, task, source: str) -> str:
         project = ((ctx.get("names") or {}).get(str(task)) or {}).get("project")
         where = places(ctx, row.get("project"))
         if project and where and project not in where:
-            return f"{row.get('project')} is not logged to {project}"
+            return f"you have not logged {row.get('project')} work to {project}"
         if source == "link" and len(links(row)) > 1:
             return "the session links other tasks too"
     if source == "session" and row.get("class") == CLIENT:
@@ -1144,7 +1144,7 @@ def _rows(d: _Day) -> None:
         for x in half:
             owner[x] = None
         claim({**c, "kind": "focused", "parallel": True,
-               "why": "its agent ran beside the work in front: half that time"}, half)
+               "why": "its agent ran while you did other work: half of that time"}, half)
     # what else the agents did while the person was at work: the minutes no claim of theirs took, by repository
     d.bg_left = {}
     d.parallel = bytearray(N)
@@ -2440,10 +2440,10 @@ def check(run: str, row: str, date: str, start: str, minutes: int, task: str, se
     """Refuses a row this run already sent, or the same entry any run of that day sent and that still stands as sent
     (still_sent): a restart, a second tab or a retry never writes it twice."""
     if not RUN.match(run or "") or run[3:13] != date:
-        raise ValueError(f"Nothing was sent: this Log the day run has no name Pulsar's journal takes ({str(run)[:60]!r}). "
+        raise ValueError(f"Nothing was sent: Pulsar did not recognise this Log the day ({str(run)[:60]!r}). "
                          "Open Log the day again.")
     if not ROW.match(row or ""):
-        raise ValueError(f"Nothing was sent: Pulsar gave this row a name its journal does not take ({str(row)[:60]!r}). "
+        raise ValueError(f"Nothing was sent: Pulsar could not keep track of this row ({str(row)[:60]!r}). "
                          "Log it with the Log button instead.")
     mine = sig(date, start, minutes, task, service)
     for r in journal()["runs"]:

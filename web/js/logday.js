@@ -68,7 +68,7 @@ async function openLogDay({fresh = false} = {}) {
   LD.loading = false; LD.plan = r;
   LD.rows = (r.entries || []).map((e, i) => ({...e, id: 'r' + i, key: ldRowKey(d, e), orig: ldOrig(e), opened: false, edited: false,
                                                status: e.sent === 'logged' ? 'logged' : e.sent ? 'unknown' : null,
-                                               reason: e.sent ? 'A run of this day already sent it.' : '',
+                                               reason: e.sent ? 'Log the day sent this entry earlier. Check the Logged column; Pulsar will not send it again.' : '',
                                                ...(e.shared ? ldSharedFrom(e) : {})}));
   if (kept) { const got = ldReapply(LD.rows, kept, r.ignoreLogged ? [] : state.logged?.entries); LD.rows = ldWithHalves(got.rows, CONFIG?.roundTo || 5); LD.open = got.open; }
   LD.rows = LD.rows.filter(x => x.status || !ldNotWork(x));  // time marked "not work" (day.js) is not proposed
@@ -103,7 +103,7 @@ async function askClaudeForDay(d) {
   if (ans.error) { LD.askNote = `Check my day with Claude: ${ans.error}`; renderReview(); return; }
   LD.picked = true;  // this day has Claude's picks now: "Check again" reviews, it does not pick again
   state.claude = {date: d, picks: ans.picks || {}};
-  if (LD.writing) { LD.askNote = "Claude answered while writing; Start over to see its picks."; renderReview(); return; }
+  if (LD.writing) { LD.askNote = "Claude answered while entries were being logged. Start over to see its picks."; renderReview(); return; }
   const r = await getJSON(`/api/dayplan?date=${d}&source=${state.source}${LD_IGNORE ? '&ignore_logged=1' : ''}`);
   if (!ldActive() || LD.date !== d || r.error) return;
   ldClaudePlan(d, r, ans);
@@ -114,7 +114,7 @@ function ldClaudePlan(d, r, ans) {
   if (!ldActive() || LD.date !== d) return;
   if (ldDlg.open) { LD.claudeLate = [d, r, ans]; return; }
   LD.claudeLate = null;
-  if (LD.writing) { LD.askNote = "Claude answered while writing; Start over to see its picks."; renderReview(); return; }
+  if (LD.writing) { LD.askNote = "Claude answered while entries were being logged. Start over to see its picks."; renderReview(); return; }
   // each row keeps Pulsar's own first plan as "proposed" (asking Claude is the person's step), where one was at that time
   const firstAt = e => LD.rows.find(o => o.s === e.s && o.e === e.e)?.orig;
   const fresh = (r.entries || []).map((e, i) => ({...e, id: 'c' + i, key: ldRowKey(d, e), orig: firstAt(e) || ldOrig(e), opened: false, edited: false, status: null, reason: ''}));
@@ -268,7 +268,7 @@ function renderReview() {
     // the flags themselves, row by row, never a list of what a flag can be
     nFlags ? `<button type="button" class="iss" data-ld-goto="${flagged[0].id}" title="${esc(flagged.map(r => `${hm(r.s)} ${r.title || 'no task'}: ${fixes(r).map(f => f.text).join('; ')}`).join('\n'))}"><span class="g" aria-hidden="true">!</span>${nFlags} to fix in Productive</button>` : '',
     T.notCovered ? `<span class="iss ok" title="Active time no entry covers, logged or proposed">${dur(T.notCovered)} not logged</span>` : '',
-    T.over ? `<span class="iss ok" title="More than your active time and meetings: shown, never placed">${dur(T.over)} over the day</span>` : '',
+    T.over ? `<span class="iss ok" title="More than your active time and meetings, so left out of the entries">${dur(T.over)} over the day</span>` : '',
     T.parallel ? `<span class="iss ok" title="${esc(`Agents ran while you did other work: ${dur(T.shared)} went to a client first, ${dur(T.leftOut)} left out`)}">Parallel ${dur(T.parallel)}</span>` : '',
   ].join('');
   const model = {haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus'}[CONFIG?.likely?.askClaudeModel] || 'Claude';
@@ -309,10 +309,10 @@ function renderReview() {
     ${results}
     ${empty || `<ul class="rv-list" aria-label="Proposed entries">${sgDayHTML()}${items.map(x => x.html).join('')}${skipped}</ul>`}
     <div class="rv-f">${LD.writing && LD.undoing
-      ? '<span class="hint" role="status">Deleting what this run logged…</span>'
+      ? '<span class="hint" role="status">Deleting the entries just logged…</span>'
       : LD.writing
       ? `<span class="hint" role="status">Writing ${LD.rows.filter(r => r.status === 'logged' && r.thisRun).length + 1} of ${LD.writeCount}…</span><button type="button" class="btn bordered" id="ld-stop"${LD.stop ? ' disabled' : ''}>${LD.stop ? 'Stopping after this one' : 'Stop after this one'}</button>`
-      : `<button type="button" class="btn bordered" id="ld-redo" title="Work the day out again; your changes go">Start over</button>
+      : `<button type="button" class="btn bordered" id="ld-redo" title="Work the day out again. Your changes in this review are lost.">Start over</button>
          <button type="button" class="btn primary big" id="ld-go"${n ? '' : ' disabled'}>Log ${n} ${n === 1 ? 'entry' : 'entries'}…</button>`}</div>`;
   const list = el.querySelector('.rv-list');
   if (list) list.scrollTop = was.list;
@@ -359,13 +359,13 @@ function rowHTML(r, overlaps) {
   for (const o of overlaps || []) warn.push(`Overlaps ${esc(o.with)} for ${dur(o.minutes)}`);
   const quiet = [];
   if (!r.taskId) quiet.push('No task yet.');
-  else if (!r.serviceId && !r.ticket?.some(f => f.kind === 'nobudget')) quiet.push(r.serviceProblem ? `No service: ${r.serviceProblem}` : 'No service that takes time on this date: pick one.');
+  else if (!r.serviceId && !r.ticket?.some(f => f.kind === 'nobudget')) quiet.push(r.serviceProblem ? `No service: ${r.serviceProblem}` : 'No service yet: pick one that takes time on this date.');
   if (r.flags.includes('agent')) quiet.push('Agent ran while you did other work.');
-  if (r.flags.includes('unattended')) quiet.push('No call seen.');
+  if (r.flags.includes('unattended')) quiet.push('No call seen during this meeting: were you in it?');
   if (r.claudeNone) quiet.push("Claude found no task; Pulsar's guess stays.");
   if (r.flags.includes('claudefound')) quiet.push('Claude found this task by search; not one of yours lately.');
   if (r.flags.includes('claudenote') && r.noteFrom === 'claude' && !r.noteEdited) quiet.push('Claude drafted the note: read it first.');
-  if (r.flags.includes('meetingtitle')) quiet.push('Meeting title not used as the note.');
+  if (r.flags.includes('meetingtitle')) quiet.push("The meeting's title was not used as the note: write one.");
   if (r.flags.includes('renamed')) quiet.push('Meeting renamed since you last logged it: check the task.');
   if (r.flags.includes('untimed')) quiet.push(`${dur(r.untimed)} of this task has no start time: is it this work?`);
   if (r.halfOf) quiet.push('The second half of a shared stretch.');
@@ -475,7 +475,7 @@ function editorHTML(r) {
     <label class="field"><span>Note</span><textarea rows="2" data-ld-note placeholder="What was done: the outcome, in a sentence">${esc(r.note || '')}</textarea></label>
     <p class="hint ld-note-hint">${noteHint(r)}</p>
     <div class="acts"><button type="button" class="btn bordered" data-ld-del="${r.id}">Remove</button>
-      <button type="button" class="btn bordered" data-ld-notwork="${r.id}" title="Not work: not proposed again, not shown as to log (this Mac only)">Not work</button>
+      <button type="button" class="btn bordered" data-ld-notwork="${r.id}" title="This time was not work: Pulsar stops proposing it and counting it as not logged (on this Mac only).">Not work</button>
       <span class="hint ld-keys"><kbd>↩</kbd> on the row ${r.taskId && r.serviceId ? 'ticks it and opens the next' : 'picks its task'}</span></div></div>`;
 }
 function wireEditor(r) {
@@ -665,7 +665,7 @@ function openConfirm(dry = null) {
   const warns = [];
   // entries under the shortest: none is sent, since the first would stop the run (2026-11-12: a split into 8 + 8 + 7 + 7)
   const short = live.filter(r => r.minutes < minEntry());
-  if (short.length) warns.push(`Under ${minEntry()} minutes, so Productive takes none of these: ${short.map(r => `${hm(r.s)} ${r.title} ${dur(r.minutes)}`).join(', ')}. Go back, and join each to a row of the same task or make it ${minEntry()}.`);
+  if (short.length) warns.push(`Pulsar does not log entries under ${minEntry()} minutes: ${short.map(r => `${hm(r.s)} ${r.title} ${dur(r.minutes)}`).join(', ')}. Go back, and join each to a row of the same task, or make it ${minEntry()}.`);
   if (ov.size) warns.push(`${[...ov.entries()].filter(([id]) => live.some(r => r.id === id)).map(([id, os]) => `${hm(ldRow(id).s)} ${ldRow(id).title} overlaps ${os.map(o => o.with).join(', ')}`).join('; ')}.`);
   const untimed = LD.plan?.ignoreLogged ? [] : (state.logged?.entries || []).filter(x => x.s == null && live.some(r => r.taskId === String(x.taskId)));
   if (untimed.length) warns.push(`Already logged with no start time, on a task below: ${untimed.map(x => `${x.task || x.project} ${dur(x.minutes)}`).join(', ')}. Check it is not the same work.`);
@@ -779,13 +779,13 @@ function ldResultsBox() {
     + (st && st.status === 'refused' ? ` Not written: <button type="button" class="linkbtn" data-ld-goto="${esc(st.id)}">${hm(st.s)} ${esc(st.title || 'this row')}</button>. ${esc(ldWhy(st))}`
       : refused ? ` ${refused} not written: the reason is on ${refused === 1 ? 'its row' : 'their rows'}.` : '')
     + (unknown ? ` ${unknown} may or may not be in Productive: check the Logged column; Pulsar will not send ${unknown === 1 ? 'it' : 'them'} again.` : '')
-    + (rest ? ` A run stops at the first row not written, so ${rest === 1 ? 'the row' : `the ${rest} rows`} after it ${rest === 1 ? 'was' : 'were'} not sent.` : '')
-    + (LD.journalError ? ` Pulsar could not read its journal of this run (${LD.journalError}), so these rows and Undo may be out of date: open Log the day again.` : '');
+    + (rest ? ` Logging stops at the first row not written, so ${rest === 1 ? 'the row' : `the ${rest} rows`} after it ${rest === 1 ? 'was' : 'were'} not sent.` : '')
+    + (LD.journalError ? ` Pulsar could not check what was logged (${LD.journalError}), so these rows and Undo may be out of date: open Log the day again.` : '');
   return `<div class="rv-res${failed.length ? ' warn' : ''}" tabindex="-1" role="status"><p>${head}</p>
-    ${LD.undoAsk ? `<p>Delete the ${n} ${n === 1 ? 'entry' : 'entries'} this run logged? ${n === 1 ? 'It goes' : 'They go'} to Productive's Recycle Bin.</p>
+    ${LD.undoAsk ? `<p>Delete the ${n} ${n === 1 ? 'entry' : 'entries'} just logged? ${n === 1 ? 'It goes' : 'They go'} to Productive's Recycle Bin.</p>
       <div class="btnrow"><button type="button" class="btn bordered sm" id="ld-undo-no">Cancel</button><button type="button" class="btn danger sm" id="ld-undo-yes">Delete the ${n}</button></div>`
     : `<div class="btnrow">${refused + left ? `<button type="button" class="btn bordered sm" id="ld-retry">Send the ${refused + left} ticked again</button>` : ''}
-      ${n ? `<button type="button" class="btn bordered sm" id="ld-undo">Undo this run (${n})</button>` : ''}</div>`}</div>`;
+      ${n ? `<button type="button" class="btn bordered sm" id="ld-undo">Undo ${n === 1 ? 'the entry' : `the ${n} entries`} just logged</button>` : ''}</div>`}</div>`;
 }
 async function undoRun() {
   LD.undoAsk = false; LD.writing = true; LD.undoing = true; LD.writeCount = LD.undo.length; renderReview();
@@ -802,6 +802,6 @@ async function undoRun() {
   LD.writing = false; LD.undoing = false;
   renderReview(); render();
   refreshLogged().then(() => renderReview());
-  toast(left.length ? `Undo deleted ${deleted} and left ${left.length}: ${left.join('; ')}.`
-                    : `Undone: the ${deleted} ${deleted === 1 ? 'entry' : 'entries'} this run logged ${deleted === 1 ? 'was' : 'were'} deleted.`, !!left.length);
+  toast(left.length ? `Undo deleted ${deleted}; ${left.length} could not be deleted: ${left.join('; ')}.`
+                    : `Undone: the ${deleted} ${deleted === 1 ? 'entry' : 'entries'} just logged ${deleted === 1 ? 'was' : 'were'} deleted.`, !!left.length);
 }

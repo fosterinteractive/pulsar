@@ -141,7 +141,7 @@ new MutationObserver(() => fillIcons()).observe(document.documentElement, {child
 /* a file from the API (it needs the token, so a plain link cannot fetch it) */
 async function downloadFromAPI(path, fallbackName) {
   const r = await fetch(path, {headers: withSession()});
-  if (!r.ok) { toast(`Download failed (HTTP ${r.status}).`, true); return; }
+  if (!r.ok) { toast('Download failed: Pulsar did not send the file. Try again.', true); return; }
   const name = (r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/)?.[1] || fallbackName;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(await r.blob()); a.download = name;
@@ -318,11 +318,11 @@ async function callJSON(path, opts) {
   if (signedOut) return {...SIGNED_OUT};
   let r;
   try { r = await fetch(path, {...(opts || {}), headers: withSession((opts || {}).headers)}); }
-  catch (e) { return {error: 'Pulsar is not responding: ' + e.message}; }
+  catch (e) { return {error: 'Pulsar is not responding. If it lasts, quit Pulsar and open it again.'}; }
   let data = null;
   try { data = await r.json(); } catch (e) { /* not JSON: said below */ }
   if (r.status === 401 && data?.signIn) { showSignIn(); return {...SIGNED_OUT}; }
-  if (!data || typeof data !== 'object') return {error: `The server answered ${r.status} without data.`};
+  if (!data || typeof data !== 'object') return {error: 'Pulsar sent an answer this page could not read. Try again.'};
   return data;
 }
 /* "3 min ago" beside ↻: when what the view shows was last read from Productive (the Day: the day's entries, dayRead;

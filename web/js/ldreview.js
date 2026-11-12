@@ -175,7 +175,7 @@ async function sgAccept(s) {
   const r = sgRowFor(s);
   // a split or a length under the shortest entry, from a review made before that rule: never applied
   if ((s.kind === 'split' && s.split.some(p => p.minutes < minEntry())) || (s.kind === 'minutes' && s.minutes < minEntry())) {
-    toast(`That would make an entry under ${minEntry()} minutes, which Productive does not take: nothing changed.`, true); return;
+    toast(`That would make an entry under ${minEntry()} minutes, which Pulsar does not log: nothing changed.`, true); return;
   }
   if (s.kind === 'extend') return sgExtend(s, r, s);
   if (s.kind === 'create_task') return sgCreate(s, r);

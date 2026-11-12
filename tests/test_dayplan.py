@@ -467,7 +467,7 @@ class PlannerTest(unittest.TestCase):
         # a link to a task of a project the repository is not logged to
         [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600, tasks=["55"])]), ctx)["entries"]
         self.assertEqual((e["taskId"], e["source"], e["confidence"], e["checked"]), ("55", "link", "low", False))
-        self.assertIn("repo is not logged to Globex", e["why"])
+        self.assertIn("you have not logged repo work to Globex", e["why"])
         # a task taken from another entry of the same session today, in another repository
         rows = [row(540, 600), row(700, 760, project="elsewhere")]
         first, second = dayplan.plan(day(items=[work(540, 600), work(700, 760)], rows=rows), ctx)["entries"]
@@ -1166,7 +1166,7 @@ class WriteTest(unittest.TestCase):
         with mock.patch.object(dayplan, "mark", mark), mock.patch("pulsar.logbook.record"):
             got = server.api_log(self.body())
         self.assertEqual(got["created"], {"id": "501"})  # never "not logged": it is in Productive
-        self.assertIn("journal", got["warning"])
+        self.assertIn("could not keep a record of it", got["warning"])
         server._just_logged.clear()
         with self.assertRaises(ValueError):  # the row stays "sending": never sent again
             server.api_log(self.body(run="ld-2026-11-04-feedbeef"))

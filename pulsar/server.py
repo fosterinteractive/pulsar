@@ -326,7 +326,7 @@ def validate(body: dict) -> dict:
         if key in body:
             v = str(body[key] or "").strip()
             if v and not is_id(v):
-                raise ValueError(f"{key.replace('_', ' ')} is a number")
+                raise ValueError(f"The {'organization' if key == 'org_id' else 'person'} ID is a number.")
             out[key] = v
     return out
 
@@ -787,7 +787,7 @@ def api_settings(body: dict) -> dict:
     changes = validate(body)
     token = str(body.get("token") or "").strip()
     if token and not config.TOKEN_RE.match(token):  # check before anything is removed or replaced
-        raise ValueError("That does not look like a Productive token (letters, digits, - and _ only).")
+        raise ValueError("That does not look like a Productive API token (letters, digits, - and _ only).")
     before = config.load()
     connection = bool(token or body.get("remove_token")) or any(
         k in changes and changes[k] != before.get(k) for k in ("productive_source", "org_id", "person_id"))
@@ -1109,7 +1109,8 @@ def new_task_source(date: str, s: dict):
             logbook.record("learn", f"Recent tasks could not be read: {exc}", kind="warning", once_per=600)
             return None
         except Exception as exc:  # anything else is a bug: said as one
-            logbook.record("learn", f"Reading recent tasks: {type(exc).__name__}: {exc}", kind="warning", once_per=600)
+            logbook.record("learn", f"Recent tasks could not be read, because of a fault in Pulsar ({type(exc).__name__}: "
+                           f"{exc}).", kind="warning", once_per=600)
             return None
         _fresh[key] = (time.time(), got)
         for old in sorted(_fresh, key=lambda k: _fresh[k][0])[:-4]:
@@ -1129,7 +1130,8 @@ def history_in_background(date: str, s: dict) -> None:
             history_rows(date, s, days=learn.LEARN_DAYS)
             new_task_source(date, s)  # read with the history, so the second ask has both
         except Exception as exc:  # a hint for Likely: the page asks again and gets the rows without learned tasks
-            logbook.record("learn", f"Reading your history from Productive: {type(exc).__name__}: {exc}", kind="warning")
+            logbook.record("learn", f"Your earlier entries could not be read from Productive ({type(exc).__name__}: {exc}).",
+                           kind="warning")
     threading.Thread(target=run, daemon=True, name="pulsar-history").start()
 
 
@@ -1176,7 +1178,7 @@ def meeting_tasks(meeting: dict, past: list, rows: list, offered: list, skip: se
             if p["s"] >= last.get(best, (float("-inf"), ""))[0]:
                 last[best] = (p["s"], str(p.get("title") or ""))
     out = [{"taskId": t, "title": seen[t].get("task") or "", "project": seen[t].get("project") or "",
-            "why": f"logged during {n} of the last {len(same)} like it", "n": n, "of": len(same), "lastTitle": last[t][1]}
+            "why": f"logged in {n} of the last {len(same)} of these meetings", "n": n, "of": len(same), "lastTitle": last[t][1]}
            for t, n in sorted(counts.items(), key=lambda kv: -kv[1])]
     words = words_of(title, skip)
     # the projects of the work logged within an hour of it: a meeting about that client's work names its tasks
@@ -1294,7 +1296,8 @@ def api_task_places(q: dict) -> dict:
     try:
         found = productive.project_places(q["project"], s)
     except productive.ProductiveError as exc:
-        return {"parents": [], "lists": [], "pick": "", "error": f"Productive did not say where tasks go there: {exc}"}
+        return {"parents": [], "lists": [], "pick": "",
+                "error": f"Productive did not say where a task can go in this project: {exc}"}
     return newtask.places(found, q["date"], str(s.get("person_id") or ""))
 
 
@@ -1333,7 +1336,9 @@ def api_task_fields(q: dict) -> dict:
         try:
             return name, reads[name]()
         except Exception as exc:  # a proposal left empty, said so; the form still opens
-            logbook.record("new task", f"Could not read the {name} to propose: {exc}", kind="warning", once_per=600)
+            what = {"statuses": "the project's statuses", "services": "the project's services",
+                    "sizes": "the estimates of the project's tasks", "parent": "the parent task"}.get(name, name)
+            logbook.record("new task", f"Could not read {what} to propose: {exc}", kind="warning", once_per=600)
             return name, {"title": str(q.get("title") or "")[:200], "unread": True} if name == "parent" else None
     from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(3) as pool:  # one of Claude Code's four connection slots stays free
@@ -1441,9 +1446,9 @@ def api_task_create(body: dict) -> dict:
                                               "estimate": estimate}, s)
         except Exception as exc:
             if isinstance(exc, productive.ProductiveUnclear) or not isinstance(exc, productive.ProductiveError):
-                _just_created[key] = (time.time() + MAYBE_CREATED, "Productive did not say whether this task was "
-                                      "created a moment ago, so it may exist. Search for it in the task list before "
-                                      "creating it again.")
+                _just_created[key] = (time.time() + MAYBE_CREATED, "Productive's answer a moment ago did not say "
+                                      "whether this task was created, so it may exist. Search for it in the task list "
+                                      "before creating it again.")
             raise
         _just_created[key] = (time.time() + JUST_CREATED, "This task was created a moment ago. Search for it in the "
                               "task list before creating it again.")
@@ -1674,7 +1679,7 @@ def api_entry_delete(body: dict) -> dict:
             made = {x["id"]: x for x in dayplan.undo_ids(dayplan.journal(), str(run))}
             x = made.get(str(body.get("id") or ""))
             if not x:
-                raise ValueError("That entry was not created by this Log the day run, so Undo leaves it alone.")
+                raise ValueError("That entry was not logged by this Log the day, so Undo leaves it alone.")
             try:
                 mine, _ = _own_entry(body, s)
             except EntryGone:
@@ -1687,8 +1692,8 @@ def api_entry_delete(body: dict) -> dict:
             if now != (x["start"], int(x["minutes"]), str(x["taskId"] or "")):
                 if not body.get("dry"):
                     dayplan.mark_undone(str(run), x["id"], "changed")
-                return {"left": x["id"], "why": "it was changed after this run logged it; delete it from its card if "
-                                                "you mean to"}
+                return {"left": x["id"], "why": "it was changed after Log the day logged it; delete it from its card "
+                                                "if you mean to"}
         if body.get("dry"):
             return {"dry": True, "wouldDelete": mine["id"]}
         productive.delete_entry(mine["id"], s)
@@ -1903,7 +1908,7 @@ def _log_pieces(body: dict, s: dict, date: str, a: float, b: float, task_id: str
             if not created:
                 return {**got, "pieces": pieces, "changed": True}
             return {"created": created, "pieces": pieces, "notLogged": pieces[len(created):],
-                    "why": "it would now overlap " + "; ".join(f"{o['start']} {o['project']}" for o in got["overlap"])}
+                    "why": "it would now overlap " + "; ".join(f"{o['start']} {o['project']}" for o in got["overlap"]) + "."}
         _just_logged[key] = time.time()
         created.append(got["created"])
     return {"created": created, "pieces": pieces}
@@ -1954,7 +1959,8 @@ def _log_checked(body: dict, s: dict, date: str, begin, minutes: int, task_id: s
         note("refused", reason=str(exc))
         raise
     except BaseException as exc:  # anything else after sending: it may have happened, and is said so, never "not logged"
-        note("unknown", reason=f"{type(exc).__name__}: {exc}")
+        note("unknown", reason=f"No clear answer from Productive ({type(exc).__name__}: {exc}), so the entry may or may not "
+                                "exist. Check the Logged column before logging again.")
         if isinstance(exc, Exception):
             raise productive.ProductiveUnclear(f"No clear answer from Productive ({type(exc).__name__}: {exc}), so the "
                                                "entry may or may not exist. Check the Logged column (it has been "
@@ -1964,17 +1970,17 @@ def _log_checked(body: dict, s: dict, date: str, begin, minutes: int, task_id: s
     try:
         note("logged", id=str(created.get("id") or ""))
     except Exception as exc:  # written all the same: the row stays "sending", never sent again, but Undo cannot offer it
-        logbook.record("log the day", f"Entry {created.get('id')} was logged, but the journal did not take it: "
+        logbook.record("log the day", f"Entry {created.get('id')} was logged, but Pulsar could not record it for Undo: "
                        f"{type(exc).__name__}: {exc}", kind="error")
-        return {"created": created, "warning": "Logged, but Pulsar's journal could not record it, so Undo will not "
+        return {"created": created, "warning": "Logged, but Pulsar could not keep a record of it, so Undo will not "
                                                "offer this entry."}
     return {"created": created}
 
 
 # ---- HTTP --------------------------------------------------------------------------------------------
 
-KEY_ONLY = ("This needs Pulsar's window: the key alone may only check that this is your Pulsar, quit Pulsar and "
-            "answer Pulsar's tools in Claude Code.")
+KEY_ONLY = ("Only Pulsar's window can do this. Pulsar's key alone allows three things: Pulsar's tools in Claude Code, "
+            "checking that this is your Pulsar, and quitting Pulsar.")
 
 
 def key_refusal(path: str, body: dict = None):
@@ -2140,7 +2146,8 @@ class Handler(BaseHTTPRequestHandler):
             return  # the browser left before the answer: not an error
         except Exception as exc:  # shown in the page, the server keeps running
             logbook.record(f"GET {url.path}", f"{type(exc).__name__}: {exc}", detail=traceback.format_exc())
-            return self.send_json({"error": f"{type(exc).__name__}: {exc}"}, 500)
+            return self.send_json({"error": f"Pulsar hit an error it did not expect ({type(exc).__name__}: {exc}). The error "
+                                            "log (Settings > Updates) has the details."}, 500)
 
     def do_POST(self):
         if not self.local():
@@ -2167,7 +2174,7 @@ class Handler(BaseHTTPRequestHandler):
         if length < 0:
             return self.send_json({"error": "bad Content-Length"}, 400)
         if length > 65536:
-            return self.send_json({"error": "too large"}, 413)
+            return self.send_json({"error": "Too much to send to Pulsar at once (over 64 KB)."}, 413)
         try:
             body = json.loads(self.rfile.read(length) or b"{}")
             if not isinstance(body, dict):
@@ -2269,7 +2276,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         except Exception as exc:  # never drop the connection: say what went wrong
             logbook.record(f"POST {urlparse(self.path).path}", f"{type(exc).__name__}: {exc}", detail=traceback.format_exc())
-            return self.send_json({"error": f"{type(exc).__name__}: {exc}", "unclear": True}, 500)
+            return self.send_json({"error": f"Pulsar hit an error it did not expect ({type(exc).__name__}: {exc}), so this "
+                                            "may or may not have happened. The error log (Settings > Updates) has the "
+                                            "details.", "unclear": True}, 500)
 
     def google_callback(self, url):
         """Google sends the browser back here after the person allows Pulsar (or does not). The request arrives as a

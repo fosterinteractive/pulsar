@@ -549,24 +549,24 @@ def validate(raw: list, plan_rows: list, known: dict, logged: list = ()) -> tupl
             continue
         row = str(s.get("row") or "")
         if row and row not in rows:
-            dropped.append(f"no row {row[:12]}")
+            dropped.append(f"a row not in the plan ({row[:12]})")
             continue
         why, bad = _say(s.get("why"), 140)
         if bad:
-            dropped.append(f"why: {bad}")
+            dropped.append(f"its reason had {bad}")
             continue
         k = s["kind"]
         item = {"row": row, "kind": k, "why": why, "source": "claude", "sure": False}
         r = rows.get(row)
         if k in ("task", "service", "minutes", "split", "untick", "extend") and not r:
-            dropped.append(f"{k} with no row")
+            dropped.append(f"a change with no row ({k})")
             continue
         if k == "create_task":
             title, bad = _text(s.get("title"), 140, allow_empty=False)
             desc, bad2 = _text(s.get("description"), 300)
             project, bad3 = _say(s.get("project"), 80, allow_empty=False)
             if bad or bad2 or bad3:
-                dropped.append(f"create_task: {bad or bad2 or bad3}")
+                dropped.append(f"a new task ({bad or bad2 or bad3})")
                 continue
             parent = str(s.get("parentTaskId") or "")
             item.update(title=title, description=desc, project=project,
@@ -575,18 +575,18 @@ def validate(raw: list, plan_rows: list, known: dict, logged: list = ()) -> tupl
         elif k == "question":
             q, bad = _say(s.get("question"), 200, allow_empty=False)
             if bad:
-                dropped.append(f"question: {bad}")
+                dropped.append(f"a question ({bad})")
                 continue
             answers = []
             for a in (s.get("answers") or [])[:3]:
                 if not isinstance(a, dict) or a.get("kind") not in ANSWERS:
-                    dropped.append("answer: not an answer")
+                    dropped.append("an answer Pulsar could not read")
                     continue
                 label, bad = _say(a.get("label"), 40, allow_empty=False)
                 fields, why_not = ({}, "") if a["kind"] == "keep" else _change(a["kind"], a, r, known, entries) \
                     if r else (None, "a change with no row")
                 if bad or fields is None:
-                    dropped.append(f"answer: {bad or why_not}")
+                    dropped.append(f"an answer ({bad or why_not})")
                     continue
                 answers.append({"label": label, "kind": a["kind"], **fields})
             item.update(question=q, answers=answers)
@@ -631,9 +631,9 @@ def _change(k: str, s: dict, r: dict, known: dict, entries: dict) -> tuple:
     if k == "extend":
         x = entries.get(str(s.get("entryId") or ""))
         if not x or not next_to(x, r):
-            return None, "extend: no entry logged right next to the row"
+            return None, "no entry logged right next to the row"
         return {"entryId": str(x["id"]), "entryTask": x.get("task") or "", "entryS": x["s"], "entryE": x["e"]}, ""
-    return None, f"{k}: not a change"
+    return None, f"not a change ({k})"
 
 
 def next_to(x: dict, r: dict) -> bool:

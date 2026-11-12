@@ -364,16 +364,23 @@ def safe_why(why: str) -> str:  # kept for callers and tests: the same rule
 ERRORS = [
     ("refused claude code's token", "Productive refused Claude Code's token: it has expired or was revoked. Open "
                                     "Pulsar's Settings."),
-    ("refused the token", "Productive refused Pulsar's token. Open Pulsar's Settings."),
+    ("refused the api token", "Productive refused the Productive API token saved in Pulsar. Paste a new one in "
+                              "Pulsar's Settings."),
+    ("refused the token", "Productive refused the Productive API token saved in Pulsar. Paste a new one in Pulsar's "
+                          "Settings."),
     ("may or may not", "No clear answer from Productive, so the entry may or may not exist. Check the Logged column in "
                        "Pulsar; Pulsar will not send it again."),
     ("never heard back", "This entry was sent before and Pulsar never heard back. Check the Logged column; Pulsar "
                          "will not send it again."),
     ("not sent twice", "This entry was logged already. It is not sent twice."),
     ("logged a moment ago", "This entry was logged a moment ago. Check the Logged column before logging it again."),
-    ("journal cannot be read", "Log the day's journal cannot be read, so Pulsar writes nothing from Claude Code. See "
-                               "Pulsar's error log (Settings > Updates)."),
-    ("needs its run and row", "Pulsar could not file this run in its journal."),
+    ("journal cannot be read", "Pulsar cannot read its record of what Log the day already sent, so it writes nothing "
+                               "from Claude Code. See Pulsar's error log (Settings > Updates)."),
+    ("needs its run and row", "Pulsar could not keep a record of this run."),
+    ("could not keep track of this row", "Pulsar could not keep track of this row, so nothing was sent."),
+    ("did not recognise this log the day", "Pulsar did not recognise this Log the day, so nothing was sent."),
+    ("an entry is at least", "An entry is at least 10 minutes: make it longer, or add these minutes to the entry of "
+                             "the same task next to it."),
     ("read-only", "Pulsar runs read-only: nothing was written."),
     ("preview does not write", "Pulsar Preview does not write to Productive unless its Settings allow it: nothing was "
                                "written."),
@@ -390,6 +397,7 @@ ERRORS = [
     ("did not list the services", "Productive did not list the task's services."),
     ("did not list its services", "Productive did not list the task's services."),
     ("did not return that task", "Productive did not return that task."),
+    ("services could not be read", "Productive did not give that task's services."),
     ("did not list the project", "Productive did not list the project's tasks."),
     ("did not list tasks", "Productive did not list tasks."),
     ("pick a task and a service", "Pick a task and a service."),
@@ -857,7 +865,8 @@ def pulsar_session(args: dict) -> dict:
     warnings: list = []
     lk = got["likely"]
     if lk.get("error") or lk.get("disabled"):
-        raise ToolError("Pulsar's Likely column is " + ("switched off." if lk.get("disabled") else error_out(lk["error"])))
+        raise ToolError("Pulsar's Likely column " + ("is switched off." if lk.get("disabled") else
+                                                     "could not be read: " + error_out(lk["error"])))
     entries = _entries(got["entries"], warnings)
     every = (lk.get("entries") or []) + (lk.get("background") or [])
     mine = [r for r in lk.get("entries") or [] if sid in (r.get("sessions") or [])]
@@ -1345,8 +1354,8 @@ def pulsar_log(args: dict) -> dict:
             results.append(_preview(e, {"status": "logged",
                                         "entryId": str((got["created"] or {}).get("id") or "") if ID.match(
                                             str((got["created"] or {}).get("id") or "")) else "",
-                                        **({"warning": "Logged, but Pulsar's journal could not record it, so Undo will "
-                                                       "not offer this entry."} if got.get("warning") else {})}))
+                                        **({"warning": "Logged, but Pulsar could not keep its own record of it, so "
+                                                       "Undo will not offer this entry."} if got.get("warning") else {})}))
             continue
         if got.get("unclear") or int(got.get("_status") or 0) >= 500:  # sent, and no clear answer came back
             results.append(_preview(e, {"status": "not known",
@@ -1368,8 +1377,8 @@ def pulsar_log(args: dict) -> dict:
     done = sum(1 for r in results if r["status"] == "logged")
     return {"date": date, "written": done, "of": len(held["entries"]), "results": results,
             "stopped": done < len(held["entries"]),
-            "undo": ("Pulsar's journal has this run, marked from Claude Code, and the Logged column shows each entry "
-                     "as from Claude Code; delete one there to take it back.") if done else ""}
+            "undo": ("Pulsar keeps a record of this run, and the Logged column shows each entry as from Claude Code; "
+                     "delete one there to take it back.") if done else ""}
 
 
 # ---- pulsar_status (Pulsar's half: the proxy adds its own) ------------------------------------------------------
@@ -1455,6 +1464,7 @@ def call(tool: str, body) -> tuple:
         return 400, {"error": str(exc)}
     except Exception as exc:  # a fault in Pulsar: logged, said without any data
         logbook.record(f"Claude Code: {tool}", f"{type(exc).__name__}: {exc}", detail=traceback.format_exc())
-        return 500, {"error": f"{type(exc).__name__} in {tool}"}
+        return 500, {"error": f"Pulsar failed on an error of its own in {tool}; its error log (Settings > Updates) "
+                              "has the details."}
     finally:
         _ctx.session, _ctx.folder, _ctx.client, _ctx.ignore = ("", "", ""), "", "", False

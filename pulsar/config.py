@@ -245,9 +245,10 @@ def _keep_copy(text: str, why: str) -> None:
     try:
         write_atomic(path, text)
     except OSError:
-        name = "nowhere (the copy could not be written)"
-    logbook.record("settings", f"settings.json {why}. Those settings are back to their defaults; the file as it was "
-                               f"is kept as {name} in {CONFIG_DIR}.", kind="warning")
+        name = ""
+    kept = (f"The file as it was is kept as {name} in {CONFIG_DIR}." if name else
+            "A copy of the file as it was could not be written.")
+    logbook.record("settings", f"{why}. {kept}", kind="warning")
 
 
 # What Pulsar Preview does not take from Pulsar's settings when it starts with none of its own: the update reminder,
@@ -293,7 +294,7 @@ def _load() -> dict:
     except ValueError:
         saved = None
     if not isinstance(saved, dict):
-        _keep_copy(text, "could not be read as settings")
+        _keep_copy(text, "Pulsar could not read its settings file, so every setting is back to its default")
         return out
     bad = []
     for key in DEFAULTS:
@@ -309,7 +310,8 @@ def _load() -> dict:
         else:
             bad.append(key)
     if bad:
-        _keep_copy(text, "had values of the wrong kind (" + ", ".join(bad) + ")")
+        _keep_copy(text, "Some settings had values Pulsar cannot use (" + ", ".join(bad) + "), so those are back to "
+                         "their defaults")
     return out
 
 
@@ -409,14 +411,14 @@ def get_token() -> str | None:
 
 
 def _read_token() -> str | None:
-    return _read_secret(KEYCHAIN_ACCOUNT, TOKEN_FILE, "Productive token")
+    return _read_secret(KEYCHAIN_ACCOUNT, TOKEN_FILE, "Productive API token")
 
 
 def set_token(token: str) -> None:
     token = token.strip()
     if not TOKEN_RE.match(token):
-        raise ValueError("That does not look like a Productive token (letters, digits, - and _ only).")
-    _write_secret(KEYCHAIN_ACCOUNT, TOKEN_FILE, token, "token")  # refused in a read-only run: the cache stays
+        raise ValueError("That does not look like a Productive API token: it has only letters, digits, - and _.")
+    _write_secret(KEYCHAIN_ACCOUNT, TOKEN_FILE, token, "Productive API token")  # refused in a read-only run: the cache stays
     _token_cache[2] = False
 
 
@@ -514,13 +516,14 @@ def _read_secret(account: str, path: str, what: str) -> str | None:
         except subprocess.TimeoutExpired:  # a keychain waiting on a dialog nobody sees: say so, do not break the page
             keychain_timed_out()
             from . import logbook
-            logbook.record("keychain", f"The keychain did not answer within 15 s for the {what}.", kind="warning")
+            logbook.record("keychain", f"The macOS keychain did not give Pulsar the {what} within 15 seconds. It may "
+                                       "be locked, or waiting on a dialog.", kind="warning")
             return None
         if run.returncode not in (0, 44):  # 44: no such item; anything else is a keychain that said no (locked, denied)
             from . import logbook
-            logbook.record("keychain", f"The keychain did not give Pulsar its {what} (security exit "
-                                       f"{run.returncode}: {run.stderr.strip()[:200]}). Unlock the login keychain, or "
-                                       "allow Pulsar when macOS asks.", kind="warning", once_per=3600)
+            logbook.record("keychain", f"The macOS keychain did not give Pulsar the {what}. Unlock the login "
+                                       "keychain, or allow Pulsar when macOS asks.", kind="warning",
+                           detail=f"security exit {run.returncode}: {run.stderr.strip()[:200]}", once_per=3600)
         return run.stdout.strip() or None
     try:
         with open(path, encoding="utf-8") as fh:
@@ -543,7 +546,8 @@ def _write_secret(account: str, path: str, value: str, what: str) -> None:
         cmd = f'add-generic-password -U -s {KEYCHAIN_SERVICE} -a {account} -w "{value}"\n'
         run = subprocess.run(["/usr/bin/security", "-i"], input=cmd, capture_output=True, text=True, timeout=15)
         if run.returncode != 0 or _read_secret(account, path, what) != value:
-            raise RuntimeError(f"Could not save the {what} in the keychain: " + (run.stderr or run.stdout).strip()[:200])
+            raise RuntimeError(f"Pulsar could not save the {what} in the macOS keychain: "
+                               + (run.stderr or run.stdout).strip()[:200])
         return
     ensure_dirs()
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)

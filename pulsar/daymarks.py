@@ -99,7 +99,7 @@ def change(date: str, done=None, add=None, remove=None, undone: bool = False, no
     decides again), add or remove a "not work" span [a, b), mark an entry of that day not an example (nolearn: its
     id) or an example again (learn: its id)."""
     if not DATE.fullmatch(date or ""):
-        raise ValueError("date=YYYY-MM-DD")
+        raise ValueError("That is not a date.")
     with _lock:
         doc = _read()
         m = clean(doc.get(date) or {})
@@ -107,20 +107,20 @@ def change(date: str, done=None, add=None, remove=None, undone: bool = False, no
             m.pop("done", None)
         elif done is not None:
             if not isinstance(done, bool):
-                raise ValueError("done is true or false")
+                raise ValueError("A day is either done or not done.")
             m["done"] = done
         if add is not None:
             if not merge([add]):
-                raise ValueError("a span [start, end) in minutes of the day")
+                raise ValueError("That is not a stretch of time within the day.")
             m["notWork"] = merge((m.get("notWork") or []) + merge([add]))
         if remove is not None:
             r = merge([remove])
             if not r:
-                raise ValueError("a span [start, end) in minutes of the day")
+                raise ValueError("That is not a stretch of time within the day.")
             m["notWork"] = cut(m.get("notWork") or [], *r[0])
         for v in (nolearn, learn):
             if v is not None and not (isinstance(v, str) and ENTRY_ID.fullmatch(v)):
-                raise ValueError("an entry id")
+                raise ValueError("That is not an entry Pulsar can mark.")
         if nolearn is not None:
             m["noLearn"] = (m.get("noLearn") or []) + [nolearn]
         if learn is not None:

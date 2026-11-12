@@ -129,7 +129,7 @@
         const day = new Date().toISOString().slice(0, 10);
         if (said !== day) {
           try { localStorage.setItem('pulsar-app-offer', day); } catch (e) {}
-          setTimeout(() => toast(`A new Pulsar app is ready: Settings, Updates, ${SHELL ? 'Update and restart' : 'Update the app'}.`), 2500);
+          setTimeout(() => toast(`A new Pulsar app is ready. To install it: Settings > Updates > ${SHELL ? 'Update and restart' : 'Update the app'}.`), 2500);
         }
       }
       return out;

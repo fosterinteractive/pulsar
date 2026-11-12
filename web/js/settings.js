@@ -245,7 +245,7 @@ function paintAw(a = awState) {
   const m = +form.elements.away_after.value || 15, st = $('#aw-timeout'), long = a.seconds != null && a.seconds > m * 60;
   const off = a.seconds != null && a.seconds !== m * 60, sync = CONFIG?.preview ? 'Fix sets it' : 'Save or Fix sets it';
   st.classList.toggle('warn', !!(a.problem || off));
-  st.textContent = a.problem ? `Pulsar could not read ActivityWatch's AFK timeout in ${a.file}: ${a.problem}. It changes nothing there.`
+  st.textContent = a.problem ? `Pulsar could not read when ActivityWatch counts you as away (${a.file}): ${a.problem}. Pulsar changes nothing in that file.`
     : long ? `ActivityWatch counts you as away only after ${awMins(a.seconds)}, so pauses from ${m} minutes to ${awMins(a.seconds)} are not in its data. ${sync} to ${m} minutes.`
     : !off ? `ActivityWatch counts you as away after ${awMins(a.seconds)} too.`
     : `ActivityWatch counts you as away after ${awMins(a.seconds)}${a.fromFile ? '' : ' (its default)'}, Pulsar after ${m} minutes. ${sync} to ${m} minutes.`;
@@ -396,7 +396,7 @@ async function saveSettings(extra = {}) {
   // everywhere; a connection that now fails keeps it open, with the reason, so it can be fixed at once.
   reloadView();
   if (r.test && !r.test.ok) {
-    msg.className = 'msg warn'; msg.textContent = `Saved, but Productive: ${r.test.message}`;
+    msg.className = 'msg warn'; msg.textContent = `Saved, but the connection to Productive does not work. ${r.test.message}`;
     const st = $('#pd-status'); st.textContent = r.test.message; st.classList.add('warn');
     showTab('t-conn');
     return;
@@ -407,12 +407,12 @@ async function saveSettings(extra = {}) {
     return;
   }
   if (r.activitywatch && !r.activitywatch.ok) {  // Away after is saved; ActivityWatch did not follow (server.sync_activitywatch)
-    msg.className = 'msg warn'; msg.textContent = `Saved, but ActivityWatch: ${r.activitywatch.message}`;
+    msg.className = 'msg warn'; msg.textContent = `Saved. ${r.activitywatch.message}`;
     showTab('t-day');
     return;
   }
   dlg.close();
-  const aw = r.activitywatch?.changed ? ` ActivityWatch follows: away after ${r.config.awayAfter} minutes, and it was restarted.` : '';
+  const aw = r.activitywatch?.changed ? ` ActivityWatch now counts you as away after ${r.config.awayAfter} minutes too, and was restarted.` : '';
   toast((r.link ? `Settings saved. ${r.link.message}` : r.test ? `Settings saved. ${r.test.message}` : 'Settings saved.') + aw);
 }
 
@@ -511,8 +511,8 @@ function waitForVersion() {
     } catch (e) { /* still restarting */ }
     if (Date.now() - t0 > 60 * 1000) {
       clearInterval(waitingForVersion); warpRelease();
-      toast('Pulsar did not come back. Close it and open it again.', true);
-      const st = $('#update-status'); st.textContent = 'Pulsar did not come back. Close it and open it again.'; st.classList.add('warn');
+      toast('Pulsar did not restart after the update. Quit it and open it again.', true);
+      const st = $('#update-status'); st.textContent = 'Pulsar did not restart after the update. Quit it and open it again.'; st.classList.add('warn');
     }
   }, 1500);
 }

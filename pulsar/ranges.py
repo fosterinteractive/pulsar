@@ -281,7 +281,7 @@ def with_services(res: dict, ctx: dict, bookable) -> None:
             x["budget"], x["billable"] = svc.get("budget") or "", svc.get("billable")
         else:
             x["serviceProblem"] = "No service of this task takes time on this date" if not b.get("services") \
-                else "Pick its service in the dialog"
+                else "Several services: log it on its own to pick one"
     for g in res.get("groups") or []:
         if g.get("taskId") and not g.get("title") and g["taskId"] not in found:
             found[g["taskId"]] = bookable(g["taskId"])

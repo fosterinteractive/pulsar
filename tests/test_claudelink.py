@@ -398,7 +398,7 @@ class SessionNote(unittest.TestCase):
                     mock.patch.object(askclaude, "steps", lambda *a, **k: [{"typed": "fix", "reply": "Done."}]):
                 got.append(askclaude.note("2026-11-04", row, T0, history, run=run))
         self.assertEqual(got[0]["note"], "Eventsite pages show the right time zone again.")  # its own project
-        self.assertEqual((got[1]["note"], got[1]["why"]), ("", "the draft had a name from another project, so it was left out"))
+        self.assertEqual((got[1]["note"], got[1]["why"]), ("", "its draft was left out (a name from another project)."))
 
     def test_nothing_to_go_on_asks_nobody(self):
         row = {"s": 1000, "e": 1010, "project": "eventsite", "titles": ["Fix the event time zone"]}
@@ -417,7 +417,7 @@ class AskProductiveBoxTest(unittest.TestCase):
             html = fh.read()
         self.assertIn("f.claude_ask_productive.disabled = off;", code)
         self.assertIn("form.elements.ask_claude.addEventListener('change', paintAskProductive)", code)
-        self.assertIn('id="claude-ask-off" hidden>Waits for “Use Claude Code with Pulsar”', html)
+        self.assertIn('id="claude-ask-off" hidden>Works only while “Use Claude Code with Pulsar” is on.', html)
 
 
 if __name__ == "__main__":

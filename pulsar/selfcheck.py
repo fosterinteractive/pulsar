@@ -347,8 +347,9 @@ def start(s: dict | None = None) -> bool:
                            f"kept, {t['failed']} not whole; {t['trackerReads']} tracker reads, "
                            f"{t['productiveReads']} Productive requests.", kind="info", once_per=0)
         except Exception as exc:  # said in the tab and in Logs
-            logbook.record("self-check", f"{type(exc).__name__}: {exc}", kind="warning", once_per=600)
-            got["note"] = f"The check stopped ({type(exc).__name__}). Check again; the error log has the details."
+            logbook.record("self-check", "The self-check stopped on an error.", kind="warning",
+                           detail=f"{type(exc).__name__}: {exc}", once_per=600)
+            got["note"] = "The check stopped on an error. Check again; the error log (Settings > Updates) has the details."
         finally:
             with _lock:
                 _state.update(running=False, step="", last={**got, "at": datetime.now().isoformat(timespec="minutes")})

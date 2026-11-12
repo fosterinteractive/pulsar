@@ -110,7 +110,8 @@ def warm(date: str, settings: dict) -> None:
                         likely.keep_day(d, config.timezone_name(settings), got, settings)
                 _state["done"] += 1
         except Exception as exc:  # a hint: the suggestions just use fewer days
-            logbook.record("learn", f"Learning tasks from past days: {type(exc).__name__}: {exc}", kind="warning")
+            logbook.record("learn", f"Pulsar could not learn tasks from past days: {exc}", kind="warning",
+                           detail=type(exc).__name__)
         finally:
             _warming.release()
 
@@ -693,7 +694,8 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
                 elif row.get("k") and here in named:
                     work = [{**w, "carried": True} for w in named[here]]
             except (OSError, ValueError) as exc:  # the votes alone, as before
-                logbook.record("learn", f"Words of the work: {type(exc).__name__}: {exc}", kind="warning")
+                logbook.record("learn", f"Pulsar could not match what a session says to tasks: {exc}", kind="warning",
+                               detail=type(exc).__name__)
                 text = {}
             e["learned"] = first_offers(with_work(with_new(suggest(row, sess, repo, names, text=text, sr=sr), found),
                                                   work), *offers(places, said))
@@ -708,4 +710,5 @@ def annotate(proposal: dict, date: str, settings: dict, entries_before: list, en
                 e["learned"] = with_work(e.get("learned") or [], [{**w, "carried": True} for w in got[-1]])
         proposal["learning"] = dict(_state) if _state["of"] and _state["done"] < _state["of"] else None
     except Exception as exc:
-        logbook.record("learn", f"Suggesting tasks: {type(exc).__name__}: {exc}", kind="warning")
+        logbook.record("learn", f"Pulsar could not suggest tasks for the Likely rows: {exc}", kind="warning",
+                       detail=type(exc).__name__)

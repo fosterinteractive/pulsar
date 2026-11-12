@@ -324,7 +324,7 @@ class UndoTest(unittest.TestCase):
         with mock.patch.object(server.productive, "delete_entry", lambda i, s: self.deleted.append(i)):
             got = server.api_entry_delete({"id": "501", "date": DATE, "run": self.RUN})
         self.assertEqual(got["left"], "501")  # left alone, said, and no longer offered: Undo goes on with the rest
-        self.assertIn("changed after this run", got["why"])
+        self.assertIn("changed after Log the day", got["why"])
         self.assertEqual((self.deleted, self.undoable()), ([], []))
 
 

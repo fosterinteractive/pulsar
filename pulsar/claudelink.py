@@ -321,9 +321,10 @@ def disconnect(settings: dict) -> dict:
             problems.append(f"Pulsar could not remove itself from Claude Code: {out or 'no answer'}")
     if (added or denied) and servers is None:  # whether the other Pulsar still uses the rules is not known: they stay
         return {"ok": False, "rulesAdded": added, "deniesAdded": denied,
-                "message": " ".join(problems) or "Claude Code's ~/.claude.json could not be read, so Pulsar asked Claude "
-                                                 "Code to remove it and kept its rules (Pulsar Preview may use "
-                                                 "them). Switch this on and off again once Claude Code opens normally."}
+                "message": " ".join(problems) or "Claude Code's own settings could not be read, so Pulsar asked "
+                                                 "Claude Code to remove Pulsar and kept Pulsar's rules there (Pulsar "
+                                                 "Preview may use them). Switch this on and off again once Claude "
+                                                 "Code opens normally."}
     if (added or denied) and registered(other()) is not None:
         # The other Pulsar is still in Claude Code and counts on the same rules: they stay, and this copy keeps
         # them on its list, so it takes them back when it is switched off again once the other has gone. Productive's
@@ -354,7 +355,8 @@ def tidy_saved() -> None:
             config.update({"claude_rules_added": got["rulesAdded"]})
             logbook.record("claude code", got["message"], kind="warning", once_per=3600)
     except Exception as exc:  # a fault here is said in Logs; Pulsar starts anyway
-        logbook.record("claude code", f"Tidying Claude Code's rules failed: {type(exc).__name__}: {exc}", kind="warning")
+        logbook.record("claude code", "Pulsar could not tidy its rules in Claude Code's settings.", kind="warning",
+                       detail=f"{type(exc).__name__}: {exc}")
 
 
 def _managed() -> dict:

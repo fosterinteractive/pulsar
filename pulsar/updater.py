@@ -170,8 +170,9 @@ def _fetch(url: str, limit: int, timeout: float) -> bytes:
             raise  # larger than expected: the same from either way
         except Exception as exc:  # GitHub's API not answering: the public link may still
             from . import logbook
-            logbook.record("updater", f"GitHub's API did not answer for an update ({exc}); trying the public link.",
-                           kind="warning", once_per=3600)
+            logbook.record("updater", "GitHub did not answer through your GitHub sign-in, so Pulsar looked for the "
+                           "update through the public download instead.", kind="warning",
+                           detail=f"{type(exc).__name__}: {exc}", once_per=3600)
     return _anonymous(url, limit, timeout)
 
 
@@ -235,16 +236,16 @@ def self_test(copy: str) -> Optional[bool]:
             run = subprocess.run([sys.executable, "-E", "-s", "-B", os.path.join(copy, "pulsar.py"), "--self-test"],
                                  capture_output=True, text=True, timeout=60)
         except (subprocess.TimeoutExpired, OSError) as exc:
-            logbook.record("updater", f"The new version's self-test did not finish: {exc}", kind="warning")
+            logbook.record("updater", "The new version's own test did not finish.", kind="warning", detail=str(exc))
             return None
         if run.returncode == 0:
             return True
         if run.returncode == UNFINISHED:  # its own requests timed out: the copy may well be fine
-            logbook.record("updater", "The new version's self-test could not finish in time.", kind="warning",
+            logbook.record("updater", "The new version's own test could not finish in time.", kind="warning",
                            detail=(run.stdout + run.stderr)[-3000:])
             return None
-        logbook.record("updater", f"The new version failed its self-test (exit {run.returncode}, try {attempt} of 2).",
-                       detail=(run.stdout + run.stderr)[-3000:])
+        logbook.record("updater", f"The new version failed its own test (try {attempt} of 2).",
+                       detail=f"Exit status {run.returncode}.\n" + (run.stdout + run.stderr)[-3000:])
     return False
 
 
@@ -299,13 +300,16 @@ class Updater:
                         if hint:
                             return self._set("signin", hint)
                         from . import logbook
-                        logbook.record("updater", "The update address answers 404: the release is gone or the "
-                                       "repository is private and this copy cannot read it. No updates arrive until it is fixed.",
+                        logbook.record("updater", "Pulsar could not find its latest release on GitHub: the release "
+                                       "was removed, or the repository is private and this copy cannot read it. No "
+                                       "updates arrive until this is fixed: tell whoever maintains Pulsar.",
                                        kind="warning", once_per=86400)
                     return self._set("latest", f"No release of Pulsar is published yet; {__version__} is the latest.")
-                return self._set("failed", f"The update server answered HTTP {exc.code}.")
+                return self._set("failed", f"GitHub did not send the latest release (error {exc.code}). Pulsar "
+                                           "tries again within the hour.")
             except Exception as exc:
-                return self._set("failed", f"Could not reach the update server: {exc}")
+                return self._set("failed", "Pulsar could not reach GitHub to look for updates. Check your internet "
+                                           f"connection; Pulsar tries again within the hour. ({exc})")
             # Nothing from the manifest is believed, not even for what the page shows, until its signature checks out.
             try:
                 signature = fetch(self.manifest_url + ".sig", 4096, timeout=15)
@@ -362,7 +366,8 @@ class Updater:
                     return self._set("failed", f"The download of Pulsar {latest} did not match its checksum; nothing was changed.")
                 copy = unpack(data, latest, self.root)
             except Exception as exc:
-                return self._set("failed", f"Pulsar {latest} could not be downloaded: {exc}")
+                return self._set("failed", f"Pulsar {latest} could not be downloaded or unpacked, so it was not "
+                                           f"installed ({exc}).")
             passed = self_test(copy)
             if not passed:
                 shutil.rmtree(copy, ignore_errors=True)

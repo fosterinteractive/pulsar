@@ -108,7 +108,7 @@ def _key() -> str:
         with open(config.SECRET_FILE, encoding="utf-8") as fh:
             value = fh.read().strip()
     except OSError:
-        raise ToolError("Pulsar has not been set up for this user (no ~/.config/pulsar/secret). Open Pulsar once.")
+        raise ToolError("Pulsar has not been set up for this user of the Mac yet. Open Pulsar once.")
     if not re.fullmatch(r"[0-9a-f]{64}", value):
         raise ToolError("Pulsar's key file looks damaged. Open Pulsar once; it writes a new one.")
     return value
@@ -155,14 +155,14 @@ def _request(path: str, params: dict | None = None, body: dict | None = None, ke
         except Exception:
             got = {}
         if exc.code == 401:
-            raise ToolError("Pulsar refused the key. Is the Pulsar on this port another user's?")
+            raise ToolError("The Pulsar on this port did not let this session in: it may belong to another user of "
+                            "this Mac.")
         return {"error": _short(got.get("error") if isinstance(got, dict) else "") or f"HTTP {exc.code}",
                 "_status": exc.code}
     except (urllib.error.URLError, ConnectionError, TimeoutError, OSError, ValueError) as exc:
         if writes and not isinstance(getattr(exc, "reason", exc), ConnectionRefusedError):  # it was sent
             raise ToolError(NOT_KNOWN)
-        raise ToolError(f"Pulsar is not answering on 127.0.0.1:{_state['port']}. Open Pulsar, then ask again. "
-                        f"({type(getattr(exc, 'reason', exc)).__name__})")
+        raise ToolError(f"Pulsar is not answering on 127.0.0.1:{_state['port']}. Open Pulsar, then ask again.")
 
 
 def whoami_proof(key: str, port: int, nonce: str) -> str:

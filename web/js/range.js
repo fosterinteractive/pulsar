@@ -137,8 +137,8 @@ async function rangeLogSplit() {
     if (r.overlap) { stop = `${rgSpan(x)} overlaps ${r.overlap.map(o => `${o.start} ${dur(o.minutes)} ${o.project}`).join('; ')}`; break; }
     if (r.error || !r.created) {  // unclear: it may be in Productive, so it is never called "not logged"
       unclear = !!r.unclear;
-      stop = unclear ? `${rgSpan(x)}: no clear answer, it may be in Productive. Check the Logged column before logging again`
-        : `${rgSpan(x)} was not logged: ${r.error || 'no answer'}`;
+      stop = unclear ? `${rgSpan(x)}: Productive gave no clear answer, so it may be logged already. Check the Logged column before logging again`
+        : `${rgSpan(x)} was not logged: ${r.error || 'no reason given'}`;
       break;
     }
     x.done = true;
@@ -149,7 +149,7 @@ async function rangeLogSplit() {
   const done = res.split.filter(x => x.done), left = res.split.filter(x => !x.done);
   if (res.date === state.date) refreshLogged();
   suggestCache = null;
-  const said = `Logged ${done.length} of ${res.split.length}.${stop ? ` ${stop}.` : ' The rest wait for a tick, or a task.'}`;
+  const said = `Logged ${done.length} of ${res.split.length}.${stop ? ` ${stop}.` : ' The others are not ticked or have no task.'}`;
   if (mine !== logOpened || !logDlg.open) return toast(stop ? said : `Logged ${done.length} entries.`, !!stop);  // closed meanwhile
   if (!stop && !left.some(rgLoggable)) {
     logDlg.close();

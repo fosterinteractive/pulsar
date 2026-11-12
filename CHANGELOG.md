@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Messages say what happened and what to do, in plain words: no internal terms (run, journal, HTTP codes, error class names), the same name for the same thing (the Productive API token), and a refusal from Log the day goes in the error log too.
 - Log the day writes the parts of a split: Pulsar refused each one before sending it, so none was ever logged. A row that is not written now says why on its card and in the run's summary.
 - The Report has a Yesterday range, next to Today.
 - No suggestion makes an entry under 10 minutes: Claude's splits and lengths below it are left out (a 30-minute row had been split into 8 + 8 + 7 + 7 and none of it was written), a row under 10 minutes says so in the review, and the confirm step names such rows and waits for them to be fixed instead of stopping a run at the first one. After Log, the summary adds up and gives the reason a row was not written.

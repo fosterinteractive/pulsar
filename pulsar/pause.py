@@ -119,7 +119,7 @@ def restore(since, marked, was, now: float | None = None) -> dict:
     (`marked` taken off, `was` put back). Nothing when paused again already."""
     now = time.time() if now is None else now
     if isinstance(since, bool) or not isinstance(since, (int, float)) or not now - 8 * 86400 <= since <= now:
-        raise ValueError("since: when the pause began")
+        raise ValueError("This resume can no longer be undone.")
     with _lock:
         if "since" in _read():
             return state()

@@ -242,11 +242,11 @@
           <button type="button" class="btn sm bordered" id="claude-relink" hidden>Add Pulsar to Claude Code again</button>
           <h4 class="cu-h" id="claude-uses-h">What Claude does, and with which model</h4>
           <div class="cu-list" id="claude-uses" role="list" aria-labelledby="claude-uses-h"></div>
-          <p class="hint">Runs your own Claude Code, on your plan. Haiku is fastest and cheapest, Opus slowest and dearest; a run stops at its limit. Task picks with Sonnet cost about $0.10 to $0.25 a day.</p>
+          <p class="hint">Runs your own Claude Code, on your plan. Haiku is fastest and cheapest, Opus slowest and dearest. Each request to Claude stops at a cost cap that depends on the model. Task picks with Sonnet cost about $0.10 to $0.25 a day.</p>
           <p class="hint" id="claude-account"></p>
           <p class="hint" id="claude-deny">With the switch on, Claude Code's file tools are kept out of Pulsar's folders; a script can still read them unless <a href="https://code.claude.com/docs/en/sandboxing" target="_blank" rel="noopener noreferrer">Claude Code's sandbox</a> is on.</p>
           <label class="check"><input type="checkbox" name="claude_ask_productive"> Ask before any Claude Code session changes Productive</label>
-          <p class="hint warnish" id="claude-ask-off" hidden>Waits for “Use Claude Code with Pulsar”.</p>
+          <p class="hint warnish" id="claude-ask-off" hidden>Works only while “Use Claude Code with Pulsar” is on.</p>
           <p class="hint"><b>Every</b> Claude Code session on this Mac, not only Pulsar's, will ask you before it changes anything in Productive.</p>
         </section>
       </div>
@@ -341,7 +341,7 @@
     </div>
     <p class="msg" id="log-msg" role="status"></p>
     <div class="df"><button type="button" class="btn bordered" data-close>Cancel</button>
-      <button type="button" class="btn bordered" id="log-notwork" hidden title="Not work: it stays unlogged and stops showing as to log (this Mac only)">Not work</button>
+      <button type="button" class="btn bordered" id="log-notwork" hidden title="Mark this time as not work: it stays unlogged and no longer counts as time to log (this Mac only)">Not work</button>
       <button type="button" class="btn bordered" id="log-skip" hidden title="Leave this stretch unlogged for now and open the next one">Skip</button><button type="submit" class="btn primary" id="log-save" aria-keyshortcuts="Meta+Enter">Log in Productive</button>
       <button type="submit" class="btn bordered" id="log-next" title="Log, then open the next time not logged (⌘⇧↩)" aria-keyshortcuts="Meta+Shift+Enter">Log and next</button>
       <button type="submit" class="btn bordered" id="log-anyway" title="Log the whole time, over the entries already logged in it" hidden>Log anyway</button></div>

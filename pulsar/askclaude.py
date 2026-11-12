@@ -534,9 +534,10 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
             found, transient = {}, set(unknown)
             reasons = dict.fromkeys(unknown, str(exc))
         except Exception as exc:  # a fault here: said in Logs, and the answer is still shown without those tasks
-            logbook.record("ask claude", f"Naming the tasks Claude found failed: {type(exc).__name__}: {exc}")
+            logbook.record("ask claude", "Pulsar could not name the tasks Claude found in Productive.",
+                           detail=f"{type(exc).__name__}: {exc}")
             found, transient = {}, set(unknown)
-            reasons = dict.fromkeys(unknown, f"{type(exc).__name__}: {exc}")
+            reasons = dict.fromkeys(unknown, "an error in Pulsar, written to the error log")
         for tid, d in found.items():
             names[tid] = {"taskId": tid, "title": d.get("title") or "", "project": d.get("project") or ""}
         if transient:
@@ -617,7 +618,7 @@ def note(date: str, row: dict, t0: float, history: list = (), run=subprocess.run
     said = steps(t0, row.get("titles") or [], row["s"], row["e"])
     made = (row.get("commits") or [])[:10]
     if not said and not made:
-        return {"note": "", "why": "nothing in the session or the commits says what was done"}
+        return {"note": "", "why": "nothing in the session or the commits says what was done."}
     sig = (date, row["s"], row["e"], row.get("project"), len(said), len(made), said[-1]["reply"][:40] if said else "",
            model)
     with _lock:
@@ -655,7 +656,7 @@ def note(date: str, row: dict, t0: float, history: list = (), run=subprocess.run
     text, bad = guard_note(drafted)
     if text and foreign_name(text, _own_projects(row, history), [h.get("project") for h in history], _person()):
         text, bad = "", "a name from another project"
-    answer = {"note": text, "why": f"the draft had {bad}, so it was left out" if bad else "",
+    answer = {"note": text, "why": f"its draft was left out ({bad})." if bad else "",
               "cost": res.get("total_cost_usd")}
     with _lock:
         _notes[sig] = answer

@@ -465,7 +465,7 @@ class ReasonTest(unittest.TestCase):
     def test_a_refused_token_at_first_setup_says_so_not_org_id(self):
         with self.assertRaises(productive.ProductiveError) as caught:
             productive.rest_detect("t", get=lambda *a: (401, None))
-        self.assertIn("refused the token", str(caught.exception))
+        self.assertIn("refused the API token", str(caught.exception))
 
     def test_a_working_day_with_minutes_keeps_them(self):
         for day, hours in (("7 h 30 min", 7.5), ("8 h", 8.0), ("", None)):
@@ -1757,7 +1757,7 @@ class MeetingTasksTest(unittest.TestCase):
                    {"taskId": "8", "title": "Scrum notes - Dana", "project": "FI-PM"}]
         got = server.meeting_tasks({"uid": "scrum", "title": "Daily Scrum"}, past, rows, offered, skip={"dana"})
         self.assertEqual([(t["taskId"], t["why"]) for t in got],
-                         [("7", "logged during 2 of the last 3 like it"), ("8", "the title says “scrum”")])
+                         [("7", "logged in 2 of the last 3 of these meetings"), ("8", "the title says “scrum”")])
         self.assertEqual(got[0]["lastTitle"], "Daily Scrum")  # the latest earlier meeting it was logged in
         # the organizer renamed the series on the 3rd: the series' task says so, and Log the day starts it unticked
         past[1]["title"] = "Scrum (new room)"
@@ -3781,7 +3781,7 @@ class SilentFailureTest(unittest.TestCase):
                     productive.bookable_services("5", "2026-11-04", {"org_id": "1"})
                 self.assertIn(words, str(caught.exception))
                 if words != "deleted, or not visible to you":  # the connection: said by the Tasks box too
-                    self.assertNotIn("did not return that task", str(caught.exception))
+                    self.assertNotIn("services could not be read", str(caught.exception))
                     with mock.patch.object(server, "current_settings", lambda: {"org_id": "1"}):
                         self.assertIn(words, server.api_estimates({"ids": "5"})["error"])
 

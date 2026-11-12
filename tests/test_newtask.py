@@ -463,7 +463,7 @@ class DraftTest(unittest.TestCase):
                 {"task": "Hero images", "project": "P", "date": "2026-10-10"},
                 {"task": "Menu fixes from August", "project": "P", "date": "2026-08-20"}], "P", run=run)
         self.assertEqual((got["title"], got["description"]), ("Lists: numbering in Firefox", ""))
-        self.assertIn("description had a file path", got["why"])
+        self.assertIn("description was left out (a file path)", got["why"])
         [(argv, kw)] = runs
         self.assertEqual(argv[:3], ["/bin/claude-fake", "-p", "--model"])
         for flag in (["--model", "sonnet"], ["--tools", ""], ["--permission-mode", "dontAsk"], ["--setting-sources", ""],

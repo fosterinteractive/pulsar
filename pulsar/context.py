@@ -236,8 +236,8 @@ def store(date: str, items: list) -> None:
         config.write_atomic(_path(date), json.dumps({"format": FORMAT, "salt": salt_id(), **day_rows(items)},
                                                           separators=(",", ":")))
     except OSError as exc:
-        logbook.record("learn", f"Past windows could not be kept: {type(exc).__name__}: {exc}", kind="warning",
-                       once_per=3600)
+        logbook.record("learn", f"Pulsar could not save the windows of a past day it learns from: {exc}", kind="warning",
+                       detail=type(exc).__name__, once_per=3600)
         return
     lo = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%d")
     for f in os.listdir(DIR):
@@ -282,7 +282,8 @@ def warm(date: str, today: str, read_items) -> None:
                     store(d, items)
         except Exception as exc:  # a hint: the tasks outside Claude just come from fewer days
             _failed_at = time.time()
-            logbook.record("learn", f"Learning from past windows: {type(exc).__name__}: {exc}", kind="warning")
+            logbook.record("learn", f"Pulsar could not learn from the windows of past days: {exc}", kind="warning",
+                           detail=type(exc).__name__)
         finally:
             _warming.release()
     threading.Thread(target=run, daemon=True, name="pulsar-context").start()

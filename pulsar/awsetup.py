@@ -156,7 +156,9 @@ def read_timeout(path: str | None = None) -> dict:
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
     except (OSError, UnicodeDecodeError) as exc:
-        return {"seconds": None, "exists": True, "problem": f"it could not be read ({type(exc).__name__})"}
+        return {"seconds": None, "exists": True,
+                "problem": "it could not be read as text" if isinstance(exc, UnicodeDecodeError)
+                else f"it could not be read ({exc.strerror or 'no reason given'})"}
     found = scan(text)
     if found["problem"]:
         return {"seconds": None, "exists": True, "problem": found["problem"]}
@@ -335,7 +337,7 @@ def restart(base: str, run=None, fetch=None, sleep=time.sleep, clock=time.monoto
             break
         except Exception:
             if clock() > end:
-                return {"ok": False, "message": f"ActivityWatch was opened again but did not answer at {base} within "
+                return {"ok": False, "message": f"ActivityWatch was opened again but did not answer within "
                                                 f"{START_WAIT} seconds. Check its menu-bar icon."}
             sleep(1)
     end = clock() + START_WAIT
@@ -344,7 +346,7 @@ def restart(base: str, run=None, fetch=None, sleep=time.sleep, clock=time.monoto
             return {"ok": False, "message": "ActivityWatch runs again, but its AFK watcher did not start. Check its "
                                             "menu-bar icon: Modules, aw-watcher-afk."}
         sleep(1)
-    return {"ok": True, "message": "ActivityWatch was restarted and its AFK watcher runs."}
+    return {"ok": True, "message": "ActivityWatch was restarted and is recording again."}
 
 
 def fix(minutes: int, base: str, path: str | None = None, run=None, fetch=None, sleep=time.sleep,
@@ -372,9 +374,9 @@ def fix(minutes: int, base: str, path: str | None = None, run=None, fetch=None, 
         return {"ok": False, "changed": False, "message": f"Pulsar did not change {path}: {exc}"}
     try:
         done = restart(base, run, fetch, sleep, clock)
-    except (OSError, subprocess.SubprocessError) as exc:
-        done = {"ok": False, "message": f"Pulsar could not restart ActivityWatch ({type(exc).__name__}): quit it from "
-                                        "its menu-bar icon and open it again."}
+    except (OSError, subprocess.SubprocessError):
+        done = {"ok": False, "message": "Pulsar could not restart ActivityWatch. Quit it from its menu-bar icon and "
+                                        "open it again."}
     said = (f"ActivityWatch now counts you as away after {minutes} minutes (it was {_mins(edit['before'])}). Days "
             f"already recorded keep their breaks: this applies to new data only. Its file as it was is kept as "
             f"{os.path.basename(edit['backup'])}.")
@@ -458,7 +460,7 @@ def add_login(run=None) -> dict:
     LOGIN.update(at=time.time(), on=on)
     if not on:
         return {"ok": False, "on": False, "message": problem or "macOS did not add it. " + AUTOMATION}
-    return {"ok": True, "on": True, "message": f"Added: ActivityWatch ({app}) opens when you log in."}
+    return {"ok": True, "on": True, "message": "ActivityWatch is now in your Login Items: it opens when you log in."}
 
 
 def status(minutes: int) -> dict:
