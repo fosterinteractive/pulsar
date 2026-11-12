@@ -1213,7 +1213,9 @@ def api_meeting_tasks(q: dict) -> dict:
     try:
         offered = api_suggest({"date": date})
         offered = (offered.get("recent") or []) + (offered.get("assigned") or [])
-    except Exception:
+    except Exception as exc:  # fewer tasks offered for the meeting: said in the log
+        logbook.record("meetings", "Your recent and assigned tasks could not be read, so fewer tasks are offered for "
+                       "meetings.", kind="warning", detail=f"{type(exc).__name__}: {exc}", once_per=3600)
         offered = []
     skip = set(WORD.findall(str(s.get("person_name") or "").lower()))  # your own name is in many task titles
     return {"tasks": meeting_tasks(meeting, past, rows, offered, skip)}
@@ -1447,11 +1449,11 @@ def api_task_create(body: dict) -> dict:
         except Exception as exc:
             if isinstance(exc, productive.ProductiveUnclear) or not isinstance(exc, productive.ProductiveError):
                 _just_created[key] = (time.time() + MAYBE_CREATED, "Productive's answer a moment ago did not say "
-                                      "whether this task was created, so it may exist. Search for it in the task list "
-                                      "before creating it again.")
+                                      "whether this task was created, so it may exist. Search for it in the Log dialog's "
+                                      "task search before creating it again.")
             raise
         _just_created[key] = (time.time() + JUST_CREATED, "This task was created a moment ago. Search for it in the "
-                              "task list before creating it again.")
+                              "Log dialog's task search before creating it again.")
     _recent.clear()  # the dialog's lists read Productive again
     name = next((p["name"] for _, ps in list(_projects.values()) for p in ps if p["id"] == project), "")
     return {"task": {"taskId": created["taskId"], "title": title, "project": name, "projectId": project}}
@@ -2146,8 +2148,8 @@ class Handler(BaseHTTPRequestHandler):
             return  # the browser left before the answer: not an error
         except Exception as exc:  # shown in the page, the server keeps running
             logbook.record(f"GET {url.path}", f"{type(exc).__name__}: {exc}", detail=traceback.format_exc())
-            return self.send_json({"error": f"Pulsar hit an error it did not expect ({type(exc).__name__}: {exc}). The error "
-                                            "log (Settings > Updates) has the details."}, 500)
+            return self.send_json({"error": "Pulsar hit an error it did not expect. The error log (Settings > Updates) has "
+                                            "the details."}, 500)
 
     def do_POST(self):
         if not self.local():
@@ -2276,7 +2278,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         except Exception as exc:  # never drop the connection: say what went wrong
             logbook.record(f"POST {urlparse(self.path).path}", f"{type(exc).__name__}: {exc}", detail=traceback.format_exc())
-            return self.send_json({"error": f"Pulsar hit an error it did not expect ({type(exc).__name__}: {exc}), so this "
+            return self.send_json({"error": "Pulsar hit an error it did not expect, so this "
                                             "may or may not have happened. The error log (Settings > Updates) has the "
                                             "details.", "unclear": True}, 500)
 

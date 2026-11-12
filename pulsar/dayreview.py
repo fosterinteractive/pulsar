@@ -24,7 +24,7 @@ import subprocess
 from collections import defaultdict
 from datetime import datetime, timedelta
 
-from . import askclaude, claudeuses, config, productive
+from . import askclaude, claudeuses, config, logbook, productive
 
 # ---- periods in task titles ----------------------------------------------------------------------------------------
 
@@ -733,7 +733,8 @@ def review(day: str, doc: dict, plan_rows: list, run=subprocess.run, model: str 
         except subprocess.TimeoutExpired:
             raise ReviewError("Claude took too long to review the day. Try again later.") from None
         except OSError as exc:
-            raise ReviewError(f"Claude Code could not be started ({exc}).") from None
+            raise ReviewError(logbook.said("claude code", "Claude Code could not be started on this Mac. Check that it is installed: run "
+                                 "claude in Terminal.", exc)) from None
     finally:
         if mcp:
             try:
@@ -756,8 +757,9 @@ def review(day: str, doc: dict, plan_rows: list, run=subprocess.run, model: str 
         try:
             for tid, t in productive.task_details(unknown, settings, {}).items():
                 known[tid] = {"title": t.get("title") or "", "project": t.get("project") or ""}
-        except productive.ProductiveError:
-            pass
+        except productive.ProductiveError as exc:  # those suggestions are left out as unknown tasks: said in the log
+            logbook.record("log the day", "Productive did not give the names of the tasks Claude found, so Claude's "
+                           "suggestions with those tasks were left out.", kind="warning", detail=str(exc))
     sugg, dropped = validate(got["suggestions"], plan_rows, known, logged_of(doc))
     u = res.get("usage") or {}
     return {"suggestions": sugg, "dropped": dropped, "cost": res.get("total_cost_usd"),

@@ -308,13 +308,14 @@ class Updater:
                 return self._set("failed", f"GitHub did not send the latest release (error {exc.code}). Pulsar "
                                            "tries again within the hour.")
             except Exception as exc:
-                return self._set("failed", "Pulsar could not reach GitHub to look for updates. Check your internet "
-                                           f"connection; Pulsar tries again within the hour. ({exc})")
+                return self._set("failed", logbook.said("updater", "Pulsar could not reach GitHub to look for updates. Check your internet "
+                                           "connection; Pulsar tries again within the hour.", exc))
             # Nothing from the manifest is believed, not even for what the page shows, until its signature checks out.
             try:
                 signature = fetch(self.manifest_url + ".sig", 4096, timeout=15)
             except Exception as exc:  # not the same as a release without a valid signature: say what happened
-                return self._set("failed", f"The release's signature could not be downloaded ({exc}); nothing was changed.")
+                return self._set("failed", logbook.said("updater", "The release's signature could not be downloaded, so nothing was changed. "
+                                           "Pulsar tries again within the hour.", exc))
             if not any(verify(raw, signature, key) for key in public_keys()):
                 return self._set("failed", "The latest release is not signed with the release key, so it was ignored.")
             try:
@@ -366,8 +367,8 @@ class Updater:
                     return self._set("failed", f"The download of Pulsar {latest} did not match its checksum; nothing was changed.")
                 copy = unpack(data, latest, self.root)
             except Exception as exc:
-                return self._set("failed", f"Pulsar {latest} could not be downloaded or unpacked, so it was not "
-                                           f"installed ({exc}).")
+                return self._set("failed", logbook.said("updater", f"Pulsar {latest} could not be downloaded or unpacked, so it was not "
+                                           "installed. Pulsar tries again within the hour.", exc))
             passed = self_test(copy)
             if not passed:
                 shutil.rmtree(copy, ignore_errors=True)

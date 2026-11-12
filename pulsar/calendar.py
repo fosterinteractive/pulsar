@@ -46,7 +46,7 @@ import webbrowser
 from datetime import date, datetime, timedelta
 from typing import Optional, Tuple
 
-from . import __version__, config
+from . import __version__, config, logbook
 
 AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -238,7 +238,8 @@ def finish(query: dict) -> dict:
                                         "code_verifier": pending["verifier"]})
     if got != 200 or not doc.get("access_token"):
         return {"ok": False, "known": True,
-                "message": f"Google did not give Pulsar access ({_google_reason(got, doc)}). Start again from Settings."}
+                "message": logbook.said("calendar", "Google did not give Pulsar access. Start again from Settings.",
+                                        _google_reason(got, doc))}
     if SCOPE not in str(doc.get("scope") or "").split():
         return {"ok": False, "known": True,
                 "message": "Google Calendar was connected without permission to see your events (that box was left "
@@ -318,7 +319,9 @@ def _access_token(renew: bool = False) -> str:
             forget()
             raise CalendarError(LAPSED)
         if got != 200 or not doc.get("access_token"):
-            raise CalendarError(f"Google did not renew Pulsar's access to your calendar ({_google_reason(got, doc)}).")
+            raise CalendarError(logbook.said("calendar", "Google did not renew Pulsar's access to your calendar. Pulsar "
+                                             "tries again; if it keeps failing, connect Google Calendar again in "
+                                             "Settings.", _google_reason(got, doc)))
         if doc.get("refresh_token") and doc["refresh_token"] != refresh:
             config.set_google_token(doc["refresh_token"])
         _keep_access(doc)
@@ -368,7 +371,8 @@ def _api_problem(got: int, doc: dict) -> str:
         return "Pulsar's access does not include your calendar events. Disconnect and connect Google Calendar again."
     if got == 429 or "rateLimitExceeded" in reason:
         return "Google is limiting requests; Pulsar tries again in a few minutes."
-    return f"Google Calendar did not give the day's events ({reason})."
+    return logbook.said("calendar", "Google Calendar did not give the day's events. Pulsar tries again in a few "
+                                     "minutes.", reason)
 
 
 def _read(day: str, tz) -> dict:

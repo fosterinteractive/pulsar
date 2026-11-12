@@ -7,6 +7,8 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- A refusal from Productive gives its reason in words, never its raw answer; system errors (Claude Code, Google, updates) are said plainly, with the technical text in the error log. Failures that said nothing now say so: a Google sign-in left unfinished, Claude's picks that could not be shown, names Productive did not give.
+- Log the day shows an entry changed by hand after it was logged as logged, not as "no answer". "Dry run" is now "Check first" and names the task and service instead of their numbers.
 - Messages say what happened and what to do, in plain words: no internal terms (run, journal, HTTP codes, error class names), the same name for the same thing (the Productive API token), and a refusal from Log the day goes in the error log too.
 - Log the day writes the parts of a split: Pulsar refused each one before sending it, so none was ever logged. A row that is not written now says why on its card and in the run's summary.
 - The Report has a Yesterday range, next to Today.

@@ -202,8 +202,12 @@ class SignInTest(Isolated):
         self.assertFalse(calendar.finish({"state": q["state"], "code": "4/made-up-code"})["ok"])
         _, q = self.begin()
         self.google.token.append((400, {"error": "invalid_grant", "error_description": "Bad Request"}))
-        result = calendar.finish({"state": q["state"], "code": "4/made-up-code"})
-        self.assertIn("invalid_grant", result["message"])
+        logged = []
+        with mock.patch.object(calendar.logbook, "record", lambda where, msg, **k: logged.append(k.get("detail"))):
+            result = calendar.finish({"state": q["state"], "code": "4/made-up-code"})
+        # plain words for the person, Google's own (HTTP 400: invalid_grant) in the error log only
+        self.assertEqual(result["message"], "Google did not give Pulsar access. Start again from Settings.")
+        self.assertIn("invalid_grant", " ".join(logged))
         self.assertIsNone(config.get_google_token())
 
 

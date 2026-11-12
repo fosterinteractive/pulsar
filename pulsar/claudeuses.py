@@ -49,7 +49,8 @@ USES = {
     },
     "review": {
         "name": "Check my day: review",
-        "does": "Checks Log the day's plan with FI's rules; you accept or reject each suggestion.",
+        "does": "Checks Log the day's plan against the team's logging rules; each suggestion has a button that "
+                "makes its change, and you choose.",
         "sends": "Sends a digest of the day: the plan, what you typed and Claude's replies (cut short), session titles, "
                  "commit subjects, meeting titles (not private or declined ones), app names by hour, the notes of entries already logged, and your "
                  "tasks of the last 30 days. Never window titles, sites or addresses. May search Productive, read only.",

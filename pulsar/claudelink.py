@@ -133,7 +133,9 @@ def _run(args: list) -> tuple:
     except subprocess.TimeoutExpired:
         return False, "Claude Code did not answer in time."
     except OSError as exc:
-        return False, f"Claude Code could not be started ({exc})."
+        from . import logbook  # imported here, as below
+        return False, logbook.said("claude code", "Claude Code could not be started on this Mac. Check that it is installed: run "
+                                 "claude in Terminal.", exc)
     return done.returncode == 0, (done.stdout or done.stderr or "").strip()[-300:]
 
 

@@ -405,7 +405,7 @@ ERRORS = [
     ("productive refused", "Productive refused it."),
     ("productive", "Productive did not answer as expected."),
 ]
-_CODE_FIELD = re.compile(r'"code"\s*:\s*"([a-z][a-z0-9_]{2,40})"')
+_CODE_FIELD = re.compile(r'"code"\s*:\s*"([a-z][a-z0-9_]{2,40})"|\(([a-z][a-z0-9_]{2,40}), HTTP \d{3}\)')
 
 
 def error_out(text) -> str:
@@ -417,7 +417,7 @@ def error_out(text) -> str:
     if known:
         return f"Productive refused the entry: {productive.REFUSALS[known]} ({known})."
     phrase = next((p for words, p in ERRORS if words in low), "Pulsar could not do this; its error log (Settings > Updates) has the details.")
-    extra = [m.group(1) for m in [_CODE_FIELD.search(raw)] if m]
+    extra = [m.group(1) or m.group(2) for m in [_CODE_FIELD.search(raw)] if m]
     extra += [f"HTTP {s}" for s in re.findall(r"\bHTTP (\d{3})\b", raw)[:1]]
     return f"{phrase} ({', '.join(extra)})" if extra else phrase
 

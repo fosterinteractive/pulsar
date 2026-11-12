@@ -319,7 +319,8 @@ def _answer(done, what: str, use: str, model: str) -> dict:
         res = None
     if not isinstance(res, dict):
         tail = (done.stderr or done.stdout or "").strip()[-200:]
-        raise AskError(f"Claude's {what} could not be read." + (f" {tail}" if tail else ""))
+        raise AskError(logbook.said("ask claude", f"Claude's {what} could not be read. Ask again; the error log "
+                                    "(Settings > Updates) has what Claude Code said.", tail))
     claudeuses.spent(use, res.get("total_cost_usd"))
     if not res.get("is_error"):
         return res
@@ -493,7 +494,8 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
             except subprocess.TimeoutExpired:
                 raise AskError("Claude took too long to answer. Try again later.") from None
             except OSError as exc:
-                raise AskError(f"Claude Code could not be started ({exc}).") from None
+                raise AskError(logbook.said("claude code", "Claude Code could not be started on this Mac. Check that it is installed: run "
+                                 "claude in Terminal.", exc)) from None
             try:
                 res = _answer(done, "answer", "ask", model)
             except AskError as exc:  # the second run failed: what the first one cost is counted too
@@ -649,7 +651,8 @@ def note(date: str, row: dict, t0: float, history: list = (), run=subprocess.run
     except subprocess.TimeoutExpired:
         raise AskError("Claude took too long to draft the note.") from None
     except OSError as exc:
-        raise AskError(f"Claude Code could not be started ({exc}).") from None
+        raise AskError(logbook.said("claude code", "Claude Code could not be started on this Mac. Check that it is installed: run "
+                                 "claude in Terminal.", exc)) from None
     res = _answer(done, "note", "note", model)
     drafted = res.get("structured_output")
     drafted = drafted.get("note") if isinstance(drafted, dict) else None

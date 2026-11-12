@@ -18,7 +18,7 @@ import re
 import subprocess
 import threading
 
-from . import askclaude, claudeuses, config, productive
+from . import askclaude, claudeuses, config, logbook, productive
 
 TITLE_MAX = 90     # characters in a drafted title (Productive takes 140)
 TITLE_LIMIT = 140  # Productive's own limit on a task's title
@@ -199,7 +199,8 @@ def claude_draft(date: str, rows: list, t0: float, history: list = (), project: 
     except subprocess.TimeoutExpired:
         raise askclaude.AskError("Claude took too long to draft the task.") from None
     except OSError as exc:
-        raise askclaude.AskError(f"Claude Code could not be started ({exc}).") from None
+        raise askclaude.AskError(logbook.said("claude code", "Claude Code could not be started on this Mac. Check that it is installed: run "
+                                 "claude in Terminal.", exc)) from None
     res = askclaude._answer(done, "draft", "task", model)
     got = res.get("structured_output") if isinstance(res.get("structured_output"), dict) else {}
     title, bad_t = guard_title(got.get("title"))

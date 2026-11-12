@@ -88,6 +88,13 @@ def record(where: str, message: str, kind: str = "error", detail: str = "", once
         pass
 
 
+def said(where: str, plain: str, raw="", kind: str = "warning") -> str:
+    """`plain` for the person; `raw` (the system's own words: an exception, a program's output, a service's answer)
+    goes only to the error log, under Details, so the message stays readable and the clue is kept (2026-11-12)."""
+    record(where, plain, kind=kind, detail=str(raw or ""))
+    return plain
+
+
 def read(days: int) -> list:
     """Events of the last `days` days, newest first."""
     since = datetime.now().astimezone() - timedelta(days=days)

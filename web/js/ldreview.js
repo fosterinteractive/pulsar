@@ -123,7 +123,7 @@ function sgNeedsPicks() {
 function sgCheckTitle() {
   const a = useOf('ask'), r = useOf('review'), cap = u => u?.caps?.[u.model] != null ? `, at most $${u.caps[u.model]}` : '';
   return (sgNeedsPicks() ? `Asks ${MODEL_NAME(a?.model)} for a task for the rows Pulsar is unsure of${cap(a)}, then ` : '')
-    + `${sgNeedsPicks() ? 'reviews' : 'Reviews'} the whole day with FI's rules (${MODEL_NAME(r?.model)}${cap(r)}). Nothing is written: you accept or reject each suggestion.`;
+    + `${sgNeedsPicks() ? 'reviews' : 'Reviews'} the whole day against the team's logging rules (${MODEL_NAME(r?.model)}${cap(r)}). Nothing is written until you press a suggestion's button.`;
 }
 async function sgCheck() {
   if (SG.asking || LD.asking) return;

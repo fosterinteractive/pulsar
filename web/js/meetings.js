@@ -95,6 +95,9 @@ $('#gcal-connect').onclick = async () => {
       reloadView();
     } else if (s.error || Date.now() - t0 > 10 * 60 * 1000) {  // a sign-in is valid for 10 minutes
       clearInterval(gcalWait); link.hidden = true; paintCalendar(CONFIG);
+      // said, never a quiet return to "Not connected" (2026-11-12)
+      toast(s.error ? `Google Calendar was not connected: ${s.error}`
+                    : 'The Google sign-in was not finished within 10 minutes. Press Connect Google Calendar to start again.', true);
     }
   }, 2000);
 };

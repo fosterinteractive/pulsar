@@ -67,8 +67,10 @@ async function openLogDay({fresh = false} = {}) {
   if (!LD.on || LD.date !== d) return;
   LD.loading = false; LD.plan = r;
   LD.rows = (r.entries || []).map((e, i) => ({...e, id: 'r' + i, key: ldRowKey(d, e), orig: ldOrig(e), opened: false, edited: false,
-                                               status: e.sent === 'logged' ? 'logged' : e.sent ? 'unknown' : null,
-                                               reason: e.sent ? 'Log the day sent this entry earlier. Check the Logged column; Pulsar will not send it again.' : '',
+                                               // "changed": logged, then changed by hand, so it is in Productive; only
+                                               // "sending" and "unknown" got no answer (dayplan.still_sent)
+                                               status: ['logged', 'changed'].includes(e.sent) ? 'logged' : e.sent ? 'unknown' : null,
+                                               reason: ['sending', 'unknown'].includes(e.sent) ? 'Log the day sent this entry earlier and got no answer. Check the Logged column; Pulsar will not send it again.' : '',
                                                ...(e.shared ? ldSharedFrom(e) : {})}));
   if (kept) { const got = ldReapply(LD.rows, kept, r.ignoreLogged ? [] : state.logged?.entries); LD.rows = ldWithHalves(got.rows, CONFIG?.roundTo || 5); LD.open = got.open; }
   LD.rows = LD.rows.filter(x => x.status || !ldNotWork(x));  // time marked "not work" (day.js) is not proposed
@@ -105,7 +107,8 @@ async function askClaudeForDay(d) {
   state.claude = {date: d, picks: ans.picks || {}};
   if (LD.writing) { LD.askNote = "Claude answered while entries were being logged. Start over to see its picks."; renderReview(); return; }
   const r = await getJSON(`/api/dayplan?date=${d}&source=${state.source}${LD_IGNORE ? '&ignore_logged=1' : ''}`);
-  if (!ldActive() || LD.date !== d || r.error) return;
+  if (!ldActive() || LD.date !== d) return;
+  if (r.error) { LD.askNote = `Claude picked its tasks, but the day could not be read again: ${r.error} Start over to see the picks.`; renderReview(); return; }
   ldClaudePlan(d, r, ans);
 }
 /* Claude's plan goes in only while nothing is being confirmed or written: what the person confirmed is what is sent.
@@ -684,10 +687,10 @@ function openConfirm(dry = null) {
       <p class="cf-sum">${esc(dayTitle(LD.date))} · <b>${dur(T.minutes)}</b> · ${dur(T.billable)} billable</p>
       ${warns.map(w => `<div class="cf-w"><span class="g" aria-hidden="true">!</span><span>${esc(w)}</span></div>`).join('')}
       ${quiet.map(w => `<div class="cf-w quiet"><span class="g" aria-hidden="true">·</span><span>${esc(w)}</span></div>`).join('')}
-      ${dry ? `<div class="cf-w quiet"><span class="g" aria-hidden="true">·</span><span>Dry run: each entry below shows what would be sent. Nothing was written.</span></div>` : ''}
+      ${dry ? `<div class="cf-w quiet"><span class="g" aria-hidden="true">·</span><span>Checked: each entry below shows what Productive would get. Nothing was written.</span></div>` : ''}
       <ul class="cl">${lines}</ul></div>
     <div class="df"><p class="hint">Sent one at a time; stops at the first problem.</p>
-      <button type="button" class="btn bordered" data-ld-dry>Dry run</button>
+      <button type="button" class="btn bordered" data-ld-dry title="Ask Pulsar what each entry would send, without writing anything">Check first</button>
       <button type="button" class="btn bordered" data-ld-x>Back to the review</button>
       <button type="button" class="btn primary" data-ld-write${short.length ? ' disabled' : ' autofocus'}>Log ${live.length} ${live.length === 1 ? 'entry' : 'entries'}</button></div>`;
   if (!ldDlg.open) ldDlg.showModal();
@@ -715,7 +718,7 @@ async function dryRun(btn) {
     const res = await postJSON('/api/log', {...rowBody(r), dry: true});
     const w = res.wouldWrite;
     out[r.id] = res.error ? `Would be refused: ${res.error}`
-      : `Would send: ${w.date} ${w.started_at.slice(11, 16)}, ${w.minutes} min, task ${w.task}, service ${w.service}, note “${rowBody(r).note}”`
+      : `Would send: ${w.date} ${w.started_at.slice(11, 16)}, ${w.minutes} min, ${r.title || `task ${w.task}`}, ${r.service || `service ${w.service}`}, note “${rowBody(r).note}”`
         + (res.overlap?.length ? `; overlaps ${res.overlap.map(o => `${o.start} ${o.project}`).join(', ')}` : '');
   }
   openConfirm(out);

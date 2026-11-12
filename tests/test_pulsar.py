@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from isolation import SCRATCH as _SCRATCH  # noqa: E402,F401  first: nothing real is reachable (isolation.py)
 
-from pulsar import config, productive, report, server, trackers, updater  # noqa: E402
+from pulsar import config, logbook, mcptools, productive, report, server, trackers, updater  # noqa: E402
 
 
 def askclaude_keep():
@@ -3876,6 +3876,18 @@ class PlainRefusalTest(unittest.TestCase):
         self.assertTrue(got.startswith("Productive refused the change:"))
         self.assertIn("(budget_limit_overrun)", got)
         self.assertEqual(productive.plain_refusal("something else", "it"), "Productive refused it: something else")
+
+    def test_a_json_refusal_gives_its_words_and_the_json_goes_to_the_log(self):
+        raw = ('{"errors":[{"status":"422","code":"invalid_date","title":"Invalid","detail":"Date is locked for '
+               'this period.","source":{"pointer":"/data/attributes/date"}}]}')
+        logged = []
+        with mock.patch.object(logbook, "record", lambda where, msg, **k: logged.append(k.get("detail"))):
+            got = productive.plain_refusal(raw, "the entry", 422)
+        self.assertEqual(got, "Productive refused the entry: Date is locked for this period (invalid_date, HTTP 422).")
+        self.assertEqual(logged, [raw])
+        self.assertEqual(mcptools.error_out(got), "Productive refused the entry. (invalid_date, HTTP 422)")
+        self.assertEqual(productive.plain_refusal('{"errors":[{}]}', "the entry", 422),
+                         "Productive refused the entry: it gave no reason (HTTP 422).")
 
 
 if __name__ == "__main__":

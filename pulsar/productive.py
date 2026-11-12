@@ -227,10 +227,10 @@ def network_reason(exc: BaseException) -> str:
     if isinstance(exc, (socket.timeout, TimeoutError)):
         return "Productive took too long to answer"
     if isinstance(exc, ssl.SSLError):
-        return f"the secure connection failed ({exc.__class__.__name__}: {exc})"
+        return f"the secure connection to Productive failed ({exc})"
     if isinstance(exc, (ConnectionRefusedError, ConnectionResetError, http.client.RemoteDisconnected)):
         return "Productive closed the connection"
-    return f"{exc.__class__.__name__}: {exc}"
+    return f"the connection to Productive failed ({exc})"
 
 
 def why(status: int, doc) -> str:
@@ -689,6 +689,10 @@ def mcp_entries(d0: str, d1: str, token: str, person: str, names: Names, bulk: b
                 learned["deal:" + ref] = deal
     names.set_many(learned)
     names.keep_for_now(failed)
+    if failed:  # the entries show without those names until Productive gives them: said in the log, never silent
+        from . import logbook
+        logbook.record("productive", f"Productive did not give the names of {len(failed) // 2} projects or services "
+                       "of your entries; Pulsar asks again later.", kind="warning", once_per=3600)
     _mcp_billing(sorted({r["service"] for r in rows if r.get("service")}), token, names, bulk)
     out = []
     for r in rows:
@@ -743,8 +747,11 @@ def _mcp_billing(services: list, token: str, names: Names, bulk: bool = False) -
         with ThreadPoolExecutor(4) as pool:
             for bt, ids in pool.map(_gated(bulk, listing), jobs):
                 found.update({f"billing:services:{i}": bt for i in ids})
-    except Exception:
-        return  # try again next time
+    except Exception as exc:  # try again next time
+        from . import logbook
+        logbook.record("productive", "Productive did not say which of your services are billable; Pulsar asks again "
+                       "next time.", kind="warning", detail=f"{type(exc).__name__}: {exc}", once_per=3600)
+        return
     for r in unknown:
         found.setdefault("billing:" + r, "0")  # in none of the lists: not visible to this role; asked again in a day
     names.set_many(found)
@@ -801,7 +808,9 @@ def entries(d0: str, d1: str, settings: dict, names: Optional[Names] = None,
     except ProductiveError as exc:
         return [], str(exc), conn["kind"]
     except Exception as exc:  # network and the like
-        return [], f"Your entries could not be read from Productive ({type(exc).__name__}: {exc}).", conn["kind"]
+        from . import logbook
+        return [], logbook.said("productive", "Your entries could not be read from Productive. Pulsar tries again "
+                                "when the day is next read.", f"{type(exc).__name__}: {exc}"), conn["kind"]
     return rows, None, conn["kind"]
 
 
@@ -1255,13 +1264,33 @@ REFUSALS = {
 }
 
 
-def plain_refusal(text: str, what: str = "the entry") -> str:
-    """Productive's refusal as a sentence the person can act on, when its code is a known one; else its own words."""
+def plain_refusal(text: str, what: str = "the entry", status: int | None = None) -> str:
+    """Productive's refusal as a sentence the person can act on, when its code is a known one; else its own words.
+    A JSON answer (the API token's) gives its words, the detail or title of each error, never the JSON itself, which
+    goes to the error log (2026-11-12: '(HTTP 422): {"errors":[…' in a message); its code and the HTTP status stay in
+    parentheses, for Claude Code (mcptools.error_out) and for whoever reads the log."""
     raw = str(text or "")
     for code, said in REFUSALS.items():
         if code in raw:
             return f"Productive refused {what}: {said} ({code})."
-    return f"Productive refused {what}: {raw[:300]}"
+    try:
+        errs = json.loads(raw).get("errors")
+    except (ValueError, AttributeError):
+        errs = None
+    if not isinstance(errs, list):
+        return f"Productive refused {what}" + (f" ({why(status, None)})" if status else "") + f": {raw[:300]}"
+    from . import logbook  # imported here, as elsewhere in this module
+    errs = [e for e in errs if isinstance(e, dict)]
+    words = []
+    for e in errs:
+        w = " ".join(str(e.get("detail") or e.get("title") or "").split()).rstrip(".")
+        if w and w not in words:
+            words.append(w)
+    codes = [str(e["code"]) for e in errs if re.fullmatch(r"[a-z][a-z0-9_]{2,40}", str(e.get("code") or ""))]
+    tag = ", ".join(codes[:1] + ([why(status, None)] if status else []))
+    logbook.record("productive", f"Productive refused {what}" + (f" ({why(status, None)})" if status else "") + ".",
+                   kind="warning", detail=raw[:2000])
+    return f"Productive refused {what}: {'; '.join(words)[:200] or 'it gave no reason'}" + (f" ({tag})." if tag else ".")
 
 
 def _rest_headers(conn: dict, settings: dict) -> dict:
@@ -1291,9 +1320,7 @@ def _rest_write(method: str, entry_id: str, body: Optional[dict], conn: dict, se
     if status >= 500:  # a server error after the change was sent: it may have happened
         raise ProductiveUnclear(UNCLEAR.format(f"HTTP {status}"))
     if status not in ok:
-        text = raw[:600].decode("utf-8", "replace")
-        raise ProductiveError(plain_refusal(text, what) if any(c in text for c in REFUSALS) else
-                              f"Productive refused {what} ({why(status, None)}): {text[:300]}")
+        raise ProductiveError(plain_refusal(raw[:20000].decode("utf-8", "replace"), what, status))
 
 
 def update_entry(entry_id: str, change: dict, settings: dict) -> None:
@@ -1385,9 +1412,7 @@ def create_entry(entry: dict, settings: dict) -> dict:
             raise ProductiveUnclear(f"Productive answered HTTP {status}, so the entry may or may not exist. Check the "
                                     "Logged column (it has been refreshed) before logging again.")
         if status not in (200, 201):
-            text = raw[:600].decode("utf-8", "replace")
-            raise ProductiveError(plain_refusal(text) if any(c in text for c in REFUSALS) else
-                                  f"Productive refused the entry (HTTP {status}): {text[:300]}")
+            raise ProductiveError(plain_refusal(raw[:20000].decode("utf-8", "replace"), "the entry", status))
         try:  # created (2xx): only an answer that names the new entry counts as logged
             new_id = str((((json.loads(raw or b"{}") or {}).get("data") or {}).get("id")) or "")
         except (ValueError, AttributeError):
@@ -1540,8 +1565,8 @@ def _description_html(text: str) -> str:
     return "".join(out)
 
 
-TASK_UNCLEAR = ("No clear answer from Productive ({}), so the task may or may not exist. Search for it in the task "
-                "list before creating it again.")
+TASK_UNCLEAR = ("No clear answer from Productive ({}), so the task may or may not exist. Search for it in the Log "
+                "dialog's task search before creating it again.")
 
 
 ESTIMATE_MAX = 500 * 60  # minutes: the largest estimate a new task may be given (500 h)
@@ -1621,4 +1646,4 @@ def create_task(task: dict, settings: dict) -> dict:
     if re.match(r"\s*(?:Failed to create|Item 1: Invalid)", text) and not UPSTREAM.search(text):  # a refusal in plain
         raise ProductiveError(task_refusal(text))  # text: nothing was created
     raise ProductiveUnclear("Productive's answer was unclear, so the task may or may not exist. Search for it in the "
-                           "task list before creating it again. Productive said: " + text[:200])
+                           "Log dialog's task search before creating it again. Productive said: " + text[:200])
