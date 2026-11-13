@@ -691,6 +691,31 @@ class ClientGateTest(unittest.TestCase):
         self.assertFalse(dayplan.same_client(ctx, "globex-site", "77", "Clientco - Ongoing Support"))
 
 
+class OpenedTaskTest(unittest.TestCase):
+    """A task the session only opened in Productive (seenTasks) may make a row the agency's own, never a client's: on
+    internal work a client's task the session only read stays an alternative (2026-11-12 audit); and it never brings
+    back a repository you never log."""
+
+    def test_an_opened_clients_task_never_makes_internal_work_a_clients(self):
+        ctx = history()[0]
+        r = {**front(600, 660, "house-tool", titles=["Other title"]), "repoLinks": [], "seenTasks": ["C1"], "tasks": ["C1"]}
+        [e] = plan([work(600, 660)], [r], ctx=ctx)["entries"]
+        self.assertEqual(e["class"], "internal")
+        self.assertNotEqual(e["taskId"], "C1")
+        self.assertIn("C1", [a["taskId"] for a in e["alts"]])
+        # a task link typed in the work does make it the client's
+        [e] = plan([work(600, 660)], [{**r, "repoLinks": ["C1"], "tasks": ["C1"]}], ctx=ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("C1", "link"))
+
+    def test_an_opened_task_never_brings_back_a_repository_you_never_log(self):
+        ctx = {**history()[0], "never_logged": {"side-thing"}}
+        r = {**front(600, 660, "side-thing", titles=["Other title"]), "repoLinks": [], "seenTasks": ["T1"], "tasks": ["T1"]}
+        p = plan([work(600, 660)], [r], ctx=ctx)
+        self.assertFalse([e for e in p["entries"] if e["taskId"] == "T1"], p["entries"])
+        p = plan([work(600, 660)], [{**r, "repoLinks": ["T1"], "tasks": ["T1"]}], ctx=ctx)
+        self.assertEqual([e["taskId"] for e in p["entries"]], ["T1"])
+
+
 class SharedTest(unittest.TestCase):
     """A client's agent, attended, while internal work is in front: the client goes first, as a shared row."""
 
@@ -821,6 +846,49 @@ class InvariantTest(unittest.TestCase):
         self.check(p, {"C1": 40})
         self.assertEqual(client_minutes(p), 40)                      # the client's 40 minutes stay
         self.assertTrue(all(u["task"] == "T1" for u in p["unplaced"] if u["why"].startswith("more than your")))
+
+
+
+class MeetingAuditTest(unittest.TestCase):
+    """2026-11-12 deep audit: meetings keep their calendar time, and nothing around them crashes or grows them."""
+
+    def setUp(self):
+        TASKS["C4"] = ("Clientco meetings", "Clientco - Ongoing Support", True)
+        self.addCleanup(TASKS.pop, "C4", None)
+        self.ctx = history(extra={"2026-10-09": ([], [entry("2026-10-09", 700, 30, "C4")])})[0]
+
+    def plan(self, items, rows, **kw):
+        base = {"items": items, "away": [], "rows": rows, "background": [], "logged": [], "meetings": [], "repeats": [],
+                "calls": [], "rules": [], "assigned": [], "picks": {}}
+        return dayplan.plan({**base, **kw}, self.ctx)
+
+    @staticmethod
+    def meeting(s, e, task, project, title="Call"):
+        return {"s": s, "e": e, "title": title, "uid": title + str(s), "declined": False, "all_day": False, "url": "",
+                "tasks": [{"taskId": task, "title": "x", "project": project, "n": 4, "of": 5}]}
+
+    def test_a_hole_after_a_clients_meeting_never_crashes_and_never_grows_it(self):
+        # Log the day failed with KeyError: the hole after the meeting went to the meeting's task, unknown to the next
+        p = self.plan([work(600, 615, app="zoom.us", title="Zoom Meeting"), work(615, 633)],
+                      [front(615, 627, "client-web"), front(627, 633, "house-tool")],
+                      meetings=[self.meeting(600, 615, "C4", "Clientco - Ongoing Support")], calls=[{"s": 600, "e": 615}])
+        meet = [e for e in p["entries"] if e["kind"] == "meeting"]
+        self.assertEqual([(e["s"], e["e"]) for e in meet], [(600, 615)])  # its calendar time, cut last by the cap
+
+    def test_a_call_that_ended_before_the_next_meeting_does_not_make_it_attended(self):
+        p = self.plan([work(600, 630, app="zoom.us", title="Zoom Meeting"), work(630, 700)], [front(630, 700, "client-web")],
+                      meetings=[self.meeting(600, 630, "Q1", "FI-AI QA", "Standup"),
+                                self.meeting(635, 700, "T1", "FI-AI Tools", "Tool sync")],
+                      calls=[{"s": 600, "e": 630}])
+        self.assertFalse([e for e in p["entries"] if e["kind"] == "meeting" and e["taskId"] == "T1" and e["checked"]],
+                         p["entries"])
+        self.assertTrue([e for e in p["entries"] if e["s"] >= 630 and e["kind"] == "focused"], p["entries"])
+
+    def test_short_work_beside_a_meeting_never_joins_it(self):
+        p = self.plan([work(594, 600), work(600, 630, app="zoom.us", title="Zoom Meeting"), work(630, 636)], [],
+                      meetings=[self.meeting(600, 630, "Q1", "FI-AI QA", "Standup")], calls=[{"s": 600, "e": 630}])
+        meet = [e for e in p["entries"] if e["kind"] == "meeting"]
+        self.assertEqual([(e["s"], e["e"]) for e in meet], [(600, 630)], p["entries"])
 
 
 if __name__ == "__main__":

@@ -136,6 +136,39 @@ class PlannerTest(unittest.TestCase):
         self.assertIn("Daily scrum", e["why"])
         self.assertTrue(e["checked"])
 
+    def test_a_meeting_starts_at_its_calendar_time_and_ends_with_its_call(self):
+        """The owner, 2026-11-12: the scrum is at 16:30 on the calendar; the daily repeat says 16:25; the Zoom window shows
+        at 16:30 and again 17:01 to 17:22. The entry: 16:30 to the call's end, never earlier, as one entry."""
+        rep = {"s": 985, "e": 995, "minutes": 10, "at": 985, "taskId": "77", "title": "Scrum", "project": "PM",
+               "serviceId": "s77", "service": "Admin", "note": "", "days": 14}
+        meet = {"s": 990, "e": 1020, "title": "Scrum", "uid": "u1", "declined": False, "all_day": False,
+                "tasks": [{"taskId": "77", "title": "Scrum", "project": "PM", "n": 8, "of": 8}]}
+        items = [work(960, 990), work(990, 992, app="zoom.us", title="Zoom Meeting"), work(992, 1021),
+                 work(1021, 1042, app="zoom.us", title="Zoom Meeting")]
+        p = dayplan.plan(day(items=items, calls=[{"s": 990, "e": 992}, {"s": 1021, "e": 1042}], repeats=[rep],
+                             meetings=[meet], rows=[row(960, 1021)]), self.ctx)
+        [m] = [e for e in p["entries"] if e["taskId"] == "77"]
+        self.assertEqual((m["s"], m["e"], m["kind"], m["checked"]), (990, 1040, "meeting", True))
+        self.assertIn("the call ran", m["why"])
+        self.assertFalse([e for e in p["entries"] if e["source"] == "call"], p["entries"])
+
+    def test_a_join_link_says_which_meeting_the_call_was(self):
+        """The call window is only "Zoom Meeting"; the browser tab that opened it has the meeting's number, as the
+        calendar's join link does: attended without a call window seen, and another meeting's link ends the call."""
+        meet = {"s": 990, "e": 1020, "title": "Scrum", "uid": "u1", "declined": False, "all_day": False,
+                "url": "https://us02web.zoom.us/j/81234567890?pwd=x",
+                "tasks": [{"taskId": "77", "title": "Scrum", "project": "PM", "n": 8, "of": 8}]}
+        tab = lambda at, n: work(at, at + 1, app="Google Chrome", host="us02web.zoom.us",  # noqa: E731
+                                 url=f"https://us02web.zoom.us/j/{n}")
+        p = dayplan.plan(day(items=[tab(989, 81234567890), work(990, 1020)], meetings=[meet]), self.ctx)
+        [m] = [e for e in p["entries"] if e["taskId"] == "77"]
+        self.assertEqual((m["s"], m["kind"], m["checked"]), (990, "meeting", True))
+        items = [tab(989, 81234567890), work(990, 1021), tab(1021, 89876543210),
+                 work(1022, 1040, app="zoom.us", title="Zoom Meeting")]
+        p = dayplan.plan(day(items=items, calls=[{"s": 1022, "e": 1040}], meetings=[meet]), self.ctx)
+        [m] = [e for e in p["entries"] if e["taskId"] == "77"]
+        self.assertEqual(m["e"], 1020)  # the call after it opened from another meeting's link: not the scrum's
+
     def test_a_call_that_runs_over_its_meeting_is_that_meeting(self):
         meet = lambda s, e, tid, title: {"s": s, "e": e, "title": title, "uid": title, "declined": False,  # noqa: E731
                                          "all_day": False, "tasks": [{"taskId": tid, "title": title, "project": "PM",
@@ -151,10 +184,38 @@ class PlannerTest(unittest.TestCase):
         p = dayplan.plan(day(items=[zoom(600, 675)], calls=[{"s": 600, "e": 675}],
                              meetings=[meet(600, 630, "77", "Planning"), meet(630, 660, "88", "Review")]), self.ctx)
         self.assertEqual([(e["taskId"], e["s"], e["minutes"]) for e in p["entries"]], [("77", 600, 30), ("88", 630, 45)])
-        # a call much longer than its meeting: the meeting takes its own length again, the rest is a call of its own
+        # a call much longer than its meeting: the meeting lasts as long as the call does, with no limit of its own
+        # (the owner, 2026-11-12; 15.10: Scrum 16:00-16:30 on the calendar, the call and the entry to 17:55)
         p = dayplan.plan(day(items=[zoom(600, 700)], calls=[{"s": 600, "e": 700}],
                              meetings=[meet(600, 620, "77", "Standup")]), self.ctx)
-        self.assertEqual([(e["taskId"], e["s"], e["minutes"]) for e in p["entries"]], [("77", 600, 40), (None, 640, 60)])
+        self.assertEqual([(e["taskId"], e["s"], e["minutes"]) for e in p["entries"]], [("77", 600, 100)])
+
+    def test_the_next_meetings_tab_after_its_calendar_start_ends_the_one_before(self):
+        """06.11: Scrum 16:30-17:00, the next meeting 17:00-17:30, one call to 19:00, the next meeting's join link
+        opened at 17:49 (logged 17:45): the scrum to 17:49, the next meeting from there to the call's end."""
+        meet = lambda s, e, tid, title, n: {"s": s, "e": e, "title": title, "uid": title, "declined": False,  # noqa: E731
+                                            "all_day": False, "url": f"https://us02web.zoom.us/j/{n}",
+                                            "tasks": [{"taskId": tid, "title": title, "project": "PM", "n": 5, "of": 6}]}
+        tab = lambda at, n: work(at, at + 1, app="Google Chrome", host="us02web.zoom.us",  # noqa: E731
+                                 url=f"https://us02web.zoom.us/j/{n}")
+        items = [tab(989, 81234567890), work(990, 1069.3, app="zoom.us", title="Zoom Meeting"),
+                 tab(1069.3, 89876543210), work(1070.3, 1140, app="zoom.us", title="Zoom Meeting")]  # a tab at 17:49:18
+        p = dayplan.plan(day(items=items, calls=[{"s": 990, "e": 1140}],
+                             meetings=[meet(990, 1020, "77", "Scrum", 81234567890),
+                                       meet(1020, 1050, "88", "Dashboard", 89876543210)]), self.ctx)
+        self.assertEqual([(e["taskId"], e["s"], e["e"]) for e in p["entries"] if e["kind"] == "meeting"],
+                         [("77", 990, 1070), ("88", 1070, 1140)])
+
+    def test_a_call_a_few_minutes_before_its_meeting_is_not_a_call_of_its_own(self):
+        """The meeting starts at its calendar time (the owner, 2026-11-12: "За календарем, 16:30"); a call joined up to
+        MEETING_SLACK minutes early makes no row asking which task it was for."""
+        meet = {"s": 990, "e": 1020, "title": "Scrum", "uid": "u1", "declined": False, "all_day": False,
+                "tasks": [{"taskId": "77", "title": "Scrum", "project": "PM", "n": 8, "of": 8}]}
+        p = dayplan.plan(day(items=[work(900, 982), work(982, 1030, app="zoom.us", title="Zoom Meeting")],
+                             calls=[{"s": 982, "e": 1030}], meetings=[meet]), self.ctx)
+        [m] = [e for e in p["entries"] if e["kind"] == "meeting"]
+        self.assertEqual((m["taskId"], m["s"], m["e"]), ("77", 990, 1030))
+        self.assertFalse([e for e in p["entries"] if e["source"] == "call"], p["entries"])
 
     def test_a_calendar_meeting_without_a_call_is_unticked_and_its_idle_part_skipped(self):
         meet = {"s": 600, "e": 660, "title": "Client review", "uid": "u2", "declined": False, "all_day": False,
@@ -242,7 +303,8 @@ class PlannerTest(unittest.TestCase):
         p = dayplan.plan(day(items=items, rows=[row(600, 640, project="pulsar")]), self.ctx)
         self.assertEqual(sum(e["minutes"] for e in p["entries"]), 40)  # testing Pulsar while building it
         p = dayplan.plan(day(items=items, rows=[row(600, 640, project="client-site")]), self.ctx)
-        self.assertEqual(sum(e["minutes"] for e in p["entries"]), 0)  # anywhere else it is time spent logging
+        # anywhere else it is time spent logging: its own row, never ticked (_logging)
+        self.assertEqual([(e["source"], e["minutes"], e["checked"]) for e in p["entries"]], [("logging", 40, False)])
 
     @mock.patch("pulsar.sessions.LOGGING_IS_WORK", False)  # the rule before 1.6.9, kept behind its switch
     def test_away_time_agent_only_time_and_time_spent_logging_are_never_ticked(self):
@@ -251,7 +313,7 @@ class PlannerTest(unittest.TestCase):
                              rows=[row(540, 600), row(650, 700, kind="parallel", titles=["Hero video"])]), self.ctx)
         for e in p["entries"]:
             self.assertFalse(e["s"] < 585 and e["e"] > 570 and e["minutes"] > 45, e)  # the break is not logged
-            self.assertFalse(600 <= e["s"] < 640, e)  # logging time
+            self.assertFalse(600 <= e["s"] < 640 and (e["checked"] or e["source"] != "logging"), e)  # logging time
         self.assertEqual(sum(e["minutes"] for e in p["entries"] if e["checked"]), 45)
         # an agent-only row with no activity under it proposes nothing
         self.assertFalse(any(e["s"] >= 650 for e in p["entries"]))
@@ -384,7 +446,8 @@ class PlannerTest(unittest.TestCase):
         jam = [e for e in p["entries"] if e["taskId"] == "88"]
         self.assertTrue(jam and sum(e["minutes"] for e in jam) >= 60, p["entries"])
         self.assertFalse([e for e in p["entries"] if e["source"] == "call"], p["entries"])
-        self.assertEqual([e["taskId"] for e in p["entries"] if e["s"] < 1065], ["77"])
+        # back to back: split as the calendar has them (the owner, 2026-11-12), the scrum to 17:00 and the jam from it
+        self.assertEqual([(e["taskId"], e["s"]) for e in p["entries"] if e["s"] < 1065], [("77", 990), ("88", 1020)])
 
     def test_days_with_entries_logged_by_length_only_never_make_a_repository_never_logged(self):
         # replay, Sep: entries with no start time cannot be matched to the work; the person's main repository was
@@ -405,16 +468,90 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual((editor["taskId"], editor["kind"], editor["s"], editor["minutes"], editor["checked"]),
                          ("11", "outside", 640, 30, False))
 
-    def test_a_sessions_time_logging_is_never_proposed_even_as_work_outside_claude(self):
-        """2026-11-11: Likely shows a session's turns spent logging time (loggingRows), loggable by hand; here they
-        are not proposed. Their minutes have no session row, so without this the editor in front would pass as work
-        outside Claude."""
+    def test_a_sessions_time_logging_is_its_own_row_never_work_outside_claude(self):
+        """2026-11-11: Likely shows a session's turns spent logging time (loggingRows). Their minutes have no session
+        row, so the editor in front would pass as work outside Claude; since 2026-11-12 they are time spent logging,
+        its own row, never ticked (_logging)."""
         items = [work(540, 600), work(640, 670)]
         p = dayplan.plan(day(items=items, rows=[row(540, 600)]), self.ctx)
         self.assertEqual([(e["s"], e["kind"]) for e in p["entries"]], [(540, "focused"), (640, "outside")])
         logging = [{"s": 640, "e": 670, "minutes": 30, "project": "time logging", "kind": "logging", "titles": ["Fix"]}]
         p = dayplan.plan(day(items=items, rows=[row(540, 600)], loggingRows=logging), self.ctx)
-        self.assertEqual([e["s"] for e in p["entries"]], [540])
+        self.assertEqual([(e["s"], e["source"], e["checked"]) for e in p["entries"]][1:], [(640, "logging", False)])
+
+    def test_the_persons_own_scrum_takes_time_spent_logging_until_they_pick_another(self):
+        """2026-11-12, the owner: under 10 minutes it stays with the work before; from 10, it is offered to the person's own
+        scrum, each person's their own."""
+        t0_of = lambda d: datetime.strptime(d, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp()  # noqa: E731
+
+        def logged(d, tid, title, minutes):
+            return {"date": d, "start": t0_of(d) + 600 * 60, "minutes": minutes, "taskId": tid, "serviceId": "s",
+                    "service": "Admin", "task": title, "project": "Inside"}
+        hist = [logged(f"2026-11-0{i}", "72", "[X-72] Scrum - Me", 15) for i in range(2, 6)]
+        hist += [logged("2026-11-03", "67", "[X-67] Scrums", 20), logged("2026-11-04", "9", "Client work", 300)]
+        self.assertEqual(dayplan.learn("2026-11-06", hist, {}, t0_of)["scrum"], "72")
+        ctx = {**self.ctx, "scrum": "72", "names": {**(self.ctx.get("names") or {}),
+                                                    "72": {"task": "[X-72] Scrum - Me", "project": "Inside"}}}
+        items = [work(700, 720, app="Pulsar")]
+        [lg] = [e for e in dayplan.plan(day(items=items), ctx)["entries"] if e["source"] == "logging"]
+        self.assertEqual((lg["taskId"], lg["title"], lg["checked"]), ("72", "[X-72] Scrum - Me", False))
+        self.assertIn("on your scrum", lg["why"])
+        [lg] = [e for e in dayplan.plan(day(items=items, loggingTask={"taskId": "77", "title": "Admin", "project": ""}),
+                                        ctx)["entries"] if e["source"] == "logging"]
+        self.assertEqual(lg["taskId"], "77")  # the person's own pick wins
+        self.assertIn("on the task you logged it to last time", lg["why"])
+
+    def test_time_spent_logging_is_asked_on_the_task_last_used_and_a_look_stays_with_the_work(self):
+        """2026-11-12, the owner: time spent logging goes to an internal task, asked each time, never logged by default."""
+        items = [work(540, 600), work(600, 604, app="Pulsar"), work(604, 640), work(700, 712, app="Pulsar"),
+                 work(712, 720, app="Safari", host="app.productive.io")]
+        rows = [row(540, 640)]
+        p = dayplan.plan(day(items=items, rows=rows), self.ctx)
+        [lg] = [e for e in p["entries"] if e["source"] == "logging"]
+        self.assertEqual((lg["s"], lg["minutes"], lg["checked"], lg["taskId"]), (700, 20, False, None))
+        self.assertIn("logging", lg["flags"])
+        self.assertIn("Pick the internal task", lg["why"])
+        session = next(e for e in p["entries"] if e["s"] == 540)
+        self.assertEqual(session["minutes"], 100)  # the 4-minute look at Pulsar stays with the work around it
+        p = dayplan.plan(day(items=items, rows=rows, loggingTask={"taskId": "77", "title": "Scrum", "project": "Inside"}),
+                         self.ctx)
+        [lg] = [e for e in p["entries"] if e["source"] == "logging"]
+        self.assertEqual((lg["taskId"], lg["title"], lg["checked"], lg["confidence"]), ("77", "Scrum", False, "medium"))
+
+    def test_ten_minutes_in_pulsar_make_a_logging_row_at_any_rounding_and_preview_is_development(self):
+        """One definition of time spent logging (rule order 1.4); a stretch of 10 minutes or more is a logging row
+        whatever Round entries to says (the owner, 2026-11-12: "більше, ніж 10 хвилин"). Pulsar Preview's window is the
+        developer's test build, so it is never logging time."""
+        items = [work(540, 600), work(600, 612, app="Pulsar")]
+        p = dayplan.plan(day(items=items, rows=[row(540, 600)]), self.ctx)
+        self.assertEqual([(e["s"], e["minutes"]) for e in p["entries"] if e["source"] == "logging"], [(600, 10)], p["entries"])
+        preview = [work(540, 600), work(600, 612, app="Pulsar Preview")]
+        p = dayplan.plan(day(items=preview, rows=[row(540, 600)]), self.ctx)
+        self.assertFalse([e for e in p["entries"] if e["source"] == "logging"], p["entries"])
+        # the 10 minutes do not follow the shortest entry setting (at a 15-minute grid the layout and the active-time
+        # cap still decide what is left of it: conflict F)
+        p = dayplan.plan(day(items=items, rows=[row(540, 600)]), self.ctx, {"grid": 5, "min_entry": 15})
+        self.assertTrue([e for e in p["entries"] if e["source"] == "logging"], p["entries"])
+
+    def test_time_spent_logging_never_joins_work_of_the_same_task(self):
+        """The task picked for logging time can be the task of the work beside it: the two stay apart, so the logging
+        row's flag never unticks the work (2026-11-13, rule order: 2.3 before 4.2)."""
+        items = [work(540, 600), work(600, 620, app="Pulsar")]
+        p = dayplan.plan(day(items=items, rows=[row(540, 600)], loggingTask={"taskId": "11", "title": "Fix", "project": "Inside"}),
+                         self.ctx)
+        got = [(e["taskId"], e["s"], e["e"], e["source"] == "logging") for e in p["entries"]]
+        self.assertEqual(got, [("11", 540, 600, False), ("11", 600, 620, True)], p["entries"])
+        self.assertTrue(p["entries"][0]["checked"])
+
+    def test_work_outside_claude_never_takes_the_task_of_time_spent_logging(self):
+        """07.11: a browser stretch between a session and the logging row took the scrum, the logging row's task; the
+        logging row is its own, so the stretch goes with the session before it."""
+        items = [work(540, 600), work(600, 630, app="Safari", title="Ticket"), work(630, 650, app="Pulsar")]
+        p = dayplan.plan(day(items=items, rows=[row(540, 600)],
+                             loggingTask={"taskId": "77", "title": "Scrum", "project": "Inside"}), self.ctx)
+        at = {x: e["taskId"] for e in p["entries"] for x in range(e["s"], e["e"])}
+        self.assertEqual({at.get(x) for x in range(600, 630)}, {"11"}, p["entries"])
+        self.assertEqual({at.get(x) for x in range(630, 650)}, {"77"})
 
     def test_work_outside_claude_goes_with_the_session_it_comes_before(self):
         # reading the ticket in a browser, then the session on it: the browser's half hour is the second task's (replay:
@@ -560,6 +697,19 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual((got[0][1], got[0][2], got[1][1], got[1][2]), (540, 580, 580, 610))  # 40 and 32 seen, on the grid
         self.assertEqual(p["unplaced"], [])
 
+    def test_a_clients_stretch_still_going_on_is_proposed_even_over_its_days_evidence(self):
+        """2026-11-12: two earlier entries of a client's task took in bits of other work, the evidence cap then cut the
+        newest entry, the stretch still going on, so its last 20 to 30 minutes were never proposed. Only what an entry
+        has beyond its own seen work is cut; what is still over is flagged to check."""
+        ctx = {**self.ctx, "names": {"A": {"task": "Site work", "project": "Initech"}, "B": {"task": "Tool", "project": "Globex"}},
+               "task_class": {"A": "client", "B": "client"}}
+        site = lambda s, e: {**row(s, e, project="site", titles=["Site work"]), "tasks": ["A"]}  # noqa: E731
+        tool = lambda s, e: {**row(s, e, project="tool", titles=["Tool"]), "tasks": ["B"]}  # noqa: E731
+        rows = [site(540, 552), tool(552, 556), site(556, 568), tool(568, 571), site(600, 660)]
+        p = dayplan.plan(day(items=[work(540, 571), work(600, 660)], rows=rows), ctx)
+        last = [e for e in p["entries"] if e["taskId"] == "A" and e["s"] >= 600]
+        self.assertTrue(last and sum(e["minutes"] for e in last) >= 55, p["entries"])  # the stretch going on: all of it
+
     def test_short_turns_of_other_work_between_long_ones_leave_no_holes(self):
         # 2026-11-10: Pulsar work in 1 to 8 minute turns between turns of a client's work of 10 minutes or more: each
         # short turn joined the client's entry, the evidence cap cut it back, and three holes of 15 minutes showed as
@@ -575,9 +725,13 @@ class PlannerTest(unittest.TestCase):
                 tool(588, 591), site(591, 603, "C"), tool(603, 609)]
         p = dayplan.plan(day(items=[work(540, 609)], rows=rows), ctx)
         mins = {t: sum(e["minutes"] for e in p["entries"] if e["taskId"] == t) for t in ("A", "C", "B")}
-        self.assertEqual(p["uncovered"], [], p["entries"])     # no hole of a step or more (before: 34 minutes)
+        # no hole an entry could fill (before: 34 minutes). Since 2026-11-12 seen work is never cut to fit the evidence
+        # cap, so a remainder shorter than an entry may stay (here 9 minutes at the end: 3 of one task, 6 of the other)
+        self.assertTrue(all(u["minutes"] < dayplan.MIN_ENTRY for u in p["uncovered"]), p["entries"])
         self.assertLessEqual(abs(mins["A"] + mins["C"] - 48), 5, mins)         # the client's: about what it was seen
-        self.assertTrue(15 <= mins["B"] <= 21, mins)                             # the other work: its turns, at most
+        # the other work: its turns, at most; its short turns (3 to 8 minutes) between the client's no longer win back
+        # minutes cut from the client's seen work, so it may keep only the turns that make an entry (2026-11-12)
+        self.assertTrue(10 <= mins["B"] <= 21, mins)
         spans = sorted((e["s"], e["e"]) for e in p["entries"])
         self.assertTrue(all(b <= c for (_, b), (c, _) in zip(spans, spans[1:])), spans)  # never two at once
 
@@ -639,13 +793,17 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual([t for t, _, _ in got], ["A"], got)       # A's task, not the crumb's
         self.assertEqual(got[0][2], 600)                            # up to its own entry, cut from the start
 
-    def test_a_task_the_session_opened_comes_after_a_typed_link_and_before_the_history(self):
+    def test_a_task_the_session_opened_comes_after_a_typed_link_and_the_sessions_vote(self):
         key = dayplan.title_key("Fix the importer")
         ctx = {**self.ctx, "sess": {key: {"M": 120.0}}, "sr": {(key, "initech"): {"M": 120.0}}, "repo": {"initech": {"P": 300.0}},
                "names": {"M": {"task": "Old", "project": "Initech"}, "P": {"task": "Support", "project": "Initech"},
                          "S": {"task": "Seen", "project": "Initech"}, "L": {"task": "Linked", "project": "Initech"}}}
         r = {**row(540, 600, project="initech"), "repoLinks": [], "seenTasks": ["S"], "tasks": ["S"]}
         [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), ctx)["entries"]
+        self.assertEqual((e["taskId"], e["source"]), ("M", "session"))  # the vote, right twice as often
+        self.assertIn("S", [a["taskId"] for a in e["alts"]])
+        # with no vote, the opened task is the pick, before the history of the repository
+        [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), {**ctx, "sess": {}, "sr": {}})["entries"]
         self.assertEqual((e["taskId"], e["source"], e["confidence"]), ("S", "seen", "medium"))
         r = {**r, "repoLinks": ["L"], "tasks": ["L", "S"]}
         [e] = dayplan.plan(day(items=[work(540, 600)], rows=[r]), ctx)["entries"]

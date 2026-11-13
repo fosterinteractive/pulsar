@@ -14,7 +14,8 @@ calls are in <folder>/<id>/subagents/*.jsonl, and count for the session that sta
     one whose agent was running, else the one last used in that sitting. Meetings and personal windows go to none.
   * The other sessions' agents that ran meanwhile, in another repository, are the background, at their real time.
     An agent's stretch counts as attended work while it runs on a chain started by a message the person typed, and
-    ends at a silence of more than 10 minutes (a long command, a wait): a new message starts the next one.
+    ends at a silence of more than 10 minutes (a long command, a wait), 12 while a call the agent made still runs
+    (chains): a new message starts the next one.
   * Without a tracker, the time an agent ran on a request, and the answers typed within Settings'
     "Away after", count as work.
 
@@ -72,6 +73,8 @@ ROOTS = {HOME, "/", "/private", "/private/tmp", "/tmp", "/private/var", "/privat
          "/Volumes"}
 TOOLING = os.path.join(HOME, ".claude")  # Claude Code's own files (memory, skills, plans): tools, not a project
 # Logging time: Pulsar itself, or Productive in a browser. It is work, but no client's: it goes to no session.
+# Pulsar Preview's window is not: it is the developer's test build, so its window is Pulsar's development (2026-11-13:
+# counted as logging time, it took 55 minutes of work on 10 Nov)
 LOGGING = re.compile(r"^Pulsar$|app\.productive\.io|(127\.0\.0\.1|localhost):56\d\d", re.I)
 # Time in Pulsar or Productive counts as the work around it (1.6.9): set aside as "time spent logging", its glances in
 # the middle of other work showed as gaps there (2026-11-09: 17 minutes in turns of 1 to 3 while deploying a site)

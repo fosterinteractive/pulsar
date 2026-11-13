@@ -27,7 +27,7 @@ MIXED_SHARE = 0.75
 MIXED_MIN = 20
 WORK = ("claude", "meeting", "call", "outside", "skip")
 LABEL = {"meeting": "a meeting", "call": "a call", "outside": "work outside Claude", "logged": "already logged",
-         "away": "away", "idle": "no work seen", "other": "logging time"}
+         "away": "away", "idle": "no work seen", "other": "logging time", "logging": "logging time"}
 
 
 def _minute(keep: dict, at: list, x: int) -> tuple:
@@ -45,6 +45,8 @@ def _minute(keep: dict, at: list, x: int) -> tuple:
         return "logged", ("logged",), o, None
     p = at[x]
     kind = (p or c)["kind"]
+    if c.get("source") == "logging":  # time spent logging time (dayplan._logging): its own row, never "Claude Code"
+        return "logging", ("logging",), o, p
     if kind in ("focused", "agent", "shared"):
         return "claude", ("claude", c.get("project") or ""), o, p
     if kind == "skip":
@@ -148,12 +150,14 @@ def analyse(keep: dict, s: float, e: float, opts: dict | None = None) -> dict:
                      for t in lead.get("alts") or [] if t and str(t) != tid and names.get(str(t), ("", ""))[0]][:3],
             "_gk": gk})
     out_groups.sort(key=lambda g: -g["minutes"])
-    # a client's work leads when it holds at least as much of the stretch as internal work does, whatever its tasks:
-    # 2026-11-09, a client's 51 minutes in two tasks (32 and 19) and the tool's own 34 led with the tool's task
+    # a client's work leads when it holds at least as much of the stretch as the rest of the work does, whatever its
+    # tasks: 2026-11-09, a client's 51 minutes in two tasks (32 and 19) and the tool's own 34 led with the tool's task.
+    # The rest is all of it, work with no task or no class too: 12 minutes of a client led 48 of unknown work and the
+    # whole range was offered on the client's task (2026-11-12 audit)
     ctx = keep.get("ctx") or {}
     cls = {id(g): _class(g, ctx) for g in out_groups}
     client = sum(g["minutes"] for g in out_groups if cls[id(g)] == attribution.CLIENT)
-    if client and client >= sum(g["minutes"] for g in out_groups if cls[id(g)] == attribution.INTERNAL):
+    if client and client >= sum(g["minutes"] for g in out_groups if cls[id(g)] != attribution.CLIENT):
         out_groups.sort(key=lambda g: cls[id(g)] != attribution.CLIENT)  # stable: by minutes within each
     dominant = out_groups[0] if out_groups else None
     share = dominant["share"] if dominant else 0
@@ -244,14 +248,19 @@ def _split(marks: list, a: int, o: dict) -> list:
             else:
                 joined.append(r)
         runs = joined
-    # boundaries between two pieces of work go on the grid
+    # boundaries between two pieces of work go on the grid: the nearest grid line (halves up), or the other one beside
+    # the cut when the nearest would leave either piece shorter than the shortest entry; with neither, the cut stays
+    # where the work changed. round() had rounded halves to even and a piece could come out at 5 minutes, which the
+    # writer refuses partway through the split (2026-11-12 audit: 15 + 25 at a 10-minute grid gave 20, 5 and 35)
     for r, q in zip(runs, runs[1:]):
         if r[2] in (None, "logged") or q[2] in (None, "logged"):
             continue
-        cut = r[0] + r[1]
-        snapped = int(round(cut / g) * g)
-        if r[0] < snapped < q[0] + q[1]:
-            r[1], q[1], q[0] = snapped - r[0], q[0] + q[1] - snapped, snapped
+        cut, end = r[0] + r[1], q[0] + q[1]
+        near = int(math.floor(cut / g + 0.5) * g)
+        lines = sorted({near, int(math.floor(cut / g) * g), int(math.ceil(cut / g) * g)}, key=lambda x: (abs(x - cut), -x))
+        ok = [x for x in lines if x - r[0] >= min(shortest, r[1]) and end - x >= min(shortest, q[1])]
+        snapped = ok[0] if ok else cut
+        r[1], q[1], q[0] = snapped - r[0], end - snapped, snapped
     return [tuple(r) for r in runs if r[2] not in (None, "logged") and r[1] > 0 and r[3] >= shortest]
 
 

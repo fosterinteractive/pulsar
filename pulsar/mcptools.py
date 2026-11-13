@@ -274,7 +274,7 @@ def summary_name(text, most: int = 120) -> str:
 
 
 FLAGS = ("notask", "low", "agent", "unattended", "noservice", "untimed", "meetingtitle",  # dayplan's: nothing else
-         "renamed", "shared")
+         "renamed", "shared", "logging", "overseen", "claudenote", "claudefound")
 
 
 def task_out(t: dict, why: str | None = None) -> dict:
@@ -311,6 +311,8 @@ BY_SOURCE = {
     "repeat": "you log this at this time on most days", "call": "a call with no calendar entry",
     "neighbour": "work outside Claude, next to other work", "none": "no match: pick the task",
     "context": "you logged it before while the same window was in front",
+    "logging": "time spent logging time (Pulsar or Productive), on your scrum or the task you logged it to last",
+    "meeting": "a meeting on your calendar, with its call",
 }
 BY_TEXT = [  # (the start, or a part, of Pulsar's own reason, lower case) -> the phrase
     ("logged while in this claude session", "you logged it during this Claude session before"),
@@ -614,7 +616,10 @@ def pulsar_day(args: dict) -> dict:
         row = {"start": hm(r["s"]), "end": hm(r["e"]), "minutes": mins(r["minutes"]), "project": name,
                "kind": "focused"}
         if r.get("tasks"):
-            row["linkedTaskIds"] = [str(t) for t in r["tasks"] if ID.match(str(t))][:4]
+            typed = r.get("repoLinks") if "repoLinks" in r else r["tasks"]
+            row["linkedTaskIds"] = [str(t) for t in typed or [] if ID.match(str(t))][:4]
+            if r.get("seenTasks"):  # Claude only opened these in Productive: not a link the person typed
+                row["openedTaskIds"] = [str(t) for t in r["seenTasks"] if ID.match(str(t))][:4]
         if me and me in (r.get("sessions") or []):
             row["thisSession"] = True
         likely_rows.append(row)
@@ -723,6 +728,11 @@ def plan_entry(e: dict, places: Places) -> dict:
     return out
 
 
+def _min_entry() -> int:
+    from .dayplan import MIN_ENTRY  # imported here, as dayplan_choices does
+    return MIN_ENTRY
+
+
 def dayplan_choices() -> tuple:
     from .dayplan import CHOICES
     return CHOICES
@@ -775,7 +785,9 @@ def pulsar_propose(args: dict) -> dict:
         **({"prefer": prefer} if prefer else {}),
         "how": ("Pulsar's Log the day: each minute placed once (logged entries, then meetings, then Claude sessions, then "
                 "other work); proposed plus logged never exceeds active time plus meetings. pulsarWouldTick=false means "
-                "Pulsar is not sure (low confidence, no task, no service, a meeting with no call seen). "
+                "Pulsar is not sure (low confidence, no task, no service, a meeting with no call seen), or the row is "
+                "for the person to choose: flag logging (time spent logging time: the person decides whether to log "
+                "it; never log it unasked), claudenote or claudefound (Claude's draft or pick: read it first). "
                 "The task is a guess from past logging: check that its project fits the repository the work was in; "
                 "when it does not, an alternative from that client is often the right one. Say which ones you changed. "
                 "shared=true: a client's agent ran on a request the person typed while internal work was on screen, so "
@@ -898,7 +910,8 @@ def pulsar_session(args: dict) -> dict:
                      "alreadyLoggedMinutes": sum(1 for m in range(a, min(b, 1440)) if covered[m]),
                      **({"givenAway": away_n} if away_n else {}),
                      **({"suggested": suggestion} if suggestion else {})})
-        for s, e in runs([not covered[m] and not given[m] for m in range(a, min(b, 1440))], least=5):
+        # never a piece shorter than an entry: the writer refuses it (2026-11-12 audit: 5 to 9 minute pieces offered)
+        for s, e in runs([not covered[m] and not given[m] for m in range(a, min(b, 1440))], least=_min_entry()):
             piece = {"start": hm(a + s), "minutes": e - s, "project": places.repo(r.get("project")),
                      **({"taskId": suggestion["taskId"], "task": suggestion.get("task"),
                          "serviceId": suggestion.get("serviceId")} if suggestion else {})}
@@ -918,7 +931,7 @@ def pulsar_session(args: dict) -> dict:
                      "project": places.repo(r.get("project")), "kind": "background", "shared": True,
                      "withOtherSessions": 0, "alreadyLoggedMinutes": sum(1 for m in got_m if covered[m]),
                      "suggested": suggestion})
-        for s, e2 in runs([bool(gained[m]) and not covered[m] for m in range(a, min(b, 1440))], least=5):
+        for s, e2 in runs([bool(gained[m]) and not covered[m] for m in range(a, min(b, 1440))], least=_min_entry()):
             to_log.append({"start": hm(a + s), "minutes": e2 - s, "project": places.repo(r.get("project")), "shared": True,
                            **({"taskId": suggestion["taskId"], "task": suggestion.get("task"),
                                "serviceId": suggestion.get("serviceId")} if suggestion.get("taskId") else {})})

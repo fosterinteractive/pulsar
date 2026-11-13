@@ -50,6 +50,8 @@ DEFAULTS = {
     "update_asked": 0,           # when the reminder last showed, in seconds
     "logs_seen": 0,              # when the error log was last marked as seen (seconds): the header's ! waits for a newer error
     "rules": [],                 # [{match, taskId, title, project}]: activity containing `match` belongs to that task
+    "logging_task": {},          # {taskId, title, project}: where time spent logging time goes, the task last logged
+                                 # from Log the day's "time spent logging" row (server.remember_logging_task)
     "calendar_account": "",      # the Google account whose calendar is connected (its email), shown in Settings
     "preview_writes": False,     # Pulsar Preview only: may it write to Productive (off by default)
     "claude_rules_added": [],    # the "ask" rules Pulsar added to Claude Code's settings (claudelink.py), to take back
@@ -224,6 +226,8 @@ def _fits(key: str, value) -> bool:
         return not isinstance(value, bool) and value in AWAY_AFTER
     if key == "advanced":
         return isinstance(value, dict)
+    if key == "logging_task":
+        return isinstance(value, dict) and (not value or _rule_ok({**value, "match": "-"}))
     if key == "working_days":
         return isinstance(value, list) and bool(value) and all(isinstance(d, int) and not isinstance(d, bool)
                                                                  and 0 <= d <= 6 for d in value)

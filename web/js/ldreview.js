@@ -163,12 +163,25 @@ async function sgApply(r, c) {
     const parts = c.split.map((p, j) => {
       // the server's journal takes row names of letters, digits, "-" and "_" only (dayplan.ROW): "c3.0" was refused,
       // so no part of a split was ever written (2026-11-12)
-      const n = {...r, id: `${r.id}-${j}`, s: at, e: at + p.minutes, minutes: p.minutes, alts: [], edited: true};
+      const n = {...r, id: `${r.id}-${j}`, key: `${r.key}#${j}`, splitOf: r.splitOf || r.key, s: at, e: at + p.minutes,
+                 minutes: p.minutes, alts: [], edited: true};
       at += p.minutes;
       return [n, p];
     });
     LD.rows.splice(LD.rows.indexOf(r), 1, ...parts.map(x => x[0]));
-    for (const [n, p] of parts) await ldSetTask(n, {taskId: p.taskId, title: p.title, project: r.project});
+    for (const [n, p] of parts) {
+      const same = String(p.taskId) === String(r.taskId || '');
+      await ldSetTask(n, {taskId: p.taskId, title: p.title, project: r.project});
+      // each part its own note (2026-11-12: three parts logged with the row's one note), set after its task: setting a
+      // task drops a note Claude wrote for another task, which had dropped these too. Claude's for that part, a draft
+      // like any of Claude's notes (never ticked by itself); else the row's note only on the part of the row's own
+      // task; else empty, to write
+      if (p.note) Object.assign(n, {note: p.note, noteFrom: 'claude', noteEdited: false, checked: false,
+                                     flags: [...new Set([...(n.flags || []), 'claudenote'])]});
+      else if (same) Object.assign(n, {note: r.note || '', noteFrom: r.noteFrom || ''});
+      else Object.assign(n, {note: '', noteFrom: ''});
+    }
+    renderReview(); render();
   }
 }
 async function sgAccept(s) {

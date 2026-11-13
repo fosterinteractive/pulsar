@@ -237,7 +237,6 @@ function commitNote(subjects) {
 /* for some Likely rows of one project, the most telling first (a block's longest, a stretch's most minutes in it): the
    Productive tasks linked in their sessions (ids), the tasks learned from your logging in the same session or
    repository (with why), and Claude's pick with its drafted note, else a note from your commits */
-function likelyTasks(b) { return rowTasks(blockRows(b)); }
 function rowTasks(rows) {
   const seen = new Set(), learned = [];
   for (const t of rows.flatMap(e => e.learned || [])) if (!seen.has(t.taskId) && seen.add(t.taskId)) learned.push(t);
@@ -289,28 +288,6 @@ function likelyBlocks(entries, Z, end) {
 
 /* away from the computer, by length (server.py away()): under an hour, up to three hours, longer */
 const AWAY_WORD = {pause: 'Pause', away: 'Away', off: 'Off'};
-
-/* the agents' background work (sessions.py): one thin dashed rail per stretch of minutes some agent ran while other
-   work was in front, with the repositories and their minutes in its title. Never a card: the minutes are the work in
-   front's. */
-function backgroundRails(rows, end) {
-  const at = Array.from({length: end}, () => null);
-  for (const r of rows || []) {
-    for (let m = Math.max(0, Math.floor(r.s)); m < Math.min(end, Math.ceil(r.e)); m++) {
-      (at[m] = at[m] || new Map()).set(r.project, (at[m].get(r.project) || 0) + 1);
-    }
-  }
-  const out = [];
-  for (let m = 0; m < end; m++) {
-    if (!at[m]) continue;
-    const last = out[out.length - 1];
-    if (last && last.e >= m - 2) { last.e = m + 1; } else out.push({s: m, e: m + 1, by: new Map()});
-    const cur = out[out.length - 1];
-    for (const [p, n] of at[m]) cur.by.set(p, (cur.by.get(p) || 0) + n);
-  }
-  return out.filter(x => x.e - x.s >= 3).map(x => ({...x, what: [...x.by].sort((a, b) => b[1] - a[1])
-    .map(([p, n]) => `${p} ${dur(n)}`).join(', ')}));
-}
 
 /* side-by-side lanes for overlapping cards (by their drawn height, not just their minutes) */
 function lanes(list, ppm, minPx) {
@@ -437,9 +414,9 @@ function render() {
     // with the Claude Code switch on: a task from Claude for each block, as "Check my day with Claude" asks first; the
     // same blocks asked about again (also after a restart) give the kept answer, and Claude is not run
     $('#ask-claude').hidden = !CONFIG?.likely?.askClaude;
-    const rails = backgroundRails(likely.background, end).map(x => `<div class="bgrail" style="top:${x.s * ppm}px;height:${(x.e - x.s) * ppm}px"
-        role="img" aria-label="${esc(`In the background ${hm(x.s)}–${hm(x.e)}: ${x.what}`)}" title="${esc(`In the background ${hm(x.s)}–${hm(x.e)}: ${x.what}`)}"></div>`).join('');
-    setHTML(laneLikely, likelyCache.length ? rails + likelyCache.map((b, i) => {
+    // the agents' background work is not drawn here (2026-11-12, the owner: "навіщо мені ця інфа?"): Log the day applies the
+    // parallel rules to it and says so on the row that gets its minutes
+    setHTML(laneLikely, likelyCache.length ? likelyCache.map((b, i) => {
       const x = {s: b.start * Z, e: b.end * Z}, h = (x.e - x.s) * ppm;
       if (b.logging) {  // a session's time spent logging time: shown and loggable by hand, never put in Log the day
         return `<div class="card likely logging" data-k="likely" data-i="${i}" style="${place(x, ppm, 18)}" tabindex="0" role="button"
@@ -671,18 +648,13 @@ document.addEventListener('click', ev => {
     }
     const meet = logBtn.dataset.meet != null ? meetCache[+logBtn.dataset.meet] : null;
     pop.classList.remove('on');
-    if (!meet && logBtn.dataset.likely == null) { logStretch(a, b); return; }  // a rail or an Activity block
-    const linked = logBtn.dataset.likely != null ? likelyTasks(likelyCache[+logBtn.dataset.likely]) : {ids: [], learned: [], claude: [], draft: null};
-    openLog({start: a, minutes: b - a, hint: rulesInRange(a, b), note: (meet ? meet.note : linked.draft?.note) || '',
-             drafted: meet ? null : linked.draft,
-             lead: meet ? {label: 'For this meeting', url: `/api/meeting-tasks?date=${state.date}&uid=${
-                             encodeURIComponent(meet.uid || '')}&title=${encodeURIComponent(meet.title || '')}`}
-                 : linked.ids.length || linked.learned.length || linked.claude.length
-                   ? {label: 'For this work', ids: linked.ids, idsWhy: 'linked in this session',
-                      tasks: [...linked.claude, ...linked.learned]} : null});
-    // with Claude Code on, a note from the block's session and commits, unless Claude's pick already brought one
-    if (!meet && logDlg.open && CONFIG?.likely?.askClaude && (!linked.draft || linked.draft.from === 'commits'))
-      draftFromSession({date: state.date, s: a, e: b, project: likelyCache[+logBtn.dataset.likely].project});
+    // a rail, an Activity block or a Likely block: a stretch, led by Log the day's task for it (range.js), so the
+    // dialog and Log the day offer the same task first (2026-11-13: on 30 days the Likely block's own first offer was
+    // the task logged on 29% of its minutes, Log the day's on 48%)
+    if (!meet) { logStretch(a, b); return; }
+    openLog({start: a, minutes: b - a, hint: rulesInRange(a, b), note: meet.note || '', drafted: null,
+             lead: {label: 'For this meeting', url: `/api/meeting-tasks?date=${state.date}&uid=${
+                      encodeURIComponent(meet.uid || '')}&title=${encodeURIComponent(meet.title || '')}`}});
     return;
   }
   // Edit, Delete and Change act on the entry the popover shows (popEntry), never on a place in a list that a refresh

@@ -185,6 +185,16 @@ class LogBodyTest(unittest.TestCase):
                                  "note": "Search keeps every letter"})
         self.assertEqual({k: v["data"]["id"] for k, v in rels.items()}, {"person": "1", "service": "6", "task": "5"})
 
+    def test_a_logged_time_spent_logging_row_remembers_its_task(self):
+        # 2026-11-12: picked once, the next "time spent logging" row comes on that task (dayplan._logging)
+        saved = []
+        with connected("token"), mock.patch.object(productive, "https", Wire()), \
+                mock.patch.object(server.config, "update", lambda ch: saved.append(ch)):
+            server.api_log(dict(self.BODY, run="ld-2026-11-04-abcdef12", row="r1", proposed={"source": "session"}))
+            server.api_log(dict(self.BODY, start="15:10", run="ld-2026-11-04-abcdef12", row="r2",
+                                proposed={"source": "logging"}))
+        self.assertEqual(saved, [{"logging_task": {"taskId": "5", "title": "", "project": ""}}])
+
     def test_mcp(self):
         wire = Wire()
         with connected("claude-code"), mock.patch.object(productive, "https", wire):

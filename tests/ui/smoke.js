@@ -156,6 +156,55 @@ try {
     const said = esc('Productive said no: the budget is closed.');
     check('a row not written says why, on the card and in the box', card.includes(said) && box.includes(said)
       && box.includes('data-ld-goto="f1"') && !box.includes('with the reason'), card.includes(said) ? box : card);
+
+    // a split gives each part its own note (2026-11-12: one note on three parts, then none at all); the task setter is
+    // stood in for: like the real one, it drops a note Claude wrote, so the notes must come after it
+    const realSet = ldSetTask, rows0 = LD.rows;
+    ldSetTask = async (n, t) => { Object.assign(n, {taskId: String(t.taskId), title: t.title || ''});
+                                  if (n.noteFrom === 'claude') Object.assign(n, {note: '', noteFrom: ''}); };
+    const whole = {id: 's1', key: 'k1', s: 600, e: 640, minutes: 40, taskId: '5', title: 'A', project: 'P', note: 'The whole row.',
+                   noteFrom: 'claude', checked: true, flags: []};
+    LD.rows = [whole];
+    await sgApply(whole, {kind: 'split', split: [{taskId: '5', minutes: 20, note: ''},
+                                                 {taskId: '6', minutes: 10, note: 'Fixed the menu.'},
+                                                 {taskId: '7', minutes: 10, note: ''}]});
+    const notes = LD.rows.map(x => `${x.id}:${x.note}:${x.noteFrom}:${x.checked}`);
+    // the parts come back, all three, when the plan is made again (2026-11-12 audit: only the last one did)
+    const kept = ldSnapshot(LD.rows, null, new Set());
+    const back = ldReapply([{...whole, id: 'r9', key: whole.key, status: null}], kept, []).rows;
+    ldSetTask = realSet; LD.rows = rows0;
+    check('a split gives each part its own note', notes.join('|') ===
+      's1-0:The whole row.:claude:true|s1-1:Fixed the menu.:claude:false|s1-2:::true', notes.join(' | '));
+    check('a split stays split when Log the day opens again', back.map(x => `${x.taskId}:${x.minutes}`).join('|') ===
+      '5:20|6:10|7:10', back.map(x => `${x.taskId}:${x.minutes}`).join(' | '));
+
+    // a row's end: the start stays and the minutes follow it; the minutes move the end (2026-11-13, the owner)
+    const tr = {id: 'te1', s: 600, e: 640, minutes: 40, taskId: '5', title: 'A', project: 'P', serviceId: null,
+                services: [], alts: [], flags: [], why: 'w', note: '', status: null};
+    const host = document.createElement('li'), realChanged = ldChanged;
+    host.dataset.row = tr.id; host.innerHTML = `<div class="ed">${editorHTML(tr)}</div>`;
+    $('#review').appendChild(host);
+    ldChanged = () => {};
+    let endOk = false, minOk = false;
+    try {
+      wireEditor(tr);
+      const end = host.querySelector('[data-ld-end]'), min = host.querySelector('[data-ld-min]');
+      end.value = '11:05'; end.dispatchEvent(new Event('change'));
+      endOk = tr.s === 600 && tr.minutes === 65 && tr.e === 665;
+      min.value = '30'; min.dispatchEvent(new Event('change'));
+      minOk = tr.s === 600 && tr.e === 630;
+    } finally { ldChanged = realChanged; host.remove(); }
+    check("a row's end sets its minutes, and its minutes its end, the start staying", endOk && minOk,
+      `end ${endOk}, minutes ${minOk}, ${tr.s}-${tr.e} ${tr.minutes} min`);
+
+    // every task in a picker has its link to Productive beside it, outside the option (2026-11-12, the owner)
+    const prod0 = CONFIG.productive, list = document.createElement('div'), qbox = document.createElement('input');
+    CONFIG.productive = {...(prod0 || {}), web: 'https://app.productive.io/1-example'};
+    makePicker(list, qbox, () => {}).set([{label: 'For this work', tasks: [{taskId: '55', title: 'Task', project: 'P'}]}]);
+    CONFIG.productive = prod0;
+    const link = list.querySelector('.pk-open');
+    check('a picked-from task links to Productive', !!link && link.href.endsWith('/1-example/tasks/55')
+      && !link.closest('.pk') && link.target === '_blank', list.innerHTML.slice(0, 300));
   }
 
   // the log dialog's over-estimate line follows the length typed

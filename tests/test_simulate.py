@@ -696,6 +696,13 @@ class Run:
             if not m.get("all_day"):
                 for x in range(max(0, int(m["s"])), min(1440, int(math.ceil(m["e"])))):
                     meetingish[x] = 1
+        # a calendar meeting goes on with its call: up to CALL_GAP from its end to a call window (dayplan._meetings)
+        for m in day["meetings"]:
+            if m.get("all_day") or m.get("declined"):
+                continue
+            nxt = [c["s"] for c in calls if int(math.ceil(m["e"])) <= c["s"] <= m["e"] + dayplan.CALL_GAP]
+            for x in range(int(math.ceil(m["e"])), min(1440, int(min(nxt)) if nxt else 0)):
+                meetingish[x] = 1
         notes = {"meeting": {(m.get("title") or "").strip() for m in day["meetings"]},
                  "repeat": {(r.get("note") or "").strip() for r in day["repeats"]},
                  "commits": {commits.note(r.get("commits") or []) for r in day["rows"]}}

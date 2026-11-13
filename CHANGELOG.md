@@ -6,6 +6,28 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- Log the day: each row has a Start, an End and Minutes. Changing the end sets the minutes, changing the minutes moves the end, and the start stays where you put it.
+- Log on a Likely block offers Log the day's task first, as a picked stretch does: on 30 days the block's own first offer was the task logged on 29% of its minutes, Log the day's on 48%.
+- A task Claude only opened in Productive comes after the session's own vote, never makes internal work a client's, and never brings back a repository you never log: on 26 days, 116 fewer minutes on a wrong client and 112 fewer over-billed. A task link you give, a ticket key or a rule still does.
+- Time spent logging stays its own row: it never joins work of the same task, so its flag never unticks that work, and 10 minutes make a logging row whatever Round entries to says.
+- The log dialog's split never makes a part shorter than the shortest entry (15 + 25 minutes on a 10-minute grid had made a 5-minute part), and a client's part leads the dialog only when it holds at least as much as the rest of the work.
+- A call goes on the same way everywhere (its window back within 20 minutes), and Zoom's /w/ and /my/ links and four-letter Meet codes count as calls too.
+- Claude's pick of a client's task in a project this repository is never logged to starts unticked, to check.
+- Half each makes two entries of 10 minutes or more, or is not offered; the page and Pulsar in Claude Code halve the same way (25 minutes: 15 + 10).
+- Two clients' agents beside the same work share it instead of one taking the other's half, and only another client's agent gets half (not another task of the same client).
+- Every task in a task list (the log dialog, Log the day, rules) has a Link to its page in Productive beside it.
+- Log the day no longer fails with an error when a hole after a client's meeting is filled, and a meeting never grows into the time after it.
+- A meeting keeps its own time: work of the same task before or after it (time spent logging, short stretches) stays a row of its own, a call that ended before a meeting does not make it attended, and the active-time limit cuts meetings last. A daily meeting card on a calendar meeting is rated from its own days.
+- A split and a join stay as they were when Log the day is opened again; a join needs the same service.
+- Claude's review knows the current rules (time spent logging, parallel agents, meetings), never suggests adding agent time, and a longer row it suggests never runs into the next one. Pulsar in Claude Code says which rows are time spent logging or Claude's drafts, offers no piece under 10 minutes, and tells the tasks a session only opened from the ones linked in it.
+- Work seen is always proposed: when a task's entries come out longer than its work was seen, only the minutes an entry took in beyond its own work are cut, never the work itself; what is still over is said on the row ("check it"). The stretch still going on had been cut first, so its last 20 to 30 minutes were never proposed.
+- A split from Claude gives each part its own note (checked like any note Claude drafts, and never ticked by itself); without one, only the part of the row's own task keeps the row's note. Three parts had been logged with one and the same note.
+- Meetings follow the calendar: an entry starts at the meeting's calendar time and ends with its call (the call windows that go on from its end, each within 20 minutes of the last, however long), never stretched by work before or after it, nor pushed later by the entry before it. A daily meeting card on a calendar meeting is that meeting. Two meetings back to back are split as the calendar has them, or where the browser tab that opened the second one's call was. A call joined up to 10 minutes early makes no row of its own. When a call was opened from a join link in the browser, its Zoom number or Meet code says which meeting it was.
+- Work outside Claude next to time spent logging takes the task of the work beside it, never the logging row's.
+- The Likely column no longer draws the agents' background work as a dashed line: Log the day applies the parallel rules to that time and says so on the row it goes to.
+- Time spent logging time is its own row in Log the day, never ticked: a stretch of 10 minutes or more in Pulsar or Productive, or a Claude session spent logging time. It comes on your own scrum (the task with "scrum" in its name you log to most) until you pick another, which Pulsar then remembers; tick it to log it. A shorter look at Pulsar stays with the work around it, and testing Pulsar in its own repository is work. Before, such a stretch went to the work before it, a client's too.
+
 ## 1.6.19 (2026-11-12)
 - Task search finds every word typed, in any order and in part, in the title or the project: "drupal shop" or "upgr SHOP" finds "Drupal 11 – DB Upgrade – Shop".
 

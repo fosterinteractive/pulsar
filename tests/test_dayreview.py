@@ -157,7 +157,8 @@ class Checks(unittest.TestCase):
     def test_good_suggestions_pass_with_names_from_pulsar(self):
         raw = [{"row": "r0", "kind": "task", "taskId": "6", "why": "the commits are about the menu"},
                {"row": "r0", "kind": "service", "service": "Service Request / Contingency", "why": "a contingency issue"},
-               {"row": "r0", "kind": "split", "split": [{"taskId": "5", "minutes": 40}, {"taskId": "6", "minutes": 20}],
+               {"row": "r0", "kind": "split", "split": [{"taskId": "5", "minutes": 40, "note": "Fixed the menu on phones."},
+                                                         {"taskId": "6", "minutes": 20, "note": "See https://evil.example"}],
                 "why": "two kinds of work"},
                {"row": "", "kind": "question", "question": "Was 14:00-15:00 the client call?", "why": "no work seen"},
                {"row": "r0", "kind": "create_task", "title": "Menu breaks on phones", "project": "ACME",
@@ -167,8 +168,20 @@ class Checks(unittest.TestCase):
         self.assertEqual(got[0]["title"], "Fix the menu")       # Pulsar's name, never Claude's words
         self.assertEqual(got[1]["serviceId"], "s2")
         self.assertEqual([p["minutes"] for p in got[2]["split"]], [40, 20])
+        # each part its own note, through the note check: one with a web address is left empty (2026-11-12)
+        self.assertEqual([p["note"] for p in got[2]["split"]], ["Fixed the menu on phones.", ""])
         self.assertEqual(got[4]["parentTitle"], "Build the importer")
         self.assertTrue(all(s["source"] == "claude" and not s["sure"] for s in got))
+
+    def test_a_row_grows_only_up_to_the_next_row_and_the_prompt_keeps_agent_time_out(self):
+        # 2026-11-12 audit: "minutes" could add agent time no one saw; the prompt invited it ("placed after, in free time")
+        rows = self.rows + [{"id": "r1", "s": 620, "e": 650, "minutes": 30, "taskId": "6", "serviceId": "s1", "services": []}]
+        ok = [{"row": "r0", "kind": "minutes", "minutes": 80, "why": "the work went on"}]
+        over = [{"row": "r0", "kind": "minutes", "minutes": 90, "why": "add the agent's time"}]
+        self.assertEqual([g["minutes"] for g in dayreview.validate(ok, rows, self.known)[0]], [80])
+        self.assertEqual(dayreview.validate(over, rows, self.known)[0], [])
+        self.assertNotIn("placed after, in free time", dayreview.RULES)
+        self.assertIn("never ticked", dayreview.RULES)
 
     def test_anything_else_is_dropped_never_repaired(self):
         raw = [{"row": "r0", "kind": "task", "taskId": "777", "why": "made up"},
@@ -223,6 +236,15 @@ class ButtonsThatDoIt(unittest.TestCase):
         self.assertEqual(dayreview.continued_calls(entries, self.logged, [{"s": 1120, "e": 1145}]), [])
         # a row with a task, or not a call, is not touched
         self.assertEqual(dayreview.continued_calls([{**self.rows[0], "taskId": "5"}], self.logged, calls), [])
+
+    def test_the_review_and_log_the_day_agree_how_long_a_call_goes_on(self):
+        # one definition (rule order 2.2): the same gap as Log the day's meeting chain
+        from pulsar import dayplan
+        self.assertEqual(dayreview.CALL_GAP, dayplan.CALL_GAP)
+        x = self.logged[0]
+        later = [{**self.rows[0], "s": x["e"] + 15, "e": x["e"] + 45, "minutes": 30}]
+        calls = [{"s": x["s"] + 5, "e": x["e"]}, {"s": x["e"] + 15, "e": x["e"] + 45}]
+        self.assertEqual([g["kind"] for g in dayreview.continued_calls(later, self.logged, calls)], ["extend"])
 
     def test_no_change_makes_an_entry_under_ten_minutes(self):
         # 2026-11-12: a 30-minute row split into 8 + 8 + 7 + 7 was accepted, and Productive took none of it

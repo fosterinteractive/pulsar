@@ -133,13 +133,12 @@ section.rv[hidden] { display: none; }
 .alt span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .alt:hover { background: var(--hover); }
 .alt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.tl { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; column-gap: 10px; align-items: end; }
+.tl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 10px; align-items: end; }
 .tl .field input { height: 32px; }  /* the time and number fields the same height, so their labels line up */
-.tl .endt { color: var(--muted); font-size: 12px; padding-bottom: 8px; white-space: nowrap; }
-/* a narrow editor: "until" under the two fields, then the fields one under the other */
+/* a narrow editor: start and end side by side, the minutes under them; then one under the other */
 @container (max-width: 300px) {
-  .tl { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-  .tl .endt { grid-column: 1 / -1; padding: 4px 0 0; }
+  .tl { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); row-gap: 8px; }
+  .tl .field:last-child { grid-column: 1 / -1; }
 }
 @container (max-width: 220px) { .tl { grid-template-columns: minmax(0, 1fr); } }
 .whyd { display: flex; gap: 2px; color: var(--muted); font-size: 12px; margin: 8px 0 0; line-height: 1.45; }

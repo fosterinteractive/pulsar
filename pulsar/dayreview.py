@@ -25,6 +25,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 from . import askclaude, claudeuses, config, logbook, productive
+from .dayplan import CALL_GAP  # a call goes on while its window shows again within this many minutes
 
 # ---- periods in task titles ----------------------------------------------------------------------------------------
 
@@ -255,7 +256,7 @@ BROWSER = re.compile(r"chrome|safari|firefox|arc|brave|edge|orion|opera", re.I)
 CHAT = re.compile(r"slack|telegram|teams|discord|mail|outlook|messages", re.I)
 
 
-# a step about logging time says nothing about the work (and the time spent logging is never logged)
+# a step about logging time says nothing about the work (time spent logging is a row of its own, dayplan._logging)
 LOGGING_TALK = re.compile(r"залог|логу[йєюв]|затрек|трекн|\blog(?:ged|ging)? (?:the |my |this )?(?:time|day|hours)"
                           r"|time entr|productive|timesheet", re.I)
 
@@ -344,7 +345,10 @@ def digest(day: str, d: dict, budget: int = BUDGET_TOKENS) -> tuple:
                      "commits": [_cut(c, 100) for c in (r.get("commits") or [])[:8]],
                      "learned": [{"taskId": t.get("taskId"), "task": _cut(t.get("title"), 70), "why": _cut(t.get("why"), 60)}
                                  for t in (r.get("learned") or [])[:5]],
-                     "linked": [str(x) for x in (r.get("tasks") or [])[:3]]})
+                     # typed by the person (linked) apart from those Claude only opened in Productive (opened): one
+                     # read for another project's work is no link (2026-11-12 audit)
+                     "linked": [str(x) for x in (r.get("repoLinks") if "repoLinks" in r else r.get("tasks") or [])[:3]],
+                     "opened": [str(x) for x in (r.get("seenTasks") or [])[:3]]})
     # meetings: never one you declined; the title of one marked private in Google Calendar, or holding a word of
     # Settings' personal windows, is not sent (only that a meeting was there)
     personal = [w.lower() for w in config.load().get("personal_patterns") or [] if isinstance(w, str) and w.strip()]
@@ -434,7 +438,8 @@ SCHEMA = {"type": "object", "required": ["suggestions"], "properties": {"suggest
                        "minutes": {"type": "integer"},
                        "split": {"type": "array", "maxItems": 4, "items": {
                            "type": "object", "required": ["taskId", "minutes"],
-                           "properties": {"taskId": {"type": "string"}, "minutes": {"type": "integer"}}}},
+                           "properties": {"taskId": {"type": "string"}, "minutes": {"type": "integer"},
+                                          "note": {"type": "string"}}}},
                        "entryId": {"type": "string"},
                        "answers": {"type": "array", "maxItems": 3, "items": {
                            "type": "object", "required": ["label", "kind"],
@@ -461,9 +466,13 @@ logging to last period's task. A task closed before the day does not take time.
 line; a developer cannot set a task's service, only the entry's.
 - Estimates, scoping and proposals go to the person's estimations task; internal meetings to their meeting task; \
 internal tooling to its internal project: non-billable.
-- How much: the person's time at the keys and in meetings, never more than they worked; time spent logging time is \
-never logged; personal windows and away time are not work. Work an agent did while the person was elsewhere is \
-placed after, in free time, never on top of other work; whether to add it is the person's call: ask.
+- How much: the person's time at the keys and in meetings, never more than they worked; personal windows and away \
+time are not work. Time spent logging time (10 minutes or more in Pulsar or Productive) is its own row, flagged \
+"logging", on the person's scrum task and never ticked: they choose; never suggest unticking or moving it.
+- Agents working while the person did other work: a client's agent over internal work takes that time from 10 \
+minutes; another client's agent beside client work in front gets half of the overlap from 15 minutes; anything else an \
+agent did is shown, never placed. Agent time is never moved into free time and never added on top: never suggest it.
+- Meetings: the calendar's start, the end of their call; two back to back are split as the calendar has them.
 - Notes: the outcome, short; clients may read them."""
 PROMPT = """You review a proposed day of time entries for one person before they log it in Productive. Pulsar (their \
 time tracker) made the plan below from their activity, Claude Code sessions, calendar and earlier entries. You get a \
@@ -480,14 +489,15 @@ plan is wrong or a rule above is broken, and say why in at most 15 words. Kinds:
 - "minutes": the row's minutes should be this number (less: the person was not at it; more: only with evidence), \
 never under 10: no entry is shorter.
 - "split": the row is work for several tasks: up to 4 parts, taskId and minutes each, adding up to the row's minutes, \
-each part at least 10 minutes (no entry is shorter), so a 30-minute row splits into 3 parts at most.
+each part at least 10 minutes (no entry is shorter), so a 30-minute row splits into 3 parts at most. Give each part \
+its own "note": one short sentence of what was done for that task in this row (the row's note is about all of it).
 - "create_task": no task fits and one should exist (a new period's task, a subtask for an issue under the period's \
 contingency task): title in the company's pattern, the project, parentTaskId when it is a subtask, one-line \
 description of the issue. Never for a task that exists.
-- "question": what the evidence cannot settle and only the person knows (which of two tasks, whether to add agent \
-time): one short question, and up to 3 "answers" the person clicks, each a "label" of at most 6 words and the change \
+- "question": what the evidence cannot settle and only the person knows (which of two tasks, whether a row is \
+work): one short question, and up to 3 "answers" the person clicks, each a "label" of at most 6 words and the change \
 it makes: kind "task", "minutes", "split", "untick" or "extend" with that kind's fields, or "keep" for no change.
-- "untick": the row should not be logged (time spent logging, personal, already logged elsewhere).
+- "untick": the row should not be logged (personal, already logged elsewhere).
 - "extend": the row is the same work as an entry already logged right before or after it (a meeting that ran over): \
 add its minutes to that entry instead of logging it apart; "entryId" is the entry's "id" in "logged".
 Row "" is for the day as a whole (a question about time not in the plan). At most {most} suggestions, the ones that \
@@ -541,6 +551,12 @@ def validate(raw: list, plan_rows: list, known: dict, logged: list = ()) -> tupl
     through the note's checks. A question's answers are checked the same way, one by one: an answer that fails is
     left out, the question stays. Nothing is repaired: a suggestion that fails is dropped."""
     rows = {str(r.get("id")): r for r in plan_rows}
+    # how far a row may grow: up to the next row or entry already logged (never on top of other work, 2026-11-12 audit:
+    # a "minutes" suggestion could add agent time no one saw)
+    starts = sorted([int(x["s"]) for x in plan_rows if x.get("s") is not None]
+                    + [int(x["s"]) for x in logged or () if x.get("s") is not None])
+    rows = {k: {**r, "_room": next((a for a in starts if a > int(r["s"])), 1440) - int(r["s"])}
+            if r.get("s") is not None else r for k, r in rows.items()}
     entries = {str(x.get("id")): x for x in logged or () if x.get("id") and x.get("s") is not None}
     out, dropped = [], []
     for s in raw[:MAX_SUGGESTIONS]:
@@ -617,8 +633,9 @@ def _change(k: str, s: dict, r: dict, known: dict, entries: dict) -> tuple:
         return {"serviceId": str(svc["id"]), "service": name}, ""
     if k == "minutes":
         m = s.get("minutes")
-        if not isinstance(m, int) or not SHORTEST <= m <= 720 or m == r.get("minutes") or r["s"] + m > 1440:
-            return None, "minutes out of range"
+        if not isinstance(m, int) or not SHORTEST <= m <= 720 or m == r.get("minutes") or r["s"] + m > 1440 \
+                or m > max(int(r.get("minutes") or 0), int(r.get("_room") or 1440)):
+            return None, "minutes out of range, or more than the room up to the next row"
         return {"minutes": m}, ""
     if k == "split":
         parts = [p for p in s.get("split") or [] if isinstance(p, dict)]
@@ -626,8 +643,12 @@ def _change(k: str, s: dict, r: dict, known: dict, entries: dict) -> tuple:
         if len(parts) < 2 or any(str(p.get("taskId")) not in known or not isinstance(p.get("minutes"), int)
                                  or p["minutes"] < SHORTEST for p in parts) or sum(p["minutes"] for p in parts) != r["minutes"]:
             return None, "split does not add up, has a part under 10 minutes, or names an unknown task"
+        # each part its own note, through the same check as any note Claude drafts (askclaude.guard_note); one it
+        # refuses is left empty for the person to write (2026-11-12: three parts got the row's one note)
         return {"split": [{"taskId": str(p["taskId"]), "minutes": p["minutes"],
-                           "title": known[str(p["taskId"])].get("title") or ""} for p in parts]}, ""
+                           "title": known[str(p["taskId"])].get("title") or "",
+                           "note": _GUARD(p.get("note"))[0] if isinstance(p.get("note"), str) else ""}
+                          for p in parts]}, ""
     if k == "extend":
         x = entries.get(str(s.get("entryId") or ""))
         if not x or not next_to(x, r):
@@ -655,7 +676,9 @@ def continued_calls(entries: list, logged: list, calls: list) -> list:
             if x.get("s") is None or x.get("e") is None or not x.get("id"):
                 continue
             end = e.get("e") if e.get("e") is not None else e["s"] + e["minutes"]
-            if not (-5 <= e["s"] - x["e"] <= 5 or -5 <= x["s"] - end <= 5):
+            # the call goes on as Log the day chains a meeting's call: windows within CALL_GAP of each other (one
+            # definition, rule order 2.2; it was 5 minutes here)
+            if not (-5 <= e["s"] - x["e"] <= CALL_GAP or -5 <= x["s"] - end <= CALL_GAP):
                 continue
             if sum(max(0, min(c["e"], x["e"]) - max(c["s"], x["s"])) for c in calls or ()) < 5:
                 continue  # no call during that entry: another call, not the same one going on
@@ -695,7 +718,7 @@ def known_tasks(doc: dict) -> dict:
     for w in doc.get("work") or []:
         for t in w.get("learned") or []:
             add(t.get("taskId"), t.get("task"))
-        for tid in w.get("linked") or []:  # pasted in the session: named by Productive before the page sees it
+        for tid in list(w.get("linked") or []) + list(w.get("opened") or []):  # named by Productive before the page sees it
             add(tid, "")
     for m in doc.get("meetings") or []:
         for t in m.get("tasks") or []:

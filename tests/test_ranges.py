@@ -107,6 +107,14 @@ class AnalyseTest(unittest.TestCase):
         d = day(items=[work(540, 625)], rows=[row(540, 600), row(600, 625, titles=["Hero video"])])
         self.assertEqual(analyse(d, ctx, 540, 625)["dominant"]["taskId"], "11")
 
+    def test_a_small_clients_part_never_leads_more_work_with_no_class(self):
+        # 2026-11-12 audit: 12 minutes of a client led 48 minutes of work whose task has no class known
+        ctx = ctx_for({"Fix the importer": "11", "Hero video": "22"})
+        ctx = {**ctx, "task_class": {"22": "client"}}
+        d = day(items=[work(540, 600)], rows=[row(540, 588), row(588, 600, project="site", titles=["Hero video"])])
+        res = analyse(d, ctx, 540, 600)
+        self.assertEqual((res["dominant"]["taskId"], res["dominant"]["minutes"]), ("11", 48))
+
     def test_a_task_holding_most_of_the_range_with_nothing_else_of_20_minutes_is_not_mixed(self):
         d = day(items=[work(540, 612)], rows=[row(540, 600), row(600, 612, project="site", titles=["Hero video"])])
         res = analyse(d, self.ctx, 540, 612)
@@ -173,6 +181,18 @@ class AnalyseTest(unittest.TestCase):
 
 
 class SplitTest(unittest.TestCase):
+    def test_the_grid_never_leaves_a_piece_shorter_than_an_entry(self):
+        # 2026-11-12 audit: 15 + 25 + 20 minutes on a 10-minute grid made a 5-minute entry the writer refuses
+        got = ranges._split(["A"] * 15 + ["B"] * 10 + ["C"] * 35, 540, {"grid": 10, "min_entry": 10})
+        self.assertEqual([(s, n, k) for s, n, k, _ in got], [(540, 10, "A"), (550, 20, "B"), (570, 30, "C")])
+        self.assertTrue(all(n >= 10 for _, n, _, _ in got))
+        # halves go up, not to the even line: 25 on a 10-minute grid is 30
+        got = ranges._split(["A"] * 25 + ["B"] * 35, 540, {"grid": 10, "min_entry": 10})
+        self.assertEqual([(s, n) for s, n, _, _ in got], [(540, 30), (570, 30)])
+        # with no grid line that keeps both pieces long enough, the cut stays where the work changed
+        got = ranges._split(["A"] * 10 + ["B"] * 10, 543, {"grid": 5, "min_entry": 10})
+        self.assertEqual([(s, n) for s, n, _, _ in got], [(543, 10), (553, 10)])
+
     def test_a_short_piece_joins_its_neighbour(self):
         got = ranges._split(["A"] * 30 + ["B"] * 6 + ["A"] * 30, 540, OPTS)
         self.assertEqual(got, [(540, 66, "A", 66)])
@@ -369,7 +389,7 @@ class PageTest(unittest.TestCase):
         self.assertIn("logStretch(s.a, s.b)", self.read("js/flow.js"))  # Log and next
         day = self.read("js/day.js")
         self.assertRegex(day, r"function logStretch[\s\S]{0,600}range: true")  # every stretch goes through range.js
-        self.assertIn("logBtn.dataset.likely == null) { logStretch(a, b)", day)  # rails, Activity blocks
+        self.assertIn("if (!meet) { logStretch(a, b); return; }", day)  # rails, Activity and Likely blocks
 
     def test_a_drag_to_the_minute_is_not_rounded_again(self):
         """The Logged column drags in 1-minute steps: the dialog keeps those minutes, never "Round entries to"."""

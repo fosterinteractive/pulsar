@@ -49,18 +49,26 @@ SITTING_GAP = config.DEFAULTS["away_after"]  # minutes without activity that end
 CALL_GAP = 20        # a call goes on while its window shows again within this many minutes
 CALL_MIN = 10        # a shorter call is a glance at a call window, not a meeting
 MEETING_SLACK = 10   # a call this close to a calendar meeting is that meeting
+# a meeting's own key in its join link (calendar.py "url"), and in the browser tab that opened the call: Zoom's meeting
+# number, Google Meet's code. The call window itself is only "Zoom Meeting" (2026-11-12)
+JOIN_KEY = re.compile(r"zoom\.us/(?:j|w|my)/(\w{6,})|meet\.google\.com/([a-z]{3,4}-[a-z]{4}-[a-z]{3,4})\b", re.I)
+
+
+def join_key(url) -> str:
+    m = JOIN_KEY.search(str(url or ""))
+    return next((g for g in m.groups() if g), "").lower() if m else ""
 HALF_LIFE = 7        # days: older logging counts half as much this many days later
 LEARN_DAYS = 60
 RECENT_DAYS = 30
 RANK = {"low": 0, "medium": 1, "high": 2}
-ORDER = ("rule", "link", "ticket", "seen", "session", "work", "repo", "sameday", "words")
+ORDER = ("rule", "link", "ticket", "session", "seen", "work", "repo", "sameday", "words")
 BLOCKED = -1
 
 # time spent logging time (Pulsar, Productive): never proposed, never given to a session (sessions.LOGGING)
-LOGGING = re.compile(r"^Pulsar$|app\.productive\.io|(127\.0\.0\.1|localhost):56\d\d", re.I)
+LOGGING = sessions_mod.LOGGING  # one definition (rule order 1.4): Pulsar and Productive
 # ...except in Pulsar's own repository: there the Pulsar window is the work itself, testing what was just built
 # (2026-11-06: 76 minutes of testing Pulsar were dropped as logging time)
-OWN_REPO = re.compile(r"^pulsar(-preview)?$", re.I)
+OWN_REPO = sessions_mod.OWN_REPO
 WORD = re.compile(r"[^\W_]{3,}")
 TICKET = re.compile(r"\b[A-Z][A-Z0-9]{1,9}-\d{1,5}\b")
 GENERIC = {"the", "and", "for", "with", "drupal", "site", "website", "issues", "issue", "fix", "update", "kb-dev",
@@ -301,6 +309,12 @@ def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_L
         last[t] = r["date"]
     lo30 = (day0 - timedelta(days=RECENT_DAYS)).strftime("%Y-%m-%d")
     recent = [t for t, d in sorted(last.items(), key=lambda kv: kv[1], reverse=True) if d >= lo30]
+    # the person's own scrum: the task with "scrum" in its title they logged most to, where time spent logging time
+    # goes until they pick another (_logging; the owner, 2026-11-12: "в скрам-мітинг для кожного юзера він свій")
+    scrum_min: dict = defaultdict(int)
+    for r in before:
+        if SCRUM.search(str(r.get("task") or "")) and r.get("taskId"):
+            scrum_min[str(r["taskId"])] += int(r.get("minutes") or 0)
     never = {p for p in seen if p and seen[p] >= 60 and logged[p] / seen[p] < 0.1}
     task_class, project_class = attribution.task_classes(before)
     # each project's task of its latest earlier day: the work of a repository logged to that project most often goes
@@ -308,6 +322,7 @@ def learn(date: str, history: list, days: dict, t0_of, half_life: float = HALF_L
     lastday = attribution.last_day_tasks(before, date)
     return {"sess": sess, "repo": repo, "sr": sr, "service": service, "project_service": project_service,
             "names": names, "recent": recent, "never_logged": never, "lastday": lastday,
+            "scrum": max(scrum_min, key=scrum_min.get) if scrum_min else None,
             "latest": attribution.latest_tasks(before, date),
             "skip": set(WORD.findall((person or "").lower())),
             "task_class": task_class, "project_class": project_class,
@@ -411,7 +426,9 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
             out.append((str(first), "link", "high", "a task link or number in this Claude session"))
         elif src == "seen" and row.get("seenTasks"):
             # the session's Claude opened the task in Productive or gave its link: the work names it, less surely
-            # than a link you typed
+            # than a link you typed, and after the session's vote (right on 29% of its minutes, the vote on 60%: the
+            # self-check, 26 days to 2026-11-12). Dropping it moved a QA session's minutes to a client on 9 Nov, so it
+            # stays, and never sets a row's class to a client's (prepare)
             out.append((str(row["seenTasks"][0]), "seen", "medium", "this Claude session opened or linked this task"))
         elif src == "ticket":
             found = set(TICKET.findall(" ".join(list(row.get("titles") or []) + [row.get("first_message") or ""]
@@ -531,6 +548,16 @@ def doubt(row: dict, ctx: dict, task, source: str) -> str:
         return ""
     if source == "sameday":  # its why says so already
         return "check it"
+    if source == "claude":
+        # Claude reads the day's own work, so the gates for guesses from history do not hold it; but a client's task of
+        # a project this repository is never logged to starts unticked (2026-11-12 audit: it came ticked, one click
+        # from billing a client for another client's or internal work)
+        project = ((ctx.get("names") or {}).get(str(task)) or {}).get("project") or task_project(task, ctx, row)
+        where = places(ctx, row.get("project"))
+        client = attribution.class_of_task(task, ctx) == CLIENT or project_class(project, ctx) == CLIENT
+        if client and project and where and project not in where:
+            return f"Claude's pick is a client's task in {project}, where you have not logged {row.get('project')} work"
+        return ""
     if source in ("link", "seen", "ticket"):
         project = ((ctx.get("names") or {}).get(str(task)) or {}).get("project")
         where = places(ctx, row.get("project"))
@@ -607,6 +634,9 @@ def choose(row: dict, ctx: dict, rule_hit=None, sameday: dict | None = None, ass
         alts = [(task, src, conf, why)] if task else []
         alts = [(t, s, c, f"Pulsar's guess: {w}") for t, s, c, w in alts]
         task, src, conf, why = str(first["taskId"]), "claude", "medium", f"Claude: {pick.get('why') or 'its pick'}"
+        reason = doubt(row, ctx, task, "claude")  # a project this repository is never logged to: unticked, to check
+        if reason:
+            conf, why = "low", f"{why}; {reason}"
         alts += [(str(t["taskId"]), "claude", "low", "Claude: another option") for t in pick["tasks"][1:]]
     seen, out = {task}, []
     for t, s, c, w in alts + new_alt + found[1:] + [(str(x["taskId"]), "learned", "low", x.get("why") or "")
@@ -771,6 +801,7 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     d = _Day(day, ctx, {"grid": GRID, "min_entry": MIN_ENTRY, "merge_gap": MERGE_GAP, "out_min": OUT_MIN, **(opts or {})})
     _logged(d)
     _meetings(d)
+    _logging(d)
     _rows(d)
     # time spent logging (Pulsar, Productive): never proposed. An editor or terminal with no session row is work
     # outside Claude, below (it was set aside, and the person logged most of it: 624 minutes in 34 days)
@@ -842,10 +873,22 @@ def _meetings(d: _Day) -> None:
     N, owner, claims, claim, known = DAY_MIN, d.owner, d.claims, d.claim, d.known
     calls = join_calls(d.day.get("calls") or [])
     attended = d.attended = []
+    # the calendar first (the owner, 2026-11-12: "мітинги будемо в першу чергу звіряти з календарем"): a daily repeat on a
+    # calendar meeting is that meeting, at the calendar's time, and gives it its task when the meeting has none
+    on_cal = [m for m in d.day.get("meetings") or [] if not m.get("all_day") and not m.get("declined")
+              and m["e"] - m["s"] >= 5]
+    from_repeat: dict = {}  # id(calendar meeting) -> the repeat on it
+    # the browser tabs that opened a call: [(minute, key)], so a call is known to be this meeting, or another one
+    joins = sorted((it["s"], join_key(it.get("url"))) for it in d.items
+                   if it.get("cat") == "work" and join_key(it.get("url")))
     for rp in d.day.get("repeats") or []:
         tid = str(rp["taskId"])
         if tid in d.done_tasks:
             continue  # its task already has an entry today: the page stops offering it too
+        cal = next((m for m in on_cal if _overlap(m["s"], m["e"], rp["s"], rp["e"]) > 0), None)
+        if cal is not None:
+            from_repeat.setdefault(id(cal), rp)
+            continue
         known(tid, rp.get("title"), rp.get("project"))
         conf = "high" if (rp.get("days") or 0) >= 5 else "medium"
         i, _ = claim({"kind": "meeting", "source": "repeat", "task": tid, "conf": conf, "attended": True,
@@ -856,6 +899,7 @@ def _meetings(d: _Day) -> None:
                      range(int(rp["s"]), int(rp["e"])))
         attended.append([rp["s"], rp["e"], i])
     unattended = d.unattended = []
+    last_end = 0  # where the last attended calendar meeting ended: the next one starts there when it ran over
     from .calendar import note_of
     norm = lambda t: re.sub(r"\s+", " ", str(t or "").strip().lower())  # noqa: E731
     for m in sorted(d.day.get("meetings") or [], key=lambda m: m["s"]):
@@ -870,7 +914,9 @@ def _meetings(d: _Day) -> None:
         refused = "meetingtitle" if title and not m.get("external") and not title_note else ""
         # the same call only when the repeat covers half of this meeting: a repeat stretched over the next meeting
         # must not swallow it (its call was left with no task)
-        same = next((x for x in attended if _overlap(x[0], x[1], s, e) >= 0.5 * (e - s)), None)
+        # (a repeat's only: a calendar meeting before this one that ran into it ends where this one's call began)
+        same = next((x for x in attended if claims[x[2]].get("source") == "repeat"
+                     and _overlap(x[0], x[1], s, e) >= 0.5 * (e - s)), None)
         if same:  # the repeat already stands for this call: one entry, with the meeting's title if it has no note
             c = claims[same[2]]
             if title_note and not c.get("note"):
@@ -885,6 +931,10 @@ def _meetings(d: _Day) -> None:
         if in_log >= 0.5 * (e - s):
             continue  # logged already
         t = (m.get("tasks") or [None])[0]
+        rp = from_repeat.get(id(m))
+        if rp is not None and (not t or str(t.get("taskId")) == str(rp["taskId"])):
+            t = {"taskId": str(rp["taskId"]), "title": rp.get("title"), "project": rp.get("project"),
+                 "n": int((t or {}).get("n") or 0), "of": int((t or {}).get("of") or 0), "why": (t or {}).get("why")}
         if t:
             known(str(t["taskId"]), t.get("title"), t.get("project"))
             n, of = t.get("n") or 0, t.get("of") or 0
@@ -894,14 +944,57 @@ def _meetings(d: _Day) -> None:
         else:
             conf, why = "low", "a meeting on your calendar; no task found for it"
         renamed = bool(t and t.get("lastTitle") is not None and norm(t["lastTitle"]) != norm(title))
-        seen = any(_overlap(a - MEETING_SLACK, b + MEETING_SLACK, s, e) > 0 for a, b in calls)
+        key = join_key(m.get("url"))
+        joined = bool(key) and any(k == key and s - 15 <= at <= e for at, k in joins)
+        # a call into the meeting's own time; one that ended just before it only when no other meeting had it (joined
+        # early), never the call of the meeting before (2026-11-12 audit: a meeting right after another, with client
+        # work in front all through it, was taken as attended)
+        others = [(m2["s"], m2["e"]) for m2 in on_cal if m2 is not m]
+        seen = joined or any(_overlap(a, b, s, e) > 0 or (s - MEETING_SLACK <= b <= s and not any(
+            _overlap(a, b, x, y) > 0 for x, y in others)) for a, b in calls)
+        if rp is not None and t and str(t["taskId"]) == str(rp["taskId"]):
+            # rated from the repeat's own days, as a repeat alone is (2026-11-12 audit: made-up votes gave "high" from 3)
+            days = int(rp.get("days") or 0)
+            conf = max(conf, "high" if days >= 5 else "medium", key=RANK.get)
+            why = f"you log it most days ({days} days) and it is on your calendar"
         c = {"kind": "meeting", "source": "meeting", "task": str(t["taskId"]) if t else None, "conf": conf,
+             "joinKey": key, **({"service": str(rp.get("serviceId") or "") or None} if rp is not None else {}),
              "why": why, "note": title_note, "noteFrom": "meeting" if title_note else "", "titles": [], "meeting": title,
              "alts": [str(x["taskId"]) for x in (m.get("tasks") or [])[1:3]],
              **({"flag": "renamed" if renamed else refused} if renamed or refused else {})}
+        if rp is not None and (rp.get("note") or "").strip() and t and str(t["taskId"]) == str(rp["taskId"]):
+            c.update(note=rp["note"].strip(), noteFrom="repeat", why=c["why"] + (f"; on your calendar as “{title}”"
+                                                                               if title else ""))
+            c.pop("flag", None)
         if seen:
-            i, _ = claim({**c, "attended": True}, range(int(s), int(math.ceil(e))))
-            attended.append([s, e, i])
+            # the owner, 2026-11-12: it starts at its calendar time, or where the meeting before it ended when that one ran
+            # over, and lasts as long as the Zoom activity does ("Він триває стільки, скільки триває активність в
+            # зумі"): the call windows from its calendar end, each within CALL_GAP of the last, with no limit of its
+            # own (15.10: Scrum 16:00-16:30 on the calendar, the call and the entry to 17:55). A meeting next on the
+            # calendar takes over at the browser tab that opened its call, the first one from its calendar start
+            # (04.11: 17:29, logged 17:30; 06.11: 17:49, logged 17:45); with no such tab, at its calendar start
+            s = max(s, last_end) if last_end > s else s
+            end, x = e, int(math.ceil(e))
+            for a, b in calls:
+                if b <= x:
+                    continue
+                if a > x + CALL_GAP:
+                    break
+                other = min((at for at, k in joins if k != key and x <= at < b), default=None)
+                if other is not None:  # a tab opened another meeting's call: this one ended there (to the second,
+                    x = other           # so the check for that tab below finds it: 06.11, 17:49:20)
+                    break
+                x = int(math.ceil(b))
+            end = max(e, x)
+            nxt = min((m2 for m2 in on_cal if m2 is not m and m["s"] < m2["s"] < end), key=lambda m2: m2["s"], default=None)
+            if nxt is not None:  # the tab that ended the call above, at `end` itself, counts
+                tab = min((at for at, k in joins if nxt["s"] <= at <= end), default=None)
+                end = max(s + 1, tab if tab is not None else nxt["s"])
+            if end > e:
+                c["why"] += f"; the call ran {int(math.ceil(end - e))} min over"
+            i, _ = claim({**c, "attended": True, "calEnd": e}, range(int(s), int(math.ceil(end))))
+            attended.append([s, end, i])
+            last_end = end
         else:
             unattended.append((m, c))
     # a call that started before its meeting or ran over it is that meeting: the call's free minutes right before and
@@ -911,6 +1004,12 @@ def _meetings(d: _Day) -> None:
     for item in attended:
         s, e, i = item
         length = max(1, int(math.ceil(e)) - int(s))
+        if claims[i].get("source") == "meeting":
+            # its end was set by its call when it was claimed, above; its start is the calendar's, and the call's last
+            # MEETING_SLACK minutes before it make no call of their own: they stay with the work around (11.11: the
+            # call from 16:10, Scrum at 16:30 on the calendar, the work before it logged to 16:25)
+            grown[i] = (False, e > claims[i].get("calEnd", e))
+            continue
         for a, b in calls:
             if _overlap(a, b, s, e) <= 0:
                 continue
@@ -947,6 +1046,60 @@ def _meetings(d: _Day) -> None:
             attended.append([free[0], free[-1] + 1, i])
 
 
+LOGGING_GAP = 2  # minutes: a pause this short in Pulsar or Productive does not end a stretch of logging time
+SCRUM = re.compile(r"\bscrums?\b", re.I)
+
+
+def _logging(d: _Day) -> None:
+    """2b. time spent logging time, as its own row (2026-11-12, the owner: "логування хай йде в якийсь внутрішній … щоб
+    воно не логувалось по дефолту, а питало"): a stretch of at least the shortest entry in Pulsar or Productive
+    (pauses up to LOGGING_GAP joined), and a Claude session's turns spent logging time (loggingRows). Never ticked at
+    the start, on the task the person last logged such a row to (settings "logging_task"), or none to pick. A shorter
+    look at Pulsar stays with the work around it (sessions.LOGGING_IS_WORK), and so does the Pulsar window while a
+    session in Pulsar's own repository is at work: that is testing it. With no task picked yet, the person's own scrum
+    (context: the "scrum" task they logged most to) is offered."""
+    N, items = DAY_MIN, d.items
+    lg = bytearray(N)
+    for it in items:
+        if it.get("cat") == "work" and any(LOGGING.search(str(it.get(k) or "")) for k in ("app", "host", "url")):
+            for x in range(max(0, int(it["s"])), min(N, int(math.ceil(it["e"])))):
+                lg[x] = 1
+    for r in d.day.get("loggingRows") or []:
+        for x in range(max(0, int(r["s"])), min(N, int(math.ceil(r["e"])))):
+            lg[x] = 1
+    for r in d.day.get("rows") or []:  # testing Pulsar in its own repository: the session's work
+        if OWN_REPO.match(str(r.get("project") or "")):
+            for x in range(max(0, int(r["s"])), min(N, int(math.ceil(r["e"])))):
+                lg[x] = 0
+    mins = [x for x in range(N) if lg[x] and d.work[x] and not d.away[x] and not d.personal[x] and d.owner[x] is None]
+    runs, run = [], []
+    for x in mins:
+        if run and x - run[-1] > LOGGING_GAP + 1:
+            runs.append(run)
+            run = []
+        run.append(x)
+    if run:
+        runs.append(run)
+    task = d.day.get("loggingTask") or {}
+    tid, whose = str(task.get("taskId") or "") or None, "the task you logged it to last time"
+    if not tid and d.ctx.get("scrum"):
+        tid, whose = str(d.ctx["scrum"]), "your scrum"
+        task = {"title": (d.ctx.get("names") or {}).get(tid, {}).get("task"),
+                "project": (d.ctx.get("names") or {}).get(tid, {}).get("project")}
+    if tid:
+        d.known(tid, task.get("title"), task.get("project"))
+    for run in runs:
+        if len(run) < MIN_ENTRY:  # the owner: 10 minutes or more, whatever the rounding
+            continue
+        d.claim({"kind": "focused", "source": "logging", "task": tid, "conf": "medium" if tid else "low",
+                 "flag": "logging", "titles": [], "project": "",
+                 # no minutes in it: two stretches of one task make one entry, with the first one's why
+                 "why": "time spent logging time, in Pulsar or Productive"
+                        + (f", on {whose}" if tid else ". Pick the internal task it goes to (your scrum, say); Pulsar "
+                                                       "remembers it")},
+                run)
+
+
 def _rows(d: _Day) -> None:
     """3. Likely rows at their own time: a client's work in front first; then a client's agent that ran attended while
     internal work was in front (shared: the client goes first); then the rest in front. What else the agents did
@@ -980,8 +1133,11 @@ def _rows(d: _Day) -> None:
         hit = rule_in([] if bg else d.items, day.get("rules") or [], r["s"], r["e"], text)
         if hit:
             known(str(hit["taskId"]), hit.get("title"), hit.get("project"))
-        hint = (str(hit["taskId"]) if hit else None) or (str(r["tasks"][0]) if r.get("tasks") else None) \
-            or ticket_task(r, ctx, assigned)
+        # what the work names sets the class: a rule, a task link, a ticket key. A task the session only opened
+        # (seenTasks) only when it is the agency's own: one read for another project's work made internal work a
+        # client's (2026-11-12 audit), so it may narrow the class, never open a client's
+        opened = next((str(t) for t in r.get("seenTasks") or [] if attribution.class_of_task(str(t), ctx) == INTERNAL), None)
+        hint = (str(hit["taskId"]) if hit else None) or (links(r) or [None])[0] or opened or ticket_task(r, ctx, assigned)
         r = {**r, "class": attribution.segment_class(r.get("project"), ctx, hint)}
         pick = None if bg else picks.get(f"{r.get('pick_s', r['s'])}|{r.get('project') or ''}")
         for t in (pick or {}).get("tasks") or []:
@@ -1004,7 +1160,7 @@ def _rows(d: _Day) -> None:
 
     front: list = []  # (row, claim)
     for r in sorted(rows, key=lambda r: r["s"]):
-        if repo_key(r.get("project")) in never and not r.get("tasks"):
+        if repo_key(r.get("project")) in never and not links(r):
             claim({"kind": "skip", "project": r.get("project"), "why": f"{r.get('project')}: you never log this repository"},
                   [x for x in range(int(r["s"]), int(r["e"])) if not away[x]])
             continue
@@ -1033,7 +1189,7 @@ def _rows(d: _Day) -> None:
             claim(c, span_of(r, c))
     d.shared_spans = []
     for r in back:  # 3b. a client's agent, attended, over internal work in front: the client goes first (shared)
-        if not r.get("qualifies") or (repo_key(r.get("project")) in never and not r.get("tasks")):
+        if not r.get("qualifies") or (repo_key(r.get("project")) in never and not links(r)):
             continue
         c = prepare(r, True)
         # only a client's task, a known one: priority never makes a task billable, and never adds a minute
@@ -1118,8 +1274,9 @@ def _rows(d: _Day) -> None:
     # run of under PARALLEL_MIN in a sitting is ignored; from that long, half of those minutes are the agent's, taken
     # from the work in front, so the clients together get no more than the time sat (2026-11-10)
     beside: dict = {}  # (task, sitting) -> (claim, minutes)
+    proj_of_task = lambda t: (d.names.get(str(t or "")) or ("", ""))[1]  # noqa: E731
     for r in back:
-        if not r.get("qualifies") or (repo_key(r.get("project")) in never and not r.get("tasks")):
+        if not r.get("qualifies") or (repo_key(r.get("project")) in never and not links(r)):
             continue
         c = prepare(r, True)
         if not c["task"] or not client(c) or class_of(c["task"], d) == INTERNAL:
@@ -1129,18 +1286,27 @@ def _rows(d: _Day) -> None:
             if not present(x, False) or who in (None, BLOCKED):
                 continue
             f = claims[who]
+            # another client's: never the same task, repository or project (2026-11-12 audit: another task of the
+            # same client in another repository took half, against the 2026-11-10 decision "another client")
             if f.get("kind") != "focused" or not client(f) or str(f.get("task") or "") == str(c["task"]) \
-                    or repo_key(f.get("project")) == repo_key(r.get("project")):
+                    or repo_key(f.get("project")) == repo_key(r.get("project")) \
+                    or (proj_of_task(c["task"]) and proj_of_task(c["task"]) == proj_of_task(f.get("task"))):
                 continue  # its own work in front, internal work (shared, 3b), or no client in front
             key = (str(c["task"]), d.sitting[x])
             beside.setdefault(key, (c, set()))[1].add(x)
     least = max(d.o["grid"] or 1, d.o["min_entry"] or MIN_ENTRY)
-    for (_, _), (c, xs) in beside.items():
+    given: set = set()  # minutes one agent's half already took: never taken again by another's (2026-11-12 audit)
+    for (_, _), (c, xs) in sorted(beside.items(), key=lambda kv: (-len(kv[1][1]), kv[0])):
         if len(xs) < PARALLEL_MIN:
             continue
         # its half, at least an entry (15 to 19 minutes beside: 10), as one block from its first minute: laid in its own
-        # time, before the rest of the work in front (every other minute was laid past its own time and lost)
-        half = sorted(xs)[:min(len(xs), max(len(xs) // 2, least))]
+        # time, before the rest of the work in front (every other minute was laid past its own time and lost); of the
+        # minutes no other agent's half took, so two clients' agents beside one stretch share it, whatever the order
+        free = sorted(x for x in xs if x not in given)
+        half = free[:min(len(free), max(len(xs) // 2, least))]
+        if len(half) < least:
+            continue
+        given.update(half)
         for x in half:
             owner[x] = None
         claim({**c, "kind": "focused", "parallel": True,
@@ -1203,8 +1369,10 @@ def _outside(d: _Day) -> None:
         # (_merge); before, the work before it took it (replay, 43 days, with _pieces: 0.9 points more minutes on the
         # right task, 165 fewer minutes on a wrong billable client)
         order = (left, right) if right is not None and claims[right].get("attended") else (right, left)
-        pick_i = next((i for i in order if i is not None and claims[i]["kind"] not in ("logged", "skip", "shared")),
-                      None)  # never a shared stretch: that is the agent's time, not the work in front
+        # never a shared stretch (the agent's time, not the work in front), nor a meeting attended on either side: it
+        # keeps its calendar start and its call's end (the owner, 2026-11-12); a short run beside one stays not covered
+        pick_i = next((i for i in order if i is not None and claims[i]["kind"] not in ("logged", "skip", "shared")
+                       and not claims[i].get("attended")), None)
         if pick_i is not None:
             for x in range(a, b + 1):
                 if work[x] and owner[x] is None:
@@ -1322,7 +1490,8 @@ def _pieces(d: _Day) -> list:
                 and d.sitting[after[0]["s"]] == d.sitting[p["last"]]
             near = after + before if soon else before + after
             # never a meeting's task, nor one a window named (_context: only the work close to it takes that one)
-            nb = [q for q in near if q.get("task") and q["kind"] in ("focused", "agent")]
+            # nor the time spent logging time (_logging): its own row, never the task of the work beside it
+            nb = [q for q in near if q.get("task") and q["kind"] in ("focused", "agent") and q.get("source") != "logging"]
             if any(q["kind"] == "skip" for q in near) and not nb:
                 p["kind"], p["why"] = "skip", "next to work in a repository you never log"
             elif nb:
@@ -1373,6 +1542,8 @@ def _merge(d: _Day, pieces: list) -> list:
             continue
         if m and m.get("task") and m["task"] == p.get("task") and not {"skip", "shared"} & {m["kind"], p["kind"]} \
                 and p["s"] - m["last"] <= o["merge_gap"] and sitting[m["last"]] == sitting[p["s"]] \
+                and bool(p.get("attended")) == bool(m.get("attended")) \
+                and (p.get("source") == "logging") == (m.get("source") == "logging") \
                 and (not p.get("attended") or p["s"] - m["last"] <= (o["grid"] or 1)) \
                 and not _blocked_between(d, m["last"] + 1, p["s"]) and not _away_between(d, m, p, m["last"] + 1, p["s"]):
             m["minutes"] += p["minutes"]
@@ -1386,9 +1557,13 @@ def _merge(d: _Day, pieces: list) -> list:
     # across an entry already logged; a meeting someone attended stays an entry of its own from 5 minutes, and keeps
     # its own time: work before it never joins it
     def joins(p, q, q_first):
-        if q is None or q["kind"] == "skip" or (q.get("attended") and not q_first and not p.get("attended")):
+        # a meeting someone attended keeps its own time on both sides: the calendar's start and its call's end (the owner,
+        # 2026-11-12); short work after it no longer joins it (20 minutes of other tasks had stretched a scrum)
+        if q is None or q["kind"] == "skip" or (q.get("attended") and not p.get("attended")):
             return False
         if "shared" in (p["kind"], q["kind"]):  # a shared stretch stays as it was, at its real time
+            return False
+        if (p.get("source") == "logging") != (q.get("source") == "logging"):  # time spent logging is its own row (2.3)
             return False
         a, b = (q["last"], p["s"]) if q_first else (p["last"], q["s"])
         if _blocked_between(d, a + 1, b) or _away_between(d, p, q, a + 1, b):
@@ -1527,7 +1702,9 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
         # a client's entries right against the hole (not shared ones): a hole between two of one client's entries is in
         # that client's work, so internal work takes none of it (a turn of internal work inside a client's work is the
         # client's, 3b'; 2026-11-10); between two clients, or beside one, internal work there is its own
-        beside = [x for x in out if x.get("kind") != "shared" and (x["e"] == a or x["s"] == b)
+        # never a meeting: it keeps its calendar time and its call's end (2026-11-12), so a hole beside one is no
+        # client's to grow it (a second meeting entry came out right after a client's meeting)
+        beside = [x for x in out if x.get("kind") not in ("shared", "meeting", "unattended") and (x["e"] == a or x["s"] == b)
                   and x.get("taskId") and billable.get(str(x["taskId"]), class_of(str(x["taskId"]), d) != INTERNAL)]
         before = next((x for x in beside if x["e"] == a), None)
         after = next((x for x in beside if x["s"] == b), None)
@@ -1560,6 +1737,9 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
             if t not in mine:
                 mine[t] = [p for p in pieces if str(p.get("task") or "") == t] or [{"s": a, "last": b - 1, "minutes": room,
                                                                                     "task": t, "kind": "focused", "parts": []}]
+                # the next holes read these for every task in mine (2026-11-12: KeyError, Log the day failed)
+                billable[t], proj[t] = True, proj_of(before)
+                owed.setdefault(t, 0)
             taken[t] = taken.get(t, 0) + room
             room = 0
         elif room >= g:  # what is left of the hole: internal work in front there, or already taking part of it
@@ -1581,7 +1761,9 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
                 s, e = cursor, cursor + take
                 cursor = e
             given_back[t] = given_back.get(t, 0) + take
-            nb = next((x for x in out if str(x.get("taskId") or "") == t and (x["e"] == s or x["s"] == e)), None)
+            # a meeting keeps its own time, the calendar's start and its call's end (the owner, 2026-11-12): never grown
+            nb = next((x for x in out if str(x.get("taskId") or "") == t and (x["e"] == s or x["s"] == e)
+                       and x.get("kind") != "meeting"), None)
             if nb is not None:  # right against an entry of its own: that entry grows
                 nb["s"], nb["e"] = min(nb["s"], s), max(nb["e"], e)
                 nb["minutes"] = nb["e"] - nb["s"]
@@ -1638,7 +1820,16 @@ def _layout(d: _Day, entries: list) -> tuple:
         fixed.append((s, e, "shared"))
     fixed.sort()
     for m in sorted((m for m in entries if m["kind"] != "shared"), key=lambda m: m["s"]):
-        s = max(int(round(m["s"] / g) * g), end)
+        own = int(round(m["s"] / g) * g)
+        if m["kind"] == "meeting" and m.get("attended") and end > own and out and out[-1]["s"] < own:
+            # a meeting attended keeps its calendar time (the owner, 2026-11-12): the entry before it, laid out from its first
+            # minute, stops where the meeting starts instead of pushing it later (9 Nov: a 16:30 scrum laid at 16:35)
+            prev = out[-1]
+            unplaced.append({"minutes": prev["e"] - own, "task": prev.get("taskId"), "project": prev.get("project") or "",
+                             "why": "no room before a meeting"})
+            prev["e"], prev["minutes"] = own, own - prev["s"]
+            end = own
+        s = max(own, end)
         e = int(round((s + m["minutes"]) / g) * g)
         cut, why = 0, "no room before an entry already logged"  # minutes an entry already logged left no room for
         behind = False  # pushed past an entry already logged (or a shared one), not only past the proposed ones before
@@ -1717,7 +1908,10 @@ def _caps(d: _Day, out: list, unplaced: list, evidence: dict) -> tuple:
         return cut
 
     # what goes first: internal work, then mixed or unknown, a client's last; within each the least sure, the latest
-    first_cut = lambda e: (CLASS_ORDER.get(e.get("class"), 1), RANK[e["confidence"]], -e["s"])  # noqa: E731
+    # an attended meeting last of all: the calendar and its call say the person was in it (2026-11-12 audit: a client
+    # meeting, "unknown" class, was cut before client work and lost its calendar end)
+    first_cut = lambda e: (9 if e["kind"] == "meeting" else CLASS_ORDER.get(e.get("class"), 1),  # noqa: E731
+                           RANK[e["confidence"]], -e["s"])
     if over > 0:
         left = dict(d.untimed)  # first the task of an entry with no start, up to its minutes: it may be that work
         for e in sorted(out, key=first_cut):
@@ -1740,10 +1934,30 @@ def _caps(d: _Day, out: list, unplaced: list, evidence: dict) -> tuple:
     for e in out:
         if billable(e):
             total[str(e["taskId"])] += e["minutes"]
-    for e in sorted(out, key=lambda e: -e["s"]):
+    # Only what an entry has beyond its own work is cut: the bits of other work it took in and the grid, the entry that
+    # took in most first. Work of its task seen inside it is never cut (the owner, 2026-11-12: "пропозал має вилізти"):
+    # cutting the newest entry first took a client's stretch still going on, so the last 20 to 30 minutes were never
+    # proposed. What is still over is flagged to check, never cut.
+    def seen_in(e) -> int:
+        t, n = str(e.get("taskId") or ""), 0
+        for a, b in e.get("own") or []:
+            for x in range(max(0, int(a)), min(DAY_MIN, int(math.ceil(b)))):
+                o = d.owner[x]
+                if o is not None and o >= 0 and str(d.claims[o].get("task") or "") == t and d.work[x] and not d.away[x]:
+                    n += 1
+        return n
+    beyond = {id(e): e["minutes"] - seen_in(e) for e in out}
+    for e in sorted(out, key=lambda e: (-beyond[id(e)], -e["s"])):
         t = str(e.get("taskId") or "")
-        if billable(e) and e["minutes"] and total[t] > evidence.get(t, 0):
-            total[t] -= cut_from(e, total[t] - evidence.get(t, 0), "more than the time this work was seen")
+        if billable(e) and e["minutes"] and total[t] > evidence.get(t, 0) and beyond[id(e)] > 0:
+            # cut_from rounds up to the grid: at most a step into its own work, which is then its seen minutes on the
+            # grid, as before
+            total[t] -= cut_from(e, min(beyond[id(e)], total[t] - evidence.get(t, 0)), "more than the time this work was seen")
+    for e in out:
+        t = str(e.get("taskId") or "")
+        if billable(e) and e["minutes"] and total[t] - evidence.get(t, 0) >= g:
+            e["flags"].append("overseen")
+            e["overSeen"] = total[t] - evidence.get(t, 0)
     out = [e for e in out if e["minutes"] >= g]
     for e in out:
         if d.untimed.get(str(e["taskId"])):
@@ -1761,8 +1975,9 @@ def _join_touching(out: list) -> list:
     joined: list = []
     for e in sorted(out, key=lambda e: e["s"]):
         p = joined[-1] if joined else None
+        # never time spent logging with work (2.3 before 4.2 in the rule order): its flag would untick the work too
         if p and p.get("taskId") and p["taskId"] == e.get("taskId") and p["kind"] == e["kind"] == "focused" \
-                and abs(p["e"] - e["s"]) < 0.5:
+                and (p.get("source") == "logging") == (e.get("source") == "logging") and abs(p["e"] - e["s"]) < 0.5:
             surer, other = (p, e) if RANK[p["confidence"]] >= RANK[e["confidence"]] else (e, p)
             p.update(e=e["e"], minutes=p["minutes"] + e["minutes"], parts=(p.get("parts") or 0) + (e.get("parts") or 0),
                      checked=p["checked"] and e["checked"], confidence=other["confidence"],
@@ -1918,9 +2133,12 @@ def apply_choice(e: dict, choice: str, grid: int = GRID) -> list:
     if choice == "internal":
         return [{**e, **inner, "choice": "internal"}]
     g = max(1, int(grid or 1))
-    half = int(round(e["minutes"] / 2 / g) * g)
-    if not g <= half <= e["minutes"] - g:
-        return [{**e, "choice": "client"}]  # too short to halve on the grid
+    # half up, as the page rounds (Math.round: 25 minutes are 15 + 10 on both), and both halves an entry at least:
+    # 10 to 19 minutes made a part the writer refuses (2026-11-12 audit)
+    half = int(math.floor(e["minutes"] / 2 / g + 0.5)) * g
+    least = max(g, MIN_ENTRY)
+    if not least <= half <= e["minutes"] - least:
+        return [{**e, "choice": "client"}]  # too short to halve into two entries
     first = {**e, "e": e["s"] + half, "minutes": half, "choice": "half"}
     second = {**e, **inner, "s": e["s"] + half, "minutes": e["minutes"] - half, "choice": "half", "halfOf": e.get("id")}
     return [first, second]
@@ -2161,7 +2379,7 @@ def gather(date: str, source: str = "auto", ignore_logged: bool = False, keep: d
            "loggingRows": got["likely"].get("loggingRows") or [], "logged": logged,
            "meetings": meetings, "repeats": [x for x in got["repeats"].get("repeats") or [] if not inside(x)], "calls": calls,
            "rules": s.get("rules") or [], "assigned": got["assigned"], "picks": (answer or {}).get("picks") or {},
-           "gone": server.missing_hour(t0, t1, tz)}
+           "loggingTask": s.get("logging_task") or {}, "gone": server.missing_hour(t0, t1, tz)}
     opts = opts_for(s)
     result = plan(day, ctx, opts) if keep is None else plan(day, ctx, opts, keep=keep)
     result["roundTo"] = opts["grid"]

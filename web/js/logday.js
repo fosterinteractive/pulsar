@@ -330,14 +330,14 @@ function ldFocus(el) {
   const a = /** @type {HTMLInputElement} */ (document.activeElement);
   if (!a || !el.contains(a) || !/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return null;
   const row = /** @type {HTMLElement} */ (a.closest('[data-row]'))?.dataset.row;
-  const attr = [...a.attributes].map(x => x.name).find(n => /^data-ld-(note|start|min|svc)$/.test(n));
+  const attr = [...a.attributes].map(x => x.name).find(n => /^data-ld-(note|start|end|min|svc)$/.test(n));
   let at = null; try { at = [a.selectionStart, a.selectionEnd]; } catch (e) { /* a number field has no caret */ }
   return row && attr ? {row, attr, value: a.value, at} : null;
 }
 function ldRefocus(el, f) {
   if (!f || el.contains(document.activeElement) && document.activeElement !== document.body) return;
   const a = /** @type {HTMLInputElement} */ (el.querySelector(`[data-row="${f.row}"] [${f.attr}]`)); if (!a) return;
-  const typing = f.attr === 'data-ld-start' || f.attr === 'data-ld-min';
+  const typing = f.attr === 'data-ld-start' || f.attr === 'data-ld-end' || f.attr === 'data-ld-min';
   if (typing) a.value = f.value;
   a.focus({preventScroll: true});
   try {
@@ -369,6 +369,11 @@ function rowHTML(r, overlaps) {
   if (r.flags.includes('claudefound')) quiet.push('Claude found this task by search; not one of yours lately.');
   if (r.flags.includes('claudenote') && r.noteFrom === 'claude' && !r.noteEdited) quiet.push('Claude drafted the note: read it first.');
   if (r.flags.includes('meetingtitle')) quiet.push("The meeting's title was not used as the note: write one.");
+  // more minutes on this task today than its work was seen (dayplan._caps): said, never cut from seen work
+  if (r.flags.includes('overseen')) quiet.push(`This task has about ${dur(r.overSeen || 0)} more today than its work was seen: check it.`);
+  // time spent logging time (dayplan._logging): asked each time, never ticked by Pulsar
+  if (r.flags.includes('logging')) quiet.push(r.taskId ? 'Time spent logging time. Not ticked: tick it to log it to this task.'
+    : 'Time spent logging time. Pick the internal task it goes to (your scrum, say) and tick it to log it. Pulsar remembers the task.');
   if (r.flags.includes('renamed')) quiet.push('Meeting renamed since you last logged it: check the task.');
   if (r.flags.includes('untimed')) quiet.push(`${dur(r.untimed)} of this task has no start time: is it this work?`);
   if (r.halfOf) quiet.push('The second half of a shared stretch.');
@@ -397,7 +402,9 @@ function rowHTML(r, overlaps) {
    rows of 25 minutes with the same note); null otherwise */
 function ldJoinable(r) {
   if (!r.taskId || r.halfOf || !ldPending(r)) return null;
+  // the same service too: one entry has one (2026-11-12 audit)
   return LD.rows.find(p => p !== r && p.taskId === r.taskId && !p.halfOf && ldPending(p)
+                      && (!p.serviceId || !r.serviceId || p.serviceId === r.serviceId)
                       && Math.abs((p.e ?? p.s + p.minutes) - r.s) < 0.5) || null;
 }
 function joinLine(r) {
@@ -415,6 +422,8 @@ function ldJoin(r) {
   p.flags = [...new Set([...(p.flags || []), ...(r.flags || [])])];
   p.checked = p.checked && r.checked;
   LD.rows = LD.rows.filter(x => x !== r);
+  // gone from the proposal, so a plan made again does not bring it back beside the longer first row (2026-11-12 audit)
+  if (r.key && !r.splitOf) LD.deleted.add(r.key);
   if (LD.open === r.id) LD.open = p.id;
   ldChanged(p);
 }
@@ -422,7 +431,9 @@ function ldJoin(r) {
 /* a shared row's note and its choice (ldkeep.js ldChoice), outside the row's button */
 function sharedLine(r) {
   if (!r.shared || r.halfOf) return '';
-  const c = r.choice || 'client', b = (k, label) => `<button type="button" data-ld-choice="${r.id}|${k}" aria-pressed="${c === k}"${LD.writing ? ' disabled' : ''}>${label}</button>`;
+  // Half each only where both halves make an entry (ldkeep.js ldChoice)
+  const whole = r.whole ? r.whole[1] - r.whole[0] : r.minutes, short = whole < 2 * minEntry();
+  const c = r.choice || 'client', b = (k, label) => `<button type="button" data-ld-choice="${r.id}|${k}" aria-pressed="${c === k}"${LD.writing || (k === 'half' && short && c !== 'half') ? ' disabled' : ''}${k === 'half' && short ? ` title="Under ${2 * minEntry()} minutes: too short for two entries"` : ''}>${label}</button>`;
   return `<div class="e-shared"><span>${esc(LD_SHARED_TEXT[c] || LD_SHARED_TEXT.client)}</span>
     <span class="seg ld-choice" role="group" aria-label="Who this stretch goes to">${b('client', 'Client')}${b('half', 'Half each')}${b('internal', 'Internal')}</span></div>`;
 }
@@ -473,8 +484,8 @@ function editorHTML(r) {
       ${svcs.map(x => `<option value="${esc(x.id)}"${x.id === r.serviceId ? ' selected' : ''}>${esc(x.name)}${x.budget ? ' · ' + esc(x.budget) : ''}${x.billable ? ' · billable' : x.billable === false ? ' · not billable' : ''}</option>`).join('')}
     </select></label>
     <div class="tl"><label class="field"><span>Start</span><input type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="9" placeholder="HH:MM" title="A time: 14:30, or 2:30 pm" data-ld-start value="${hm24(r.s)}"></label>
-      <label class="field"><span>Minutes</span><input type="number" min="${Math.max(CONFIG?.roundTo || 5, minEntry())}" max="720" step="${CONFIG?.roundTo || 5}" data-ld-min value="${r.minutes}"></label>
-      <span class="endt">until ${hm(r.s + r.minutes)}</span></div>
+      <label class="field"><span>End</span><input type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="9" placeholder="HH:MM" title="A time: 15:10, or 3:10 pm. The minutes follow it; the start stays" data-ld-end value="${hm24(r.s + r.minutes)}"></label>
+      <label class="field"><span>Minutes</span><input type="number" min="${Math.max(CONFIG?.roundTo || 5, minEntry())}" max="720" step="${CONFIG?.roundTo || 5}" title="The end follows them; the start stays" data-ld-min value="${r.minutes}"></label></div>
     <label class="field"><span>Note</span><textarea rows="2" data-ld-note placeholder="What was done: the outcome, in a sentence">${esc(r.note || '')}</textarea></label>
     <p class="hint ld-note-hint">${noteHint(r)}</p>
     <div class="acts"><button type="button" class="btn bordered" data-ld-del="${r.id}">Remove</button>
@@ -500,6 +511,14 @@ function wireEditor(r) {
     if (!m) { ev.target.value = hm24(r.s); ev.target.setAttribute('aria-invalid', 'true'); return; }
     ev.target.removeAttribute('aria-invalid'); ev.target.value = t;
     const s = +m[1] * 60 + +m[2]; r.s = s; r.e = Math.min(1440, s + r.minutes); r.minutes = r.e - r.s; ldChanged(r);
+  };
+  // the end: the start stays, the minutes follow (the owner, 2026-11-13: "старт ... залишається статичним")
+  li.querySelector('[data-ld-end]').onchange = ev => {
+    const t = startHHMM(ev.target.value), m = t && /^(\d\d):(\d\d)$/.exec(t);
+    const e = m ? +m[1] * 60 + +m[2] : NaN;
+    if (!(e > r.s)) { ev.target.value = hm24(r.s + r.minutes); ev.target.setAttribute('aria-invalid', 'true'); return; }
+    ev.target.removeAttribute('aria-invalid');
+    r.minutes = e - r.s; r.e = e; ldChanged(r);
   };
   li.querySelector('[data-ld-min]').onchange = ev => {
     const v = Math.round(+ev.target.value); if (!(v >= 1 && v <= 1440 - r.s)) { ev.target.value = r.minutes; return; }

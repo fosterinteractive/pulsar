@@ -34,8 +34,11 @@ function ldChoice(r, choice, step) {
   const ready = x => ({...x, checked: !!(x.taskId && x.serviceId)});
   if (choice === 'internal') return [ready({...base, ...ldInner(r.sharedWith || {})})];
   if (choice !== 'half') return [ready({...base, choice: 'client'})];
-  const g = Math.max(1, step || 5), half = Math.round((e - s) / 2 / g) * g;
-  if (!(half >= g && half <= e - s - g)) return [ready({...base, choice: 'client'})];  // too short to halve on the grid
+  // both halves an entry at least (2026-11-12 audit: 10 to 19 minutes made a part the writer refuses); half up, as
+  // dayplan.apply_choice
+  const g = Math.max(1, step || 5), half = Math.floor((e - s) / 2 / g + 0.5) * g;
+  const least = Math.max(g, typeof minEntry === 'function' ? minEntry() : 10);
+  if (!(half >= least && half <= e - s - least)) return [ready({...base, choice: 'client'})];  // too short to halve
   return [ready({...base, e: s + half, minutes: half}),
           ready({...base, ...ldInner(r.sharedWith || {}), id: r.id + 'h', key: r.key + '|half', s: s + half,
                  minutes: e - s - half, halfOf: r.id})];
@@ -69,7 +72,15 @@ function ldSnapshot(rows, open, deleted) {
     const fields = r.edited || r.opened ? LD_KEEP_FIELDS : LD_NOTE_FIELDS;
     kept[r.key] = Object.fromEntries(fields.filter(k => k in r).map(k => [k, JSON.parse(JSON.stringify(r[k] ?? null))]));
   }
-  return {rows: kept, deleted: [...(deleted || [])], open: rows.find(r => r.id === open)?.key || null};
+  // the parts of a split (ldreview.js), by the row they came from: the plan made again still has that row, never them,
+  // so they are put back in its place (2026-11-12 audit: every part kept the row's key, and only the last came back)
+  const splits = {};
+  for (const r of rows) {
+    if (!r.splitOf || r.status === 'logged' || r.status === 'writing' || r.status === 'unknown') continue;
+    (splits[r.splitOf] = splits[r.splitOf] || []).push(Object.fromEntries(
+      [...LD_KEEP_FIELDS, 'key', 'splitOf'].filter(k => k in r).map(k => [k, JSON.parse(JSON.stringify(r[k] ?? null))])));
+  }
+  return {rows: kept, splits, deleted: [...(deleted || [])], open: rows.find(r => r.id === open)?.key || null};
 }
 
 /* minutes [s, e) of a row inside an entry logged now: [{s, e}] */
@@ -87,12 +98,22 @@ function ldReapply(fresh, kept, logged) {
   for (const f of fresh) {
     if (f.status) { rows.push(f); continue; }  // a run wrote it, or tried: the journal's word stands
     if (gone.has(f.key)) continue;  // deleted from the proposal by the person
+    const parts = kept.splits?.[f.key];
+    if (parts?.length) {  // split by the person: its parts, in its place
+      if (ldOverLogged(f, logged)) { dropped.push(f.key); rows.push(f); continue; }
+      parts.forEach((p, j) => rows.push({...f, ...p, id: `${f.id}-${j}`, status: null, reason: ''}));
+      continue;
+    }
     const k = kept.rows?.[f.key];
     if (!k) { rows.push(f); continue; }
     if (ldOverLogged(k, logged)) { dropped.push(f.key); rows.push(f); continue; }  // its time is logged now: the plan's row
     rows.push({...f, ...k, id: f.id, key: f.key, status: f.status || null, reason: f.reason || ''});
   }
-  for (const key of Object.keys(kept.rows || {})) if (!fresh.some(f => f.key === key)) dropped.push(key);  // the row is gone
+  for (const key of Object.keys(kept.rows || {})) {
+    if (!fresh.some(f => f.key === key) && !Object.values(kept.splits || {}).some(ps => ps.some(p => p.key === key))) {
+      dropped.push(key);  // the row is gone
+    }
+  }
   const open = kept.open ? rows.find(r => r.key === kept.open)?.id || null : null;
   return {rows, open, dropped};
 }

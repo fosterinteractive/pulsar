@@ -63,15 +63,21 @@ function searchDate() {
   if (logDlg.open && logForm.elements.date.value) return logForm.elements.date.value;
   return typeof LD !== 'undefined' && LD.on ? LD.date : state.date;
 }
+/* a task's page in Productive (flow.js), where that file is loaded: the page tests load this one alone */
+const taskURL = id => (typeof productiveTaskURL === 'function' ? productiveTaskURL(id) : '');
 function makePicker(listEl, searchEl, onPick) {
   let selected = null, groups = [], base = [], timer, loading = false, searched = '', byHand = false;
   function draw() {
     const empty = loading ? 'Loading your tasks…' : searched ? `No task matches “${searched}”.` : 'No tasks to offer. Search for one above.';
     listEl.innerHTML = groups.filter(g => g.tasks.length || g.note).map(g => `<div class="pk-h">${esc(g.label)}</div>`
       + (g.note ? `<div class="note">${esc(g.note)}</div>` : '')
-      + g.tasks.map(t => `<button type="button" class="pk${selected?.taskId === t.taskId ? ' on' : ''}" data-id="${esc(t.taskId)}"
+      // each task with a link to its page in Productive beside it (2026-11-12, the owner), never inside the option: a click on
+      // it opens the page, never picks the task; the picked task's own link is in the dialog for the keyboard
+      + g.tasks.map(t => `<div class="pk-row" role="none"><button type="button" class="pk${selected?.taskId === t.taskId ? ' on' : ''}" data-id="${esc(t.taskId)}"
           role="option" aria-selected="${selected?.taskId === t.taskId}"><span class="pk-t">${esc(t.title)}</span>
-          <span class="pk-p">${t.yours ? `<span class="pk-mine">${t.yours === 'logged' ? 'yours, logged lately' : 'assigned to you'}</span> · ` : ''}${esc(t.project)}${g.showMin && t.minutes ? ' · ' + dur(t.minutes) + ' here' : ''}${t.why ? ' · ' + (t.claude ? CLAUDE_MARK : '') + esc(t.why) : ''}${taskNote(t)}</span></button>`).join('')).join('')
+          <span class="pk-p">${t.yours ? `<span class="pk-mine">${t.yours === 'logged' ? 'yours, logged lately' : 'assigned to you'}</span> · ` : ''}${esc(t.project)}${g.showMin && t.minutes ? ' · ' + dur(t.minutes) + ' here' : ''}${t.why ? ' · ' + (t.claude ? CLAUDE_MARK : '') + esc(t.why) : ''}${taskNote(t)}</span></button>${
+          taskURL(t.taskId) ? `<a class="pk-open" href="${esc(taskURL(t.taskId))}" target="_blank" rel="noopener noreferrer" tabindex="-1"
+          title="Open in Productive" aria-label="Open ${esc(t.title)} in Productive">Link ↗</a>` : ''}</div>`).join('')).join('')
       || `<div class="note">${esc(empty)}</div>`;
   }
   /* a redraw replaces the buttons: the one that had the focus gets it back */

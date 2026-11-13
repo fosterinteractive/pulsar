@@ -933,8 +933,11 @@ def is_call(it: dict) -> bool:
         return bool(re.search(r"huddle", title, re.I))
     if re.search(r"webex|facetime", app, re.I):
         return True
-    return bool(re.search(r"meet\.google\.com/[a-z]{3}-[a-z]{4}-[a-z]{3}|zoom\.us/(wc|j)/", where)
-                or re.match(r"Meet\s*[-–]\s*[a-z]{3}-[a-z]{4}-[a-z]{3}", title) or "Google Meet" in title)
+    # a browser tab of a call: Zoom's web client, or a join link by the pattern Log the day keys meetings with
+    # (dayplan.JOIN_KEY: one definition, rule order 2.2; /w/ and /my/ rooms and four-letter Meet codes were keys
+    # and no call), or a Meet call by its title
+    return bool(dayplan.JOIN_KEY.search(where) or re.search(r"zoom\.us/wc/", where)
+                or re.match(r"Meet\s*[-–]\s*[a-z]{3,4}-[a-z]{4}-[a-z]{3,4}", title) or "Google Meet" in title)
 
 
 def repeating(rows: list, tz, date: str, strict: bool = False) -> list:
@@ -1543,7 +1546,16 @@ def _api_log(body: dict, via: str = "") -> dict:
         if "created" in result:
             _just_logged[key] = time.time()
             productive.forget_task(task_id)  # its time worked changed: the next estimate check reads it again
+            if ((journal or {}).get("proposed") or {}).get("source") == "logging":
+                remember_logging_task(task_id, s)
         return result
+
+
+def remember_logging_task(task_id: str, s: dict) -> None:
+    """The task a "time spent logging" row of Log the day was just logged to: the next such row comes on it
+    (dayplan._logging), so the person picks it once. Its name comes from Productive with the plan."""
+    if str((s.get("logging_task") or {}).get("taskId") or "") != task_id:
+        config.update({"logging_task": {"taskId": task_id, "title": "", "project": ""}})
 
 
 SEEN = {"start": "start", "minutes": "length", "taskId": "task", "serviceId": "service", "note": "note"}

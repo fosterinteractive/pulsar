@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from isolation import SCRATCH as _SCRATCH  # noqa: E402,F401  first: nothing real is reachable (isolation.py)
 
-from pulsar import askclaude, daymarks, server  # noqa: E402
+from pulsar import askclaude, daymarks, dayplan, server  # noqa: E402
 
 WEB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
 
@@ -322,14 +322,24 @@ class LogTheDayKeepsWorkTest(unittest.TestCase):
           const half = ldChoice(r, 'half', 5), inner = ldChoice(r, 'internal', 5);
           const back = ldChoice(inner[0], 'client', 5), kept = ldWithHalves([half[0]], 5);
           const short = ldChoice({...r, whole: [620, 628], e: 628, minutes: 8}, 'half', 5);
+          const fifteen = ldChoice({...r, whole: [620, 635], e: 635, minutes: 15}, 'half', 5);
+          const odd = ldChoice({...r, whole: [620, 645], e: 645, minutes: 25}, 'half', 5);
           const show = x => [x.s, x.e, x.minutes, x.taskId, x.serviceId, x.choice, x.checked, x.halfOf || ''];
-          return {half: half.map(show), inner: inner.map(show), back: back.map(show), kept: kept.map(show), short: short.map(show)};
+          return {half: half.map(show), inner: inner.map(show), back: back.map(show), kept: kept.map(show), short: short.map(show),
+                  fifteen: fifteen.map(x => x.minutes), odd: odd.map(x => x.minutes)};
         """)
         self.assertEqual(got["half"], [[620, 640, 20, "C1", "sC", "half", True, ""], [640, 660, 20, "T1", "sT", "half", True, "r1"]])
         self.assertEqual(got["inner"], [[620, 660, 40, "T1", "sT", "internal", True, ""]])
         self.assertEqual(got["back"], [[620, 660, 40, "C1", "sC", "client", True, ""]])   # the client's fields come back
         self.assertEqual(got["kept"], got["half"])                                         # a kept Half each gets its half
         self.assertEqual(got["short"], [[620, 628, 8, "C1", "sC", "client", True, ""]])    # too short to halve on the grid
+        # both halves an entry at least, and halved as dayplan.apply_choice halves (2026-11-12 audit)
+        self.assertEqual(got["fifteen"], [15])
+        self.assertEqual(got["odd"], [15, 10])
+        shared = {"id": "r1", "s": 620, "e": 645, "minutes": 25, "shared": True, "taskId": "C1",
+                  "sharedWith": {"taskId": "T1", "serviceId": "sT"}}
+        self.assertEqual([x["minutes"] for x in dayplan.apply_choice(shared, "half")], got["odd"])
+        self.assertEqual([x["minutes"] for x in dayplan.apply_choice({**shared, "e": 635, "minutes": 15}, "half")], [15])
 
     def test_the_key_is_the_work_not_the_place(self):
         got = self.js("""
