@@ -61,6 +61,7 @@ DEFAULTS = {
     "away_after": 15,            # 10 | 15 | 20 | 30 minutes without input that are time away (away_after)
     "working_days": [0, 1, 2, 3, 4],  # Monday 0 ... Sunday 6: Earlier days, the week line and the reminder
     "likely_keep_days": 31,      # 31 | 62 | 92 | 183 | 365: past days' Likely columns kept on this Mac (likely.py)
+    "planned": True,             # the Day view's Planned column: your Resource Planner bookings (productive.bookings)
     "advanced": {},  # Settings > Time and activity > Advanced: only the choices that differ from ADVANCED's defaults
 }
 

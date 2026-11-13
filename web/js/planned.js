@@ -9,6 +9,7 @@ const PLAN_FROM = 600;  // 10:00: bookings have no time of day
 const planOpen = () => { try { return localStorage.getItem('pulsar-planned-open') === '1'; } catch (e) { return false; } };
 
 function loadBookings(d, fresh = false) {
+  if (CONFIG?.planned === false) { state.booked = null; return Promise.resolve(null); }  // switched off in Settings
   return getJSON(`/api/bookings?date=${d}${fresh ? '&fresh=1' : ''}`).then(x => {
     if (d === state.date) { state.booked = {...x, date: d}; drawSoon(); }
     return x;

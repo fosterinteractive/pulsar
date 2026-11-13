@@ -6,6 +6,7 @@ function applyConfig(c) {
   TZ = c.timezone || undefined;  // undefined: the browser's own zone, the computer's
   TARGET = c.targetMinutes || 480;
   document.body.classList.toggle('no-likely', !c.likely.enabled);
+  document.body.classList.toggle('no-plan', c.planned === false);  // Settings > Connections > Productive
   // the error log lives in Settings > Updates; the header shows a small button for it only while there are errors
   const errs = c.errors24h || 0;
   $('#open-logs').hidden = !errs;

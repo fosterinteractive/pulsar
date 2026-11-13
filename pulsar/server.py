@@ -189,7 +189,7 @@ def public_config(s: dict) -> dict:
         "targetMinutes": config.target_minutes(s), "targetHours": s["target_hours"], "personDayHours": s["person_day_hours"],
         "personalPatterns": s["personal_patterns"], "activitywatchUrl": s["activitywatch_url"], "rules": s["rules"],
         "roundTo": s["round_to"], "minEntry": dayplan.MIN_ENTRY, "awayAfter": config.away_after(s), "workingDays": s["working_days"],
-        "likelyKeepDays": likely.keep_days(s),
+        "likelyKeepDays": likely.keep_days(s), "planned": bool(s.get("planned", True)),
         "advanced": config.advanced(s),
         "activitywatch": awsetup.status(config.away_after(s)),  # its AFK timeout, read from its file; no program started
         "update": {**UPDATER.public(), "skip": s["update_skip"], "asked": s["update_asked"]},
@@ -254,6 +254,10 @@ def validate(body: dict) -> dict:
         if not isinstance(body["ask_claude"], bool):
             raise ValueError("ask_claude is true or false")
         out["ask_claude"] = body["ask_claude"]
+    if "planned" in body:
+        if not isinstance(body["planned"], bool):
+            raise ValueError("planned is true or false")
+        out["planned"] = body["planned"]
     if "claude_ask_productive" in body:
         if not isinstance(body["claude_ask_productive"], bool):
             raise ValueError("claude_ask_productive is true or false")
@@ -1703,6 +1707,8 @@ _booked: dict = {}  # date -> (time read, your bookings that day): five minutes
 def api_bookings(q: dict) -> dict:
     """The day view's Planned column: your Resource Planner bookings on a day (productive.bookings). Read only."""
     s = current_settings()
+    if not s.get("planned", True):  # switched off in Settings: Productive is not asked
+        return {"bookings": [], "off": True}
     d = q["date"]
     got = _booked.get(d)
     if not got or time.time() - got[0] > 300 or q.get("fresh"):

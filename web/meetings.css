@@ -31,6 +31,9 @@
 /* Planned (js/planned.js): your Resource Planner bookings, a narrow strip until opened */
 body { --plan-w: 22px; }
 body.plan-open { --plan-w: minmax(0,.55fr); }
+/* switched off in Settings: the column keeps its place in every grid, with no width */
+body.no-plan { --plan-w: 0px; }
+.no-plan .colhead.plancol, .no-plan .lane.plancol { visibility: hidden; padding: 0; border: 0; overflow: hidden; }
 .colhead.plancol { padding-left: 2px; padding-right: 2px; overflow: hidden; }
 .plan-tg { font: 600 11px/1 inherit; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 6px;
   padding: 3px 4px; cursor: pointer; min-width: 16px; }

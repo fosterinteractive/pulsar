@@ -243,18 +243,21 @@ try {
     // every layout keeps each column in its own place, Log the day's included (2026-11-13: without room for Planned
     // there, the Logged column fell under the time axis)
     const cls0 = document.body.className, offGrid = [];
-    for (const rv of [false, true]) for (const meet of [false, true]) for (const noLikely of [false, true]) {
+    let planOff = -1;
+    for (const rv of [false, true]) for (const meet of [false, true]) for (const noLikely of [false, true]) for (const noPlan of [false, true]) {
       document.body.classList.toggle('rv-on', rv); document.body.classList.toggle('has-meetings', meet);
-      document.body.classList.toggle('no-likely', noLikely);
+      document.body.classList.toggle('no-likely', noLikely); document.body.classList.toggle('no-plan', noPlan);
+      if (noPlan) planOff = Math.max(planOff, q('#lane-plan').getBoundingClientRect().width, q('.colhead.plancol').getBoundingClientRect().width);
       for (const sel of ['#grid', '.cols']) {
         const kids = [...q(sel).children].filter(k => (k.id === 'axis' || k.matches('.lane, .colhead')) && getComputedStyle(k).display !== 'none');
         const r = kids.map(k => k.getBoundingClientRect());
         if (r.some(x => Math.abs(x.top - r[0].top) > 1) || r.some((x, i) => i && x.left < r[i - 1].right - 1))
-          offGrid.push(`${sel} rv=${rv} meet=${meet} noLikely=${noLikely}`);
+          offGrid.push(`${sel} rv=${rv} meet=${meet} noLikely=${noLikely} noPlan=${noPlan}`);
       }
     }
     document.body.className = cls0;
-    check('Every layout keeps the columns side by side, Log the day too', !offGrid.length, offGrid.join(' | '));
+    check('Every layout keeps the columns side by side, Log the day too; Planned switched off takes no room',
+      !offGrid.length && planOff === 0, `${offGrid.join(' | ')} | Planned off: ${planOff}px`);
 
     // the Report's parallel work: per project, in parallel and about how much is not logged (2026-11-13, the owner)
     const par = parallelSection({days: 26, of: 30, keepDays: 31, parallel: 125, notLogged: 80,

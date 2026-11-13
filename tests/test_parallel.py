@@ -145,6 +145,20 @@ class BookingsTest(unittest.TestCase):
         self.assertEqual((by["4"]["kind"], by["4"]["title"], by["4"]["minutes"]), ("absence", "Vacation", 480))
         self.assertEqual(got[0]["kind"], "absence")  # absences first
 
+    def test_the_column_is_on_by_default_and_switched_off_it_never_asks_productive(self):
+        from unittest import mock
+        from pulsar import config, productive, server
+        self.assertIs(config.DEFAULTS["planned"], True)
+        self.assertEqual(server.validate({"planned": False}), {"planned": False})
+        with self.assertRaises(ValueError):
+            server.validate({"planned": "no"})
+
+        def asked(*a, **k):
+            raise AssertionError("Productive was asked")
+        with mock.patch.object(server, "current_settings", lambda: {"planned": False}), \
+                mock.patch.object(productive, "bookings", asked):
+            self.assertEqual(server.api_bookings({"date": "2026-11-13"}), {"bookings": [], "off": True})
+
 
 if __name__ == "__main__":
     unittest.main()

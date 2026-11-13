@@ -25,6 +25,7 @@ function fillSettings(c) {
   document.querySelectorAll('#working-days input').forEach(x => { /** @type {HTMLInputElement} */ (x).checked = days.has(+/** @type {HTMLInputElement} */ (x).value); });
   f.away_after.value = String(c.awayAfter || 15);
   f.likely_keep_days.value = String(c.likelyKeepDays || 31);
+  f.planned.checked = c.planned !== false;
   const adv = c.advanced || {};
   for (const k of ADV_KEYS) {
     const el = /** @type {HTMLSelectElement} */ (f[`adv_${k}`]);
@@ -382,7 +383,7 @@ async function saveSettings(extra = {}) {
     personal_patterns: f.personal_patterns.value,
     activitywatch_url: f.activitywatch_url.value.trim(), likely: f.likely.value, ask_claude: f.ask_claude.checked,
     claude_models: Object.fromEntries([...document.querySelectorAll('#claude-uses select')].map(x => [x.dataset.use, x.value])),
-    claude_ask_productive: f.claude_ask_productive.checked,
+    claude_ask_productive: f.claude_ask_productive.checked, planned: f.planned.checked,
     ...(CONFIG?.preview ? {preview_writes: f.preview_writes.checked} : {}), ...extra,
   };
   if (f.token.value.trim()) body.token = f.token.value.trim();
