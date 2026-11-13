@@ -41,15 +41,17 @@ body:not(.plan-open) .colhead.plancol, body:not(.plan-open) .lane.plancol { visi
 .plan-tg:hover { background: var(--hover); color: var(--text); }
 /* a day with a booking not seen yet (the column not opened since it came): accent, and now and then a light sheen
    crosses it; once seen, a quiet grey fill and no motion (the owner, 2026-11-13) */
-.plan-tg.has { --plan-sheen: color-mix(in srgb, var(--accent) 34%, transparent);  /* light: a deeper blue crosses the pale one */
+.plan-tg.has { --plan-sheen: color-mix(in srgb, var(--accent) 30%, transparent);  /* light: a deeper blue crosses the pale one */
   position: relative; overflow: hidden; color: var(--accent);
   background: color-mix(in srgb, var(--accent) 16%, var(--panel)); border-color: color-mix(in srgb, var(--accent) 42%, transparent); }
-.plan-tg.has:not(.seen)::after { content: ''; position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(110deg, transparent 35%, var(--plan-sheen) 50%, transparent 65%) no-repeat;
-  background-size: 260% 100%; background-position: 100% 0; animation: plan-sheen 5s ease-in-out infinite; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .plan-tg.has { --plan-sheen: rgb(255 255 255 / .26); } }
-:root[data-theme="dark"] .plan-tg.has { --plan-sheen: rgb(255 255 255 / .26); }
-@keyframes plan-sheen { 0%, 62% { background-position: 100% 0; } 100% { background-position: 0% 0; } }
+/* soft waves of light one tile apart (a tile about the button's width, so one is always on it), moving one tile per
+   loop at an even speed: the end of a loop is its start, so the flow never stops or jumps; the layer is slanted */
+.plan-tg.has:not(.seen)::after { content: ''; position: absolute; top: 0; bottom: 0; left: -50%; right: -50%; pointer-events: none;
+  background: linear-gradient(90deg, transparent 0%, var(--plan-sheen) 50%, transparent 100%) repeat-x;
+  background-size: 40px 100%; transform: skewX(-20deg); animation: plan-sheen 3.2s linear infinite; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .plan-tg.has { --plan-sheen: rgb(255 255 255 / .2); } }
+:root[data-theme="dark"] .plan-tg.has { --plan-sheen: rgb(255 255 255 / .2); }
+@keyframes plan-sheen { from { background-position: 0 0; } to { background-position: 40px 0; } }
 @media (prefers-reduced-motion: reduce) { .plan-tg.has:not(.seen)::after { animation: none; display: none; } }
 .plan-tg.has.seen { background: color-mix(in srgb, var(--text) 9%, var(--panel)); border-color: transparent; }
 .plan-tg.has:hover { filter: brightness(1.12); }
