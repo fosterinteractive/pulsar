@@ -803,7 +803,8 @@ $('#ask-claude').onclick = async () => {
   render();
   // the blocks on screen that show a pick: the picks are per row, and a block joins several rows
   const n = likelyCache.filter(b => claudePick(b)).length;
-  const said = n ? `Claude picked a task for ${n} ${n === 1 ? 'block' : 'blocks'}. Its pick is on the card, and first among the tasks when you log it.` : 'Claude found no task for these blocks.';
+  const said = (n ? `Claude picked a task for ${n} ${n === 1 ? 'block' : 'blocks'}. Its pick is on the card, and first among the tasks when you log it.` : 'Claude found no task for these blocks.')
+    + (r.reused ? ' The blocks that had not changed kept their earlier pick: Claude was asked only about the new ones.' : '');
   toast(r.warning ? `${said} ${r.warning}` : said, !!r.warning);
   askEnd(n ? 'picked' : 'none');
 };

@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Ask Claude in the Likely column (and Check my day with Claude) keeps Claude's pick for every block that has not changed since it was last asked, and asks only about the new or changed ones: cheaper, and the earlier picks stay.
 - Log the day keeps Claude's suggestions after a restart for the rows that have not changed since "Check my day with Claude" (the same time, task, work and service); the ones for rows that changed or were logged are left out, and the line says how many.
 - Where ActivityWatch recorded nothing at all for 10 minutes or more (it was quit or crashed), Pulsar takes that time from MemTime: the Activity column says "ActivityWatch + MemTime" and those cards have a dashed edge. Time ActivityWatch recorded as away stays away. Settings > Time and activity > Activity can switch it off.
 - Settings > Time and activity > Advanced: from which share of a Claude session's votes its row comes ticked (60% by default) and, on a client's work, the share it needs too (80%).

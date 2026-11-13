@@ -1259,6 +1259,44 @@ class AskClaudeTest(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         self.assertEqual((again["picks"], again["cost"], again.get("kept")), (first["picks"], 0, True))
 
+    def test_blocks_that_did_not_change_keep_their_pick_and_only_the_others_are_asked(self):
+        """2026-11-13 (the owner): the day goes on after Ask Claude; asking again asked about every block, at a cost,
+        and its answer replaced the earlier picks."""
+        import json as _json
+        from pulsar import askclaude
+        prompts = []
+
+        def fake_run(cmd, **kw):
+            prompts.append(kw["input"])
+            answer = {"picks": [{"id": i, "tasks": ["7"], "why": f"block {i}"} for i in range(5)
+                                if f'"id": {i},' in kw["input"]]}
+            return mock.Mock(stdout=_json.dumps({"result": "x " + _json.dumps(answer), "total_cost_usd": 0.1}),
+                             stderr="", returncode=0)
+
+        rows = [{"s": 600, "e": 660, "project": "acme-site", "titles": [], "minutes": 60},
+                {"s": 700, "e": 740, "project": "house-tool", "titles": [], "minutes": 40}]
+        entries = [{"taskId": "7", "task": "Estimations", "project": "Proposals", "minutes": 30, "date": "2026-09-28"}]
+        with mock.patch.object(askclaude.productive, "_claude_binary", lambda: "/bin/claude"), \
+                mock.patch.object(askclaude.productive, "task_details", lambda ids, s, *a: {}), \
+                mock.patch.object(askclaude.config, "load", lambda: {}):
+            first = askclaude.ask("2026-10-03", rows, 0, entries, run=fake_run, model="haiku")
+            askclaude._cache.clear()  # a restart
+            later = [rows[0], {**rows[1], "e": 760}, {"s": 800, "e": 830, "project": "acme-site", "titles": []}]
+            got = askclaude.ask("2026-10-03", later, 0, entries, run=fake_run, model="haiku")
+            askclaude._cache.clear()  # a restart again
+            same = askclaude.ask("2026-10-03", later, 0, entries, run=fake_run, model="haiku")  # nothing new: no run
+            other = askclaude.ask("2026-10-03", later, 0, entries, run=fake_run, model="sonnet")  # another model: all
+        self.assertEqual(len(prompts), 3)
+        self.assertNotIn('"id": 0,', prompts[1])  # the first block had not changed: not asked
+        self.assertIn('"id": 1,', prompts[1])     # it grew
+        self.assertIn('"id": 2,', prompts[1])     # new
+        self.assertEqual(got["picks"]["600|acme-site"], first["picks"]["600|acme-site"])  # kept as it was
+        self.assertEqual(sorted(got["picks"]), ["600|acme-site", "700|house-tool", "800|acme-site"])
+        self.assertEqual((got["reused"], got["asked"]), (1, 2))
+        self.assertEqual((same["cost"], same.get("kept"), sorted(same["picks"])), (0, True, sorted(got["picks"])))
+        self.assertIn('"id": 0,', prompts[2])
+        self.assertEqual(sorted(other["picks"]), sorted(got["picks"]))
+
     def test_claude_runs_read_only_and_its_picks_are_named(self):
         import json as _json
         from pulsar import askclaude

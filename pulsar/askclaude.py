@@ -473,6 +473,16 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
     was = kept(date, sig)  # the same blocks asked about before, also before a restart: that answer, at no cost
     if was:
         return {**was, "cost": 0, "notesBlocked": []}
+    # blocks still exactly as when Claude was last asked about them (with this model): their answer, kept; only the
+    # new or changed ones are asked (the owner, 2026-11-13: keep Claude's picks for what did not change)
+    asked = {_pick_key(rows[b["id"]]): _row_sig(rows[b["id"]]) for b in blocks}
+    before = kept_rows(date, model)
+    reused = {k: (before["picks"].get(k)) for k, v in asked.items() if before and before["rows"].get(k) == v}
+    blocks = [b for b in blocks if _pick_key(rows[b["id"]]) not in reused]
+    if not blocks:
+        answer = {"picks": {k: v for k, v in reused.items() if v}, "cost": 0, "notesBlocked": [], "kept": True}
+        keep(date, answer, sig, asked, model)
+        return answer
     mine = recent_tasks(entries_30)
     prompt = PROMPT.format(date=date, note_max=NOTE_MAX, blocks=json.dumps(blocks, ensure_ascii=False, indent=1),
                            tasks="\n".join(json.dumps(t, ensure_ascii=False) for t in mine))
@@ -567,8 +577,10 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
             note, bad = "", "a name from another project"  # another client's name on this client's invoice
         if bad:
             blocked.append(bad)
-        out[f"{r['s']}|{r.get('project') or ''}"] = {"tasks": tasks, "why": str(p.get("why") or "")[:120], "note": note}
-    answer = {"picks": out, "cost": round(spent, 4) if spent else res.get("total_cost_usd"), "notesBlocked": blocked}
+        out[_pick_key(r)] = {"tasks": tasks, "why": str(p.get("why") or "")[:120], "note": note}
+    answer = {"picks": {**{k: v for k, v in reused.items() if v}, **out},
+              "cost": round(spent, 4) if spent else res.get("total_cost_usd"), "notesBlocked": blocked,
+              **({"reused": len(reused), "asked": len(blocks)} if reused else {})}
     if unnamed:  # shown with the picks; not kept, so asking again can name them
         n = sum(1 for x in unknown if x not in names)
         answer["warning"] = (f"Claude also found {n} task{'s' if n != 1 else ''} by searching Productive that Pulsar "
@@ -579,7 +591,7 @@ def ask(date: str, rows: list, t0: float, entries_30: list, run=subprocess.run, 
         _cache[sig] = answer
         for old in list(_cache)[:-30]:
             del _cache[old]
-    keep(date, answer, sig)
+    keep(date, answer, sig, asked, model)
     return answer
 
 
@@ -749,17 +761,44 @@ def _sig_text(sig) -> str:
     return json.dumps(sig, ensure_ascii=False, default=str)
 
 
-def keep(date: str, answer: dict, sig=None) -> None:
+def _pick_key(r: dict) -> str:
+    """A Likely row's name in the picks: its start and repository (server.pick_key)."""
+    return f"{r['s']}|{r.get('project') or ''}"
+
+
+def _row_sig(r: dict) -> list:
+    """A Likely row as Claude was asked about it: its time, repository and number of commits."""
+    return [r["s"], r["e"], r.get("project"), len(r.get("commits") or [])]
+
+
+def keep(date: str, answer: dict, sig=None, rows: dict | None = None, model: str = "") -> None:
+    """The day's answer on disk; `rows` ({pick key: _row_sig}) every block it was asked about, with or without a pick,
+    and `model` the model asked, so a later ask keeps the picks of the blocks that did not change (kept_rows)."""
     if not answer.get("picks"):
         return
     try:
         os.makedirs(PICKS_DIR, mode=0o700, exist_ok=True)
         config.write_atomic(os.path.join(PICKS_DIR, f"{date}.json"), json.dumps(
             {"format": 1, "date": date, "picks": answer["picks"], "when": time.time(),
-             **({"asked": _sig_text(sig)} if sig else {})}, ensure_ascii=False))
+             **({"asked": _sig_text(sig)} if sig else {}),
+             **({"rows": rows, "model": model, "version": ASK_VERSION} if rows else {})}, ensure_ascii=False))
         _prune()
     except OSError:
         pass
+
+
+def kept_rows(date: str, model: str) -> dict | None:
+    """{"picks", "rows"} of the day's kept answer when it says which blocks it was asked about and was asked with this
+    model and this way of asking (ASK_VERSION); None otherwise (an answer kept before 2026-11-13 has no rows)."""
+    try:
+        with open(os.path.join(PICKS_DIR, f"{date}.json"), encoding="utf-8") as fh:
+            doc = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    if not (isinstance(doc, dict) and doc.get("format") == 1 and isinstance(doc.get("picks"), dict)
+            and isinstance(doc.get("rows"), dict) and doc.get("model") == model and doc.get("version") == ASK_VERSION):
+        return None
+    return {"picks": doc["picks"], "rows": doc["rows"]}
 
 
 def kept(date: str, sig=None):
