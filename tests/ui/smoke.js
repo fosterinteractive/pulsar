@@ -197,6 +197,13 @@ try {
     check("a row's end sets its minutes, and its minutes its end, the start staying", endOk && minOk,
       `end ${endOk}, minutes ${minOk}, ${tr.s}-${tr.e} ${tr.minutes} min`);
 
+    // the Report's parallel work: per project, in parallel and about how much is not logged (2026-11-13, the owner)
+    const par = parallelSection({days: 26, of: 30, keepDays: 31, parallel: 125, notLogged: 80,
+                                 projects: [{name: 'Clientco', mapped: true, parallel: 95, front: 300, logged: 330, notLogged: 65},
+                                            {name: 'some-repo', mapped: false, parallel: 30, front: 10, logged: 0, notLogged: 15}]});
+    check('the Report shows parallel work by project, with the days not kept', par.includes('Parallel work')
+      && par.includes('Clientco') && par.includes('(repository)') && par.includes('From 26 of 30 days'), par.slice(0, 200));
+
     // every task in a picker has its link to Productive beside it, outside the option (2026-11-12, the owner)
     const prod0 = CONFIG.productive, list = document.createElement('div'), qbox = document.createElement('input');
     CONFIG.productive = {...(prod0 || {}), web: 'https://app.productive.io/1-example'};
