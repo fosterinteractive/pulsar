@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- A ticket still in a "not started" status that you log time to is offered "In progress" (or its workflow's first started status) with the row, said on the row even when it is closed. No change in the row keeps it as it is.
 - Log the day: each row has a "Status after logging" with the statuses of its task's workflow (No change by default). The task moves to the one picked only once its entry is written; the confirm step says so, a refusal is said on the row with the entry kept, and Undo puts the status back unless it was moved again since.
 - Two meetings on your calendar right after each other stay two entries, each with its own note, even when both go to one task (the daily scrum and a weekly meeting both logged to the scrum).
 - A calendar meeting finds the task you logged in the earlier meetings of its series again: Google gives each meeting of a series its own id, and titles ending in a space did not match. A weekly meeting logged to one task four times now offers it (on 26 days, 160 more minutes on the right task).

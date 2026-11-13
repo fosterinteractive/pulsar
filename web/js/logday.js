@@ -77,6 +77,7 @@ async function openLogDay({fresh = false} = {}) {
   sgFromPlan(r);  // ldreview.js: FI's rules on this plan
   if (kept?.sg) sgRestore(kept.sg); else sgKept(d);  // the review's suggestions as they were, or the one kept for the day
   renderReview(); render();
+  ldProposeStatuses();
   document.body.classList.toggle('rv-ignore', !!r.ignoreLogged);
   // Claude runs only from "Check my day with Claude" (ldreview.js sgCheck), never by itself on opening
 }
@@ -368,6 +369,10 @@ function rowHTML(r, overlaps) {
   if (r.claudeNone) quiet.push("Claude found no task; Pulsar's guess stays.");
   if (r.flags.includes('claudefound')) quiet.push('Claude found this task by search; not one of yours lately.');
   if (r.flags.includes('mixed')) quiet.push('Short turns of several tasks: pick the one this time was from the ones offered.');
+  if (r.statusId && !r.status) {
+    const was = (r.statusList || []).find(x => x.id === r.statusNow)?.name;
+    quiet.push(`Then the ticket goes to “${r.statusName}”${was ? ` (now “${was}”)` : ''}${r.statusAuto ? ': it was not started yet' : ''}.`);
+  }
   if (r.flags.includes('claudenote') && r.noteFrom === 'claude' && !r.noteEdited) quiet.push('Claude drafted the note: read it first.');
   if (r.flags.includes('meetingtitle')) quiet.push("The meeting's title was not used as the note: write one.");
   // more minutes on this task today than its work was seen (dayplan._caps): said, never cut from seen work
@@ -533,7 +538,9 @@ function wireEditor(r) {
   };
   li.querySelector('[data-ld-status]').onchange = ev => {  // moved only after the row's entry is written (server)
     const x = (r.statusList || []).find(s => s.id === ev.target.value);
-    r.statusId = x && x.id !== r.statusNow ? x.id : null; r.statusName = r.statusId ? x.name : ''; ldChanged(r);
+    r.statusId = x && x.id !== r.statusNow ? x.id : null; r.statusName = r.statusId ? x.name : '';
+    if (!r.statusId && r.statusAuto) r.statusDeclined = true;
+    r.statusAuto = false; ldChanged(r);
   };
   li.querySelector('[data-ld-note]').onfocus = () => ldDraftNote(r);
   li.querySelector('[data-ld-note]').oninput = ev => { r.note = ev.target.value; r.noteEdited = true; r.edited = true;
@@ -584,8 +591,32 @@ async function ldLoadStatuses(r) {
   if (!got) { got = await getJSON(`/api/task/statuses?task=${tid}&date=${LD.date}`).catch(() => ({error: 'No answer.'})); if (!got.error) ldStatusCache.set(tid, got); }
   r.statusLoading = false;
   if (r.taskId !== tid) return;
-  if (got.error) { r.statusProblem = got.error; } else { r.statusList = got.statuses || []; r.statusNow = got.current || ''; }
-  if (LD.open === r.id) renderReview();
+  if (got.error) r.statusProblem = got.error; else ldApplyStatuses(r, got);
+  renderReview();
+}
+/* a ticket still in a "not started" status that time is logged to: moving it to "In progress" (or the workflow's first
+   started status) is offered with the row, collapsed or open (the owner, 2026-11-13: "якщо статус не був оновлений
+   взагалі навіть до інпрогрес"). No change in the row keeps it as it is */
+function ldApplyStatuses(r, got) {
+  r.statusList = got.statuses || []; r.statusNow = got.current || '';
+  const now = r.statusList.find(x => x.id === r.statusNow);
+  if (r.statusId || r.statusDeclined || now?.category !== '1') return;
+  const started = r.statusList.filter(x => x.category === '2');
+  const pick = started.find(x => /progress/i.test(x.name)) || started[0];
+  if (pick) Object.assign(r, {statusId: pick.id, statusName: pick.name, statusAuto: true});
+}
+async function ldProposeStatuses() {
+  const d = LD.date;
+  for (const tid of [...new Set(LD.rows.filter(r => r.taskId && !r.status).map(r => r.taskId))]) {
+    let got = ldStatusCache.get(tid);
+    if (!got) {
+      got = await getJSON(`/api/task/statuses?task=${tid}&date=${d}`).catch(() => ({error: 'No answer.'}));
+      if (!got.error) ldStatusCache.set(tid, got);
+    }
+    if (!LD.on || LD.date !== d) return;
+    if (!got.error) for (const r of LD.rows.filter(x => x.taskId === tid && !x.status)) ldApplyStatuses(r, got);
+  }
+  renderReview();
 }
 function ldOpen(id, scroll = false) {
   const r = ldRow(id); if (!r || LD.writing) return;
@@ -604,7 +635,8 @@ async function ldSetTask(r, t) {
   if (LD.writing) return;
   Object.assign(r, {taskId: String(t.taskId), title: t.title || '', project: t.project || '', serviceId: null, service: '',
                     services: [], billable: null, edited: true, opened: true, source: 'you', why: 'picked by you', confidence: 'high',
-                    ticket: [], statusId: null, statusName: '', statusList: null, statusNow: '', statusProblem: ''});  // the new task's flags come with its services
+                    ticket: [], statusId: null, statusName: '', statusList: null, statusNow: '', statusProblem: '',
+                    statusAuto: false, statusDeclined: false});  // the new task's flags come with its services
   ldLoadStatuses(r);
   r.flags = r.flags.filter(f => !['notask', 'low', 'noservice', 'claudefound'].includes(f));
   if (r.noteFrom === 'claude' && !r.noteEdited) { r.note = ''; r.noteFrom = ''; r.flags = r.flags.filter(f => f !== 'claudenote'); }  // Claude wrote it for another task
