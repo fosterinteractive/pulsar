@@ -485,7 +485,8 @@ function editorHTML(r) {
       ${svcs.map(x => `<option value="${esc(x.id)}"${x.id === r.serviceId ? ' selected' : ''}>${esc(x.name)}${x.budget ? ' · ' + esc(x.budget) : ''}${x.billable ? ' · billable' : x.billable === false ? ' · not billable' : ''}</option>`).join('')}
     </select></label>
     <label class="field"><span>Status after logging</span><select data-ld-status${r.taskId && r.statusList ? '' : ' disabled'}>
-      <option value="">${!r.taskId ? 'Pick a task first' : r.statusProblem ? 'Could not read the statuses' : r.statusList ? 'No change' : 'Loading…'}</option>
+      <option value="">${!r.taskId ? 'Pick a task first' : r.statusProblem ? 'Could not read the statuses' : r.statusList
+        ? `No change${(r.statusList.find(x => x.id === r.statusNow) || {}).name ? ` (now: ${esc(r.statusList.find(x => x.id === r.statusNow).name)})` : ''}` : 'Loading…'}</option>
       ${(r.statusList || []).map(x => `<option value="${esc(x.id)}"${x.id === r.statusId ? ' selected' : ''}>${esc(x.name)}${x.id === r.statusNow ? ' (now)' : ''}</option>`).join('')}
     </select></label>
     ${r.statusProblem ? `<p class="hint">${esc(r.statusProblem)}</p>` : ''}

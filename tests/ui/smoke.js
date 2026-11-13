@@ -203,7 +203,8 @@ try {
                 statusList: [{id: '10', name: 'In progress'}, {id: '30', name: 'QA'}, {id: '40', name: 'Done'}]};
     const sh = editorHTML(sr), sb = rowBody(sr);
     check("a row offers the task's statuses after logging and sends the one picked", sh.includes('Status after logging')
-      && sh.includes('In progress (now)') && /value="30" selected/.test(sh) && sb.statusId === '30', `${sb.statusId} ${sh.length}`);
+      && sh.includes('In progress (now)') && sh.includes('No change (now: In progress)') && /value="30" selected/.test(sh)
+      && sb.statusId === '30', `${sb.statusId} ${sh.length}`);
 
     // the Report's parallel work: per project, in parallel and about how much is not logged (2026-11-13, the owner)
     const par = parallelSection({days: 26, of: 30, keepDays: 31, parallel: 125, notLogged: 80,
