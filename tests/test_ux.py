@@ -185,6 +185,44 @@ class KeptAnswersTest(unittest.TestCase):
             server.api_dayplan_review({"date": "2026-11-05"})
             self.assertEqual(len(runs), 3)
 
+    def test_a_changed_plan_keeps_the_suggestions_of_the_rows_that_stayed_the_same(self):
+        """2026-11-13: after a restart the review was gone as soon as anything in the day had changed."""
+        plan = {"entries": [{"id": "r0", "s": 540, "e": 600, "taskId": "7", "kind": "focused", "repo": "acme-site"},
+                            {"id": "r1", "s": 600, "e": 660, "taskId": "5", "kind": "focused", "repo": "house-tool"}]}
+        runs = []
+
+        def gather(date, source, ignore, inputs=None):
+            inputs.update(rows=[], t0=0)
+            return plan
+
+        def review(date, doc, entries, model=None, settings=None):
+            runs.append(model)
+            return {"suggestions": [{"kind": "task", "row": "r0", "taskId": "8"}, {"kind": "untick", "row": "r1"},
+                                    {"kind": "question", "row": "", "question": "Was the 4 PM call billable?"}],
+                    "dropped": [], "cost": 0.02}
+        with mock.patch.object(server, "current_settings", lambda: {**S, "ask_claude": True}), \
+                mock.patch.object(server.dayplan, "gather", gather), \
+                mock.patch.object(server.dayreview, "digest", lambda d, i: ("digest", 0, 100)), \
+                mock.patch.object(server.dayreview, "review", review), \
+                mock.patch.object(server.claudeuses, "model", lambda use, s: "haiku"):
+            server.api_dayplan_review({"date": "2026-11-06"})
+            # time went on: a row before the others (ids shift), and the second row grew
+            plan["entries"] = [{"id": "r0", "s": 480, "e": 520, "taskId": "3", "kind": "outside"},
+                               {"id": "r1", "s": 540, "e": 600, "taskId": "7", "kind": "focused", "repo": "acme-site"},
+                               {"id": "r2", "s": 600, "e": 690, "taskId": "5", "kind": "focused", "repo": "house-tool"}]
+            got = server.api_dayplan_review({"date": "2026-11-06", "kept_only": True})
+            self.assertEqual(len(runs), 1)  # never a run on opening
+            self.assertEqual([(s["kind"], s["row"]) for s in got["suggestions"]], [("task", "r1"), ("question", "")])
+            self.assertEqual((got["kept"], got["changed"], got["cost"]), (True, 1, 0))
+            self.assertNotIn("rowSigs", got)
+            # every row with a suggestion gone, and none about the day: nothing kept
+            plan["entries"] = [{"id": "r0", "s": 540, "e": 610, "taskId": "7", "kind": "focused", "repo": "acme-site"}]
+            with mock.patch.object(server.dayreview, "review", lambda *a, **k: {"suggestions": [{"kind": "untick", "row": "r0"}],
+                                                                                  "dropped": [], "cost": 0}):
+                server.api_dayplan_review({"date": "2026-11-07"})
+            plan["entries"] = [{"id": "r0", "s": 540, "e": 620, "taskId": "7", "kind": "focused", "repo": "acme-site"}]
+            self.assertTrue(server.api_dayplan_review({"date": "2026-11-07", "kept_only": True}).get("none"))
+
 
 class DayMarksTest(unittest.TestCase):
     """The day done and time marked "not work": on this Mac only, per day, merged spans, KEEP_DAYS days."""

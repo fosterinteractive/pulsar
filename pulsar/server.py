@@ -1839,7 +1839,8 @@ def api_dayplan_review(body: dict) -> dict:
     Claude Code, isolated as Ask Claude is; its suggestions come back checked, for the review panel to accept or
     reject. Nothing is written. A POST, because it runs Claude; the page's session only (key_refusal). The last review
     of a day is kept (askclaude.stash, "review") and given back while the plan is the same (review_key); "again": true
-    asks Claude anyway, "kept_only": true never asks it (the panel opening)."""
+    asks Claude anyway, "kept_only": true never asks it (the panel opening): then, on a plan that changed since, the
+    last review's suggestions for the rows still as they were (carry_review)."""
     s = current_settings()
     date = str(body.get("date") or "")
     if not DATE.match(date):
@@ -1862,8 +1863,11 @@ def api_dayplan_review(body: dict) -> dict:
     # the same plan, reviewed before (also before a restart): no new run, unless the person asks again ("again")
     again = None if body.get("again") is True else askclaude.stashed(date, "review", key)
     if again is not None:
-        return {**again, "rows": rows, "cost": 0, "kept": True}
+        return {**{k: v for k, v in again.items() if k not in ("rowSigs", "ignore")}, "rows": rows, "cost": 0, "kept": True}
     if body.get("kept_only") is True:  # the panel opening: what is kept, never a run of Claude
+        carried = carry_review(askclaude.stashed_latest(date, "review"), plan["entries"], ignore)
+        if carried:
+            return {**carried, "rows": rows, "cost": 0, "kept": True}
         return {"suggestions": [], "rows": rows, "none": True}
     for r in inputs["rows"]:  # what was typed and Claude's replies, as Ask Claude reads them (capped there)
         if r["e"] - r["s"] >= 10:
@@ -1877,16 +1881,45 @@ def api_dayplan_review(body: dict) -> dict:
     if got["dropped"]:
         logbook.record("log the day", f"Review with Claude: left out {len(got['dropped'])} suggestions: "
                        f"{'; '.join(got['dropped'][:5])}", kind="warning")
-    askclaude.stash(date, "review", key, {k: v for k, v in got.items() if k != "cost"})
+    # each row as it was, so a later plan can keep the suggestions of the rows that stay the same (carry_review)
+    askclaude.stash(date, "review", key, {**{k: v for k, v in got.items() if k != "cost"},
+                                          "rowSigs": {e["id"]: row_sig(e) for e in plan["entries"]}, "ignore": ignore})
     return {**got, "rows": rows, "digestTokens": size, "cut": cut}
 
 
+def row_sig(e: dict) -> list:
+    """A row of the plan as proposed: its time, task, kind, work, meeting and service."""
+    return [e.get("s"), e.get("e"), e.get("taskId"), e.get("kind"), e.get("repo"), e.get("meeting"), e.get("serviceId")]
+
+
 def review_key(entries: list, model: str, source: str, ignore: bool) -> str:
-    """What a review of the day was about: the plan's rows as proposed (time, task, kind, work, meeting), the model,
-    the tracker and the test view. The same key reuses the review kept for the day; any change asks Claude again."""
-    rows = [[e.get("s"), e.get("e"), e.get("taskId"), e.get("kind"), e.get("repo"), e.get("meeting"), e.get("serviceId")]
-            for e in entries]
+    """What a review of the day was about: the plan's rows as proposed (row_sig), the model, the tracker and the test
+    view. The same key reuses the review kept for the day whole; on another, the panel opening keeps what it can
+    (carry_review) and "Check my day with Claude" asks Claude again."""
+    rows = [row_sig(e) for e in entries]
     return hashlib.sha256(json.dumps([rows, model, source, bool(ignore)], sort_keys=True).encode()).hexdigest()[:32]
+
+
+def carry_review(last, entries: list, ignore: bool) -> dict | None:
+    """The day's last review on a plan that changed since (time went on, an entry was logged, Pulsar restarted): its
+    suggestions for the rows still exactly as they were (row_sig), on their ids now, and those about the whole day;
+    the ones whose row changed or went are left out, counted in "changed" (the owner, 2026-11-13: "для тих таймлогів,
+    які не змінилися, зберігати рекомендації від клода"). None when nothing is left, or the review has no rows kept
+    (before 2026-11-13) or was of the other view (ignore_logged)."""
+    if not isinstance(last, dict) or not isinstance(last.get("rowSigs"), dict) or bool(last.get("ignore")) != ignore:
+        return None
+    now = {json.dumps(row_sig(e)): e["id"] for e in entries}
+    out, changed = [], 0
+    for s in last.get("suggestions") or []:
+        if not s.get("row"):
+            out.append(s)
+            continue
+        new = now.get(json.dumps(last["rowSigs"].get(s["row"])))
+        if new is None:
+            changed += 1
+        else:
+            out.append({**s, "row": new})
+    return {"suggestions": out, "dropped": last.get("dropped") or [], "changed": changed} if out else None
 
 
 def api_range(q: dict) -> dict:

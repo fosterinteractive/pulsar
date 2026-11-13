@@ -252,6 +252,18 @@ try {
       && away.includes('Vacation') && wide > 60 && narrow === 0 && unseenLit && lit && seenAfter && plain,
       `${cards.join(' | ')} | ${tops.join(',')} | ${away} | ${Math.round(wide)} → ${Math.round(narrow)} | unseen ${unseenLit} lit ${lit} seen ${seenAfter} plain ${plain}`);
 
+    // Claude's review kept after a restart on a plan that changed since: the rows' suggestions that still apply, and
+    // a word on the ones left out (2026-11-13, the owner)
+    const sg0 = {items: SG.items, note: SG.note};
+    sgTake({suggestions: [{kind: 'untick', row: '', why: 'x'}], kept: true, changed: 2, rows: []}, true);
+    const carriedNote = SG.note;
+    sgTake({suggestions: [{kind: 'untick', row: '', why: 'x'}], kept: true, rows: []}, true);
+    const wholeNote = SG.note;
+    SG.items = sg0.items; SG.note = sg0.note;
+    check('A kept review says when suggestions for changed rows were left out',
+      carriedNote.includes('kept from the last review (2 more for rows that changed since left out)')
+      && wholeNote.includes('kept from the last review of this plan'), `${carriedNote} | ${wholeNote}`);
+
     // every layout keeps each column in its own place, Log the day's included (2026-11-13: without room for Planned
     // there, the Logged column fell under the time axis)
     const cls0 = document.body.className, offGrid = [];

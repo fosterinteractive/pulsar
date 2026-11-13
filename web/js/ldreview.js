@@ -42,7 +42,8 @@ function sgTake(ans, kept = false) {
   }));
   const n = (ans.suggestions || []).length;
   SG.note = `${n ? `${n} ${n === 1 ? 'suggestion' : 'suggestions'}` : 'Nothing to change'} from Claude`
-    + (kept || ans.kept ? ', kept from the last review of this plan' : ans.cost != null ? ` · $${(+ans.cost).toFixed(3)}` : '')
+    + (kept || ans.kept ? `, kept from the last review${ans.changed == null ? ' of this plan'
+      : ans.changed ? ` (${ans.changed} more for rows that changed since left out)` : ''}` : ans.cost != null ? ` · $${(+ans.cost).toFixed(3)}` : '')
     + (ans.dropped?.length ? ` · ${ans.dropped.length} left out by Pulsar's checks` : '') + '.';
 }
 /* the row a suggestion was made for, as it was then: it applies only while the row is still as proposed */

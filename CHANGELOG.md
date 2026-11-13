@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Log the day keeps Claude's suggestions after a restart for the rows that have not changed since "Check my day with Claude" (the same time, task, work and service); the ones for rows that changed or were logged are left out, and the line says how many.
 - Where ActivityWatch recorded nothing at all for 10 minutes or more (it was quit or crashed), Pulsar takes that time from MemTime: the Activity column says "ActivityWatch + MemTime" and those cards have a dashed edge. Time ActivityWatch recorded as away stays away. Settings > Time and activity > Activity can switch it off.
 - Settings > Time and activity > Advanced: from which share of a Claude session's votes its row comes ticked (60% by default) and, on a client's work, the share it needs too (80%).
 - A Planned column beside Meetings: your bookings in Productive's Resource Planner on the day, each with how much you logged to its task. Folded to a narrow strip until you click it (this Mac remembers). A booking has no time of day, so the day's bookings are shown one after another from 10:00; tentative ones are dashed, an absence is a line under the title. Settings > Connections > Productive turns it off (on by default); off, Pulsar does not ask Productive for bookings.

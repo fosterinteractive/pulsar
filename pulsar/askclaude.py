@@ -826,6 +826,16 @@ def stashed(date: str, kind: str, key: str):
     return got.get("answer") if isinstance(got, dict) and isinstance(got.get("answer"), dict) else None
 
 
+def stashed_latest(date: str, kind: str):
+    """The answer kept last for `date`, whatever it was asked about, or None."""
+    try:
+        items = _stash_read(date, kind)
+    except ValueError:
+        return None
+    got = items[list(items)[-1]] if items else None
+    return got.get("answer") if isinstance(got, dict) and isinstance(got.get("answer"), dict) else None
+
+
 def _prune() -> None:
     """Files of days older than KEEP_DAYS go, picks and stashes alike."""
     oldest = (datetime.now() - timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%d")
