@@ -240,6 +240,22 @@ try {
       && cards[0].includes('SEO audit') && cards[1].includes('tentative') && tops[1] > tops[0] && away.includes('Vacation')
       && wide > 60 && narrow < 30, `${cards.join(' | ')} | ${tops.join(',')} | ${away} | ${Math.round(wide)} → ${Math.round(narrow)}`);
 
+    // every layout keeps each column in its own place, Log the day's included (2026-11-13: without room for Planned
+    // there, the Logged column fell under the time axis)
+    const cls0 = document.body.className, offGrid = [];
+    for (const rv of [false, true]) for (const meet of [false, true]) for (const noLikely of [false, true]) {
+      document.body.classList.toggle('rv-on', rv); document.body.classList.toggle('has-meetings', meet);
+      document.body.classList.toggle('no-likely', noLikely);
+      for (const sel of ['#grid', '.cols']) {
+        const kids = [...q(sel).children].filter(k => (k.id === 'axis' || k.matches('.lane, .colhead')) && getComputedStyle(k).display !== 'none');
+        const r = kids.map(k => k.getBoundingClientRect());
+        if (r.some(x => Math.abs(x.top - r[0].top) > 1) || r.some((x, i) => i && x.left < r[i - 1].right - 1))
+          offGrid.push(`${sel} rv=${rv} meet=${meet} noLikely=${noLikely}`);
+      }
+    }
+    document.body.className = cls0;
+    check('Every layout keeps the columns side by side, Log the day too', !offGrid.length, offGrid.join(' | '));
+
     // the Report's parallel work: per project, in parallel and about how much is not logged (2026-11-13, the owner)
     const par = parallelSection({days: 26, of: 30, keepDays: 31, parallel: 125, notLogged: 80,
                                  projects: [{name: 'Clientco', mapped: true, parallel: 95, front: 300, logged: 330, notLogged: 65},
