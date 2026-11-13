@@ -2,10 +2,10 @@
 .meetcol { display: none; }
 .has-meetings .meetcol { display: block; }
 .has-meetings .cols, .has-meetings .grid {
-  grid-template-columns: 56px minmax(0,.62fr) minmax(0,1.1fr) minmax(0,.85fr) minmax(0,1.2fr);
+  grid-template-columns: 56px var(--plan-w) minmax(0,.62fr) minmax(0,1.1fr) minmax(0,.85fr) minmax(0,1.2fr);
 }
 .has-meetings.no-likely .cols, .has-meetings.no-likely .grid {
-  grid-template-columns: 56px minmax(0,.62fr) minmax(0,1.1fr) minmax(0,1.3fr);
+  grid-template-columns: 56px var(--plan-w) minmax(0,.62fr) minmax(0,1.1fr) minmax(0,1.3fr);
 }
 
 /* all-day events: small lines under the column's title, never on the time axis */
@@ -27,3 +27,19 @@
 .pop .links a { color: var(--accent); font-size: 12.5px; }
 .pop .links a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 #gcal-link a { color: var(--accent); }
+
+/* Planned (js/planned.js): your Resource Planner bookings, a narrow strip until opened */
+body { --plan-w: 22px; }
+body.plan-open { --plan-w: minmax(0,.55fr); }
+.colhead.plancol { padding-left: 2px; padding-right: 2px; overflow: hidden; }
+.plan-tg { font: 600 11px/1 inherit; color: var(--muted); background: none; border: 1px solid var(--line); border-radius: 6px;
+  padding: 3px 4px; cursor: pointer; min-width: 16px; }
+.plan-open .plan-tg { color: var(--text); }
+.plan-tg:hover { background: var(--hover); }
+.plan-tg:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.colhead.plancol #h-plan { display: block; margin-top: 3px; }
+.lane.plancol { border-right: 1px solid var(--line); }
+.card.plan { border: 0; border-left: 3px solid var(--accent2, var(--accent)); background: color-mix(in srgb, var(--accent2, var(--accent)) 10%, var(--card)); }
+.card.plan.draft { background: transparent; border: 1px dashed var(--line); border-left: 3px dashed var(--faint); }
+.card.plan .t { font-weight: 600; font-size: 12px; }
+.card.plan .d { color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

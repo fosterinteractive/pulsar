@@ -117,5 +117,34 @@ class TaskStatusesRouteTest(unittest.TestCase):
                              {"error": "Productive did not return the task (HTTP 404)."})
 
 
+class BookingsTest(unittest.TestCase):
+    """productive.bookings: the day's Resource Planner bookings, read with the network stood in for."""
+
+    def test_each_way_of_booking_comes_to_its_minutes_that_day(self):
+        import json
+        from unittest import mock
+        from pulsar import productive
+        cols = ["type", "id", "started_on", "ended_on", "time", "booking_method", "percentage", "total_time", "is_draft",
+                "note", "task", "service", "event"]
+        rows = [["bookings", "1", "2026-11-11", "2026-11-12", None, "Total hours", None, "1 h", False, None, "tasks:7", "services:8", None],
+                ["bookings", "2", "2026-11-10", "2026-11-14", "2 h", "Per day", None, None, True, "pairing", "tasks:9", "services:8", None],
+                ["bookings", "3", "2026-11-11", "2026-11-11", None, "Percentage", 25, None, False, None, None, "services:8", None],
+                ["bookings", "4", "2026-11-11", "2026-11-11", None, "Per day", None, None, False, None, None, None, "events:5"]]
+        inc = {"columns": ["type", "id", "title", "name"],
+               "rows": [["tasks", "7", "SEO audit", None], ["tasks", "9", "Pairing", None], ["services", "8", None, "Support"],
+                        ["events", "5", None, "Vacation"]]}
+        doc = json.dumps({"items": {"columns": cols, "rows": rows}, "included": inc})
+        with mock.patch.object(productive, "_need", lambda s: {"kind": "mcp", "token": "t"}), \
+                mock.patch.object(productive, "mcp_text", lambda *a, **k: doc), \
+                mock.patch.object(productive, "parse_mcp", lambda text: json.loads(text)):
+            got = productive.bookings("2026-11-11", {"person_id": "1", "target_hours": 8})
+        by = {x["id"]: x for x in got}
+        self.assertEqual((by["1"]["minutes"], by["1"]["title"], by["1"]["taskId"]), (30, "SEO audit", "7"))  # 1 h over 2 days
+        self.assertEqual((by["2"]["minutes"], by["2"]["draft"], by["2"]["note"]), (120, True, "pairing"))
+        self.assertEqual((by["3"]["minutes"], by["3"]["title"]), (120, "Support"))  # 25% of 8 h
+        self.assertEqual((by["4"]["kind"], by["4"]["title"], by["4"]["minutes"]), ("absence", "Vacation", 480))
+        self.assertEqual(got[0]["kind"], "absence")  # absences first
+
+
 if __name__ == "__main__":
     unittest.main()

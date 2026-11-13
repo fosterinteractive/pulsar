@@ -220,6 +220,26 @@ try {
         && stLine.includes('“In progress” (now “Backlog”)') && stLine.includes('data-ld-status-keep="ns1"'),
       `${fresh.statusId} ${inQa.statusId} ${shut.statusId} ${kept1.statusId}`);
 
+    // Planned: the day's bookings from 10:00 one after another, folded to a strip until opened, and folded back
+    const booked0 = state.booked, open0 = (() => { try { return localStorage.getItem('pulsar-planned-open'); } catch (e) { return null; } })();
+    state.booked = {date: state.date, bookings: [{id: 'b1', kind: 'work', title: 'SEO audit', service: 'Support', taskId: '7', minutes: 30, draft: false},
+                                                 {id: 'b2', kind: 'work', title: 'Pairing', service: 'Dev', taskId: '9', minutes: 60, draft: true},
+                                                 {id: 'b3', kind: 'absence', title: 'Vacation', minutes: 480, draft: false}]};
+    try { localStorage.setItem('pulsar-planned-open', '1'); } catch (e) { /* no storage: folded */ }
+    render();
+    const cards = [...document.querySelectorAll('#lane-plan .card.plan')].map(c => c.getAttribute('aria-label'));
+    const tops = [...document.querySelectorAll('#lane-plan .card.plan')].map(c => parseFloat(c.style.top));
+    const away = q('#plan-allday').textContent, wide = q('#lane-plan').getBoundingClientRect().width;
+    try { localStorage.setItem('pulsar-planned-open', '0'); } catch (e) { /* as above */ }
+    render();
+    const narrow = q('#lane-plan').getBoundingClientRect().width;
+    state.booked = booked0;
+    try { if (open0 == null) localStorage.removeItem('pulsar-planned-open'); else localStorage.setItem('pulsar-planned-open', open0); } catch (e) { /* as above */ }
+    render();
+    check('Planned shows the bookings from 10:00 one after another, folds to a strip', cards.length === 2
+      && cards[0].includes('SEO audit') && cards[1].includes('tentative') && tops[1] > tops[0] && away.includes('Vacation')
+      && wide > 60 && narrow < 30, `${cards.join(' | ')} | ${tops.join(',')} | ${away} | ${Math.round(wide)} → ${Math.round(narrow)}`);
+
     // the Report's parallel work: per project, in parallel and about how much is not logged (2026-11-13, the owner)
     const par = parallelSection({days: 26, of: 30, keepDays: 31, parallel: 125, notLogged: 80,
                                  projects: [{name: 'Clientco', mapped: true, parallel: 95, front: 300, logged: 330, notLogged: 65},

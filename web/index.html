@@ -56,6 +56,7 @@
     <div class="checklist" id="checklist" hidden role="region" aria-label="Before Pulsar can fill your day"></div>
     <div class="cols">
       <div class="colhead"></div>
+      <div class="colhead plancol"><button type="button" class="plan-tg" id="plan-tg" aria-expanded="false" aria-controls="lane-plan">·</button><span id="h-plan"></span><div class="allday" id="plan-allday"></div></div>
       <div class="colhead meetcol"><b>Meetings</b><span id="h-meet">…</span><div class="allday" id="meet-allday"></div></div>
       <div class="colhead"><b>Activity</b><span id="h-act">…</span>
         <select id="source-select" class="mini-select" aria-label="Activity source" title="Which tracker to show">
@@ -69,6 +70,7 @@
     <div class="scroll" id="scroll">
       <div class="grid" id="grid">
         <div class="axis" id="axis"></div>
+        <div class="lane plancol" id="lane-plan"></div>
         <div class="lane meetcol" id="lane-meet"></div>
         <div class="lane" id="lane-act"></div>
         <div class="lane" id="lane-likely"></div>
@@ -464,6 +466,7 @@
 <script src="/static/js/settings.js"></script>
 <script src="/static/js/selfcheck.js"></script>
 <script src="/static/js/meetings.js"></script>
+<script src="/static/js/planned.js"></script>
 <script src="/static/js/log.js"></script>
 <script src="/static/js/flow.js"></script>
 <script src="/static/js/range.js"></script>

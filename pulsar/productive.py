@@ -1335,6 +1335,78 @@ def set_task_status(task_id: str, status_id: str, settings: dict) -> None:
         raise ProductiveUnclear(STATUS_UNCLEAR.format("Productive said: " + (text[:200] or "nothing")))
 
 
+def _working_days(a: str, b: str, settings: dict) -> int:
+    """Working days from a to b (YYYY-MM-DD, both counted), by Settings' working days (Monday 0); at least one."""
+    days = set(settings.get("working_days") or [0, 1, 2, 3, 4])
+    d0, d1 = datetime.strptime(a, "%Y-%m-%d"), datetime.strptime(b, "%Y-%m-%d")
+    n = sum(1 for i in range((d1 - d0).days + 1) if (d0 + timedelta(days=i)).weekday() in days)
+    return max(1, n)
+
+
+def bookings(date: str, settings: dict) -> list:
+    """Your Resource Planner bookings on a day, read only: [{id, kind ("work" or "absence"), title, service, taskId,
+    minutes (that day), draft, note, start, end}]. Productive gives them dates and an amount (hours a day, a share of
+    the day, or hours over the period), never a time of day. Your role sees your own bookings only, which is all this
+    asks for. Canceled ones are left out; tentative ones are kept (draft)."""
+    conn = _need(settings)
+    person = str(settings.get("person_id") or "")
+    if not person.isdigit():
+        raise ProductiveError("Pulsar does not know your Productive person ID yet.")
+    rows = []
+    if conn["kind"] == "token":  # REST spellings not yet tried against Productive
+        status, doc = rest_get("/bookings", {"filter[person_id]": person, "filter[after]": date, "filter[before]": date,
+                                             "filter[with_draft]": "true", "include": "task,service,event",
+                                             "page[size]": 200}, conn["token"], settings.get("org_id"))
+        if status != 200 or not isinstance(doc, dict):
+            raise ProductiveError(f"Productive did not list your bookings ({why(status, doc)}).")
+        idx = _index(doc)
+        for d in doc.get("data") or []:
+            if not isinstance(d, dict) or _attr(d, "canceled_at"):
+                continue
+            task, service, event = (idx.get((k + "s", _rel(d, k) or "")) for k in ("task", "service", "event"))
+            rows.append({"id": d.get("id"), "start": _attr(d, "started_on"), "end": _attr(d, "ended_on"),
+                         "method": _attr(d, "booking_method_id") or _attr(d, "booking_method"),
+                         "time": _attr(d, "time"), "total": _attr(d, "total_time"), "pct": _attr(d, "percentage"),
+                         "draft": _attr(d, "draft") if _attr(d, "draft") is not None else _attr(d, "is_draft"),
+                         "note": _attr(d, "note"), "taskId": _rel(d, "task") or "", "task": _attr(task, "title"),
+                         "service": _attr(service, "name"), "event": _attr(event, "name"), "absence": bool(_rel(d, "event"))})
+    else:
+        found, related = _mcp_items(parse_mcp(mcp_text("query_resources", {
+            "resource_type": "bookings", "limit": 200,
+            "include_fields": ["started_on", "ended_on", "time", "booking_method", "percentage", "total_time", "is_draft",
+                               "note", "task.title", "service.name", "event.name"],
+            "filters": {"op": "and", "conditions": [
+                {"field": "person", "operator": "eq", "value": person},
+                {"field": "after", "operator": "gt_eq", "value": date},
+                {"field": "before", "operator": "lt_eq", "value": date},
+                {"field": "is_canceled", "operator": "eq", "value": "false"},
+                {"field": "with_draft", "operator": "eq", "value": "true"}]}}, conn["token"])))
+        for r in found:
+            task, service, event = (related.get(str(r.get(k) or "")) or {} for k in ("task", "service", "event"))
+            rows.append({"id": r.get("id"), "start": r.get("started_on"), "end": r.get("ended_on"),
+                         "method": r.get("booking_method"), "time": r.get("time"), "total": r.get("total_time"),
+                         "pct": r.get("percentage"), "draft": r.get("is_draft"), "note": r.get("note"),
+                         "taskId": _id_of(r.get("task")), "task": task.get("title"), "service": service.get("name"),
+                         "event": event.get("name"), "absence": bool(r.get("event"))})
+    day = config.target_minutes(settings)
+    out = []
+    for r in rows:
+        method = str(r.get("method") or "").lower()
+        if "total" in method or method == "3":
+            a, b = str(r.get("start") or date), str(r.get("end") or date)
+            minutes = minutes_of(r.get("total") or 0) / _working_days(a, b, settings)
+        elif "percent" in method or method == "2":
+            minutes = float(r.get("pct") or 0) / 100 * day
+        else:
+            minutes = minutes_of(r.get("time") or 0) or (day if r["absence"] else 0)
+        out.append({"id": str(r.get("id") or ""), "kind": "absence" if r["absence"] else "work",
+                    "title": str(r.get("task") or r.get("event") or r.get("service") or "Booking").strip(),
+                    "service": str(r.get("service") or "").strip(), "taskId": str(r.get("taskId") or ""),
+                    "minutes": int(round(minutes)), "draft": bool(r.get("draft")), "note": str(r.get("note") or "")[:300],
+                    "start": str(r.get("start") or ""), "end": str(r.get("end") or "")})
+    return sorted(out, key=lambda x: (x["kind"] != "absence", x["draft"], -x["minutes"], x["title"]))
+
+
 def _write_conn(settings: dict) -> dict:
     if config.writes_blocked():  # tests, demos, and a preview not allowed to write: nothing may reach Productive
         raise ProductiveError(config.writes_blocked())

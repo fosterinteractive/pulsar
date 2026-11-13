@@ -1697,6 +1697,23 @@ def api_entry_update(body: dict) -> dict:
         return {"updated": mine["id"]}
 
 
+_booked: dict = {}  # date -> (time read, your bookings that day): five minutes
+
+
+def api_bookings(q: dict) -> dict:
+    """The day view's Planned column: your Resource Planner bookings on a day (productive.bookings). Read only."""
+    s = current_settings()
+    d = q["date"]
+    got = _booked.get(d)
+    if not got or time.time() - got[0] > 300 or q.get("fresh"):
+        try:
+            got = (time.time(), productive.bookings(d, s))
+        except productive.ProductiveError as exc:
+            return {"error": str(exc), "bookings": []}
+        _booked[d] = got
+    return {"bookings": got[1]}
+
+
 _statuses: dict = {}  # project -> (time read, its workflow's statuses): ten minutes
 
 
@@ -2225,7 +2242,7 @@ class Handler(BaseHTTPRequestHandler):
                       "/api/dayplan": api_dayplan, "/api/dayplan/journal": api_dayplan_journal, "/api/range": api_range,
                       "/api/likely/picks": api_likely_picks, "/api/task/projects": api_task_projects,
                       "/api/task/places": api_task_places, "/api/task/fields": api_task_fields,
-                      "/api/task/statuses": api_task_statuses,
+                      "/api/task/statuses": api_task_statuses, "/api/bookings": api_bookings,
                       "/api/daymarks": lambda q: daymarks.get(q["date"])}
             if url.path not in routes:
                 return self.send(404, b"not found", "text/plain")

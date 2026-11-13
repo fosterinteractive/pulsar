@@ -30,6 +30,7 @@ function load({fresh = false, keepScroll = false} = {}) {
       return x;
     }),
     loadMeetings(d, fresh),  // meetings.js
+    loadBookings(d, fresh),  // planned.js
     // the day done, time not work (daymarks.py): said on this Mac, never sent to Productive
     getJSON(`/api/daymarks?date=${d}`).then(x => { if (d === state.date) { state.marks = x.error ? {date: d} : {...x, date: d}; drawSoon(); } return x; }),
     // Ask Claude's picks for this day, kept from an earlier ask (this run or on disk): shown again, never asked again
@@ -358,6 +359,7 @@ function render() {
     now.style.top = `${nowMin() * ppm}px`;
   }
   renderMeetings(ppm);  // meetings.js: the Meetings column, only while Google Calendar is connected
+  renderPlanned(ppm);  // planned.js: your Resource Planner bookings, folded until opened
 
   assignHues([...(logged?.entries || []).map(x => x.project), ...(CONFIG?.rules || []).map(r => r.project),
               ...(state.repeats || []).map(r => r.project)]);
@@ -682,6 +684,7 @@ document.addEventListener('click', ev => {
   const i = +card.dataset.i, Z = state.zoom;
   if (card.dataset.k === 'prop') { closePop(); ldOpen(card.dataset.row, true); return; }  // logday.js
   if (card.dataset.k === 'meet') return openMeeting(i, ev);  // meetings.js
+  if (card.dataset.k === 'plan') return openBooking(i, ev);  // planned.js
   if (card.dataset.k === 'repeat') {
     const x = repeatCache[i];
     closePop();
