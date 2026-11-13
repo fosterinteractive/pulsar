@@ -33,16 +33,33 @@
 body { --plan-w: 0px; }
 body.plan-open { --plan-w: minmax(0,.55fr); }
 body:not(.plan-open) .colhead.plancol, body:not(.plan-open) .lane.plancol { visibility: hidden; padding: 0; border: 0; overflow: hidden; }
-.colhead.axishead { padding: 10px 0 0; display: flex; justify-content: center; align-items: flex-start; }
-.plan-tg { display: inline-grid; place-items: center; width: 28px; height: 26px; padding: 0; color: var(--muted); background: none;
-  border: 1px solid transparent; border-radius: 7px; cursor: pointer; }
-.plan-tg svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.colhead.axishead { padding: 9px 0 0; display: flex; justify-content: center; align-items: flex-start; }
+.plan-tg { display: grid; place-items: center; box-sizing: border-box; width: 30px; height: 30px; padding: 0; color: var(--muted);
+  background: none; border: 1.5px solid transparent; border-radius: 9px; cursor: pointer; }
+.plan-tg svg { display: block; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round;
+  stroke-linejoin: round; }
 .plan-tg:hover { background: var(--hover); color: var(--text); }
-.plan-tg.has { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
-.plan-open .plan-tg { color: var(--text); border-color: var(--line); background: var(--seg-on, var(--hover)); }
+/* a day with a booking, closed: a ring in the logo's colours turns slowly round the icon, and a soft glow circles inside */
+@property --plan-a { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+.plan-tg.has {
+  --plan-base: color-mix(in srgb, var(--accent) 14%, var(--panel));
+  color: var(--accent);
+  background:
+    radial-gradient(circle 13px at calc(50% + 32% * cos(var(--plan-a))) calc(50% + 32% * sin(var(--plan-a))),
+      rgb(244 114 182 / .32), transparent) padding-box,
+    linear-gradient(var(--plan-base), var(--plan-base)) padding-box,
+    conic-gradient(from var(--plan-a), #22d3ee, #a78bfa, #ec4899, var(--accent), #22d3ee) border-box;
+  box-shadow: 0 0 12px -3px rgb(167 139 250 / .55);
+  animation: plan-orbit 6s linear infinite;
+}
+.plan-tg.has:hover { filter: brightness(1.15) saturate(1.1); }
+@keyframes plan-orbit { to { --plan-a: 360deg; } }
+@media (prefers-reduced-motion: reduce) { .plan-tg.has { animation: none; } }
+/* open: pressed, and still */
+.plan-open .plan-tg, .plan-open .plan-tg.has { color: var(--text); background: var(--seg-on, var(--hover)); border-color: var(--line);
+  box-shadow: none; animation: none; }
 .plan-open .plan-tg.has { color: var(--accent); }
-.plan-tg:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.plan-tg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .no-plan .plan-tg { display: none; }  /* switched off in Settings */
 .lane.plancol { border-right: 1px solid var(--line); }
 .card.plan { border: 0; border-left: 3px solid var(--accent2, var(--accent)); background: color-mix(in srgb, var(--accent2, var(--accent)) 10%, var(--card)); }
