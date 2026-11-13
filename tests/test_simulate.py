@@ -893,7 +893,7 @@ class Run:
             mock.patch.object(server, "public_config", lambda s: {
                 "version": server.__version__, "preview": None, "timezone": d.tzname, "targetMinutes": 480,
                 "writesBlocked": config.writes_blocked(), "rules": d.rules}),
-            mock.patch.object(trackers, "both", lambda t0, t1, url, cls, away=None: {"aw": [dict(it) for it in d.items], "memtime": []}),
+            mock.patch.object(trackers, "both", lambda t0, t1, url, cls, away=None, fill=None: {"aw": [dict(it) for it in d.items], "memtime": []}),
             mock.patch.object(likely, "available", lambda: True),
             mock.patch.object(likely, "proposal", proposal),
             mock.patch.object(learn, "warm", lambda date, s: None),

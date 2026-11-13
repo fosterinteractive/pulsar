@@ -426,15 +426,63 @@ def cut_out(items: list, gaps: list) -> list:
     return out
 
 
-def both(t0: float, t1: float, aw_url: str, classify: Classifier, away: float | None = None) -> dict:
+# A stretch this long with no AFK event at all is ActivityWatch not running (quit, crashed) or the Mac off: its AFK
+# watcher records at the keys and away alike, so it leaves no gap while it runs. On the owner's 30 days to 2026-11-13
+# every gap it left while running was under 5 minutes; the ones from 15 minutes were it or the Mac off (2026-11-05:
+# ActivityWatch started at 14:29, and MemTime had 397 minutes of the morning)
+FILL_MIN = 10
+TRAIL_GRACE = 5  # minutes past the AFK timeout before a gap up to now counts: a pause still going on has no event yet
+
+
+def aw_gaps(raw: dict | None, t0: float, t1: float, minutes: float, now: float | None = None) -> list:
+    """[(s, e)] in minutes from t0: where ActivityWatch recorded nothing at all, from FILL_MIN minutes. The gap up to
+    now counts only beyond `minutes` (Away after, its AFK timeout) and TRAIL_GRACE: until its timeout passes, the AFK
+    watcher has written nothing for a pause still going on. None of it while ActivityWatch has no events at all."""
+    if not raw:
+        return []
+    end = min(t1, time.time() if now is None else now)
+    spans = merge([[s, s + float(ev.get("duration") or 0)] for ev in raw.get("afk") or []
+                   if isinstance(ev, dict) and ev.get("timestamp") for s in [parse_ts(ev["timestamp"])]])
+    out, at = [], t0
+    for s, e in spans:
+        if s >= end:
+            break
+        if s - at >= FILL_MIN * 60:
+            out.append((round((at - t0) / 60, 3), round((s - t0) / 60, 3)))
+        at = max(at, e)
+    if end - at >= max(FILL_MIN, minutes + TRAIL_GRACE) * 60:
+        out.append((round((at - t0) / 60, 3), round((end - t0) / 60, 3)))
+    return out
+
+
+def fill_gaps(aw: list, mem: list, gaps: list) -> list:
+    """ActivityWatch's items, and MemTime's inside `gaps` (aw_gaps), each of those marked "fill"."""
+    add = []
+    for it in mem:
+        for a, b in gaps:
+            lo, hi = max(it["s"], a), min(it["e"], b)
+            if hi - lo >= 1 / 60:
+                add.append({**it, "s": round(lo, 3), "e": round(hi, 3), "fill": "memtime"})
+    return sorted(aw + add, key=lambda x: x["s"]) if add else aw
+
+
+def both(t0: float, t1: float, aw_url: str, classify: Classifier, away: float | None = None,
+         fill: bool | None = None) -> dict:
     """Both trackers' items. `away`: Settings' "Away after" in minutes (read from the settings when not given).
     MemTime counts the window in front even while nobody is there (until its own idle time), so where ActivityWatch
-    recorded the person away, MemTime's items are cut there too: one answer to "was I there?" whichever is shown."""
+    recorded the person away, MemTime's items are cut there too: one answer to "was I there?" whichever is shown.
+    `fill`: Settings' "Take the time ActivityWatch missed from MemTime" (read from the settings when not given):
+    where ActivityWatch recorded nothing at all (aw_gaps), its items take MemTime's, marked "fill" (the owner,
+    2026-11-13: "якщо час відсутній беремо той проміжок з бекапу")."""
     PROBLEMS.pop("memtime", None)
     minutes = config.away_after() if away is None else away
+    fill = bool(config.load().get("tracker_fill", True)) if fill is None else fill
     raw = activitywatch_raw(aw_url, t0, t1)
-    mem = activity_memtime(t0, t1, classify)
-    return {"aw": activity_aw(aw_url, t0, t1, classify, minutes, raw=raw), "memtime": cut_out(mem, aw_away(raw, t0, minutes))}
+    mem = cut_out(activity_memtime(t0, t1, classify), aw_away(raw, t0, minutes))
+    aw = activity_aw(aw_url, t0, t1, classify, minutes, raw=raw)
+    if fill and mem:
+        aw = fill_gaps(aw, mem, aw_gaps(raw, t0, t1, minutes))
+    return {"aw": aw, "memtime": mem}
 
 
 # ActivityWatch saw less than this share of MemTime's minutes: it was down most of the day. Not more: MemTime counts a

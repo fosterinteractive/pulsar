@@ -93,6 +93,12 @@ CLASS_ORDER = {INTERNAL: 0, "mixed": 1, "unknown": 1, CLIENT: 2}  # what the cap
 SURE_SHARE = 0.6     # a session's vote with this share (and 30 minutes) is sure: "high", ticked
 SURE_CLIENT = 0.8    # on a client's work, from this share only (doubt): a client's tasks are its tickets, and a session
                      # that was logged to several of them moves between them
+# both are Settings > Time and activity > Advanced choices (opts_for): plan() puts the two in ctx["sure"]
+
+
+def sure(ctx: dict) -> tuple:
+    """(share, client share) from which a session's vote ticks its row: Advanced's choices, or SURE_SHARE, SURE_CLIENT."""
+    return ctx.get("sure") or (SURE_SHARE, SURE_CLIENT)
 
 
 def opts_for(settings: dict) -> dict:
@@ -102,7 +108,8 @@ def opts_for(settings: dict) -> dict:
     step = step if step in config.ROUNDING and not isinstance(step, bool) else GRID
     a = config.advanced(settings)  # Settings > Time and activity > Advanced
     return {"grid": step, "min_entry": max(MIN_ENTRY, step), "sitting_gap": config.away_after(settings),
-            "merge_gap": a["join_gap"], "out_min": a["outside_min"], "mixed_share": a["split_hint"]}
+            "merge_gap": a["join_gap"], "out_min": a["outside_min"], "mixed_share": a["split_hint"],
+            "sure_share": a["sure_share"], "sure_client": a["sure_client"]}
 
 
 def words(text: str, skip: frozenset = frozenset()) -> set:
@@ -448,7 +455,7 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
                 t, m, share = got
                 session_share = share
                 # 40-60% was "medium" and was right no more often than "low" (replay, 34 days): it starts unticked
-                conf = "high" if share >= SURE_SHARE and m >= 30 else "low"
+                conf = "high" if share >= sure(ctx)[0] and m >= 30 else "low"
                 out.append((t, "session", conf, f"you logged it while in this Claude session ({round(share * 100)}%)"))
         elif src == "repo":
             v = ctx["repo"].get(repo_key(row.get("project"))) or {}
@@ -482,7 +489,7 @@ def candidates(row: dict, ctx: dict, rule_hit, sameday: dict, assigned: list) ->
                     best = (tid, len(shared), shared)
             if best:
                 out.append((best[0], "words", "low", "name matches: " + ", ".join(sorted(best[2]))))
-    weak = lambda c: c[1] in ("repo", "sameday", "words", "work") or (c[1] == "session" and session_share < SURE_SHARE)  # noqa: E731
+    weak = lambda c: c[1] in ("repo", "sameday", "words", "work") or (c[1] == "session" and session_share < sure(ctx)[0])  # noqa: E731
     # the task you logged last in a project the repository's work goes to (places): after a sure session vote, before
     # the weaker answers (replay, 43 days: +2.6 points of minutes on the right task). The same for every session: a
     # rule for sessions never logged before, switched by each person's habit, was left out (2026-11-10: one logic for
@@ -567,7 +574,7 @@ def doubt(row: dict, ctx: dict, task, source: str) -> str:
             return "the session links other tasks too"
     if source == "session" and row.get("class") == CLIENT:
         got = session_vote(row, ctx)
-        if got and got[2] < SURE_CLIENT:
+        if got and got[2] < sure(ctx)[1]:
             return "this session was logged to other tasks of the client too"
     return ""
 
@@ -797,7 +804,8 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     The steps, each a function below, in this order: who has each minute (_logged, _meetings, _rows, time spent
     logging blocked, _unattended, _outside), the pieces they make (_pieces), entries from them (_merge), laid out on
     the grid (_layout), then the caps (_caps) and what is left uncovered (_result)."""
-    ctx = {**ctx, "clients_today": clients_today(day, ctx)}
+    ctx = {**ctx, "clients_today": clients_today(day, ctx),
+           "sure": ((opts or {}).get("sure_share", SURE_SHARE), (opts or {}).get("sure_client", SURE_CLIENT))}
     d = _Day(day, ctx, {"grid": GRID, "min_entry": MIN_ENTRY, "merge_gap": MERGE_GAP, "out_min": OUT_MIN, **(opts or {})})
     _logged(d)
     _meetings(d)
@@ -2305,7 +2313,8 @@ def past_items(date: str, url: str):
     tz = config.tz(s)
     t0, t1 = server.day_bounds(date, tz)
     with trackers.own_problems() as problems:  # its own: the Activity header's warning for today is never touched
-        found = trackers.both(t0, t1, url, trackers.classifier(s["personal_patterns"]), config.away_after(s))
+        found = trackers.both(t0, t1, url, trackers.classifier(s["personal_patterns"]), config.away_after(s),
+                              bool(s.get("tracker_fill", True)))
         items = server.clock_spans(found[trackers.pick(found, "auto")], t0, t1, tz)
     if items:
         return items

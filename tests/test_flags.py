@@ -348,7 +348,7 @@ class CatchUpTest(unittest.TestCase):
         with mock.patch.object(server, "current_settings", lambda: {"timezone": "UTC", "personal_patterns": [],
                                                                      "activitywatch_url": "http://localhost:5600"}), \
                 mock.patch.object(server, "productive_rows", lambda d0, d1, s: ([], None, "token", False)), \
-                mock.patch.object(server.trackers, "both", lambda a, b, url, cls, away=None: {"aw": []}):
+                mock.patch.object(server.trackers, "both", lambda a, b, url, cls, away=None, fill=None: {"aw": []}):
             got = server.api_report({"from": "2026-10-16", "to": "2026-11-05"})
         self.assertEqual(len(got["days"]), 21)
         self.assertTrue(all("notLogged" in d and "weekday" in d for d in got["days"]))

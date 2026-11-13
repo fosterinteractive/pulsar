@@ -660,6 +660,21 @@ class PlannerTest(unittest.TestCase):
         e = entry(0.7, "internal")
         self.assertEqual((e["taskId"], e["confidence"], e["checked"]), ("11", "high", True))
 
+    def test_the_shares_a_sessions_vote_ticks_from_are_settings(self):
+        # Settings > Time and activity > Advanced (the owner, 2026-11-13): "Tick a session's pick", "On a client's work"
+        key = dayplan.title_key("Fix the importer")
+
+        def entry(share: float, cls: str, sure_share: float, sure_client: float) -> dict:
+            votes = {"11": share * 100, "22": (1 - share) * 100}
+            ctx = {**self.ctx, "sess": {key: votes}, "sr": {(key, "repo"): votes}, "lastday": {}, "classes": {"repo": cls}}
+            opts = dayplan.opts_for({"advanced": {"sure_share": sure_share, "sure_client": sure_client}})
+            [e] = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600)]), ctx, opts)["entries"]
+            return e
+        self.assertEqual(entry(0.7, "internal", 0.8, 0.8)["checked"], False)   # 70% under 80%: unticked
+        self.assertEqual(entry(0.55, "internal", 0.5, 0.8)["checked"], True)   # 55% from 50%: ticked
+        self.assertEqual(entry(0.75, "client", 0.6, 0.7)["checked"], True)     # a client's work from 70%
+        self.assertEqual(entry(0.85, "client", 0.6, 0.9)["checked"], False)    # ... or only from 90%
+
     def test_the_task_logged_before_the_last_one_is_the_second_alternative(self):
         # replay of 43 days (2026-11-10): the right task is the pick or one of its three alternatives on 71.1% of the
         # clean minutes instead of 70.1%
@@ -1121,7 +1136,7 @@ class GatherClockChangeTest(unittest.TestCase):
         self.assertEqual([r["pick_s"] for r in got["rows"]], [60, 480])  # Ask Claude's names stay as they were
         # no "Round entries to" saved: today's grid; no "Away after" saved: its default ends a sitting
         self.assertEqual(got["opts"], {"grid": 5, "min_entry": 10, "sitting_gap": 15, "merge_gap": 30, "out_min": 10,
-                                         "mixed_share": 0.75})
+                                         "mixed_share": 0.75, "sure_share": 0.6, "sure_client": 0.8})
 
 
 class JournalTest(unittest.TestCase):

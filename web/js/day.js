@@ -85,7 +85,7 @@ function estimateLine(t) {
 
 /* ---------- activity blocks, the MemTime way: dominant window per slot, equal neighbours joined ---------- */
 function activityBlocks(items, Z, end) {
-  const slots = Array.from({length: Math.ceil(end / Z)}, () => ({tot: 0, keys: new Map()}));
+  const slots = Array.from({length: Math.ceil(end / Z)}, () => ({tot: 0, fill: 0, keys: new Map()}));
   for (const it of items) {
     const key = it.app + '|' + (it.host || it.title);
     let s = it.s;
@@ -94,6 +94,7 @@ function activityBlocks(items, Z, end) {
       if (!sl) break;
       const d = stop - s;
       sl.tot += d;
+      if (it.fill) sl.fill += d;  // MemTime's, where ActivityWatch recorded nothing (trackers.fill_gaps)
       let k = sl.keys.get(key);
       if (!k) sl.keys.set(key, k = {min: 0, titles: new Map(), urls: new Map(), it});
       k.min += d; k.titles.set(it.title, (k.titles.get(it.title) || 0) + d);
@@ -369,12 +370,15 @@ function render() {
   else if (act.error) { setHTML(laneAct, `<div class="state err">${esc(act.error)}</div>`); setText($('#h-act'), 'error'); }
   else {
     blocksCache = activityBlocks(act.items, Z, end);
-    const src = act.source === 'aw' ? 'ActivityWatch' : 'MemTime';
+    const filled = act.items.reduce((s, x) => s + (x.fill ? x.e - x.s : 0), 0);
+    const src = act.source === 'aw' ? (filled ? 'ActivityWatch + MemTime' : 'ActivityWatch') : 'MemTime';
     const total = act.items.reduce((s, x) => s + x.e - x.s, 0);
     const other = (act.source === 'aw' ? act.minutes?.memtime : act.minutes?.aw) || 0;
     const problem = (act.problems || {})[act.source] || (!total ? Object.values(act.problems || {})[0] : '');
     setText($('#h-act'), problem ? problem : !total && !other ? 'No activity recorded' : `${src} · ${dur(total)}`);
     $('#h-act').classList.toggle('warn', !!problem);
+    $('#h-act').title = filled && !problem ? `${dur(filled)} from MemTime, where ActivityWatch recorded nothing (it was not running). `
+      + 'Settings > Time and activity > Activity.' : '';
     // away from the computer: a hatched rail on the column's left edge, above the cards (a 30-minute card can hide a
     // 20-minute break), named by its kind and length at the first place in it no card covers. Never proposed for
     // logging: a click only says what it is (its own logging is the person's, by hand).
@@ -399,7 +403,9 @@ function render() {
       for (const a of b.items) { const r = ruleOf(a.it); if (r) byRule.set(r.project, (byRule.get(r.project) || 0) + a.min); }
       const top = [...byRule].sort((p, q) => q[1] - p[1])[0];
       b.rule = top && top[1] >= b.total * 0.4 ? top[0] : null;
-      return `<div class="card act ${b.it.cat}${b.rule ? ' ruled' : ''}" data-k="act" data-i="${i}" style="${b.rule ? `--c:${color(b.rule)};` : ''}${place(x, ppm, 18)}"${b.rule ? ` title="${esc(b.rule)}"` : ''}
+      const fromMem = b.slots.reduce((n, sl) => n + sl.fill, 0) >= b.total / 2;
+      const tip = [b.rule, fromMem ? 'From MemTime: ActivityWatch recorded nothing here' : ''].filter(Boolean).join(' · ');
+      return `<div class="card act ${b.it.cat}${b.rule ? ' ruled' : ''}${fromMem ? ' fill' : ''}" data-k="act" data-i="${i}" style="${b.rule ? `--c:${color(b.rule)};` : ''}${place(x, ppm, 18)}"${tip ? ` title="${esc(tip)}"` : ''}
         tabindex="0" role="button" aria-label="${esc(`Activity ${hm(x.s)}–${hm(x.e)}: ${b.title}, ${dur(b.total)}`)}">
         <div class="row">${icon(b.it.icon, b.it.app)}<span class="t">${esc(b.title)}</span><span class="m num">${dur(b.total)}</span></div></div>`;
     }).join('') : '<div class="state">No activity on this day.</div>') + awayHTML);

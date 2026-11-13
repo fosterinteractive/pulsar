@@ -117,6 +117,52 @@ class TaskStatusesRouteTest(unittest.TestCase):
                              {"error": "Productive did not return the task (HTTP 404)."})
 
 
+class TrackerFillTest(unittest.TestCase):
+    """trackers.aw_gaps and both(): where ActivityWatch recorded nothing at all, MemTime's time (the owner, 2026-11-13)."""
+    T0 = 1_800_000_000.0
+
+    def afk(self, a, b, status="not-afk"):
+        from datetime import datetime, timezone
+        return {"timestamp": datetime.fromtimestamp(self.T0 + a * 60, timezone.utc).isoformat(), "duration": (b - a) * 60,
+                "data": {"status": status}}
+
+    def test_only_a_stretch_with_no_event_at_all_is_a_gap_and_the_one_up_to_now_only_past_the_timeout(self):
+        from pulsar import trackers
+        raw = {"window": [{}], "afk": [self.afk(0, 540, "afk"), self.afk(540, 600), self.afk(604, 660),
+                                       self.afk(660, 700, "afk"), self.afk(760, 800)]}
+        # 600-604 is under FILL_MIN; away (afk) is never a gap; 700-760 nothing recorded: a gap
+        self.assertEqual(trackers.aw_gaps(raw, self.T0, self.T0 + 86400, 30, now=self.T0 + 820 * 60), [(700.0, 760.0)])
+        # up to now: from the AFK timeout and TRAIL_GRACE only (a pause still going on is written later)
+        self.assertEqual(trackers.aw_gaps(raw, self.T0, self.T0 + 86400, 30, now=self.T0 + 830 * 60), [(700.0, 760.0)])
+        self.assertEqual(trackers.aw_gaps(raw, self.T0, self.T0 + 86400, 30, now=self.T0 + 840 * 60),
+                         [(700.0, 760.0), (800.0, 840.0)])
+        self.assertEqual(trackers.aw_gaps(None, self.T0, self.T0 + 86400, 30), [])
+
+    def test_memtimes_items_fill_the_gaps_marked_and_the_setting_switches_it_off(self):
+        from unittest import mock
+        from pulsar import trackers
+        raw = {"window": [{}], "afk": [self.afk(540, 600), self.afk(700, 800)]}
+        aw = [{"s": 540.0, "e": 600.0, "app": "Cursor"}, {"s": 700.0, "e": 800.0, "app": "Cursor"}]
+        mem = [{"s": 530.0, "e": 720.0, "app": "Safari"}]
+        with mock.patch.object(trackers, "activitywatch_raw", lambda *a: raw), \
+                mock.patch.object(trackers, "activity_aw", lambda *a, **k: list(aw)), \
+                mock.patch.object(trackers, "activity_memtime", lambda *a: list(mem)), \
+                mock.patch.object(trackers.time, "time", lambda: self.T0 + 900 * 60):
+            got = trackers.both(self.T0, self.T0 + 86400, "http://aw", None, 30, fill=True)
+            off = trackers.both(self.T0, self.T0 + 86400, "http://aw", None, 30, fill=False)
+        self.assertEqual([(x["s"], x["e"], x.get("fill")) for x in got["aw"]],
+                         [(530.0, 540.0, "memtime"), (540.0, 600.0, None), (600.0, 700.0, "memtime"), (700.0, 800.0, None)])
+        self.assertEqual(off["aw"], aw)
+        self.assertEqual(got["memtime"], mem)
+
+    def test_on_by_default_and_only_true_or_false(self):
+        from pulsar import config, server
+        self.assertIs(config.DEFAULTS["tracker_fill"], True)
+        self.assertEqual(server.validate({"tracker_fill": False}), {"tracker_fill": False})
+        with self.assertRaises(ValueError):
+            server.validate({"tracker_fill": 1})
+
+
 class BookingsTest(unittest.TestCase):
     """productive.bookings: the day's Resource Planner bookings, read with the network stood in for."""
 

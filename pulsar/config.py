@@ -61,6 +61,7 @@ DEFAULTS = {
     "away_after": 15,            # 10 | 15 | 20 | 30 minutes without input that are time away (away_after)
     "working_days": [0, 1, 2, 3, 4],  # Monday 0 ... Sunday 6: Earlier days, the week line and the reminder
     "likely_keep_days": 31,      # 31 | 62 | 92 | 183 | 365: past days' Likely columns kept on this Mac (likely.py)
+    "tracker_fill": True,        # where ActivityWatch recorded nothing at all, MemTime's time (trackers.both)
     "planned": True,             # the Day view's Planned column: your Resource Planner bookings (productive.bookings)
     "advanced": {},  # Settings > Time and activity > Advanced: only the choices that differ from ADVANCED's defaults
 }
@@ -77,6 +78,8 @@ ADVANCED = {
     "meeting_cards": ("usual", "strict", "off"),  # the daily meeting cards: as now, only steadier repeats, never
     "split_hint": (0.75, 0.6, 0.9),  # a stretch is offered as a split when its main task has less than this share
     "no_estimate": (True, False),    # the "No estimate" flag (flags.py)
+    "sure_share": (0.6, 0.5, 0.7, 0.8),  # a session's vote with this share (and 30 minutes) ticks its row (dayplan)
+    "sure_client": (0.8, 0.7, 0.9),      # on a client's work, from this share only (dayplan.doubt)
     "pause_ask": (60, 30, 120, 240, 0),  # minutes paused, with work seen, before Pulsar asks if the pause is still on; 0 never
 }
 

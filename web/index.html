@@ -184,11 +184,13 @@
           <p class="hint" id="app-login-hint" hidden></p>
           <p class="msg" id="app-msg" role="status"></p>
         </section>
-        <section data-k="personal windows activitywatch memtime tracker afk away">
+        <section data-k="personal windows activitywatch memtime tracker afk away backup missed gap fill">
           <h3>Activity</h3>
           <label class="field"><span>Personal windows</span><textarea name="personal_patterns" rows="5"></textarea></label>
           <p class="hint">One word per line. A window that contains one counts as personal, not work.</p>
           <label class="field"><span>ActivityWatch address</span><input name="activitywatch_url" placeholder="http://localhost:5600"></label>
+          <label class="check"><input type="checkbox" name="tracker_fill"> Take the time ActivityWatch missed from MemTime</label>
+          <p class="hint">Where ActivityWatch recorded nothing at all for 10 minutes or more (it was quit or crashed), Pulsar uses MemTime's windows for that time, marked with a dashed edge. Time ActivityWatch recorded as away stays away.</p>
         </section>
         <section data-k="away after afk timeout break breaks pause paused resume idle sitting activitywatch login items open at login autostart restart" id="away-sec">
           <h3>Away</h3>
@@ -211,7 +213,7 @@
             <p class="hint" id="aw-msg" role="status" aria-live="polite"></p>
           </div>
         </section>
-        <section data-k="advanced join gap merge outside claude entry learning memory half life daily meeting cards repeats split hint mixed no estimate flag" id="adv-sec">
+        <section data-k="advanced join gap merge outside claude entry learning memory half life daily meeting cards repeats split hint mixed no estimate flag session vote tick ticked share" id="adv-sec">
           <h3>Advanced</h3>
           <details class="more" id="adv-more"><summary>How Log the day joins, learns and flags. The first choice in each is the usual one.</summary>
             <label class="field"><span>Join pieces of one task</span>
@@ -229,6 +231,11 @@
             <label class="field"><span>Offer a split</span>
               <select name="adv_split_hint"><option value="0.75">Main task under 75%</option><option value="0.6">Main task under 60%</option><option value="0.9">Main task under 90%</option></select></label>
             <p class="hint">A stretch you select is offered as a split when its main task has less of it than this.</p>
+            <label class="field"><span>Tick a session's pick</span>
+              <select name="adv_sure_share"><option value="0.6">From 60% of its votes</option><option value="0.5">From 50%</option><option value="0.7">From 70%</option><option value="0.8">From 80%</option></select></label>
+            <label class="field"><span>On a client's work</span>
+              <select name="adv_sure_client"><option value="0.8">From 80% of its votes</option><option value="0.7">From 70%</option><option value="0.9">From 90%</option></select></label>
+            <p class="hint">A row comes ticked when the task has this share of what you logged while in that Claude session, from 30 minutes of it. On a client's work it needs both shares. Lower ticks more rows, and more of them wrong.</p>
             <label class="check"><input type="checkbox" name="adv_no_estimate"> Flag a task with no estimate when most of its project's tasks have one</label>
           </details>
         </section>

@@ -190,6 +190,7 @@ def public_config(s: dict) -> dict:
         "personalPatterns": s["personal_patterns"], "activitywatchUrl": s["activitywatch_url"], "rules": s["rules"],
         "roundTo": s["round_to"], "minEntry": dayplan.MIN_ENTRY, "awayAfter": config.away_after(s), "workingDays": s["working_days"],
         "likelyKeepDays": likely.keep_days(s), "planned": bool(s.get("planned", True)),
+        "trackerFill": bool(s.get("tracker_fill", True)),
         "advanced": config.advanced(s),
         "activitywatch": awsetup.status(config.away_after(s)),  # its AFK timeout, read from its file; no program started
         "update": {**UPDATER.public(), "skip": s["update_skip"], "asked": s["update_asked"]},
@@ -254,6 +255,10 @@ def validate(body: dict) -> dict:
         if not isinstance(body["ask_claude"], bool):
             raise ValueError("ask_claude is true or false")
         out["ask_claude"] = body["ask_claude"]
+    if "tracker_fill" in body:
+        if not isinstance(body["tracker_fill"], bool):
+            raise ValueError("tracker_fill is true or false")
+        out["tracker_fill"] = body["tracker_fill"]
     if "planned" in body:
         if not isinstance(body["planned"], bool):
             raise ValueError("planned is true or false")
@@ -389,7 +394,7 @@ def api_pause(q: dict) -> dict:
     if q.get("ask") != "2" and (not after or now - since < after * 60 or (st["asked"] and now - st["asked"] < after * 60)):
         return out  # ask=2: Resume was clicked, so the question is only from when
     found = trackers.both(since, now, s["activitywatch_url"], trackers.classifier(s["personal_patterns"]),
-                          config.away_after(s))
+                          config.away_after(s), bool(s.get("tracker_fill", True)))
     items = sorted((x for x in found[trackers.pick(found, "auto")] if x.get("cat") != "personal"), key=lambda x: x["s"])
     work = sum(x["e"] - x["s"] for x in items)
     out["workMinutes"] = round(work)
@@ -509,8 +514,11 @@ def test_productive(s: dict) -> dict:
 def api_activity(q: dict) -> dict:
     s = config.load()
     t0, t1 = day_bounds(q["date"], config.tz(s))
-    found = trackers.both(t0, t1, s["activitywatch_url"], trackers.classifier(s["personal_patterns"]), config.away_after(s))
+    found = trackers.both(t0, t1, s["activitywatch_url"], trackers.classifier(s["personal_patterns"]), config.away_after(s),
+                          bool(s.get("tracker_fill", True)))
     source = trackers.pick(found, q.get("source", "auto"))
+    if q.get("source") == "aw":  # ActivityWatch picked by hand in the column: its own record, without MemTime's minutes
+        found["aw"] = [x for x in found["aw"] if not x.get("fill")]
     minutes = {k: round(sum(x["e"] - x["s"] for x in v)) for k, v in found.items()}
     tz = config.tz(s)
     # away time from elapsed minutes; then, on a day the clocks change, everything by the clock (each piece its real length)

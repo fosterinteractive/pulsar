@@ -209,7 +209,8 @@ def _built_in(date: str, settings: dict, names: tuple = (None, None), turns: dic
     day = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=tz)
     t0, t1 = day.timestamp(), (day + timedelta(days=1)).timestamp()
     found = trackers.both(t0, t1, settings.get("activitywatch_url") or config.DEFAULTS["activitywatch_url"],
-                          trackers.classifier(settings.get("personal_patterns") or []))
+                          trackers.classifier(settings.get("personal_patterns") or []),
+                          fill=bool(settings.get("tracker_fill", True)))
     source = trackers.pick(found, "auto")
     labels = {"aw": "ActivityWatch", "memtime": "MemTime"}
     namer, logging_name = names

@@ -1,7 +1,7 @@
 /* Settings: the Productive connection, time zone, daily target, personal windows, the Likely column */
 const dlg = $('#settings'), form = $('#settings-form');
 // Settings > Time and activity > Advanced: the selects named adv_<key> (config.ADVANCED); no_estimate is a checkbox
-const ADV_KEYS = ['join_gap', 'outside_min', 'memory', 'meeting_cards', 'split_hint', 'pause_ask'];  // pause_ask: in Away
+const ADV_KEYS = ['join_gap', 'outside_min', 'memory', 'meeting_cards', 'split_hint', 'sure_share', 'sure_client', 'pause_ask'];  // pause_ask: in Away
 
 function connectionText(p) {
   if (!p.active) return p.problem || 'Productive is not connected.';
@@ -26,6 +26,7 @@ function fillSettings(c) {
   f.away_after.value = String(c.awayAfter || 15);
   f.likely_keep_days.value = String(c.likelyKeepDays || 31);
   f.planned.checked = c.planned !== false;
+  f.tracker_fill.checked = c.trackerFill !== false;
   const adv = c.advanced || {};
   for (const k of ADV_KEYS) {
     const el = /** @type {HTMLSelectElement} */ (f[`adv_${k}`]);
@@ -383,7 +384,7 @@ async function saveSettings(extra = {}) {
     personal_patterns: f.personal_patterns.value,
     activitywatch_url: f.activitywatch_url.value.trim(), likely: f.likely.value, ask_claude: f.ask_claude.checked,
     claude_models: Object.fromEntries([...document.querySelectorAll('#claude-uses select')].map(x => [x.dataset.use, x.value])),
-    claude_ask_productive: f.claude_ask_productive.checked, planned: f.planned.checked,
+    claude_ask_productive: f.claude_ask_productive.checked, planned: f.planned.checked, tracker_fill: f.tracker_fill.checked,
     ...(CONFIG?.preview ? {preview_writes: f.preview_writes.checked} : {}), ...extra,
   };
   if (f.token.value.trim()) body.token = f.token.value.trim();

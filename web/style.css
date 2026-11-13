@@ -112,6 +112,8 @@ input[type=date] {
 .ico { width: 15px; height: 15px; border-radius: 4px; flex: none; object-fit: contain; }
 .ico.letter { display: inline-grid; place-items: center; background: var(--seg); color: var(--muted); font-size: 9.5px; font-weight: 600; }
 .act.personal { opacity: .5; }
+/* MemTime's minutes where ActivityWatch recorded nothing (Settings > Activity): a dashed edge, said in the tooltip */
+.card.act.fill { border-style: dashed; }
 .act .t { font-weight: 500; }
 .likely { border-left: 2px solid var(--faint); }
 .pop .li.bg .t > div { color: var(--muted); }
