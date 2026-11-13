@@ -220,7 +220,8 @@ try {
         && stLine.includes('“In progress” (now “Backlog”)') && stLine.includes('data-ld-status-keep="ns1"'),
       `${fresh.statusId} ${inQa.statusId} ${shut.statusId} ${kept1.statusId}`);
 
-    // Planned: the day's bookings from 10:00 one after another, folded to a strip until opened, and folded back
+    // Planned: the day's bookings from 10:00 one after another; closed, no column at all, only the icon above the time
+    // axis, lit when the day has a booking and plain when it has none (the owner, 2026-11-13)
     const booked0 = state.booked, open0 = (() => { try { return localStorage.getItem('pulsar-planned-open'); } catch (e) { return null; } })();
     state.booked = {date: state.date, bookings: [{id: 'b1', kind: 'work', title: 'SEO audit', service: 'Support', taskId: '7', minutes: 30, draft: false},
                                                  {id: 'b2', kind: 'work', title: 'Pairing', service: 'Dev', taskId: '9', minutes: 60, draft: true},
@@ -232,13 +233,19 @@ try {
     const away = q('#plan-allday').textContent, wide = q('#lane-plan').getBoundingClientRect().width;
     try { localStorage.setItem('pulsar-planned-open', '0'); } catch (e) { /* as above */ }
     render();
-    const narrow = q('#lane-plan').getBoundingClientRect().width;
+    const narrow = q('#lane-plan').getBoundingClientRect().width + q('.colhead.plancol').getBoundingClientRect().width;
+    const icon = q('#plan-tg'), lit = icon.classList.contains('has') && icon.getBoundingClientRect().width > 0
+      && icon.closest('.colhead.axishead') !== null && icon.getAttribute('aria-expanded') === 'false';
+    state.booked = {date: state.date, bookings: []};
+    render();
+    const plain = !icon.classList.contains('has');
     state.booked = booked0;
     try { if (open0 == null) localStorage.removeItem('pulsar-planned-open'); else localStorage.setItem('pulsar-planned-open', open0); } catch (e) { /* as above */ }
     render();
-    check('Planned shows the bookings from 10:00 one after another, folds to a strip', cards.length === 2
+    check('Planned shows the bookings from 10:00; closed, only its icon, lit on a day with bookings', cards.length === 2
       && cards[0].includes('SEO audit') && cards[1].includes('tentative') && tops[1] > tops[0] && away.includes('Vacation')
-      && wide > 60 && narrow < 30, `${cards.join(' | ')} | ${tops.join(',')} | ${away} | ${Math.round(wide)} → ${Math.round(narrow)}`);
+      && wide > 60 && narrow === 0 && lit && plain,
+      `${cards.join(' | ')} | ${tops.join(',')} | ${away} | ${Math.round(wide)} → ${Math.round(narrow)} | lit ${lit} plain ${plain}`);
 
     // every layout keeps each column in its own place, Log the day's included (2026-11-13: without room for Planned
     // there, the Logged column fell under the time axis)

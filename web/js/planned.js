@@ -1,5 +1,6 @@
 /* Planned: your bookings in Productive's Resource Planner on the day, in a column beside Meetings (the owner,
-   2026-11-13). Folded to a narrow strip by default; a click opens it, and this Mac remembers. A booking has dates and
+   2026-11-13). Hidden by default, with only an icon above the time axis, lit when the day has a booking; a click
+   opens the column, and this Mac remembers. A booking has dates and
    an amount (hours a day, a share of the day, or hours over its period), never a time of day, so the day's bookings are
    laid one after another from 10:00, each as long as its share of the day; an absence is a line under the title. Each
    says how much you logged to its task that day. day.js calls loadBookings() from load(), renderPlanned() from
@@ -21,17 +22,22 @@ const loggedOn = taskId => (state.logged?.entries || []).filter(e => String(e.ta
   .reduce((n, e) => n + (e.minutes || 0), 0);
 
 function renderPlanned(ppm) {
-  const open = planOpen();
+  const on = CONFIG?.planned !== false, open = on && planOpen();
   document.body.classList.toggle('plan-open', open);
   const b = state.booked?.date === state.date ? state.booked : null;
   const lane = $('#lane-plan'), head = $('#h-plan'), allDay = $('#plan-allday'), tg = $('#plan-tg');
   const list = b?.bookings || [];
   const work = list.filter(x => x.kind === 'work' && x.minutes > 0), away = list.filter(x => x.kind === 'absence');
   const total = work.reduce((n, x) => n + x.minutes, 0);
+  // the icon above the time axis: lit when the day has a booking, plain when it has none
+  const what = [work.length ? `${work.length} booking${work.length === 1 ? '' : 's'}, ${dur(total)}` : '',
+                away.length ? away.map(x => x.title).join(', ') : ''].filter(Boolean).join(' · ');
+  tg.classList.toggle('has', !!(work.length || away.length));
   tg.setAttribute('aria-expanded', String(open));
-  tg.title = `Planned in Productive's Resource Planner${work.length ? `: ${dur(total)}` : ''}. Click to ${open ? 'fold' : 'show'} it.`;
-  setText(tg, open ? 'Planned' : (work.length || away.length ? String(work.length + away.length) : '·'));
-  setText(head, !open ? '' : !b ? '…' : b.error ? 'error' : work.length ? dur(total) : 'nothing');
+  tg.title = `Planned in Productive's Resource Planner: ${b?.error ? 'could not be read' : what || (b ? 'nothing this day' : '…')}. `
+    + `Click to ${open ? 'hide' : 'show'} it.`;
+  tg.setAttribute('aria-label', `Planned: ${what || 'nothing'}`);
+  setText(head, !b ? '…' : b.error ? 'error' : work.length ? dur(total) : 'nothing');
   head.classList.toggle('warn', !!b?.error);
   head.title = b?.error || '';
   if (!open) { setHTML(allDay, ''); setHTML(lane, ''); planCache = []; return; }
