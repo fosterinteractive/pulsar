@@ -1659,9 +1659,16 @@ question) and cannot tell when inside it the work happened.
 - **Planned** (`productive.bookings`, `GET /api/bookings`, `web/js/planned.js`; Settings' **Planned column**, `planned`,
   on by default): the person's bookings in Productive's Resource Planner on the day, read with their own access (a
   role that sees its own bookings is enough), kept five minutes. A booking has dates and an amount (hours a day, a
-  share of the day, or hours over its working days), never a time of day, so the day's work bookings are laid one after
-  another from 10:00, each as long as its share of the day; absences are lines under the column's title; tentative
-  ones are dashed. Each card says how much is logged to its task that day; a click opens a popover with the booking.
+  share of the day, or hours over its working days), never a time of day, so a manager who plans "from 14:00 to
+  16:00" (by hand or through Claude) can say it only in the note. `pulsar/booktime.py` reads it there: a range
+  ("14:00-16:00", "14.00–16.00", "2-4pm", "з 14 до 16", "о 14:00, до 16:00"), or a start alone ("о 14:00", "at 2pm":
+  as long as the booking), with an optional zone after it ("ET", "Toronto", "PT", "UTC", "за Києвом") turned into the
+  person's, else in the person's own. Bare numbers count only after a word that says time ("з", "from"), a point
+  only before 00, 15, 30 or 45 (so "18.11" stays a date), and a clock after "до", "by" or "deadline" is no start; a
+  time that falls outside the day once in the person's zone is no time. Work bookings with a time stand there
+  (`at`); the others go one after another from 10:00, each in the first free stretch long enough for it
+  (`planLayout`), each as long as its share of the day; absences are lines under the column's title; tentative ones
+  are dashed. Each card says how much is logged to its task that day; a click opens a popover with the booking.
   Closed, the column takes no width in any grid (`--plan-w: 0`) and only an icon shows above the time axis: lit, with
   a slow sheen, while the day has bookings not seen yet; grey once the column was open with them (`pulsar-planned-seen`
   in the window's storage, booking ids per day, 31 days); plain with none. Switched off, no request is made.

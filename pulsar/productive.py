@@ -30,7 +30,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Callable, Optional, Tuple
 
-from . import config
+from . import booktime, config
 
 API = "https://api.productive.io/api/v2"
 MCP_URL = "https://mcp.productive.io/mcp"
@@ -1345,8 +1345,10 @@ def _working_days(a: str, b: str, settings: dict) -> int:
 
 def bookings(date: str, settings: dict) -> list:
     """Your Resource Planner bookings on a day, read only: [{id, kind ("work" or "absence"), title, service, taskId,
-    minutes (that day), draft, note, start, end}]. Productive gives them dates and an amount (hours a day, a share of
-    the day, or hours over the period), never a time of day. Your role sees your own bookings only, which is all this
+    minutes (that day), draft, note, start, end, at, atText}]. Productive gives them dates and an amount (hours a day,
+    a share of the day, or hours over the period), never a time of day: a work booking whose note gives one
+    (booktime.on_day: "14:00-16:00", "2pm-4pm ET") has it in `at`, [start, end] in minutes of the day in the person's
+    zone, with the words it came from; else `at` is None. Your role sees your own bookings only, which is all this
     asks for. Canceled ones are left out; tentative ones are kept (draft)."""
     conn = _need(settings)
     person = str(settings.get("person_id") or "")
@@ -1388,7 +1390,7 @@ def bookings(date: str, settings: dict) -> list:
                          "pct": r.get("percentage"), "draft": r.get("is_draft"), "note": r.get("note"),
                          "taskId": _id_of(r.get("task")), "task": task.get("title"), "service": service.get("name"),
                          "event": event.get("name"), "absence": bool(r.get("event"))})
-    day = config.target_minutes(settings)
+    day, tz = config.target_minutes(settings), config.tz(settings)
     out = []
     for r in rows:
         method = str(r.get("method") or "").lower()
@@ -1399,11 +1401,13 @@ def bookings(date: str, settings: dict) -> list:
             minutes = float(r.get("pct") or 0) / 100 * day
         else:
             minutes = minutes_of(r.get("time") or 0) or (day if r["absence"] else 0)
+        at = None if r["absence"] else booktime.on_day(str(r.get("note") or ""), date, tz, int(round(minutes)))
         out.append({"id": str(r.get("id") or ""), "kind": "absence" if r["absence"] else "work",
                     "title": str(r.get("task") or r.get("event") or r.get("service") or "Booking").strip(),
                     "service": str(r.get("service") or "").strip(), "taskId": str(r.get("taskId") or ""),
                     "minutes": int(round(minutes)), "draft": bool(r.get("draft")), "note": str(r.get("note") or "")[:300],
-                    "start": str(r.get("start") or ""), "end": str(r.get("end") or "")})
+                    "start": str(r.get("start") or ""), "end": str(r.get("end") or ""),
+                    "at": [at["s"], at["e"]] if at else None, "atText": at["text"][:80] if at else ""})
     return sorted(out, key=lambda x: (x["kind"] != "absence", x["draft"], -x["minutes"], x["title"]))
 
 

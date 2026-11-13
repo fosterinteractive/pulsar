@@ -190,6 +190,28 @@ class BookingsTest(unittest.TestCase):
         self.assertEqual((by["3"]["minutes"], by["3"]["title"]), (120, "Support"))  # 25% of 8 h
         self.assertEqual((by["4"]["kind"], by["4"]["title"], by["4"]["minutes"]), ("absence", "Vacation", 480))
         self.assertEqual(got[0]["kind"], "absence")  # absences first
+        self.assertEqual([by[k]["at"] for k in "1234"], [None, None, None, None])  # no time in any note
+
+    def test_a_work_booking_takes_its_time_of_day_from_its_note_in_the_persons_zone(self):
+        import json
+        from unittest import mock
+        from pulsar import productive
+        cols = ["type", "id", "started_on", "ended_on", "time", "booking_method", "percentage", "total_time", "is_draft",
+                "note", "task", "service", "event"]
+        rows = [["bookings", "1", "2026-11-18", "2026-11-18", "2 h", "Per day", None, None, False, "14:00-16:00 ET", "tasks:7", "services:8", None],
+                ["bookings", "2", "2026-11-18", "2026-11-18", "1 h", "Per day", None, None, False, "о 10:30", "tasks:7", "services:8", None],
+                ["bookings", "3", "2026-11-18", "2026-11-18", None, "Per day", None, None, False, "з 14:00", None, None, "events:5"]]
+        inc = {"columns": ["type", "id", "title", "name"],
+               "rows": [["tasks", "7", "Migration", None], ["services", "8", None, "Support"], ["events", "5", None, "Doctor"]]}
+        doc = json.dumps({"items": {"columns": cols, "rows": rows}, "included": inc})
+        with mock.patch.object(productive, "_need", lambda s: {"kind": "mcp", "token": "t"}), \
+                mock.patch.object(productive, "mcp_text", lambda *a, **k: doc), \
+                mock.patch.object(productive, "parse_mcp", lambda text: json.loads(text)):
+            got = productive.bookings("2026-11-18", {"person_id": "1", "target_hours": 8, "timezone": "Europe/Kyiv"})
+        by = {x["id"]: x for x in got}
+        self.assertEqual((by["1"]["at"], by["1"]["atText"]), ([1260, 1380], "14:00-16:00 ET"))  # Toronto's 14:00
+        self.assertEqual(by["2"]["at"], [630, 690])  # a start: as long as the booking
+        self.assertIsNone(by["3"]["at"])  # an absence keeps its line under the title
 
     def test_the_column_is_on_by_default_and_switched_off_it_never_asks_productive(self):
         from unittest import mock

@@ -13,7 +13,8 @@ for you. That holds in normal use; a
 program with full access to your account can get around any confirmation, as with any app ([Security](#security)).
 
 - **Day**: one time axis with up to five columns: **Planned** (your bookings in Productive's Resource Planner, opened
-  from the calendar icon above the time axis), **Meetings** (once Google Calendar is connected), **Activity** (what
+  from the calendar icon above the time axis; a booking stands at the time its note gives, such as "14:00–16:00" or
+  "2pm–4pm ET", else one after another from 10:00), **Meetings** (once Google Calendar is connected), **Activity** (what
   was on screen), **Likely** (what you most likely worked on, for Claude Code users) and **Logged** (your Productive
   entries). A yellow rail marks active time with no entry; a hatched rail, a pause or time away (named, never offered
   for logging); a dashed card, an entry you log at this time most days. Under the date: the week's logged and active
@@ -534,6 +535,7 @@ pulsar/
   learn.py             tasks for Likely rows, learned from what you logged in the same session or repository
   attribution.py       parallel work: which repository and session a logged minute teaches
   parallel.py          the Report's parallel work: agents in the background by project, and what no entry covers
+  booktime.py          a booking's time of day, read from its note (the Planned column)
   context.py           tasks for work outside Claude Code, learned from the window in front (hashed keys)
   commits.py           your commits during a Likely row, for the note (git run inertly)
   askclaude.py         task picks and notes from a session (claude -p, Productive read only), kept 60 days

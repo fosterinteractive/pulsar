@@ -1,10 +1,11 @@
 /* Planned: your bookings in Productive's Resource Planner on the day, in a column beside Meetings (the owner,
    2026-11-13). Hidden by default, with only an icon above the time axis, lit when the day has a booking (a sheen until
-   the column has been open with it, then quiet); a click opens the column, and this Mac remembers. A booking has dates and
-   an amount (hours a day, a share of the day, or hours over its period), never a time of day, so the day's bookings are
-   laid one after another from 10:00, each as long as its share of the day; an absence is a line under the title. Each
-   says how much you logged to its task that day. day.js calls loadBookings() from load(), renderPlanned() from
-   render(), and openBooking() for a click. Read only. */
+   the column has been open with it, then quiet); a click opens the column, and this Mac remembers. A booking has dates
+   and an amount (hours a day, a share of the day, or hours over its period), never a time of day: one whose note gives
+   a time (pulsar/booktime.py) stands there, the others one after another from 10:00 around them, each as long as its
+   share of the day (planLayout); an absence is a line under the title. Each says how much you logged to its task that
+   day. day.js calls loadBookings() from load(), renderPlanned() from render(), and openBooking() for a click. Read
+   only. */
 let planCache = [];
 const PLAN_FROM = 600;  // 10:00: bookings have no time of day
 const planOpen = () => { try { return localStorage.getItem('pulsar-planned-open') === '1'; } catch (e) { return false; } };
@@ -55,15 +56,29 @@ function renderPlanned(ppm) {
   head.title = b?.error || '';
   if (!open) { setHTML(allDay, ''); setHTML(lane, ''); planCache = []; return; }
   setHTML(allDay, away.map(x => `<div title="${esc(`Absence: ${x.title}${x.draft ? ', tentative' : ''}`)}">${esc(x.title)}${x.draft ? ' · tentative' : ''}</div>`).join(''));
-  let at = PLAN_FROM;
-  planCache = work.map(x => { const s = at; at += x.minutes; return {...x, s, e: at}; });
+  planCache = planLayout(work);
   setHTML(lane, planCache.map((x, i) => {
     const h = (x.e - x.s) * ppm, done = x.taskId ? loggedOn(x.taskId) : 0;
     return `<div class="card plan${x.draft ? ' draft' : ''}" data-k="plan" data-i="${i}" style="${place(x, ppm, 18)}"
-      tabindex="0" role="button" aria-label="${esc(`Planned ${dur(x.minutes)}: ${x.title}${x.draft ? ', tentative' : ''}`)}">
+      tabindex="0" role="button" aria-label="${esc(`Planned ${dur(x.minutes)}${x.at ? ` at ${hm(x.s)}–${hm(x.e)}` : ''}: ${x.title}${x.draft ? ', tentative' : ''}`)}">
       <div class="row"><span class="t">${esc(x.title)}</span></div>
       ${h > 34 ? `<div class="d num">${dur(x.minutes)} planned · ${done ? `${dur(done)} logged` : 'none logged'}</div>` : ''}</div>`;
   }).join('') || (b && !b.error ? '<div class="state">Nothing planned.</div>' : b?.error ? `<div class="state err">${esc(b.error)}</div>` : ''));
+}
+
+/* where each work booking stands on the day: a booking whose note gave a time (productive.bookings "at") there; the
+   others one after another from 10:00, each in the first free stretch long enough for it, never over a timed one */
+function planLayout(work) {
+  const timed = work.filter(x => x.at).map(x => ({...x, s: x.at[0], e: x.at[1]}));
+  const taken = timed.map(x => [x.s, x.e]).sort((p, q) => p[0] - q[0]);
+  let at = PLAN_FROM;
+  const loose = work.filter(x => !x.at).map(x => {
+    let s = at;
+    for (const [a, b] of taken) if (s < b && s + x.minutes > a) s = b;  // sorted by start: one pass finds the gap
+    at = s + x.minutes;
+    return {...x, s, e: at};
+  });
+  return [...timed, ...loose].sort((p, q) => p.s - q.s);
 }
 
 /* the same popover as the other cards: the booking, its period and how much is logged to its task that day */
@@ -76,7 +91,8 @@ function openBooking(i, ev) {
       <div class="sub">${dur(x.minutes)} planned on this day${x.draft ? ' · tentative' : ''}${x.start ? ` · booked ${x.start === x.end ? x.start : `${x.start} to ${x.end}`}` : ''}</div></div></div>
     <p>${esc(x.service || '')}${x.service ? ' · ' : ''}${done ? `${dur(done)} logged to it today` : 'Nothing logged to it today'}.</p>
     ${x.note ? `<p>${esc(x.note)}</p>` : ''}
-    <p class="sub">Productive gives a booking no time of day: Pulsar shows the day's bookings one after another from 10:00.</p>
+    <p class="sub">${x.at ? `At ${hm(x.s)}–${hm(x.e)}, as its note says (“${esc(x.atText)}”).`
+      : "Productive gives a booking no time of day, and its note names none: Pulsar shows such bookings one after another from 10:00, around the ones whose note gives a time."}</p>
     ${url ? `<p class="links"><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Open the task in Productive</a></p>` : ''}`, ev);
 }
 

@@ -256,6 +256,28 @@ try {
       && popText.includes('30 min planned on this day') && popText.includes('one after another from 10:00'),
       `${cards.join(' | ')} | ${tops.join(',')} | ${away} | ${Math.round(wide)} → ${Math.round(narrow)} | unseen ${unseenLit} lit ${lit} seen ${seenAfter} plain ${plain} | pop ${popText.slice(0, 60)}`);
 
+    // a booking whose note gives a time stands there; the others one after another from 10:00, around it (the owner,
+    // 2026-11-13: a manager's "from 14:00 to 16:00" can only go in the note)
+    const lay = planLayout([{id: 'n1', kind: 'work', title: 'Short', minutes: 60, at: null},
+                            {id: 'n2', kind: 'work', title: 'Noon call', minutes: 60, at: [720, 780], atText: '12:00-13:00'},
+                            {id: 'n3', kind: 'work', title: 'Long', minutes: 90, at: null}]).map(x => `${x.title} ${x.s}-${x.e}`);
+    const booked1 = state.booked, open1 = (() => { try { return localStorage.getItem('pulsar-planned-open'); } catch (e) { return null; } })();
+    state.booked = {date: state.date, bookings: [{id: 'n2', kind: 'work', title: 'Noon call', service: 'Dev', taskId: '7', minutes: 60,
+                                                  draft: false, at: [720, 780], atText: '12:00-13:00'}]};
+    try { localStorage.setItem('pulsar-planned-open', '1'); } catch (e) { /* no storage */ }
+    render();
+    const timedTop = parseFloat(q('#lane-plan .card.plan')?.style.top || '0'), timedLabel = q('#lane-plan .card.plan')?.getAttribute('aria-label') || '';
+    q('#lane-plan .card.plan')?.click();
+    const timedPop = pop.classList.contains('on') ? pop.textContent : '';
+    closePop();
+    state.booked = booked1;
+    try { if (open1 == null) localStorage.removeItem('pulsar-planned-open'); else localStorage.setItem('pulsar-planned-open', open1); } catch (e) { /* as above */ }
+    render();
+    check("a booking's time from its note: there on the day, the others from 10:00 around it",
+      lay.join() === 'Short 600-660,Noon call 720-780,Long 780-870' && Math.abs(timedTop - (720 * ppmOf(state.zoom) + 1)) < 2
+      && timedLabel.includes(`at ${hm(720)}–${hm(780)}`) && timedPop.includes('as its note says'),
+      `${lay.join(' | ')} | top ${Math.round(timedTop)} of ${Math.round(720 * ppmOf(state.zoom) + 1)} | ${timedLabel} | ${timedPop.slice(0, 80)}`);
+
     // Claude's review kept after a restart on a plan that changed since: the rows' suggestions that still apply, and
     // a word on the ones left out (2026-11-13, the owner)
     const sg0 = {items: SG.items, note: SG.note};
