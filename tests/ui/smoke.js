@@ -214,10 +214,10 @@ try {
           shut = {id: 'ns3', taskId: '7', flags: [], status: null}, kept1 = {id: 'ns4', taskId: '5', flags: [], status: null, statusKept: true};
     ldApplyStatuses(fresh, ns); ldApplyStatuses(inQa, {...ns, current: '3'}); ldApplyStatuses(shut, {...ns, current: '4'});
     ldApplyStatuses(kept1, ns);
-    const line = statusLine(fresh);
+    const stLine = statusLine(fresh);
     check('a Backlog ticket goes to In progress by itself; QA, closed or kept by hand stay',
       fresh.statusId === '2' && !inQa.statusId && !shut.statusId && !kept1.statusId
-        && line.includes('“In progress” (now “Backlog”)') && line.includes('data-ld-status-keep="ns1"'),
+        && stLine.includes('“In progress” (now “Backlog”)') && stLine.includes('data-ld-status-keep="ns1"'),
       `${fresh.statusId} ${inQa.statusId} ${shut.statusId} ${kept1.statusId}`);
 
     // the Report's parallel work: per project, in parallel and about how much is not logged (2026-11-13, the owner)
