@@ -369,10 +369,6 @@ function rowHTML(r, overlaps) {
   if (r.claudeNone) quiet.push("Claude found no task; Pulsar's guess stays.");
   if (r.flags.includes('claudefound')) quiet.push('Claude found this task by search; not one of yours lately.');
   if (r.flags.includes('mixed')) quiet.push('Short turns of several tasks: pick the one this time was from the ones offered.');
-  if (r.statusId && !r.status) {
-    const was = (r.statusList || []).find(x => x.id === r.statusNow)?.name;
-    quiet.push(`Then the ticket goes to “${r.statusName}”${was ? ` (now “${was}”)` : ''}${r.statusAuto ? ': it was not started yet' : ''}.`);
-  }
   if (r.flags.includes('claudenote') && r.noteFrom === 'claude' && !r.noteEdited) quiet.push('Claude drafted the note: read it first.');
   if (r.flags.includes('meetingtitle')) quiet.push("The meeting's title was not used as the note: write one.");
   // more minutes on this task today than its work was seen (dayplan._caps): said, never cut from seen work
@@ -400,6 +396,7 @@ function rowHTML(r, overlaps) {
     ${ticketLine(r)}
     ${sgRowHTML(r)}
     ${joinLine(r)}
+    ${statusLine(r)}
     ${open ? editorHTML(r) : ''}</li>`;
 }
 
@@ -539,8 +536,7 @@ function wireEditor(r) {
   li.querySelector('[data-ld-status]').onchange = ev => {  // moved only after the row's entry is written (server)
     const x = (r.statusList || []).find(s => s.id === ev.target.value);
     r.statusId = x && x.id !== r.statusNow ? x.id : null; r.statusName = r.statusId ? x.name : '';
-    if (!r.statusId && r.statusAuto) r.statusDeclined = true;
-    r.statusAuto = false; ldChanged(r);
+    r.statusKept = !r.statusId; ldChanged(r);  // picked by hand, No change included: never moved by itself again
   };
   li.querySelector('[data-ld-note]').onfocus = () => ldDraftNote(r);
   li.querySelector('[data-ld-note]').oninput = ev => { r.note = ev.target.value; r.noteEdited = true; r.edited = true;
@@ -594,16 +590,23 @@ async function ldLoadStatuses(r) {
   if (got.error) r.statusProblem = got.error; else ldApplyStatuses(r, got);
   renderReview();
 }
-/* a ticket still in a "not started" status that time is logged to: moving it to "In progress" (or the workflow's first
-   started status) is offered with the row, collapsed or open (the owner, 2026-11-13: "якщо статус не був оновлений
-   взагалі навіть до інпрогрес"). No change in the row keeps it as it is */
+/* a ticket not started yet (Backlog, To do) that time is logged to goes to "In progress" (or the workflow's first
+   started status) with the row, by itself; one already started (In progress, QA) or closed is left as it is, and so is
+   any status picked by hand (the owner, 2026-11-13: "якщо це був баклог ... хай це буде ін прогрес. Але якщо це вже
+   QA, тоді хай це залишається"). Said under the row, collapsed too, with "Keep its status" */
 function ldApplyStatuses(r, got) {
   r.statusList = got.statuses || []; r.statusNow = got.current || '';
   const now = r.statusList.find(x => x.id === r.statusNow);
-  if (r.statusId || r.statusDeclined || now?.category !== '1') return;
+  if (r.statusId || r.statusKept || now?.category !== '1') return;
   const started = r.statusList.filter(x => x.category === '2');
   const pick = started.find(x => /progress/i.test(x.name)) || started[0];
-  if (pick) Object.assign(r, {statusId: pick.id, statusName: pick.name, statusAuto: true});
+  if (pick) Object.assign(r, {statusId: pick.id, statusName: pick.name});
+}
+function statusLine(r) {
+  if (r.status || LD.writing || !r.statusId) return '';
+  const was = (r.statusList || []).find(x => x.id === r.statusNow)?.name;
+  return `<div class="ld-join">Then the ticket goes to “${esc(r.statusName)}”${was ? ` (now “${esc(was)}”)` : ''}.
+    <button type="button" class="btn sm" data-ld-status-keep="${r.id}">Keep its status</button></div>`;
 }
 async function ldProposeStatuses() {
   const d = LD.date;
@@ -635,8 +638,7 @@ async function ldSetTask(r, t) {
   if (LD.writing) return;
   Object.assign(r, {taskId: String(t.taskId), title: t.title || '', project: t.project || '', serviceId: null, service: '',
                     services: [], billable: null, edited: true, opened: true, source: 'you', why: 'picked by you', confidence: 'high',
-                    ticket: [], statusId: null, statusName: '', statusList: null, statusNow: '', statusProblem: '',
-                    statusAuto: false, statusDeclined: false});  // the new task's flags come with its services
+                    ticket: [], statusId: null, statusName: '', statusList: null, statusNow: '', statusProblem: '', statusKept: false});  // the new task's flags come with its services
   ldLoadStatuses(r);
   r.flags = r.flags.filter(f => !['notask', 'low', 'noservice', 'claudefound'].includes(f));
   if (r.noteFrom === 'claude' && !r.noteEdited) { r.note = ''; r.noteFrom = ''; r.flags = r.flags.filter(f => f !== 'claudenote'); }  // Claude wrote it for another task
@@ -704,6 +706,11 @@ $('#review').addEventListener('click', ev => {
                         onCreated: (task, serviceHint) => ldRow(r.id) && ldSetTask(ldRow(r.id), {...task, serviceHint})});
   }
   if (t.dataset.ldAlt != null) { const r = ldRow(LD.open); return ldSetTask(r, r.alts[+t.dataset.ldAlt]); }
+  if (t.dataset.ldStatusKeep) {  // the ticket keeps its status: never moved again by itself for this row
+    const r = ldRow(t.dataset.ldStatusKeep);
+    if (r) { Object.assign(r, {statusId: null, statusName: '', statusKept: true}); ldChanged(r); }
+    return;
+  }
   if (t.dataset.ldDel) { const k = ldRow(t.dataset.ldDel)?.key; if (k) LD.deleted.add(k); LD.rows = LD.rows.filter(r => r.id !== t.dataset.ldDel); LD.open = null; renderReview(); render(); return; }
   if (t.dataset.ldNotwork) {  // the row's time was not work: it leaves the proposal, and comes back with Undo
     const r = ldRow(t.dataset.ldNotwork); if (!r) return;

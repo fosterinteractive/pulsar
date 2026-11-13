@@ -206,15 +206,19 @@ try {
       && sh.includes('In progress (now)') && sh.includes('No change (now: In progress)') && /value="30" selected/.test(sh)
       && sb.statusId === '30', `${sb.statusId} ${sh.length}`);
 
-    // a ticket not started yet that time is logged to: "In progress" offered, said on the row even collapsed
-    const ns = {statuses: [{id: '1', name: 'To do', category: '1'}, {id: '2', name: 'In progress', category: '2'},
+    // a ticket not started (Backlog) that time is logged to goes to "In progress" by itself, said under the row even
+    // collapsed; one in QA, a closed one, or one kept by hand is left as it is
+    const ns = {statuses: [{id: '1', name: 'Backlog', category: '1'}, {id: '2', name: 'In progress', category: '2'},
                            {id: '3', name: 'QA', category: '2'}, {id: '4', name: 'Done', category: '3'}], current: '1'};
-    const fresh = {id: 'ns1', taskId: '5', flags: [], status: null}, going = {id: 'ns2', taskId: '6', flags: [], status: null},
-          kept1 = {id: 'ns3', taskId: '5', flags: [], status: null, statusDeclined: true};
-    ldApplyStatuses(fresh, ns); ldApplyStatuses(going, {...ns, current: '3'}); ldApplyStatuses(kept1, ns);
-    check('a ticket not started yet is offered In progress, one started or declined is not',
-      fresh.statusId === '2' && fresh.statusAuto && !going.statusId && !kept1.statusId,
-      `${fresh.statusId} ${going.statusId} ${kept1.statusId}`);
+    const fresh = {id: 'ns1', taskId: '5', flags: [], status: null}, inQa = {id: 'ns2', taskId: '6', flags: [], status: null},
+          shut = {id: 'ns3', taskId: '7', flags: [], status: null}, kept1 = {id: 'ns4', taskId: '5', flags: [], status: null, statusKept: true};
+    ldApplyStatuses(fresh, ns); ldApplyStatuses(inQa, {...ns, current: '3'}); ldApplyStatuses(shut, {...ns, current: '4'});
+    ldApplyStatuses(kept1, ns);
+    const line = statusLine(fresh);
+    check('a Backlog ticket goes to In progress by itself; QA, closed or kept by hand stay',
+      fresh.statusId === '2' && !inQa.statusId && !shut.statusId && !kept1.statusId
+        && line.includes('“In progress” (now “Backlog”)') && line.includes('data-ld-status-keep="ns1"'),
+      `${fresh.statusId} ${inQa.statusId} ${shut.statusId} ${kept1.statusId}`);
 
     // the Report's parallel work: per project, in parallel and about how much is not logged (2026-11-13, the owner)
     const par = parallelSection({days: 26, of: 30, keepDays: 31, parallel: 125, notLogged: 80,
