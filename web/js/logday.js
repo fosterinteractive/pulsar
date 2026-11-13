@@ -580,7 +580,7 @@ async function ldLoadStatuses(r) {
   const tid = r.taskId;
   r.statusLoading = true;
   let got = ldStatusCache.get(tid);
-  if (!got) { got = await getJSON(`/api/task/statuses?task=${tid}`).catch(() => ({error: 'No answer.'})); if (!got.error) ldStatusCache.set(tid, got); }
+  if (!got) { got = await getJSON(`/api/task/statuses?task=${tid}&date=${LD.date}`).catch(() => ({error: 'No answer.'})); if (!got.error) ldStatusCache.set(tid, got); }
   r.statusLoading = false;
   if (r.taskId !== tid) return;
   if (got.error) { r.statusProblem = got.error; } else { r.statusList = got.statuses || []; r.statusNow = got.current || ''; }

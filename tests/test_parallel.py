@@ -101,5 +101,21 @@ class TaskStatusTest(unittest.TestCase):
                 productive.set_task_status("55", "30", {})
 
 
+class TaskStatusesRouteTest(unittest.TestCase):
+    def test_the_page_asks_with_the_date_every_such_route_needs_and_a_refusal_comes_back_in_words(self):
+        """2026-11-13: the page asked /api/task/statuses without a date, and the route table refuses that."""
+        from unittest import mock
+        from pulsar import productive, server
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "js", "logday.js"),
+                  encoding="utf-8") as fh:
+            self.assertRegex(fh.read(), r"/api/task/statuses\?task=\$\{tid\}&date=\$\{LD\.date\}")
+
+        def refuse(tid, s):
+            raise productive.ProductiveError("Productive did not return the task (HTTP 404).")
+        with mock.patch.object(server, "current_settings", lambda: {}), mock.patch.object(server.productive, "task_status", refuse):
+            self.assertEqual(server.api_task_statuses({"task": "5", "date": "2026-11-13"}),
+                             {"error": "Productive did not return the task (HTTP 404)."})
+
+
 if __name__ == "__main__":
     unittest.main()

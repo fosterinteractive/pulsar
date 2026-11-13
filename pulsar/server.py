@@ -1707,11 +1707,14 @@ def api_task_statuses(q: dict) -> dict:
     tid = str(q.get("task") or "")
     if not is_id(tid):
         raise ValueError("task=<id>")
-    now = productive.task_status(tid, s)
-    got = _statuses.get(now["projectId"])
-    if not got or time.time() - got[0] > 600:
-        got = (time.time(), productive.workflow_statuses(now["projectId"], s))
-        _statuses[now["projectId"]] = got
+    try:
+        now = productive.task_status(tid, s)
+        got = _statuses.get(now["projectId"])
+        if not got or time.time() - got[0] > 600:
+            got = (time.time(), productive.workflow_statuses(now["projectId"], s))
+            _statuses[now["projectId"]] = got
+    except productive.ProductiveError as exc:  # said under the field; the row logs as before, with no status change
+        return {"error": str(exc)}
     return {"current": now["statusId"], "statuses": got[1]}
 
 
