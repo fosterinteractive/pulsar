@@ -1556,11 +1556,14 @@ def _merge(d: _Day, pieces: list) -> list:
             same["last"] = p["last"]
             same["parts"].append(p)
             continue
+        # two meetings on the calendar stay two entries, each with its own note, even of one task (the owner,
+        # 2026-11-13: the scrum and the weekly meeting right after it, both logged to the scrum, came out as one)
         if m and m.get("task") and m["task"] == p.get("task") and not {"skip", "shared"} & {m["kind"], p["kind"]} \
                 and p["s"] - m["last"] <= o["merge_gap"] and sitting[m["last"]] == sitting[p["s"]] \
                 and bool(p.get("attended")) == bool(m.get("attended")) \
                 and (p.get("source") == "logging") == (m.get("source") == "logging") \
                 and (not p.get("attended") or p["s"] - m["last"] <= (o["grid"] or 1)) \
+                and (not p.get("attended") or p.get("claim") == m.get("claim")) \
                 and not _blocked_between(d, m["last"] + 1, p["s"]) and not _away_between(d, m, p, m["last"] + 1, p["s"]):
             m["minutes"] += p["minutes"]
             m["last"] = p["last"]

@@ -7,6 +7,7 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- Two meetings on your calendar right after each other stay two entries, each with its own note, even when both go to one task (the daily scrum and a weekly meeting both logged to the scrum).
 - A calendar meeting finds the task you logged in the earlier meetings of its series again: Google gives each meeting of a series its own id, and titles ending in a space did not match. A weekly meeting logged to one task four times now offers it (on 26 days, 160 more minutes on the right task).
 - A stretch of short turns of several tasks, none long enough for an entry, is one row in Log the day with no task picked and each of those tasks offered, most minutes first, instead of time not logged.
 - A Claude session's turns spent logging time, under 10 minutes, stay with the work around them as you asked, instead of being left out.

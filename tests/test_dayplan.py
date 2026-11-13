@@ -192,6 +192,16 @@ class PlannerTest(unittest.TestCase):
                              meetings=[meet(600, 620, "77", "Standup")]), self.ctx)
         self.assertEqual([(e["taskId"], e["s"], e["minutes"]) for e in p["entries"]], [("77", 600, 100)])
 
+    def test_two_meetings_of_one_task_back_to_back_stay_two_entries_each_with_its_note(self):
+        """2026-11-13: the scrum and the weekly meeting right after it, both logged to the scrum, came out as one entry
+        with the scrum's note only."""
+        meet = lambda s, e, title: {"s": s, "e": e, "title": title, "uid": title, "declined": False,  # noqa: E731
+                                    "all_day": False, "tasks": [{"taskId": "77", "title": "Scrum", "project": "PM", "n": 5, "of": 5}]}
+        p = dayplan.plan(day(items=[work(990, 1080, app="zoom.us", title="Zoom Meeting")], calls=[{"s": 990, "e": 1080}],
+                             meetings=[meet(990, 1020, "Daily scrum"), meet(1020, 1050, "Weekly PM review")]), self.ctx)
+        got = [(e["taskId"], e["s"], e["note"]) for e in p["entries"]]
+        self.assertEqual(got, [("77", 990, "Daily scrum"), ("77", 1020, "Weekly PM review")])
+
     def test_the_next_meetings_tab_after_its_calendar_start_ends_the_one_before(self):
         """06.11: Scrum 16:30-17:00, the next meeting 17:00-17:30, one call to 19:00, the next meeting's join link
         opened at 17:49 (logged 17:45): the scrum to 17:49, the next meeting from there to the call's end."""
