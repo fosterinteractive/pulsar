@@ -7,6 +7,9 @@ What each Pulsar release changed, newest first.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
 ## Unreleased
+- A calendar meeting finds the task you logged in the earlier meetings of its series again: Google gives each meeting of a series its own id, and titles ending in a space did not match. A weekly meeting logged to one task four times now offers it (on 26 days, 160 more minutes on the right task).
+- A stretch of short turns of several tasks, none long enough for an entry, is one row in Log the day with no task picked and each of those tasks offered, most minutes first, instead of time not logged.
+- A Claude session's turns spent logging time, under 10 minutes, stay with the work around them as you asked, instead of being left out.
 - Report: a Parallel work section. For each project, how long Claude Code agents ran in the background while you were at other work, and about how much of it is not in your entries, from the past days kept on this Mac.
 - Settings › Claude Code › Keep past days: 1 month (as before), 2, 3, 6 months or a year. The day view and the Report's parallel work reach that far back; task picks do not change with it (60 or 90 days of learning came out the same).
 - Another client's agent beside your work takes its half first from turns too short to be an entry, and never leaves the work in front under one: 7 of a client's 10 minutes had gone to the agent, and both were lost.

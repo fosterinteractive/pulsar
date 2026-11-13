@@ -555,6 +555,23 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual({at.get(x) for x in range(600, 630)}, {"11"}, p["entries"])
         self.assertEqual({at.get(x) for x in range(630, 650)}, {"77"})
 
+    def test_a_hole_of_short_turns_of_several_tasks_is_one_row_offering_each_of_them(self):
+        """2026-11-13: 10 minutes of turns of 1 to 3 minutes of three tasks, none an entry by itself, were left as
+        "not logged". One row with no task picked, each of them offered, most minutes first."""
+        ctx = {**self.ctx, "names": {"A": {"task": "Task A", "project": "P1"}, "B": {"task": "Task B", "project": "P2"},
+                                     "C": {"task": "Task C", "project": "P3"}}}
+        turns = [(600, 603, "A"), (603, 605, "B"), (605, 608, "A"), (608, 609, "C"), (609, 610, "B")]
+        rows = [{**row(s, e, project="repo-" + t, titles=["T " + t]), "tasks": [t]} for s, e, t in turns]
+        p = dayplan.plan(day(items=[work(600, 610)], rows=rows), ctx)
+        [e] = p["entries"]
+        self.assertEqual((e["taskId"], e["s"], e["minutes"], e["checked"], e["source"]), (None, 600, 10, False, "mixed"))
+        self.assertIn("mixed", e["flags"])
+        self.assertEqual([a["taskId"] for a in e["alts"]], ["A", "B", "C"])  # every one of them, one click each
+        self.assertIn("Task A 6 min", e["why"])
+        # past the day's cap too: it bills nobody until a task is picked
+        p = dayplan.plan(day(items=[work(600, 610)], rows=rows, logged=[{"s": 900, "minutes": 30, "taskId": "Z"}]), ctx)
+        self.assertEqual([(e["taskId"], e["source"]) for e in p["entries"]], [(None, "mixed")])
+
     def test_work_outside_claude_goes_with_the_session_it_comes_before(self):
         # reading the ticket in a browser, then the session on it: the browser's half hour is the second task's (replay:
         # the person logged the work after such a stretch three times as often as the work before it)

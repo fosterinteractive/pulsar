@@ -1746,6 +1746,17 @@ class MeetingTasksTest(unittest.TestCase):
         got = server.meeting_tasks({"title": "D11 upgrade call", "s": 50400, "e": 54000}, [], rows, offered)
         self.assertEqual(got[0]["taskId"], "2")
 
+    def test_one_meeting_of_a_series_is_found_by_its_series_id_or_its_title_with_spaces_at_the_end(self):
+        """2026-11-13: a weekly meeting logged four times to the scrum found no task: Google gives one meeting of a
+        series its own id ("<id>_R20261113T150000") and the titles ended in a space."""
+        rows = [{"start": self.at(d, "17:00"), "minutes": 30, "taskId": "7", "task": "[FIP-72] Scrum - Dana", "project": "FI-PM"}
+                for d in (2, 3, 4)]
+        past = [{"s": self.at(2, "17:00"), "e": self.at(2, "17:30"), "uid": "old_20261102T150000Z", "title": "Weekly PM ", "declined": False},
+                {"s": self.at(3, "17:00"), "e": self.at(3, "17:30"), "uid": "week_R20261103T150000", "title": "Weekly PM ", "declined": False},
+                {"s": self.at(4, "17:00"), "e": self.at(4, "17:30"), "uid": "week_R20261104T150000", "title": "Weekly PM", "declined": False}]
+        got = server.meeting_tasks({"uid": "week_R20261113T150000", "title": "Weekly PM "}, past, rows, [])
+        self.assertEqual([(t["taskId"], t["n"], t["of"]) for t in got], [("7", 3, 3)])
+
     def test_the_series_history_comes_first_then_words_of_the_title(self):
         past = [{"s": self.at(d, "16:25"), "e": self.at(d, "17:25"), "uid": "scrum", "title": "Daily Scrum", "declined": False}
                 for d in (2, 3, 4)]

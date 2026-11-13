@@ -232,7 +232,7 @@ const ldNotWork = x => [...notWorkSpans(), ...pausedSpans()].some(([a, b]) => a 
    searching Productive (not one you logged to lately) that nobody opened: what Claude read could have steered it
    there, so it waits for the person, as it always has */
 const ldTickable = r => ldPending(r) && !r.checked && !!r.taskId && !!r.serviceId;
-const ldTickAllRows = () => LD.rows.filter(r => ldTickable(r) && !(r.flags.includes('claudefound') && !r.opened));
+const ldTickAllRows = () => LD.rows.filter(r => ldTickable(r) && !((r.flags.includes('claudefound') || r.flags.includes('mixed')) && !r.opened));
 /* the next row to check after the open one (in time order), back to the first after the last */
 function ldNextCheck(list) {
   const at = ldRow(LD.open)?.s ?? -1;
@@ -367,6 +367,7 @@ function rowHTML(r, overlaps) {
   if (r.flags.includes('unattended')) quiet.push('No call seen during this meeting: were you in it?');
   if (r.claudeNone) quiet.push("Claude found no task; Pulsar's guess stays.");
   if (r.flags.includes('claudefound')) quiet.push('Claude found this task by search; not one of yours lately.');
+  if (r.flags.includes('mixed')) quiet.push('Short turns of several tasks: pick the one this time was from the ones offered.');
   if (r.flags.includes('claudenote') && r.noteFrom === 'claude' && !r.noteEdited) quiet.push('Claude drafted the note: read it first.');
   if (r.flags.includes('meetingtitle')) quiet.push("The meeting's title was not used as the note: write one.");
   // more minutes on this task today than its work was seen (dayplan._caps): said, never cut from seen work

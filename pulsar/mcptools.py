@@ -274,7 +274,7 @@ def summary_name(text, most: int = 120) -> str:
 
 
 FLAGS = ("notask", "low", "agent", "unattended", "noservice", "untimed", "meetingtitle",  # dayplan's: nothing else
-         "renamed", "shared", "logging", "overseen", "claudenote", "claudefound")
+         "renamed", "shared", "logging", "overseen", "mixed", "claudenote", "claudefound")
 
 
 def task_out(t: dict, why: str | None = None) -> dict:
@@ -313,6 +313,7 @@ BY_SOURCE = {
     "context": "you logged it before while the same window was in front",
     "logging": "time spent logging time (Pulsar or Productive), on your scrum or the task you logged it to last",
     "meeting": "a meeting on your calendar, with its call",
+    "mixed": "short turns of several tasks: no task picked, each of them offered",
 }
 BY_TEXT = [  # (the start, or a part, of Pulsar's own reason, lower case) -> the phrase
     ("logged while in this claude session", "you logged it during this Claude session before"),

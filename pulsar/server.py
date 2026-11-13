@@ -1173,9 +1173,14 @@ def meeting_tasks(meeting: dict, past: list, rows: list, offered: list, skip: se
     every meeting has, do not count). Each with why, in words; a series' task also with `lastTitle`, the title of the
     latest earlier meeting you logged it in (a series renamed since starts unticked in Log the day)."""
     title = (meeting.get("title") or "").strip()
-    norm = re.sub(r"\s+", " ", title.lower())
+    # the same series: its id without the instance part Google adds to one meeting of a series ("<id>_R20261113T150000",
+    # "<id>_20261106T150000Z"), or the same title, spaces at either end not counting (2026-11-13: a weekly meeting
+    # logged to one task four times found none, its titles ending in a space and its ids carrying the instance)
+    norm = lambda x: re.sub(r"\s+", " ", str(x or "").strip().lower())  # noqa: E731
+    series = lambda u: str(u or "").split("_")[0]  # noqa: E731
     same = [p for p in past if not p.get("declined")
-            and ((meeting.get("uid") and p.get("uid") == meeting["uid"]) or re.sub(r"\s+", " ", p.get("title", "").lower()) == norm)]
+            and ((series(meeting.get("uid")) and series(p.get("uid")) == series(meeting.get("uid")))
+                 or norm(p.get("title")) == norm(title))]
     counts: dict = {}
     seen: dict = {}
     last: dict = {}  # task -> (start, title) of the latest earlier meeting that voted for it

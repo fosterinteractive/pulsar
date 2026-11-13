@@ -808,12 +808,9 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     for x in range(DAY_MIN):
         if d.work[x] and d.owner[x] is None and d.logging[x]:
             d.owner[x] = BLOCKED
-    # a Claude session's turns spent logging time: Likely shows them and they can be logged by hand, but not here
-    # (2026-11-11); their minutes have no session row, so they would otherwise pass as work outside Claude
-    for r in day.get("loggingRows") or []:
-        for x in range(max(0, int(r["s"])), min(DAY_MIN, int(math.ceil(r["e"])))):
-            if d.owner[x] is None:
-                d.owner[x] = BLOCKED
+    # a Claude session's turns spent logging time: from 10 minutes they are the logging row (_logging, above); shorter
+    # ones stay with the work around them as work outside Claude (the owner, 2026-11-12: under 10 minutes it stays
+    # with the work), no longer blocked (2026-11-13: two such minutes cut a hole of short turns under an entry)
     _unattended(d)
     _outside(d)
     _context(d)
@@ -827,6 +824,10 @@ def plan(day: dict, ctx: dict, opts: dict | None = None, keep: dict | None = Non
     evidence = _evidence(d, pieces)
     out, totals = _caps(d, out, unplaced, evidence)
     out, given_back = _refill(d, out, pieces, totals["cap"] - totals["logged"])
+    out = _mixed_holes(d, out, pieces, totals["cap"])
+    # work seen past the cap (_caps, _mixed_holes): said on the day as over, never cut
+    totals["overLeft"] = max(int(totals.get("overLeft") or 0),
+                             sum(e["minutes"] for e in out) - max(0, totals["cap"] - totals["logged"]))
     for u in unplaced:  # minutes the refill gave back are placed after all: no longer "not placed"
         back_ = min(u["minutes"], given_back.get(str(u.get("task") or ""), 0))
         if back_:
@@ -1787,6 +1788,57 @@ def _refill(d: _Day, out: list, pieces: list, allowed: int) -> list:
             out.append(_entry({**parts[0], "parts": parts, "minutes": sum(p["minutes"] for p in parts)}, s, e, d.names))
     out.sort(key=lambda e: e["s"])
     return out, given_back
+
+
+def _mixed_holes(d: _Day, out: list, pieces: list, cap: int) -> list:
+    """Holes left after the refill (_refill) with work of several tasks in short turns: one row each, no task picked.
+    Entries logged with a start where no work was seen leave the room as it was (the owner, 2026-11-12); minutes logged
+    with no start may be this very work, so they take room (a hole they could be stays one)."""
+    # what is still a hole, with work of several tasks in short turns (none an entry by itself): one row with no task,
+    # every task of it offered as a choice, most minutes first (the owner, 2026-11-13: "чому відразу не пропонувати
+    # варіанти?"). Not the task with most minutes as the pick: on 26 days that was right on none of its minutes and
+    # added 10 billed over. With no task it bills nobody, so it is work seen past the day's cap too, never cut
+    N, g = DAY_MIN, d.o["grid"] or 1
+    least = max(g, d.o["min_entry"] or MIN_ENTRY)
+    mine: dict = defaultdict(list)
+    for p in pieces:
+        if p.get("task") and p["kind"] in ("focused", "outside"):
+            mine[str(p["task"])].append(p)
+    claim_task = {p["claim"]: t for t, ps in mine.items() for p in ps}
+    in_work = sum(1 for a, b in d.busy for x in range(max(0, int(a)), min(N, int(math.ceil(b)))) if d.work[x])
+    room = cap - in_work - sum(d.untimed.values()) - sum(e["minutes"] for e in out)
+    covered = bytearray(N)
+    for a, b in d.busy + [(e["s"], e["e"]) for e in out]:
+        for x in range(max(0, int(a)), min(N, int(math.ceil(b)))):
+            covered[x] = 1
+    start = None
+    for x in range(N + 1):
+        hole = x < N and d.work[x] and not covered[x] and not d.away[x] and d.owner[x] != BLOCKED
+        if hole and start is None:
+            start = x
+        if hole or start is None:
+            continue
+        a, b, start = int(math.ceil(start / g) * g), x // g * g, None
+        inside = Counter(claim_task[d.owner[y]] for y in range(a, b) if claim_task.get(d.owner[y]))
+        b = a + min(b - a, max(0, room) // g * g)
+        if b - a < least or len(inside) < 2:
+            continue
+        room -= b - a
+        ranked = inside.most_common()
+        parts = [{**p, "task": None, "note": "", "alts": []} for p in mine[ranked[0][0]]]
+        e = _entry({**parts[0], "task": None, "parts": parts, "minutes": sum(p["minutes"] for p in parts)}, a, b, d.names)
+        name = lambda u: (d.names.get(u) or ("", ""))[0] or f"task {u}"  # noqa: E731
+        e.update(checked=False, confidence="low", confidenceWords=CONF_WORDS["low"], source="mixed", serviceId=None,
+                 class_=None, why="short turns of several tasks here: "
+                 + ", ".join(f"{name(u)} {m} min" for u, m in ranked[:4]) + ": pick the one it was",
+                 alts=[{"taskId": u, "title": name(u), "project": (d.names.get(u) or ("", ""))[1], "why": f"{m} min here"}
+                       for u, m in ranked[:4]])
+        e.pop("class_", None)
+        e["class"] = None
+        e["flags"] = list(dict.fromkeys([f for f in e["flags"] if f != "shared"] + ["notask", "mixed", "low"]))
+        out.append(e)
+    out.sort(key=lambda e: e["s"])
+    return out
 
 
 def class_of(task, d: "_Day") -> str | None:
