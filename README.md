@@ -8,10 +8,12 @@ Code in Settings, the parts of your day Claude needs go to Anthropic when Claude
 ([What goes to Anthropic](#what-goes-to-anthropic)).
 
 Pulsar writes to Productive only when you ask, and you confirm each time: logging time, changing or deleting an entry,
-Log the day and its Undo, creating a task, or a Claude Code session logging time for you. That holds in normal use; a
+Log the day and its Undo (with a ticket's status after logging), creating a task, or a Claude Code session logging time
+for you. That holds in normal use; a
 program with full access to your account can get around any confirmation, as with any app ([Security](#security)).
 
-- **Day**: one time axis with up to four columns: **Meetings** (once Google Calendar is connected), **Activity** (what
+- **Day**: one time axis with up to five columns: **Planned** (your bookings in Productive's Resource Planner, opened
+  from the calendar icon above the time axis), **Meetings** (once Google Calendar is connected), **Activity** (what
   was on screen), **Likely** (what you most likely worked on, for Claude Code users) and **Logged** (your Productive
   entries). A yellow rail marks active time with no entry; a hatched rail, a pause or time away (named, never offered
   for logging); a dashed card, an entry you log at this time most days. Under the date: the week's logged and active
@@ -19,7 +21,8 @@ program with full access to your account can get around any confirmation, as wit
   their estimates.
 - **Report**: today, this week (where it opens), last week, this or last month, the last 30 days, or any range up to 93
   days: logged against active time by day, time by project, top apps and sites, projects by day, when in the week you
-  work, tasks against their estimates, and every day in a table. **Download** saves the report as a PDF, an **invoice
+  work, tasks against their estimates, **parallel work** (by project, how long Claude Code agents ran in the
+  background while you did other work, and about how much of it no entry covers), and every day in a table. **Download** saves the report as a PDF, an **invoice
   summary** (your name, the period, then your tasks by project, billable projects first and the most time first, each
   with its subtotal, its share of the time, and its tasks' time and billable time; as PDF or CSV), or the days or the
   time entries as CSV (for Excel or Numbers); **Print…** prints the report. A Pulsar window installed before 1.6.14
@@ -160,12 +163,15 @@ organization or person, Settings asks: the **Organization ID** is the number at 
 | Round entries to | 5 minutes (or 10 or 15): Log the day's entries start and end on this step (or against an entry already logged), a block you click to log is rounded to it (a drag or typed minutes are not), and shorter active time is not marked as unlogged |
 | Away after | 15 minutes (or 10, 20 or 30) without typing or moving the mouse: time away, and the end of a sitting (Likely, Log the day) |
 | Appearance | Theme: same as the Mac (or Light, or Dark); ◐ at the top and View > Appearance set it too |
-| Advanced | closed: join pieces of one task 30 min apart, work outside Claude an entry from 10 min, learning memory 7 days, daily meeting cards Usual, offer a split under 75%, the "No estimate" flag on |
+| Advanced | closed: join pieces of one task 30 min apart, work outside Claude an entry from 10 min, learning memory 7 days, daily meeting cards Usual, offer a split under 75%, a session's pick ticked from 60% of its votes (80% on a client's work), the "No estimate" flag on |
 | This Mac | menu bar, Dock badge and reminder on; Open at login off (Pulsar's window only) |
 | Personal windows | Telegram, WhatsApp, YouTube, Netflix, Instagram, Facebook, TikTok, Reddit (one word per line; a window whose app, title or site contains one is personal, never work) |
 | ActivityWatch address | `http://localhost:5600` |
+| Take the time ActivityWatch missed from MemTime | on (Time and activity → Activity) |
+| Planned column | on (Connections → Productive): your Resource Planner bookings behind the icon above the time axis |
 | Rules | none (words in a window, page or site that mean a task: that time is coloured by project, and the task comes first when you log it) |
 | Likely column | shown when there are Claude Code sessions on this computer (`~/.claude/projects`) |
+| Keep past days | 1 month (or 2, 3, 6 months or a year): how long past days' Likely columns stay on this Mac (Settings → Claude) |
 | Use Claude Code with Pulsar | off ([Claude Code](#claude-code)) |
 | Claude's models | Sonnet for every use (task picks, the review, notes, a new task's draft). **Settings → Claude** lists each use, what it sends, and a model to pick for it (Haiku, Sonnet or Opus) |
 | Google Calendar | not connected |
@@ -177,9 +183,12 @@ Settings are saved in `~/.config/pulsar/settings.json`. Delete `~/.config/pulsar
 ### Activity and time away
 
 - **ActivityWatch is the main tracker**: it counts input, so it knows when you are at the keys. MemTime counts the
-  window in front: the Day view uses it only for a day ActivityWatch saw nothing of, or under a fifth of what MemTime
-  saw (ActivityWatch was down most of that day), and cuts its time where ActivityWatch recorded you away. The Report takes, for each day, the tracker that saw more of it. The Activity
-  column's header can switch tracker.
+  window in front, and is the backup: where ActivityWatch recorded nothing at all for 10 minutes or more (it was quit
+  or crashed), the Day view takes that time from MemTime; the Activity header then says **ActivityWatch + MemTime**
+  and those cards have a dashed edge (**Settings → Time and activity → Activity** switches it off). A day
+  ActivityWatch saw nothing of, or under a fifth of what MemTime saw, is MemTime's. MemTime's time is cut wherever
+  ActivityWatch recorded you away. The Report takes, for each day, the tracker that saw more of it. The Activity
+  column's header can switch tracker; **ActivityWatch** there shows its own record alone.
 - **Breaks**: reading or a call with no typing is time away once it lasts **Away after**; a shorter pause between two
   stretches of work counts as work. A gap under an hour is a pause, an hour or more is away, three hours or more is off
   and never added to the total.
@@ -196,8 +205,10 @@ session you were most likely working in: the one whose title your editor showed,
 the one you used last in that sitting. Each row is named after the git repository the session worked in, so a session
 that worked in two repositories gives a row for each; another session's agent working meanwhile is a thin dashed rail.
 Meetings and personal windows go to no session. Time in Pulsar or Productive counts as the work around it, like any
-other window. A session's turns spent logging time show as a quieter dashed **Time logging** card with the session's
-name: Log the day leaves them out, and a click on the card logs them by hand when they were work. Nothing is sent
+other window. A session's turns spent logging time, from 10 minutes, show as a quieter dashed **Time logging** card
+with the session's name: Log the day offers them as one unticked row for an internal task (your scrum task until you
+pick another; Pulsar remembers it), and a click on the card logs them by hand. Shorter turns stay with the work
+around them. Nothing is sent
 anywhere unless you switch on Claude Code, and nothing is logged by itself.
 
 **Log this time** on a row offers first a Productive task you pasted into that session in the three hours before, then
@@ -206,7 +217,8 @@ match the work. That history is worked out once in the background and keeps only
 each session title (`~/.cache/pulsar/likely-days/`). Work outside Claude Code (and every minute, for someone without
 it) learns from the windows you had in front while you logged each task: kept as minutes and hashes only
 (`~/.cache/pulsar/context-days/`), never the titles. Past days' Likely columns, with session titles and first messages,
-are kept 31 days so they open at once (`~/.cache/pulsar/likely-full/`); ↻ works a day out again.
+are kept so they open at once (`~/.cache/pulsar/likely-full/`; a month, or as **Settings → Claude → Keep past days**
+says, up to a year); ↻ works a day out again.
 
 ### Logging and changing time
 
@@ -217,7 +229,8 @@ are kept 31 days so they open at once (`~/.cache/pulsar/likely-full/`); ↻ work
   create the same title in that project again for ten minutes, so search for it first.
 - **Ticket flags**: the log dialog and Log the day say when a task is closed, when no budget takes time on that date,
   when it has no estimate while the project's other tasks have one, or when this time would take it over its estimate,
-  with a link to fix it in Productive. Pulsar only reads these; it never changes the task.
+  with a link to fix it in Productive. Pulsar only reads these flags; the one change it makes to a task is its status,
+  from Log the day (below), when you confirm the run.
 - **Changing an entry**: click it in Logged. **Edit** opens it in the log dialog; **Delete** asks first (Productive keeps
   deleted entries in its Recycle Bin). Drag its top or bottom edge to move its start or end; Pulsar asks before it
   changes anything. **Undo**, in the note at the bottom, puts back a delete or a drag (a deleted entry comes back as a
@@ -234,7 +247,14 @@ Pulsar is and why. Unsure entries, and those whose task and note Claude picked, 
 task, service, start, length and note, or remove an entry.
 
 - **Tick all with a task** ticks every entry that has a task and a service, except one whose task Claude found by
-  searching Productive (it waits until you open it). Enter on an open entry ticks it and opens the next.
+  searching Productive, or a stretch of several tasks' short turns (each waits until you open it). Enter on an open
+  entry ticks it and opens the next.
+- **Status after logging**: each entry can move its ticket to another status of its workflow (QA, Done…), only once the
+  entry is written; the confirm step says so, and **Undo this run** puts the status back unless someone changed it
+  since. A ticket not started yet (Backlog, To do) goes to **In progress** when its entry is written, said under the row
+  even when it is closed, with **Keep its status**; a ticket already started or closed stays as it is.
+- **Short turns of several tasks**, none long enough for an entry, become one row with no task picked and each of those
+  tasks offered, most minutes first: pick the one that time was from.
 - Nothing is written until you confirm. Then the entries go to Productive one at a time, stopping at the first one that
   is refused, and **Undo this run** deletes only what that run wrote.
 - With the Claude Code switch on, the notes fill in by themselves: Claude drafts one for each entry from a Claude
@@ -245,7 +265,8 @@ task, service, start, length and note, or remove an entry.
   like a meeting's name (not an instruction, a sum or an address); a series renamed since you last logged it starts
   unticked.
 - A call that runs over its meeting, or starts early, is that meeting: a 10:00 to 10:30 meeting whose call ended at
-  10:55 is one 55-minute entry. Meetings back to back each keep their own time.
+  10:55 is one 55-minute entry. Meetings back to back each keep their own time and note, even when both go to one
+  task (a daily scrum, then a weekly meeting). A meeting finds the task you logged in the earlier meetings of its series.
 - Your ticks, tasks, notes and deletions are kept per day while Pulsar is open; **Start over** forgets them.
 - Work outside Claude Code (Slack, a browser, a document), and for someone without Claude Code the whole day, takes
   the task you logged before while the same window was in front: the Slack conversation, the site and the first parts
@@ -379,8 +400,15 @@ about 1.6 cents (with Haiku about a tenth of a cent), so a day's 15 notes about 
 Claude's answers for each day stay on this Mac for 60 days, in `~/.cache/pulsar/claude-picks/`: the tasks it picked,
 with its reasons and drafted notes (which come from your sessions' text), the notes drafted for each stretch of work,
 and the day's last review. They are shown again after a restart, so the same question is not asked, or paid for, twice:
-Claude runs again only when you click **Check my day with Claude** or **Check again**, or ask about work that changed (a
-note for another stretch, a review of a changed plan). With the switch off, Pulsar does not use them.
+
+- **Task picks**: asking again keeps Claude's pick for every block that has not changed since (the same time,
+  repository and commits) and asks only about the new or changed ones; with nothing changed, Claude does not run.
+- **The review**: opening Log the day after a restart, or later in the day, shows the last review's suggestions for
+  the entries still as they were (the same time, task, work and service); the line says how many were left out
+  because their entry changed or was logged. **Check again** runs a new review of the whole day.
+- **Notes**: a stretch of work drafted for once is never drafted again.
+
+With the switch off, Pulsar does not use them.
 
 ## Security
 
@@ -420,12 +448,12 @@ Finder: **Go → Go to Folder…**, paste `~/Library/Logs`).
 | The app | `/Applications/Pulsar.app` |
 | The code it runs, with its updates | `~/Library/Application Support/Pulsar/` |
 | Settings, rules and the session key | `~/.config/pulsar/` |
-| Copies of each day's entries (120 days), names, Likely's history, the windows you worked in as hashed keys (62 days), Claude's answers (60 days), day marks, the self-check's numbers (62 days), the error log (31 days) | `~/.cache/pulsar/` |
+| Copies of each day's entries (120 days), names, Likely's history, past days' Likely columns (as Keep past days says), the windows you worked in as hashed keys (62 days), Claude's answers (60 days), day marks, the self-check's numbers (62 days), the error log (31 days) | `~/.cache/pulsar/` |
 | What the app wrote while starting | `~/Library/Logs/Pulsar.log` |
 | Your Productive API token | the login keychain, item `pulsar` (open Keychain Access to see it) |
 | Your Google Calendar access | the login keychain, item `pulsar`, account `google-calendar` |
 | Your GitHub sign-in (for updates) | the login keychain, item `pulsar`, account `github`; who signed in in `~/.config/pulsar/github.json` |
-| The window's own data (its sign-in, theme, size, This Mac choices) | `~/Library/WebKit/com.fosterinteractive.pulsar/`, `~/Library/Caches/com.fosterinteractive.pulsar/`, `~/Library/Preferences/com.fosterinteractive.pulsar.plist` |
+| The window's own data (its sign-in, theme, size, This Mac choices, whether Planned is open and which bookings you have seen) | `~/Library/WebKit/com.fosterinteractive.pulsar/`, `~/Library/Caches/com.fosterinteractive.pulsar/`, `~/Library/Preferences/com.fosterinteractive.pulsar.plist` |
 
 Everything in `~/.config/pulsar` and `~/.cache/pulsar` is readable by you alone. Pulsar Preview, if you have it, keeps the same things under its own
 names: `/Applications/Pulsar Preview.app`, `~/.config/pulsar-preview`, `~/.cache/pulsar-preview`,
@@ -505,6 +533,8 @@ pulsar/
   sessions.py          Claude Code sessions -> which project each minute of work went to; task links typed in them
   learn.py             tasks for Likely rows, learned from what you logged in the same session or repository
   attribution.py       parallel work: which repository and session a logged minute teaches
+  parallel.py          the Report's parallel work: agents in the background by project, and what no entry covers
+  context.py           tasks for work outside Claude Code, learned from the window in front (hashed keys)
   commits.py           your commits during a Likely row, for the note (git run inertly)
   askclaude.py         task picks and notes from a session (claude -p, Productive read only), kept 60 days
   claudeuses.py        everything Pulsar asks Claude: what each sends, its model and its cost limit
@@ -513,6 +543,7 @@ pulsar/
   mcptools.py          the Claude Code tools' answers, computed in Pulsar, and pulsar_preview / pulsar_log
   dayplan.py           Log the day: the whole day proposed, the journal of what each run wrote, Undo
   dayreview.py         Log the day with Claude: FI's rules and Claude's review of the plan
+  selfcheck.py         Settings > Self-check: Log the day replayed blind on your last 30 days
   daymarks.py          day done, not work, not an example (this Mac only)
   pause.py             Pause and Resume: the paused time counts nowhere, then becomes not work
   ranges.py            what a stretch picked in the Day view holds, and its split into entries
@@ -537,6 +568,7 @@ web/
   js/datepick.js       the calendar behind every date field
   js/day.js            the day view
   js/meetings.js       the Meetings column and the Google Calendar part of Settings
+  js/planned.js        the Planned column: Resource Planner bookings behind the icon above the time axis
   js/report.js         the report, its charts and downloads
   js/settings.js       the settings dialog and updates
   js/log.js            logging time and rules
@@ -548,6 +580,10 @@ web/
   js/ldreview.js       Log the day with Claude's suggestions
   js/catchup.js        Earlier days: catching up on several days
   js/ask.js            Ask Claude while it works
+  js/pause.js          Pause and Resume, and the paused stretch on the day
+  js/awayback.js       Ask when I come back: the panel after time away
+  js/trackcheck.js     the notice when a tracker stopped recording
+  js/selfcheck.js      Settings > Self-check
   js/logs.js           the error log dialog
   js/main.js           views and start-up
 macos/                 the app: its window (Swift), its launcher, the icon and the release script (see macos/README.md)
@@ -558,7 +594,8 @@ tests/                 PULSAR_TESTS_OFFLINE=1 python3 -m unittest discover -s te
 ```
 
 Tests run under `tests/isolation.py`: no keychain, network, Claude Code or real files, and the run fails if a test
-reaches for one. `python3 pulsar.py --self-test` checks that the page files are there and the server answers; with ruff
+reaches for one. `macos/ui_smoke.sh` clicks through the page in Pulsar's real window (`tests/ui/smoke.js`, writing
+nothing): every feature on the page has a check there. `python3 pulsar.py --self-test` checks that the page files are there and the server answers; with ruff
 installed, `ruff check pulsar pulsar.py tests` must pass. On a test server, `PULSAR_READ_ONLY=1` makes writing to
 Productive impossible; use `"dry": true` on `/api/log`.
 

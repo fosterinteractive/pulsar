@@ -30,13 +30,16 @@ launcher (`macos/`). How each part works is in `docs/HOW-IT-WORKS.md`; read the 
 - `npx -p typescript@5.6.3 tsc -p jsconfig.json` (development only) type-checks the page's scripts as the one global
   scope they share: an unknown or misspelt name, or a wrong number of arguments, across files. It must report 0
   errors. `types/page.d.ts` says what Pulsar's window adds and what the page's elements are; JSDoc types the rest.
-- `macos/ui_smoke.sh` clicks through the page in Pulsar's real window (`tests/ui/smoke.js`, read only: dialogs, breaks,
-  Not an example, the estimate line, Update's restart, the day's copy) and must pass after a change to the page or the
-  window. A new feature on the page gets a check there.
+- `macos/ui_smoke.sh` clicks through the page in Pulsar's real window (`tests/ui/smoke.js`, read only: every feature on
+  the page has a check, requests to Productive or Claude stood in for) and must pass after a change to the page or the
+  window. A new feature on the page gets a check there. Before running it, `node --check` the script wrapped in an
+  async function: a name declared twice stops the whole run with no line number.
 - What a change does goes under `## Unreleased` in `CHANGELOG.md`; behaviour in `docs/HOW-IT-WORKS.md`; agreed
   next steps in `docs/TODO.md`.
 
 ## Releases
 
-Only `macos/release.sh`, only from `main` as it is on GitHub, and only when the maintainer says so. Never read,
+Only `macos/release.sh`, only from `main` as it is on GitHub, and only when the maintainer says so. Before it, every
+change under `## Unreleased` has its test (a unit test for the server, a check in `tests/ui/smoke.js` for the page),
+and `README.md` and `docs/HOW-IT-WORKS.md` say what it does: updated in the same work, never left for later. Never read,
 print or copy anything in `~/.config/pulsar-release` (the release keys) or `~/.config/pulsar/google_client.json`.

@@ -287,7 +287,17 @@ Both readers return the same items: `{s, e, app, title, host, url, cat, icon}`, 
   ids. Icons are the ones MemTime already saved; nothing is fetched from the internet.
 - **Auto** picks ActivityWatch, the main tracker, whenever it saw the day; MemTime only for a day it saw nothing of.
   MemTime counts the window in front even while nobody is there, so its items are cut where ActivityWatch recorded
-  the person away (`trackers.aw_away`, `cut_out`). A gap from Away after up to an hour is a **pause**, an hour or
+  the person away (`trackers.aw_away`, `cut_out`).
+- **The time ActivityWatch missed** (`trackers.aw_gaps`, `fill_gaps`; Settings' **Take the time ActivityWatch missed
+  from MemTime**, `tracker_fill`, on by default): ActivityWatch's AFK watcher writes "at the keys" and "away" alike, so
+  while it runs it leaves no gap (on the owner's 30 days to 2026-11-13 every one was under 5 minutes). A stretch of
+  `FILL_MIN` (10) minutes or more with no AFK event at all is ActivityWatch not running, quit or crashed, or the Mac
+  off; MemTime's items there join ActivityWatch's, each marked `fill`. The stretch up to now counts only beyond Away
+  after and `TRAIL_GRACE` (5 minutes): until its timeout passes, the AFK watcher has written nothing for a pause still
+  going on. Every reader takes the joined items (the Day view, Likely, Log the day, the pause check, the windows kept
+  for learning); the Activity header says "ActivityWatch + MemTime" with the minutes in its tooltip, a card mostly of
+  MemTime's minutes has a dashed edge, and ActivityWatch picked by hand in the header shows its own record alone. On
+  26 days the plan's right task rose 162 minutes and no task fell 237 (almost all on one morning ActivityWatch missed). A gap from Away after up to an hour is a **pause**, an hour or
   more is **away** (`server.AWAY_LONG`), three hours or more is **off**; a gap still going on today shows too.
   The Activity header can switch.
 - **Personal windows**: a window whose app, title or site contains one of the words in Settings is `personal`. It is
@@ -1085,6 +1095,21 @@ minutes. Repeats were the surest source (78% at the right time), calendar meetin
 unticked. Most of the rest is tasks new that day (14% of the logged minutes), sessions that moved between tasks, and
 time logged when the tracker saw nothing (8%).
 
+**Status after logging** (`productive.task_status`, `set_task_status`, `server._status_after`, `_status_back`;
+`GET /api/task/statuses`). Each row has a select with the statuses of its task's workflow (read with the task, the
+workflow's statuses kept ten minutes per project), "No change" by default and the status now named in it. The task
+moves only after its entry is written, never on a refused one; the confirm step lists the moves, the journal keeps
+`taskStatus {taskId, from, to}`, and Undo puts the status back unless it was changed since (then it says so). A task
+in a not-started status (category 1: Backlog, To do) gets "In progress" (or its workflow's first started status)
+proposed by itself for every row with time, said under the row even when it is closed, with **Keep its status**; a
+status picked by hand, "No change" included, wins. Through Claude Code's connection the write is `update_resource`
+after `load_resource`, and only Productive's "Task updated (ID: n)" counts as done; anything else is unclear.
+
+**Short turns of several tasks** (`dayplan._mixed_holes`, flag `mixed`): a hole of work time left after the rows,
+holding turns of two tasks or more none of which makes an entry, is one row with no task, its tasks offered as
+alternatives (most minutes first), unticked; Tick all leaves it until it is opened. Taking the largest share was
+right on none of its minutes in the replay.
+
 ### 5.4b Catching up on earlier days (`web/js/catchup.js`)
 
 **Earlier days…** in Log the day's title row lists the last 7 workdays before today that are not done (6: marked
@@ -1631,6 +1656,15 @@ question) and cannot tell when inside it the work happened.
 
 ## 6. The rest of the day view
 
+- **Planned** (`productive.bookings`, `GET /api/bookings`, `web/js/planned.js`; Settings' **Planned column**, `planned`,
+  on by default): the person's bookings in Productive's Resource Planner on the day, read with their own access (a
+  role that sees its own bookings is enough), kept five minutes. A booking has dates and an amount (hours a day, a
+  share of the day, or hours over its working days), never a time of day, so the day's work bookings are laid one after
+  another from 10:00, each as long as its share of the day; absences are lines under the column's title; tentative
+  ones are dashed. Each card says how much is logged to its task that day; a click opens a popover with the booking.
+  Closed, the column takes no width in any grid (`--plan-w: 0`) and only an icon shows above the time axis: lit, with
+  a slow sheen, while the day has bookings not seen yet; grey once the column was open with them (`pulsar-planned-seen`
+  in the window's storage, booking ids per day, 31 days); plain with none. Switched off, no request is made.
 - **Where a day opens**: today with the now line in the lower third of the view; another day at the start of its
   first long run of work (activity, entries and meetings less than 15 minutes apart, 30 minutes or more of them), so
   a stray minute at 00:30 does not decide it.
@@ -1773,6 +1807,13 @@ but only when it lists `savePDF` in `window.PULSAR_APP.features`: the updates re
 the window, so an older window opens its print dialog instead (its PDF menu saves the file), and so does a browser.
 Print… always opens the print dialog.
 
+**Parallel work** (`pulsar/parallel.py`, in `/api/report` as `parallel`): from the past days' Likely columns kept on
+this Mac (Keep past days), for each project, the minutes Claude Code agents ran in their repository while the work in
+front was another repository's, the work in front, what was logged to it, and about how much of the parallel time no
+entry covers (each day, the parallel minutes less what was logged beyond the work in front, never below zero). A
+repository stands for the project logged most while it was in front (30 minutes or more); with less, for its own
+name. A day not kept has no figures, and the section says how many of the range's days were.
+
 **The invoice summary** (`report.invoice`, in `/api/report` as `invoice`): every task logged in the range, by project
 (A to Z, "(no project)" last), most time first, with its time and billable time; a subtotal per project, then the
 total time, the billable time and the billable share. Billable is the Billable tile's rule: an entry is billable when
@@ -1809,9 +1850,10 @@ view and every 30 seconds; left out in a window narrower than 820 pixels.
 | `~/.cache/pulsar/likely-days/` | Past days' Likely rows for learning: times, repository, title hashes. |
 | `~/.cache/pulsar/context-days/` | Past days' windows in front for learning the tasks of work outside Claude: minutes and a hash of each window's keys (conversation, site and path, title parts, app), salted with this Mac's own key, never the titles, pages or conversations; 62 days. Read from the tracker in the background once; while it does not answer, again an hour later. |
 | `~/.cache/pulsar/context-salt` | This Mac's random key for those hashes (owner-only), so a kept day cannot be checked against guessed names; made again when missing, and the days kept under the old one are read again. |
-| `~/.cache/pulsar/likely-full/` | Past days' Likely columns as the page shows them (rows with session titles and first messages), so a day opened again, or after a restart, shows at once; 31 days; ↻ works a day out again. Never a day worked out while no tracker answered. |
-| `~/.cache/pulsar/claude-picks/` | Ask Claude's last answer per day (`<date>.json`: task ids, reasons, drafted notes), shown again when the day is opened, never asked again by itself; the notes Claude drafted for a stretch of work (`<date>.notes.json`, under the stretch, its repository and what its session and commits held, so the same work is never drafted twice); the day's last review (`<date>.review.json`, under the plan it reviewed, `server.review_key`, given back while the plan is the same). 60 days. |
+| `~/.cache/pulsar/likely-full/` | Past days' Likely columns as the page shows them (rows with session titles and first messages), so a day opened again, or after a restart, shows at once, and the Report's parallel work reads them; as long as Settings' Keep past days says (31 days by default; 62, 92, 183 or 365); ↻ works a day out again. Never a day worked out while no tracker answered. |
+| `~/.cache/pulsar/claude-picks/` | Ask Claude's last answer per day (`<date>.json`: task ids, reasons, drafted notes), shown again when the day is opened, never asked again by itself; the notes Claude drafted for a stretch of work (`<date>.notes.json`, under the stretch, its repository and what its session and commits held, so the same work is never drafted twice); the day's last review (`<date>.review.json`, under the plan it reviewed, `server.review_key`, given back while the plan is the same; with each row as it was, so a changed plan still gets the suggestions of the rows that did not change, `server.carry_review`). The picks keep each block they were asked about (`rows`, with the model): asking again asks only about the new or changed blocks (`askclaude.kept_rows`). 60 days. |
 | (the page, while it is open) | Log the day's work per day: ticks, tasks, services, times, notes, the rows opened and deleted, the review's suggestions with their state (`ldkeep.js`). |
+| (the window's storage) | Whether Planned is open (`pulsar-planned-open`) and the bookings seen per day (`pulsar-planned-seen`, 31 days). |
 | `~/.cache/pulsar/day-marks.json` | Days marked done (or not done) and time marked "not work", in minutes of the day (6); 120 days. |
 | `~/.cache/pulsar/logday-journal.json` | Log the day: each row a run sent, before it was sent, what the plan proposed for it as first planned (task, service, start, minutes, source, confidence, ticked) and what came of it (31 days). |
 | `~/.cache/pulsar/selfcheck/` | How well Pulsar picks for you (5.4d): per past day, minutes right and wrong, per pick source, the journal's counts and the two rules being tried, the version and a hash of the day's entries; numbers only, never a name; 62 days. Kept so the background work is done once per day and version, not on every look. |
@@ -2106,9 +2148,12 @@ All JSON. GET reads; POST needs `X-Pulsar: 1`. Everything but the public routes 
   picture of the page, a download and a PDF, then quits; with `PULSAR_TEST_WARP` too, three pictures of the native
   warp; with `PULSAR_TEST_SCRIPT=<file>`, it runs that file in the page once the day has loaded (the body of an async
   function returning JSON) and saves its answer as `ui.json`. `macos/ui_smoke.sh` builds that window and runs
-  `tests/ui/smoke.js`: a click-through of the page that writes nothing (dialogs and their ✕, a click outside them,
-  breaks named and never offered for logging, Not an example, the over-estimate line, Update's "and restart", the
-  day's kept copy, no page error), each check printed, exit 1 on a failure.
+  `tests/ui/smoke.js`: a click-through of the page that writes nothing, each check printed, exit 1 on a failure. Every
+  feature on the page has a check there (dialogs and their ✕, breaks, Not an example, Log the day's rows, statuses,
+  ends and splits, Planned, the column layouts, the MemTime fill, Claude's kept picks and review, the Report and its
+  parallel work, Settings, the trackers notice, Pause, contrast, Self-check, no page error); a request it must not
+  make (Productive, Claude) is stood in for in the page. `node --check` on the script wrapped in an async function
+  catches a name declared twice before the window runs it.
 
 ## 13. Known limits
 
