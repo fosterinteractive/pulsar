@@ -6,6 +6,12 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
+## Unreleased
+- Report: a Parallel work section. For each project, how long Claude Code agents ran in the background while you were at other work, and about how much of it is not in your entries, from the past days kept on this Mac.
+- Settings › Claude Code › Keep past days: 1 month (as before), 2, 3, 6 months or a year. The day view and the Report's parallel work reach that far back; task picks do not change with it (60 or 90 days of learning came out the same).
+- Another client's agent beside your work takes its half first from turns too short to be an entry, and never leaves the work in front under one: 7 of a client's 10 minutes had gone to the agent, and both were lost.
+- The active-time cap no longer cuts work seen when the day was logged past its active time: the day says how much it is over instead.
+
 ## 1.6.20 (2026-11-13)
 - Log the day: each row has a Start, an End and Minutes. Changing the end sets the minutes, changing the minutes moves the end, and the start stays where you put it.
 - Log on a Likely block offers Log the day's task first, as a picked stretch does: on 30 days the block's own first offer was the task logged on 29% of its minutes, Log the day's on 48%.

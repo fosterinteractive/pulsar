@@ -35,7 +35,7 @@ import os
 import re
 import threading
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta
 
 from . import attribution, commits as git_commits, config, context as context_mod, pause, sessions as sessions_mod, trackers
@@ -1303,7 +1303,22 @@ def _rows(d: _Day) -> None:
         # time, before the rest of the work in front (every other minute was laid past its own time and lost); of the
         # minutes no other agent's half took, so two clients' agents beside one stretch share it, whatever the order
         free = sorted(x for x in xs if x not in given)
-        half = free[:min(len(free), max(len(xs) // 2, least))]
+        want = min(len(free), max(len(xs) // 2, least))
+        # never so that the work in front falls under an entry (rule order: 2.4 takes only what leaves the work in
+        # front an entry): first the minutes of front work too short to be an entry anyway, then of work that keeps
+        # one. 2026-11-13: an agent's half taken as one block from its first minute took 7 of a client's 10 minutes
+        # in front, and both were lost (the client's rest under an entry, the agent's minutes cut by the evidence cap)
+        left = Counter(owner[x] for x in range(N) if owner[x] not in (None, BLOCKED))
+        pick: list = []
+        for keep_entry in (False, True):
+            for x in free:
+                if len(pick) >= want or x in pick:
+                    continue
+                w = owner[x]
+                if (left[w] < least) if not keep_entry else (left[w] - 1 >= least):
+                    pick.append(x)
+                    left[w] -= 1
+        half = sorted(pick)
         if len(half) < least:
             continue
         given.update(half)
@@ -1907,6 +1922,16 @@ def _caps(d: _Day, out: list, unplaced: list, evidence: dict) -> tuple:
         unplaced.append({"minutes": cut, "task": e["taskId"], "project": e["project"], "why": why})
         return cut
 
+    def seen_in(e) -> int:
+        """The minutes of an entry's own task seen at work inside it (the pieces it was made of)."""
+        t, n = str(e.get("taskId") or ""), 0
+        for a, b in e.get("own") or []:
+            for x in range(max(0, int(a)), min(DAY_MIN, int(math.ceil(b)))):
+                o = d.owner[x]
+                if o is not None and o >= 0 and str(d.claims[o].get("task") or "") == t and d.work[x] and not d.away[x]:
+                    n += 1
+        return n
+
     # what goes first: internal work, then mixed or unknown, a client's last; within each the least sure, the latest
     # an attended meeting last of all: the calendar and its call say the person was in it (2026-11-12 audit: a client
     # meeting, "unknown" class, was cut before client work and lost its calendar end)
@@ -1920,12 +1945,22 @@ def _caps(d: _Day, out: list, unplaced: list, evidence: dict) -> tuple:
                                "more than your active time and meetings; its task has time logged with no start")
                 left[str(e["taskId"])] -= cut
                 over -= cut
+        # the active-time cap takes only what an entry has beyond its own work seen (rule order 4.4: the caps cut only
+        # beyond seen work), on the grid and never below the shortest entry; meetings are never cut by it. With
+        # entries logged today beyond the active time, the work seen stays proposed and is flagged (2026-11-13: ten
+        # minutes of a client's work seen at 16:14-16:27 were cut because 235 minutes were already logged)
         for e in sorted(out, key=first_cut):
             if over <= 0:
                 break
-            if e["minutes"]:
-                over -= cut_from(e, over, "more than your active time and meetings")
+            if not e["minutes"] or e["kind"] == "meeting":
+                continue
+            room = (min(over, e["minutes"] - seen_in(e)) // g) * g
+            if e["minutes"] - room < o["min_entry"]:
+                room = max(0, (e["minutes"] - o["min_entry"]) // g * g)
+            if room > 0:
+                over -= cut_from(e, room, "more than your active time and meetings")
         out = [e for e in out if e["minutes"] >= g]
+    over_left = max(0, over)  # the day's proposals and entries past the cap: said on the day, never cut (_result)
     # the evidence cap: a task that may be billable (any not known to be internal) never gets more minutes than the
     # person was seen at work on it
     billable = lambda e: e.get("taskId") and e["kind"] not in ("meeting", "unattended") and (  # noqa: E731
@@ -1938,14 +1973,6 @@ def _caps(d: _Day, out: list, unplaced: list, evidence: dict) -> tuple:
     # took in most first. Work of its task seen inside it is never cut (the owner, 2026-11-12: "пропозал має вилізти"):
     # cutting the newest entry first took a client's stretch still going on, so the last 20 to 30 minutes were never
     # proposed. What is still over is flagged to check, never cut.
-    def seen_in(e) -> int:
-        t, n = str(e.get("taskId") or ""), 0
-        for a, b in e.get("own") or []:
-            for x in range(max(0, int(a)), min(DAY_MIN, int(math.ceil(b)))):
-                o = d.owner[x]
-                if o is not None and o >= 0 and str(d.claims[o].get("task") or "") == t and d.work[x] and not d.away[x]:
-                    n += 1
-        return n
     beyond = {id(e): e["minutes"] - seen_in(e) for e in out}
     for e in sorted(out, key=lambda e: (-beyond[id(e)], -e["s"])):
         t = str(e.get("taskId") or "")
@@ -1964,7 +1991,8 @@ def _caps(d: _Day, out: list, unplaced: list, evidence: dict) -> tuple:
             e["flags"].append("untimed")
             e["checked"] = False
             e["untimed"] = d.untimed[str(e["taskId"])]
-    return out, {"logged": logged_total, "active": active, "meetings": sum(att), "cap": cap}
+    return out, {"logged": logged_total, "active": active, "meetings": sum(att), "cap": cap,
+                 "overLeft": over_left}
 
 
 def _join_touching(out: list) -> list:
@@ -2022,7 +2050,9 @@ def _result(d: _Day, out: list, unplaced: list, totals: dict) -> dict:
                        "checked": sum(e["minutes"] for e in out if e["checked"]),
                        **totals,
                        "notCovered": sum(u["minutes"] for u in uncovered),
-                       "over": sum(u["minutes"] for u in unplaced if u["why"].startswith("more than your")),
+                       # left out for it, and what the work seen still comes to past it (never cut, _caps)
+                       "over": sum(u["minutes"] for u in unplaced if u["why"].startswith("more than your"))
+                       + int(totals.get("overLeft") or 0),
                        "parallel": sum(d.parallel), "shared": sum(e["minutes"] for e in out if e.get("shared")),
                        "leftOut": sum(n["minutes"] for n in noted)}}
 

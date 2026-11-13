@@ -271,7 +271,7 @@ function renderReview() {
     // the flags themselves, row by row, never a list of what a flag can be
     nFlags ? `<button type="button" class="iss" data-ld-goto="${flagged[0].id}" title="${esc(flagged.map(r => `${hm(r.s)} ${r.title || 'no task'}: ${fixes(r).map(f => f.text).join('; ')}`).join('\n'))}"><span class="g" aria-hidden="true">!</span>${nFlags} to fix in Productive</button>` : '',
     T.notCovered ? `<span class="iss ok" title="Active time no entry covers, logged or proposed">${dur(T.notCovered)} not logged</span>` : '',
-    T.over ? `<span class="iss ok" title="More than your active time and meetings, so left out of the entries">${dur(T.over)} over the day</span>` : '',
+    T.over ? `<span class="iss ok" title="With what is logged already, more than your active time and meetings: work seen stays proposed, so check the entries">${dur(T.over)} over the day</span>` : '',
     T.parallel ? `<span class="iss ok" title="${esc(`Agents ran while you did other work: ${dur(T.shared)} went to a client first, ${dur(T.leftOut)} left out`)}">Parallel ${dur(T.parallel)}</span>` : '',
   ].join('');
   const model = {haiku: 'Haiku', sonnet: 'Sonnet', opus: 'Opus'}[CONFIG?.likely?.askClaudeModel] || 'Claude';

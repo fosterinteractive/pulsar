@@ -72,7 +72,7 @@ class RefillTest(Ctx):
                  logged=[{"s": None, "minutes": 8, "taskId": "X9"}])
         self.assertEqual(spans(p), [(540, 580, "G1")])
         self.assertEqual([(u["s"], u["e"]) for u in p["uncovered"]], [(580, 592)])
-        self.assertLessEqual(p["totals"]["proposed"] + p["totals"]["logged"], p["totals"]["cap"])
+        self.assertLessEqual(p["totals"]["proposed"], max(0, p["totals"]["cap"] - p["totals"]["logged"]) + p["totals"]["overLeft"])
 
     @mock.patch("pulsar.sessions.LOGGING_IS_WORK", False)  # time spent logging: never proposed, behind its switch
     def test_time_spent_logging_is_never_a_hole_to_fill(self):
@@ -296,7 +296,7 @@ class RandomDaysTest(Ctx):
             for (_, a1), (b0, _) in zip(placed, placed[1:]):
                 self.assertLessEqual(a1, b0, why)                                        # never two at once
             t = p["totals"]
-            self.assertLessEqual(t["proposed"], max(0, t["cap"] - t["logged"]), why)  # the cap
+            self.assertLessEqual(t["proposed"], max(0, t["cap"] - t["logged"]) + t["overLeft"], why)  # the cap, past it only by work seen
             self.assertEqual(t["proposed"], sum(e["minutes"] for e in p["entries"]), why)
             self.assertEqual([e["s"] for e in p["entries"]], sorted(e["s"] for e in p["entries"]), why)
             for e in p["entries"]:

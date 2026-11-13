@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, urlparse
 
 import traceback
 
-from . import __version__, appupdate, askclaude, awsetup, calendar, claudelink, claudeuses, config, daymarks, dayplan, dayreview, flags, github, learn, likely, logbook, mcptools, newtask, productive, pause, ranges, report, selfcheck, sessions, trackers, trackhealth, updater, names
+from . import __version__, appupdate, askclaude, awsetup, calendar, claudelink, claudeuses, config, daymarks, dayplan, dayreview, flags, github, learn, likely, logbook, mcptools, newtask, parallel, productive, pause, ranges, report, selfcheck, sessions, trackers, trackhealth, updater, names
 from .mcp import whoami_proof
 
 UPDATER = updater.Updater()
@@ -189,6 +189,7 @@ def public_config(s: dict) -> dict:
         "targetMinutes": config.target_minutes(s), "targetHours": s["target_hours"], "personDayHours": s["person_day_hours"],
         "personalPatterns": s["personal_patterns"], "activitywatchUrl": s["activitywatch_url"], "rules": s["rules"],
         "roundTo": s["round_to"], "minEntry": dayplan.MIN_ENTRY, "awayAfter": config.away_after(s), "workingDays": s["working_days"],
+        "likelyKeepDays": likely.keep_days(s),
         "advanced": config.advanced(s),
         "activitywatch": awsetup.status(config.away_after(s)),  # its AFK timeout, read from its file; no program started
         "update": {**UPDATER.public(), "skip": s["update_skip"], "asked": s["update_asked"]},
@@ -274,6 +275,13 @@ def validate(body: dict) -> dict:
         out["round_to"] = v
     if "away_after" in body:
         out["away_after"] = away_minutes(body["away_after"])
+    if "likely_keep_days" in body:
+        v = body["likely_keep_days"]
+        if isinstance(v, str) and v.strip().isdigit():
+            v = int(v)
+        if isinstance(v, bool) or v not in config.LIKELY_KEEP:
+            raise ValueError("Past days are kept 31, 62, 92, 183 or 365 days.")
+        out["likely_keep_days"] = v
     if "working_days" in body:
         v = body["working_days"]
         days = sorted({int(d) for d in v if str(d).isdigit() and 0 <= int(d) <= 6}) if isinstance(v, list) else []
@@ -776,6 +784,11 @@ def api_report(q: dict) -> dict:
             "No activity was recorded in this range. Pulsar reads ActivityWatch or MemTime: is one of them installed "
             "and running?")
     data["targetMinutes"] = config.target_minutes(s)
+    # the agents' work in the background while you were at other work, by project, from the kept Likely days
+    tz_name, now = config.timezone_name(s), today(tz)
+    data["parallel"] = parallel.summary(dates, rows or [], lambda d: likely._load_day(d, tz_name) if d < now else None,
+                                        lambda d: day_bounds(d, tz)[0])
+    data["parallel"]["keepDays"] = likely.keep_days(s)
     return data
 
 

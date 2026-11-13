@@ -110,16 +110,18 @@ class PlannerTest(unittest.TestCase):
         for (a0, a1), (b0, b1) in zip(spans, spans[1:]):
             self.assertLessEqual(a1, b0, spans)
 
-    def test_proposed_plus_logged_never_exceeds_active_time_and_meetings(self):
-        # 60 active minutes, 50 already logged elsewhere in the day: at most 10 more, the rest shown as not placed
+    def test_work_seen_stays_proposed_when_the_day_is_logged_past_its_active_time(self):
+        # 60 active minutes, 50 already logged elsewhere in the day: the 60 minutes of work seen stay proposed and
+        # the day says it is 50 over (the owner, 2026-11-12: "пропозал має вилізти"; 2026-11-13: ten minutes of a
+        # client's work seen were cut because the day had been logged past its active time)
         logged = [{"s": 900, "minutes": 50, "taskId": "99"}]
         p = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600)], logged=logged), self.ctx)
-        self.assertLessEqual(p["totals"]["proposed"] + p["totals"]["logged"], p["totals"]["cap"])
-        self.assertEqual(p["totals"]["cap"], 60)
-        self.assertEqual(sum(u["minutes"] for u in p["unplaced"]), 50)
-        self.assertTrue(all(u["why"].startswith("more than") for u in p["unplaced"]))
-        # a day logged in full gets nothing more
-        logged = [{"s": None, "minutes": 70, "taskId": "99"}]  # even without a start time
+        self.assertEqual([(e["s"], e["e"]) for e in p["entries"]], [(540, 600)])
+        self.assertEqual((p["totals"]["cap"], p["totals"]["over"]), (60, 50))
+        self.assertLessEqual(p["totals"]["proposed"], max(0, p["totals"]["cap"] - p["totals"]["logged"]) + p["totals"]["overLeft"])
+        self.assertFalse([u for u in p["unplaced"] if u["why"].startswith("more than your")])
+        # time logged with no start to the entry's own task may be this very work: it goes first, as before
+        logged = [{"s": None, "minutes": 70, "taskId": "11"}]
         p = dayplan.plan(day(items=[work(540, 600)], rows=[row(540, 600)], logged=logged), self.ctx)
         self.assertEqual(p["entries"], [])
 
@@ -990,13 +992,20 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual(p["totals"]["notCovered"], 0)
 
     def test_the_cap_leaves_no_entry_under_ten_minutes(self):
-        # 70 active minutes, 5 logged with no start: the cap takes 5 from the least sure entry, a lone 10 minutes
+        # 70 active minutes, 5 logged with no start to another task: both entries are work seen, so the cap cuts
+        # neither (never a 5-minute stub at 13:20) and the day says it is 5 over
         rows = [row(540, 600), row(800, 810, project="elsewhere", titles=["Something new"])]
         p = dayplan.plan(day(items=[work(540, 600), work(800, 810)], rows=rows,
                              logged=[{"s": None, "minutes": 5, "taskId": "9"}]), self.ctx)
-        self.assertEqual([(e["s"], e["e"]) for e in p["entries"]], [(540, 600)])  # not a 5-minute stub at 13:20
-        self.assertEqual(sum(u["minutes"] for u in p["unplaced"]), 10)
-        self.assertLessEqual(p["totals"]["proposed"] + p["totals"]["logged"], p["totals"]["cap"])
+        self.assertEqual([(e["s"], e["e"]) for e in p["entries"]], [(540, 600), (800, 810)])
+        self.assertTrue(all(e["minutes"] >= 10 for e in p["entries"]))
+        self.assertEqual(p["totals"]["over"], 5)
+        # an entry with more than its work seen (the grid, other work it took in) is cut back to it, never under ten
+        rows = [row(540, 600), row(800, 812, project="elsewhere", titles=["Something new"])]
+        p = dayplan.plan(day(items=[work(540, 600), work(800, 812)], rows=rows,
+                             logged=[{"s": None, "minutes": 30, "taskId": "9"}]), self.ctx)
+        self.assertTrue(all(e["minutes"] >= 10 for e in p["entries"]), p["entries"])
+        self.assertLessEqual(p["totals"]["proposed"], max(0, p["totals"]["cap"] - p["totals"]["logged"]) + p["totals"]["overLeft"])
 
     def test_an_entry_logged_over_the_hour_the_clocks_skip_ends_an_hour_later(self):
         # 01:30 + 60 minutes on the night the clocks go forward at 02:00 ends at 03:30 on the clock (gather's "e")

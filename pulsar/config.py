@@ -60,10 +60,12 @@ DEFAULTS = {
     "round_to": 5,               # 5 | 10 | 15 minutes: Log the day's grid and shortest entry, the log dialog's minutes
     "away_after": 15,            # 10 | 15 | 20 | 30 minutes without input that are time away (away_after)
     "working_days": [0, 1, 2, 3, 4],  # Monday 0 ... Sunday 6: Earlier days, the week line and the reminder
+    "likely_keep_days": 31,      # 31 | 62 | 92 | 183 | 365: past days' Likely columns kept on this Mac (likely.py)
     "advanced": {},  # Settings > Time and activity > Advanced: only the choices that differ from ADVANCED's defaults
 }
 
 ROUNDING = (5, 10, 15)
+LIKELY_KEEP = (31, 62, 92, 183, 365)  # days: the day view and the Report's parallel work reach this far back
 AWAY_AFTER = (10, 15, 20, 30)
 
 # Settings > Time and activity > Advanced: a closed set, each with its choices; the first value is the default
@@ -224,6 +226,8 @@ def _fits(key: str, value) -> bool:
         return not isinstance(value, bool) and value in ROUNDING
     if key == "away_after":
         return not isinstance(value, bool) and value in AWAY_AFTER
+    if key == "likely_keep_days":
+        return not isinstance(value, bool) and value in LIKELY_KEEP
     if key == "advanced":
         return isinstance(value, dict)
     if key == "logging_task":

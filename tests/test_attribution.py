@@ -487,6 +487,18 @@ class ParallelClientsTest(unittest.TestCase):
         self.assertTrue(all(b <= c for (_, b), (c, _) in zip(spans, spans[1:])), spans)  # one after the other
         self.assertEqual(p["uncovered"], [])
 
+    def test_the_agents_half_never_leaves_the_work_in_front_under_an_entry(self):
+        """2026-11-13: the agent's half, taken as one block from its first minute, took 7 of a client's 10 minutes in
+        front between short turns of other work, and both were lost. It comes first from what is too short to be an
+        entry anyway, and never takes the work in front under one."""
+        items = [work(600, 630)]
+        rows = [front(600, 604, "client-web"), front(604, 614, "client-web", titles=["Other title"]),
+                front(614, 630, "client-web")]
+        rows[1]["tasks"] = ["C2"]
+        p = plan(items, rows, [back(600, 630, "globex-site", tasks=["G1"])], ctx=self.ctx)
+        m = self.minutes(p)
+        self.assertGreaterEqual(m.get("C2", 0), 10, p["entries"])  # its ten minutes in front stay an entry
+
     def test_a_short_run_or_one_not_attended_is_ignored(self):
         for bg in (back(600, 612, "globex-site", tasks=["G1"]), back(600, 640, "globex-site", qualifies=False, tasks=["G1"])):
             p = plan([work(600, 660)], [front(600, 660, "client-web")], [bg], ctx=self.ctx)
@@ -826,7 +838,7 @@ class InvariantTest(unittest.TestCase):
         spans = sorted((e["s"], e["e"]) for e in p["entries"])
         for (a0, a1), (b0, b1) in zip(spans, spans[1:]):
             self.assertLessEqual(a1, b0, spans)
-        self.assertLessEqual(p["totals"]["proposed"] + p["totals"]["logged"], p["totals"]["cap"])
+        self.assertLessEqual(p["totals"]["proposed"], max(0, p["totals"]["cap"] - p["totals"]["logged"]) + p["totals"]["overLeft"])
         for task, most in seen.items():
             self.assertLessEqual(sum(e["minutes"] for e in p["entries"] if e["taskId"] == task), most, task)
 

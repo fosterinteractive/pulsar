@@ -762,7 +762,7 @@ class Run:
             self.fail("plan: active minutes are not the tracker's work minutes", (totals["active"], sum(work)))
         if totals["cap"] > sum(meetingish):
             self.fail("plan: the cap counts more than work and meetings", (totals["cap"], sum(meetingish)))
-        if entries and totals["proposed"] + totals["logged"] > totals["cap"]:
+        if entries and totals["proposed"] > max(0, totals["cap"] - totals["logged"]) + totals["overLeft"]:
             self.fail("plan: proposed plus logged exceeds active time plus meetings",
                       (totals["proposed"], totals["logged"], totals["cap"]))
         # short entries: a meeting someone attended, or work with nothing to join in its sitting (a meeting someone

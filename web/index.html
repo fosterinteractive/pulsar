@@ -231,12 +231,15 @@
         </section>
       </div>
       <div role="tabpanel" id="p-claude" aria-labelledby="t-claude" hidden>
-        <section data-k="likely column ask claude sessions sonnet haiku opus model models ai suggestions mcp connect notes new task draft log from a session deny sandbox account plan cost usage productive ask rules">
+        <section data-k="likely column keep past days history ask claude sessions sonnet haiku opus model models ai suggestions mcp connect notes new task draft log from a session deny sandbox account plan cost usage productive ask rules">
           <h3>Claude Code</h3>
           <p class="hint">The Likely column reads your Claude Code sessions on this Mac. Nothing is sent anywhere unless you switch on Claude Code below.</p>
           <label class="field"><span>“Likely” column</span>
             <select name="likely"><option value="auto">Show it when Claude Code sessions are found</option><option value="off">Hide it</option></select></label>
           <p class="hint" id="likely-hint"></p>
+          <label class="field"><span>Keep past days</span>
+            <select name="likely_keep_days"><option value="31">1 month</option><option value="62">2 months</option><option value="92">3 months</option><option value="183">6 months</option><option value="365">1 year</option></select></label>
+          <p class="hint">Past days of the Likely column, with session titles and first messages, stay on this Mac this long. The day view and the Report’s parallel work reach that far back. Task picks use their own record and do not change with it.</p>
           <label class="check"><input type="checkbox" name="ask_claude"> Use Claude Code with Pulsar</label>
           <p class="hint" id="claude-link"></p>
           <button type="button" class="btn sm bordered" id="claude-relink" hidden>Add Pulsar to Claude Code again</button>

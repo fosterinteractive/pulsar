@@ -163,6 +163,7 @@ function renderReport() {
   R.tasks = [...taskRows.values()].sort((a, b) => b.minutes - a.minutes).slice(0, 40);
   html += `<section class="chart"><div class="ch"><h2>Tasks against estimates</h2></div>
     <div class="take" id="tasks-take">Reading estimates from Productive…</div><div class="tblwrap" id="tasks-table"></div></section>`;
+  html += parallelSection(x.parallel);
   html += `<section class="chart"><div class="ch"><h2>Days</h2></div><div class="tblwrap">${daysTable(days)}</div></section>`;
   body.innerHTML = html;
   dailyChart(days);
@@ -321,6 +322,26 @@ function hourMatrix(hours, days) {
   });
   return h + '</div>';
 }
+/* the agents' work in the background while you were at other work, by project (pulsar/parallel.py), from the past
+   days' Likely columns kept on this Mac: how much ran, and how much your entries leave not logged (an estimate) */
+function parallelSection(par) {
+  if (!par) return '';
+  const head = `<section class="chart"><div class="ch"><h2>Parallel work</h2></div>`;
+  if (!par.days) return `${head}<div class="take">No past day in this range is kept on this Mac (Settings › Claude Code › Keep past days: ${par.keepDays} days).</div></section>`;
+  const ps = par.projects || [];
+  const take = ps.length
+    ? `Agents ran ${dur(par.parallel)} while you were at other work; about ${dur(par.notLogged)} of it is not in your entries.`
+    : 'No agent ran while you were at other work.';
+  const note = par.days < par.of ? ` From ${par.days} of ${par.of} days: the others are not kept on this Mac (Keep past days: ${par.keepDays}).` : '';
+  const rows = ps.map(p => `<tr><td>${esc(p.name)}${p.mapped ? '' : ' <span class="muted">(repository)</span>'}</td>
+      <td class="num">${dur(p.parallel)}</td><td class="num">${dur(p.front)}</td><td class="num">${dur(p.logged)}</td><td class="num">${dur(p.notLogged)}</td></tr>`).join('');
+  return `${head}<div class="take">${esc(take + note)}</div>
+    ${ps.length ? `<div class="tblwrap"><table class="tbl"><thead><tr><th>Project</th><th class="num" title="An agent's minutes in its repository while the work in front was another one">In parallel</th>
+      <th class="num" title="Its own work in front, those days">In front</th><th class="num" title="Logged to the project, those days">Logged</th>
+      <th class="num" title="Each day: the minutes in parallel less what you logged beyond its work in front">Not logged, about</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>` : ''}</section>`;
+}
+
 function daysTable(days) {
   const s = k => days.reduce((a, d) => a + d[k], 0);
   const src = d => (d.source === 'aw' ? 'ActivityWatch' : d.source === 'memtime' ? 'MemTime' : '–');

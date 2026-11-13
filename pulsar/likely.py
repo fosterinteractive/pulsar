@@ -124,10 +124,18 @@ _publish = threading.Lock()
 
 # Past days' Likely columns, kept on this Mac so a day looked at again (or after a restart) shows at once instead of
 # being worked out again (the script reads every session of the day: seconds). Rows with their session titles and
-# first messages, so only KEEP_DAYS days are kept; ↻ works a day out again.
+# first messages, so only keep_days() days are kept (31 unless Settings says more); ↻ works a day out again.
 DAYS_DIR = os.path.join(config.CACHE_DIR, "likely-full")
 DAYS_FORMAT = 2  # 2: rows at the real time of the work, and the background (1: the script's own layout)
-KEEP_DAYS = 31
+KEEP_DAYS = 31  # the default of Settings > Claude Code > Keep past days (config.LIKELY_KEEP)
+
+
+def keep_days(settings: dict | None = None) -> int:
+    """How many past days' Likely columns are kept: the setting, else KEEP_DAYS. Learning keeps its own shorter
+    record (learn.py, likely-days) and reads only its LEARN_DAYS, so this changes no prediction: 60 or 90 days of
+    learning came out the same on 26 days (2026-11-13), and older days weigh little at a 7-day half-life."""
+    v = (config.load() if settings is None else settings).get("likely_keep_days")
+    return v if v in config.LIKELY_KEEP and not isinstance(v, bool) else KEEP_DAYS
 
 
 def _day_path(date: str) -> str:
@@ -162,7 +170,7 @@ def _save_day(date: str, tz_name: str, result: dict) -> None:
         os.makedirs(DAYS_DIR, mode=0o700, exist_ok=True)
         config.write_atomic(_day_path(date), json.dumps({"format": DAYS_FORMAT, "timezone": tz_name,
                                                          "proposal": result}, ensure_ascii=False))
-        oldest = (datetime.now() - timedelta(days=KEEP_DAYS)).strftime("%Y-%m-%d")
+        oldest = (datetime.now() - timedelta(days=keep_days())).strftime("%Y-%m-%d")
         for name in os.listdir(DAYS_DIR):
             if name.endswith(".json") and name[:10] < oldest:
                 os.remove(os.path.join(DAYS_DIR, name))

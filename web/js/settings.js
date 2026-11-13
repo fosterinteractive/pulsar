@@ -24,6 +24,7 @@ function fillSettings(c) {
   const days = new Set(c.workingDays || [0, 1, 2, 3, 4]);
   document.querySelectorAll('#working-days input').forEach(x => { /** @type {HTMLInputElement} */ (x).checked = days.has(+/** @type {HTMLInputElement} */ (x).value); });
   f.away_after.value = String(c.awayAfter || 15);
+  f.likely_keep_days.value = String(c.likelyKeepDays || 31);
   const adv = c.advanced || {};
   for (const k of ADV_KEYS) {
     const el = /** @type {HTMLSelectElement} */ (f[`adv_${k}`]);
@@ -372,7 +373,7 @@ async function saveSettings(extra = {}) {
   const body = {
     productive_source: f.productive_source.value, org_id: f.org_id.value.trim(), person_id: f.person_id.value.trim(),
     timezone: f.timezone.value.trim(), target_hours: f.target_hours.value.trim(), round_to: +f.round_to.value,
-    away_after: +f.away_after.value,
+    away_after: +f.away_after.value, likely_keep_days: +f.likely_keep_days.value,
     working_days: [...document.querySelectorAll('#working-days input:checked')].map(x => +/** @type {HTMLInputElement} */ (x).value),
     advanced: {...Object.fromEntries(ADV_KEYS.map(k => {
       const v = /** @type {HTMLSelectElement} */ (f[`adv_${k}`]).value;
