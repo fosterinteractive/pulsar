@@ -2790,7 +2790,7 @@ def undo_ids(doc: dict, run: str) -> list:
     """The entries this run created and still stands by: only its own rows marked logged, with their ids."""
     rec = next((r for r in doc.get("runs") or [] if r.get("run") == run), None)
     return [{"id": str(x["id"]), "row": x.get("row"), "date": x.get("date"), "start": x.get("start"),
-             "minutes": x.get("minutes"), "taskId": x.get("taskId")}
+             "minutes": x.get("minutes"), "taskId": x.get("taskId"), "taskStatus": x.get("taskStatus") or {}}
             for x in (rec or {}).get("rows") or [] if x.get("status") == "logged" and x.get("id")]
 
 

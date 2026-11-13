@@ -1278,6 +1278,63 @@ def workflow_statuses(project_id: str, settings: dict) -> list:
     return sorted(out, key=lambda x: (x["category"], x["position"]))
 
 
+def task_status(task_id: str, settings: dict) -> dict:
+    """{"statusId", "projectId"}: a task's workflow status now and its project. Read only (Log the day's "Status after
+    logging", and Undo putting a status back)."""
+    if not str(task_id or "").isdigit():
+        raise ProductiveError("Pick a task.")
+    conn = _need(settings)
+    if conn["kind"] == "token":
+        status, doc = rest_get(f"/tasks/{int(task_id)}", {}, conn["token"], settings.get("org_id"))
+        if status != 200 or not isinstance(doc, dict):
+            raise ProductiveError(f"Productive did not return the task ({why(status, doc)}).")
+        d = doc.get("data") or {}
+        return {"statusId": _rel(d, "workflow_status") or "", "projectId": _rel(d, "project") or ""}
+    item = parse_mcp(mcp_text("load_resource", {"resource_type": "tasks", "id": str(task_id),
+                                                "include_fields": ["workflow_status", "project"]}, conn["token"])).get("item") or {}
+    f = item.get("fields") or {}
+    ref = lambda v: str((v.get("id") if isinstance(v, dict) else _id_of(v)) or "")  # noqa: E731
+    return {"statusId": ref(f.get("workflow_status")), "projectId": ref(f.get("project"))}
+
+
+STATUS_UNCLEAR = "No clear answer from Productive about the task's status ({}): check the task in Productive."
+
+
+def set_task_status(task_id: str, status_id: str, settings: dict) -> None:
+    """Moves one task to a workflow status: Log the day's "Status after logging", sent after the row's entry was
+    written, and Undo putting the status back. Only from an explicit Log or Undo in the page."""
+    if not (str(task_id).isdigit() and str(status_id).isdigit()):
+        raise ProductiveError("Pick a task and a status.")
+    conn = _write_conn(settings)
+    if conn["kind"] == "token":
+        body = {"data": {"type": "tasks", "id": str(task_id), "relationships": {
+            "workflow_status": {"data": {"type": "workflow_statuses", "id": str(status_id)}}}}}
+        try:
+            status, raw = https("PATCH", f"{API}/tasks/{int(task_id)}", json.dumps(body).encode("utf-8"),
+                                _rest_headers(conn, settings), timeout=30, write=True)
+        except (OSError, http.client.HTTPException) as exc:
+            raise ProductiveUnclear(STATUS_UNCLEAR.format(exc))
+        if status >= 500:
+            raise ProductiveUnclear(STATUS_UNCLEAR.format(f"HTTP {status}"))
+        if status != 200:
+            raise ProductiveError(plain_refusal(raw[:20000].decode("utf-8", "replace"), "the status change", status))
+        return
+    token = conn["token"]
+    try:  # Productive's MCP changes only the fields this session has loaded: load the status first, in one session
+        session = mcp_session(token)
+        mcp_text("load_resource", {"resource_type": "tasks", "id": str(task_id), "include_fields": ["workflow_status"]},
+                 token, session)
+        text = mcp_text("update_resource", {"resource_type": "tasks",
+                                            "items": [{"id": str(task_id), "workflow_status": str(status_id)}]}, token, session)
+    except ProductiveError:
+        raise
+    except (OSError, http.client.HTTPException, ValueError) as exc:
+        raise ProductiveUnclear(STATUS_UNCLEAR.format(exc))
+    if not (_said(r"task updated \(IDs?:\s*(\d+)\)", text, task_id)
+            or _said(r"updated 1 tasks? \(IDs?:\s*(\d+)\)", text, task_id)):
+        raise ProductiveUnclear(STATUS_UNCLEAR.format("Productive said: " + (text[:200] or "nothing")))
+
+
 def _write_conn(settings: dict) -> dict:
     if config.writes_blocked():  # tests, demos, and a preview not allowed to write: nothing may reach Productive
         raise ProductiveError(config.writes_blocked())

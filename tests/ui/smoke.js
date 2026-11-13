@@ -197,6 +197,14 @@ try {
     check("a row's end sets its minutes, and its minutes its end, the start staying", endOk && minOk,
       `end ${endOk}, minutes ${minOk}, ${tr.s}-${tr.e} ${tr.minutes} min`);
 
+    // a row's "Status after logging": the task's workflow statuses, the one it has now marked, sent with the row
+    const sr = {id: 'st1', s: 600, e: 630, minutes: 30, taskId: '5', title: 'A', project: 'P', serviceId: '6', services: [],
+                alts: [], flags: [], why: 'w', note: '', status: null, statusNow: '10', statusId: '30', statusName: 'QA',
+                statusList: [{id: '10', name: 'In progress'}, {id: '30', name: 'QA'}, {id: '40', name: 'Done'}]};
+    const sh = editorHTML(sr), sb = rowBody(sr);
+    check("a row offers the task's statuses after logging and sends the one picked", sh.includes('Status after logging')
+      && sh.includes('In progress (now)') && /value="30" selected/.test(sh) && sb.statusId === '30', `${sb.statusId} ${sh.length}`);
+
     // the Report's parallel work: per project, in parallel and about how much is not logged (2026-11-13, the owner)
     const par = parallelSection({days: 26, of: 30, keepDays: 31, parallel: 125, notLogged: 80,
                                  projects: [{name: 'Clientco', mapped: true, parallel: 95, front: 300, logged: 330, notLogged: 65},

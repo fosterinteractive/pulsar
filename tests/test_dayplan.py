@@ -1324,6 +1324,44 @@ class WriteTest(unittest.TestCase):
         with self.assertRaises(ValueError):  # and while it is there, changed, it is not logged twice either
             server.api_log(self.body(row="r9", start="11:00"))
 
+    def test_a_rows_status_after_logging_moves_its_task_after_the_entry_and_undo_puts_it_back(self):
+        """2026-11-13, the owner: a ticket finished while logging goes to QA or Done from Log the day. Only once the
+        entry is written, recorded for Undo, and Undo puts it back unless it was moved again since."""
+        task = {"5": "10"}  # task -> its status now, as Productive has it
+        moves = []
+
+        def move(tid, sid, s):
+            self.assertTrue(self.created, "the entry is written first")
+            moves.append((tid, sid))
+            task[tid] = sid
+        with mock.patch.object(server.productive, "task_status", lambda tid, s: {"statusId": task[tid], "projectId": "9"}), \
+                mock.patch.object(server.productive, "set_task_status", move):
+            got = server.api_log(self.body(statusId="30"))
+            self.assertEqual((got["created"], got["taskStatus"]), ({"id": "501"}, "changed"))
+            self.assertEqual(moves, [("5", "30")])
+            [x] = dayplan.undo_ids(dayplan.journal(), self.run)
+            self.assertEqual(x["taskStatus"], {"taskId": "5", "from": "10", "to": "30"})
+            got = server.api_entry_delete({"id": "501", "date": DATE, "run": self.run})
+            self.assertEqual(got, {"deleted": "501", "statusBack": True})
+            self.assertEqual((moves[-1], task["5"]), (("5", "10"), "10"))
+            # moved by hand since: Undo deletes the entry and leaves the status
+            server._just_logged.clear()
+            server.api_log(self.body(row="r2", start="11:00", statusId="30"))
+            task["5"] = "40"
+            got = server.api_entry_delete({"id": "502", "date": DATE, "run": self.run})
+            self.assertEqual((got["deleted"], task["5"]), ("502", "40"))
+            self.assertIn("changed since", got["statusLeft"])
+
+    def test_a_status_productive_refuses_leaves_the_entry_written_and_says_so(self):
+        def refuse(tid, sid, s):
+            raise productive.ProductiveError("Productive refused the status change: not allowed")
+        with mock.patch.object(server.productive, "task_status", lambda tid, s: {"statusId": "10", "projectId": "9"}), \
+                mock.patch.object(server.productive, "set_task_status", refuse):
+            got = server.api_log(self.body(statusId="30"))
+        self.assertEqual(got["created"], {"id": "501"})
+        self.assertIn("not changed", got["statusError"])
+        self.assertEqual(dayplan.undo_ids(dayplan.journal(), self.run)[0]["taskStatus"], {})
+
     def test_undo_carries_on_past_entries_deleted_or_changed_by_hand(self):
         for i, start in enumerate(("10:00", "11:00", "12:00")):
             server.api_log(self.body(row=f"r{i}", start=start))           # 501, 502, 503

@@ -1697,6 +1697,44 @@ def api_entry_update(body: dict) -> dict:
         return {"updated": mine["id"]}
 
 
+_statuses: dict = {}  # project -> (time read, its workflow's statuses): ten minutes
+
+
+def api_task_statuses(q: dict) -> dict:
+    """Log the day's "Status after logging": the statuses a task can take (its project's workflow) and the one it has
+    now. Read only."""
+    s = current_settings()
+    tid = str(q.get("task") or "")
+    if not is_id(tid):
+        raise ValueError("task=<id>")
+    now = productive.task_status(tid, s)
+    got = _statuses.get(now["projectId"])
+    if not got or time.time() - got[0] > 600:
+        got = (time.time(), productive.workflow_statuses(now["projectId"], s))
+        _statuses[now["projectId"]] = got
+    return {"current": now["statusId"], "statuses": got[1]}
+
+
+def _status_after(task_id: str, want: str, s: dict, note, entry_id: str) -> dict:
+    """The task's status moved as the row asked, once its entry is written: kept in the journal for Undo (taskStatus),
+    and only when it is not that status already. A refusal leaves the entry as written and says so on the row."""
+    try:
+        before = productive.task_status(task_id, s)["statusId"]
+        if before == want:
+            return {"taskStatus": "unchanged"}
+        productive.set_task_status(task_id, want, s)
+    except productive.ProductiveError as exc:
+        logbook.record("log the day", f"Entry {entry_id} was logged, but its task's status was not changed: {exc}",
+                       kind="warning")
+        return {"statusError": f"Logged, but the task's status was not changed: {exc}"}
+    try:
+        note("logged", id=entry_id, taskStatus={"taskId": task_id, "from": before, "to": want})
+    except Exception as exc:  # moved all the same: Undo will not put it back
+        logbook.record("log the day", f"Task {task_id}'s status was changed, but Pulsar could not record it for Undo: "
+                       f"{type(exc).__name__}: {exc}", kind="error")
+    return {"taskStatus": "changed"}
+
+
 def api_entry_delete(body: dict) -> dict:
     """Deletes one of your entries, after the page asked "Delete …?" and only as it showed it (`seen`). Productive
     keeps it in its Recycle Bin. With `run` (Undo in Log the day), only an entry that run created, and only as it wrote it."""
@@ -1729,10 +1767,25 @@ def api_entry_delete(body: dict) -> dict:
         if body.get("dry"):
             return {"dry": True, "wouldDelete": mine["id"]}
         productive.delete_entry(mine["id"], s)
+        back: dict = {}
         if run is not None:
             dayplan.mark_undone(str(run), mine["id"])
+            back = _status_back(x.get("taskStatus") or {}, s)
         _recent.clear()
-        return {"deleted": mine["id"]}
+        return {"deleted": mine["id"], **back}
+
+
+def _status_back(moved: dict, s: dict) -> dict:
+    """Undo of a row whose task's status Log the day moved: put back, unless someone moved it again since."""
+    if not (moved.get("taskId") and moved.get("from") and moved.get("to")):
+        return {}
+    try:
+        if productive.task_status(moved["taskId"], s)["statusId"] != moved["to"]:
+            return {"statusLeft": "the task's status was changed since, so Undo left it"}
+        productive.set_task_status(moved["taskId"], moved["from"], s)
+    except productive.ProductiveError as exc:
+        return {"statusError": f"The entry was deleted, but the task's status was not put back: {exc}"}
+    return {"statusBack": True}
 
 
 def api_dayplan(q: dict) -> dict:
@@ -2006,6 +2059,9 @@ def _log_checked(body: dict, s: dict, date: str, begin, minutes: int, task_id: s
                        f"{type(exc).__name__}: {exc}", kind="error")
         return {"created": created, "warning": "Logged, but Pulsar could not keep a record of it, so Undo will not "
                                                "offer this entry."}
+    want = str(body.get("statusId") or "")  # Log the day's "Status after logging": only after the entry is written
+    if journal and is_id(want):
+        return {"created": created, **_status_after(task_id, want, s, note, str(created.get("id") or ""))}
     return {"created": created}
 
 
@@ -2166,6 +2222,7 @@ class Handler(BaseHTTPRequestHandler):
                       "/api/dayplan": api_dayplan, "/api/dayplan/journal": api_dayplan_journal, "/api/range": api_range,
                       "/api/likely/picks": api_likely_picks, "/api/task/projects": api_task_projects,
                       "/api/task/places": api_task_places, "/api/task/fields": api_task_fields,
+                      "/api/task/statuses": api_task_statuses,
                       "/api/daymarks": lambda q: daymarks.get(q["date"])}
             if url.path not in routes:
                 return self.send(404, b"not found", "text/plain")

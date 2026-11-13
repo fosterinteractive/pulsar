@@ -330,7 +330,7 @@ function ldFocus(el) {
   const a = /** @type {HTMLInputElement} */ (document.activeElement);
   if (!a || !el.contains(a) || !/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return null;
   const row = /** @type {HTMLElement} */ (a.closest('[data-row]'))?.dataset.row;
-  const attr = [...a.attributes].map(x => x.name).find(n => /^data-ld-(note|start|end|min|svc)$/.test(n));
+  const attr = [...a.attributes].map(x => x.name).find(n => /^data-ld-(note|start|end|min|svc|status)$/.test(n));
   let at = null; try { at = [a.selectionStart, a.selectionEnd]; } catch (e) { /* a number field has no caret */ }
   return row && attr ? {row, attr, value: a.value, at} : null;
 }
@@ -484,6 +484,11 @@ function editorHTML(r) {
       ${r.serviceId ? '' : '<option value="">' + (svcs.length ? 'Pick a service' : r.taskId ? 'Loading or none on this date' : 'Pick a task first') + '</option>'}
       ${svcs.map(x => `<option value="${esc(x.id)}"${x.id === r.serviceId ? ' selected' : ''}>${esc(x.name)}${x.budget ? ' · ' + esc(x.budget) : ''}${x.billable ? ' · billable' : x.billable === false ? ' · not billable' : ''}</option>`).join('')}
     </select></label>
+    <label class="field"><span>Status after logging</span><select data-ld-status${r.taskId && r.statusList ? '' : ' disabled'}>
+      <option value="">${!r.taskId ? 'Pick a task first' : r.statusProblem ? 'Could not read the statuses' : r.statusList ? 'No change' : 'Loading…'}</option>
+      ${(r.statusList || []).map(x => `<option value="${esc(x.id)}"${x.id === r.statusId ? ' selected' : ''}>${esc(x.name)}${x.id === r.statusNow ? ' (now)' : ''}</option>`).join('')}
+    </select></label>
+    ${r.statusProblem ? `<p class="hint">${esc(r.statusProblem)}</p>` : ''}
     <div class="tl"><label class="field"><span>Start</span><input type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="9" placeholder="HH:MM" title="A time: 14:30, or 2:30 pm" data-ld-start value="${hm24(r.s)}"></label>
       <label class="field"><span>End</span><input type="text" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="9" placeholder="HH:MM" title="A time: 15:10, or 3:10 pm. The minutes follow it; the start stays" data-ld-end value="${hm24(r.s + r.minutes)}"></label>
       <label class="field"><span>Minutes</span><input type="number" min="${Math.max(CONFIG?.roundTo || 5, minEntry())}" max="720" step="${CONFIG?.roundTo || 5}" title="The end follows them; the start stays" data-ld-min value="${r.minutes}"></label></div>
@@ -525,6 +530,10 @@ function wireEditor(r) {
     const v = Math.round(+ev.target.value); if (!(v >= 1 && v <= 1440 - r.s)) { ev.target.value = r.minutes; return; }
     r.minutes = v; r.e = r.s + v; ldChanged(r);
   };
+  li.querySelector('[data-ld-status]').onchange = ev => {  // moved only after the row's entry is written (server)
+    const x = (r.statusList || []).find(s => s.id === ev.target.value);
+    r.statusId = x && x.id !== r.statusNow ? x.id : null; r.statusName = r.statusId ? x.name : ''; ldChanged(r);
+  };
   li.querySelector('[data-ld-note]').onfocus = () => ldDraftNote(r);
   li.querySelector('[data-ld-note]').oninput = ev => { r.note = ev.target.value; r.noteEdited = true; r.edited = true;
     const h = li.querySelector('.ed .hint'); if (h) h.innerHTML = noteHint(r); };
@@ -564,9 +573,23 @@ async function ldDraftNote(r) {
   // typed meanwhile: only the hint changes, so the field keeps its focus
   const hint = $(`#review [data-row="${row.id}"] .ld-note-hint`); if (hint) hint.innerHTML = noteHint(row);
 }
+/* "Status after logging": the statuses the row's task can take (its project's workflow), read once per task */
+const ldStatusCache = new Map();
+async function ldLoadStatuses(r) {
+  if (!r?.taskId || r.statusList || r.statusLoading) return;
+  const tid = r.taskId;
+  r.statusLoading = true;
+  let got = ldStatusCache.get(tid);
+  if (!got) { got = await getJSON(`/api/task/statuses?task=${tid}`).catch(() => ({error: 'No answer.'})); if (!got.error) ldStatusCache.set(tid, got); }
+  r.statusLoading = false;
+  if (r.taskId !== tid) return;
+  if (got.error) { r.statusProblem = got.error; } else { r.statusList = got.statuses || []; r.statusNow = got.current || ''; }
+  if (LD.open === r.id) renderReview();
+}
 function ldOpen(id, scroll = false) {
   const r = ldRow(id); if (!r || LD.writing) return;
   LD.open = LD.open === id && !scroll ? null : id; r.opened = true;
+  if (LD.open === id) ldLoadStatuses(r);
   renderReview(); render();
   if (scroll) {
     const li = $(`#review [data-row="${id}"]`);
@@ -580,7 +603,8 @@ async function ldSetTask(r, t) {
   if (LD.writing) return;
   Object.assign(r, {taskId: String(t.taskId), title: t.title || '', project: t.project || '', serviceId: null, service: '',
                     services: [], billable: null, edited: true, opened: true, source: 'you', why: 'picked by you', confidence: 'high',
-                    ticket: []});  // the new task's flags come with its services
+                    ticket: [], statusId: null, statusName: '', statusList: null, statusNow: '', statusProblem: ''});  // the new task's flags come with its services
+  ldLoadStatuses(r);
   r.flags = r.flags.filter(f => !['notask', 'low', 'noservice', 'claudefound'].includes(f));
   if (r.noteFrom === 'claude' && !r.noteEdited) { r.note = ''; r.noteFrom = ''; r.flags = r.flags.filter(f => f !== 'claudenote'); }  // Claude wrote it for another task
   renderReview(); render();  // its note, if Claude's for the old task, went: a new draft when the note field is focused
@@ -697,6 +721,7 @@ function openConfirm(dry = null) {
   const claudeNote = r => ['claude', 'session'].includes(r.noteFrom) && !r.noteEdited;
   const lines = live.map(r => `<li class="cl-r"><span class="num">${hm(r.s)}</span><span><b>${esc(r.title)}</b>
       <small>${esc([r.project, r.service, r.budget].filter(Boolean).join(' · '))}${r.billable ? ' <span class="bill">$</span>' : ''}</small>
+      ${r.statusId ? `<small>Then the task goes to “${esc(r.statusName)}”</small>` : ''}
       ${r.flags.includes('claudefound') ? `<small class="cl-c">${CLAUDE_MARK.split('<span')[0]}Claude found this task by searching Productive; you have not logged to it lately.</small>` : ''}
       ${r.shared && !r.halfOf && r.choice !== 'internal' ? `<small class="cl-s">Shared: ${r.choice === 'half' ? 'half each with your internal work' : 'its agent ran while you did internal work'}.</small>` : ''}
       ${r.note ? `<small class="cl-n">${claudeNote(r) ? `${CLAUDE_MARK.split('<span')[0]}<span class="cl-by">Claude's note:</span> ` : ''}${esc(r.note)}</small>` : ''}
@@ -724,7 +749,8 @@ ldDlg.addEventListener('click', ev => {
 ldDlg.addEventListener('close', () => { if (LD.claudeLate) ldClaudePlan(...LD.claudeLate); });
 
 const rowBody = r => ({date: LD.date, start: hm24(r.s), minutes: r.minutes, taskId: r.taskId, serviceId: r.serviceId,
-                       note: (r.note || '').trim(), run: LD.run, row: r.id, proposed: r.orig || null});
+                       note: (r.note || '').trim(), run: LD.run, row: r.id, proposed: r.orig || null,
+                       ...(r.statusId ? {statusId: r.statusId} : {})});
 function newRun() {
   const hex = [...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('');
   return `ld-${LD.date}-${hex}`;
@@ -756,7 +782,7 @@ async function writeRun() {
     const r = ldRow(id) || {id};  // the row on screen: nothing in the panel can change or remove it while writing
     r.status = 'writing'; renderReview(); render();
     const res = await postJSON('/api/log', body);
-    if (res.created) { Object.assign(r, {status: 'logged', entryId: res.created.id, thisRun: true, reason: res.warning || ''}); continue; }
+    if (res.created) { Object.assign(r, {status: 'logged', entryId: res.created.id, thisRun: true, reason: res.warning || res.statusError || ''}); continue; }
     r.status = res.unclear ? 'unknown' : 'refused';  // unclear: it may be in Productive, and is never sent again
     r.reason = res.overlap ? `It would overlap ${res.overlap.map(o => `${o.start} ${o.project}`).join(', ')}.` : res.error || 'No answer.';
     stopped = r; break;
@@ -813,18 +839,21 @@ function ldResultsBox() {
 async function undoRun() {
   LD.undoAsk = false; LD.writing = true; LD.undoing = true; LD.writeCount = LD.undo.length; renderReview();
   let deleted = 0;
-  const left = [];  // each one is tried: one deleted or changed by hand, or refused, never holds up the rest
+  const left = [], said = [];  // each one is tried: one deleted or changed by hand, or refused, never holds up the rest
   for (const x of LD.undo) {
     const res = await postJSON('/api/entry/delete', {id: x.id, date: LD.date, run: LD.run});
     if (!res.deleted) { left.push(`${x.start || ''} ${res.why || res.error || 'no answer'}`.trim()); continue; }
     deleted++;
+    if (res.statusError || res.statusLeft) said.push(`${x.start || ''} ${res.statusError || res.statusLeft}`.trim());
     const r = LD.rows.find(r => r.entryId === x.id);  // back to a proposal, unticked
-    if (r) Object.assign(r, {status: null, thisRun: false, checked: false, entryId: null, reason: 'Undone: deleted from Productive.'});
+    if (r) Object.assign(r, {status: null, thisRun: false, checked: false, entryId: null,
+                             reason: `Undone: deleted from Productive${res.statusBack ? ', and the task back to its status before' : ''}.`});
   }
   await syncJournal();  // the journal says what Undo still offers
   LD.writing = false; LD.undoing = false;
   renderReview(); render();
   refreshLogged().then(() => renderReview());
-  toast(left.length ? `Undo deleted ${deleted}; ${left.length} could not be deleted: ${left.join('; ')}.`
-                    : `Undone: the ${deleted} ${deleted === 1 ? 'entry' : 'entries'} just logged ${deleted === 1 ? 'was' : 'were'} deleted.`, !!left.length);
+  toast((left.length ? `Undo deleted ${deleted}; ${left.length} could not be deleted: ${left.join('; ')}.`
+                     : `Undone: the ${deleted} ${deleted === 1 ? 'entry' : 'entries'} just logged ${deleted === 1 ? 'was' : 'were'} deleted.`)
+        + (said.length ? ` ${said.join('; ')}.` : ''), !!(left.length || said.length));
 }
