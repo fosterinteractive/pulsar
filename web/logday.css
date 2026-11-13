@@ -2,10 +2,10 @@
    each proposal), the Logged column shows the proposed entries as dashed cards, and the side panel becomes the review. */
 #log-day { right: 92px; }
 .rv-on #dayview { grid-template-columns: minmax(0, 1fr) 440px; }
-.rv-on .cols, .rv-on .grid { grid-template-columns: 56px minmax(0, 1fr) minmax(0, .8fr) minmax(0, 1.2fr); }
-.has-meetings.rv-on .cols, .has-meetings.rv-on .grid { grid-template-columns: 56px minmax(0, .5fr) minmax(0, .9fr) minmax(0, .75fr) minmax(0, 1.1fr); }
-.no-likely.rv-on .cols, .no-likely.rv-on .grid { grid-template-columns: 56px minmax(0, 1.1fr) minmax(0, 1.3fr); }
-.has-meetings.no-likely.rv-on .cols, .has-meetings.no-likely.rv-on .grid { grid-template-columns: 56px minmax(0, .55fr) minmax(0, 1fr) minmax(0, 1.3fr); }
+.rv-on .cols, .rv-on .grid { grid-template-columns: 56px var(--plan-w) minmax(0, 1fr) minmax(0, .8fr) minmax(0, 1.2fr); }
+.has-meetings.rv-on .cols, .has-meetings.rv-on .grid { grid-template-columns: 56px var(--plan-w) minmax(0, .5fr) minmax(0, .9fr) minmax(0, .75fr) minmax(0, 1.1fr); }
+.no-likely.rv-on .cols, .no-likely.rv-on .grid { grid-template-columns: 56px var(--plan-w) minmax(0, 1.1fr) minmax(0, 1.3fr); }
+.has-meetings.no-likely.rv-on .cols, .has-meetings.no-likely.rv-on .grid { grid-template-columns: 56px var(--plan-w) minmax(0, .55fr) minmax(0, 1fr) minmax(0, 1.3fr); }
 .rv-on aside > .box { display: none; }
 .rv-on #lane-logged .card.repeat { display: none; }  /* the proposal has them already */
 .rv-ignore #lane-logged .card.logged { display: none; }  /* test view: worked out as if nothing were logged */
