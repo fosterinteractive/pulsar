@@ -6,7 +6,7 @@ What each Pulsar release changed, newest first.
      "Unreleased" collects what is merged but not released: at release, rename it to the version and date.
      Settings and release.sh read only version headings, so the lines under "Unreleased" show nowhere until then. -->
 
-## Unreleased
+## 1.6.20 (2026-11-13)
 - Log the day: each row has a Start, an End and Minutes. Changing the end sets the minutes, changing the minutes moves the end, and the start stays where you put it.
 - Log on a Likely block offers Log the day's task first, as a picked stretch does: on 30 days the block's own first offer was the task logged on 29% of its minutes, Log the day's on 48%.
 - A task Claude only opened in Productive comes after the session's own vote, never makes internal work a client's, and never brings back a repository you never log: on 26 days, 116 fewer minutes on a wrong client and 112 fewer over-billed. A task link you give, a ticket key or a rule still does.
