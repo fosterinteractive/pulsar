@@ -223,9 +223,13 @@ try {
     // Planned: the day's bookings from 10:00 one after another; closed, no column at all, only the icon above the time
     // axis, lit when the day has a booking and plain when it has none (the owner, 2026-11-13)
     const booked0 = state.booked, open0 = (() => { try { return localStorage.getItem('pulsar-planned-open'); } catch (e) { return null; } })();
+    const seen0 = (() => { try { return localStorage.getItem('pulsar-planned-seen'); } catch (e) { return null; } })();
     state.booked = {date: state.date, bookings: [{id: 'b1', kind: 'work', title: 'SEO audit', service: 'Support', taskId: '7', minutes: 30, draft: false},
                                                  {id: 'b2', kind: 'work', title: 'Pairing', service: 'Dev', taskId: '9', minutes: 60, draft: true},
                                                  {id: 'b3', kind: 'absence', title: 'Vacation', minutes: 480, draft: false}]};
+    try { localStorage.setItem('pulsar-planned-open', '0'); localStorage.removeItem('pulsar-planned-seen'); } catch (e) { /* no storage */ }
+    render();
+    const unseenLit = q('#plan-tg').classList.contains('has') && !q('#plan-tg').classList.contains('seen');
     try { localStorage.setItem('pulsar-planned-open', '1'); } catch (e) { /* no storage: folded */ }
     render();
     const cards = [...document.querySelectorAll('#lane-plan .card.plan')].map(c => c.getAttribute('aria-label'));
@@ -234,18 +238,19 @@ try {
     try { localStorage.setItem('pulsar-planned-open', '0'); } catch (e) { /* as above */ }
     render();
     const narrow = q('#lane-plan').getBoundingClientRect().width + q('.colhead.plancol').getBoundingClientRect().width;
-    const icon = q('#plan-tg'), lit = icon.classList.contains('has') && icon.getBoundingClientRect().width > 0
+    const icon = q('#plan-tg'), seenAfter = icon.classList.contains('seen'), lit = icon.classList.contains('has') && icon.getBoundingClientRect().width > 0
       && icon.closest('.colhead.axishead') !== null && icon.getAttribute('aria-expanded') === 'false';
     state.booked = {date: state.date, bookings: []};
     render();
     const plain = !icon.classList.contains('has');
     state.booked = booked0;
     try { if (open0 == null) localStorage.removeItem('pulsar-planned-open'); else localStorage.setItem('pulsar-planned-open', open0); } catch (e) { /* as above */ }
+    try { if (seen0 == null) localStorage.removeItem('pulsar-planned-seen'); else localStorage.setItem('pulsar-planned-seen', seen0); } catch (e) { /* as above */ }
     render();
-    check('Planned shows the bookings from 10:00; closed, only its icon, lit on a day with bookings', cards.length === 2
-      && cards[0].includes('SEO audit') && cards[1].includes('tentative') && tops[1] > tops[0] && away.includes('Vacation')
-      && wide > 60 && narrow === 0 && lit && plain,
-      `${cards.join(' | ')} | ${tops.join(',')} | ${away} | ${Math.round(wide)} → ${Math.round(narrow)} | lit ${lit} plain ${plain}`);
+    check('Planned shows the bookings from 10:00; closed, only its icon, lit on a day with bookings, quiet once seen',
+      cards.length === 2 && cards[0].includes('SEO audit') && cards[1].includes('tentative') && tops[1] > tops[0]
+      && away.includes('Vacation') && wide > 60 && narrow === 0 && unseenLit && lit && seenAfter && plain,
+      `${cards.join(' | ')} | ${tops.join(',')} | ${away} | ${Math.round(wide)} → ${Math.round(narrow)} | unseen ${unseenLit} lit ${lit} seen ${seenAfter} plain ${plain}`);
 
     // every layout keeps each column in its own place, Log the day's included (2026-11-13: without room for Planned
     // there, the Logged column fell under the time axis)

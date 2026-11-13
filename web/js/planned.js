@@ -1,6 +1,6 @@
 /* Planned: your bookings in Productive's Resource Planner on the day, in a column beside Meetings (the owner,
-   2026-11-13). Hidden by default, with only an icon above the time axis, lit when the day has a booking; a click
-   opens the column, and this Mac remembers. A booking has dates and
+   2026-11-13). Hidden by default, with only an icon above the time axis, lit when the day has a booking (a sheen until
+   the column has been open with it, then quiet); a click opens the column, and this Mac remembers. A booking has dates and
    an amount (hours a day, a share of the day, or hours over its period), never a time of day, so the day's bookings are
    laid one after another from 10:00, each as long as its share of the day; an absence is a line under the title. Each
    says how much you logged to its task that day. day.js calls loadBookings() from load(), renderPlanned() from
@@ -8,6 +8,16 @@
 let planCache = [];
 const PLAN_FROM = 600;  // 10:00: bookings have no time of day
 const planOpen = () => { try { return localStorage.getItem('pulsar-planned-open') === '1'; } catch (e) { return false; } };
+// the bookings already seen, by day ({date: [booking ids]}, the last 31 days): a booking seen once lights the icon no more
+const SEEN_KEY = 'pulsar-planned-seen';
+const seenAll = () => { try { return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}') || {}; } catch (e) { return {}; } };
+const planSeen = (date, ids) => { const had = seenAll()[date] || []; return ids.every(i => had.includes(i)); };
+function markPlanSeen(date, ids) {
+  try {
+    const m = {...seenAll(), [date]: ids};
+    localStorage.setItem(SEEN_KEY, JSON.stringify(Object.fromEntries(Object.keys(m).sort().slice(-31).map(k => [k, m[k]]))));
+  } catch (e) { /* this Mac forgets: the icon stays lit */ }
+}
 
 function loadBookings(d, fresh = false) {
   if (CONFIG?.planned === false) { state.booked = null; return Promise.resolve(null); }  // switched off in Settings
@@ -32,7 +42,10 @@ function renderPlanned(ppm) {
   // the icon above the time axis: lit when the day has a booking, plain when it has none
   const what = [work.length ? `${work.length} booking${work.length === 1 ? '' : 's'}, ${dur(total)}` : '',
                 away.length ? away.map(x => x.title).join(', ') : ''].filter(Boolean).join(' · ');
+  const ids = list.map(x => String(x.id));
+  if (open && b && !b.error && ids.length && !planSeen(state.date, ids)) markPlanSeen(state.date, ids);
   tg.classList.toggle('has', !!(work.length || away.length));
+  tg.classList.toggle('seen', ids.length > 0 && planSeen(state.date, ids));
   tg.setAttribute('aria-expanded', String(open));
   tg.title = `Planned in Productive's Resource Planner: ${b?.error ? 'could not be read' : what || (b ? 'nothing this day' : '…')}. `
     + `Click to ${open ? 'hide' : 'show'} it.`;

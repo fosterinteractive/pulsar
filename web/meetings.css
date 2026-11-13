@@ -39,25 +39,22 @@ body:not(.plan-open) .colhead.plancol, body:not(.plan-open) .lane.plancol { visi
 .plan-tg svg { display: block; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round;
   stroke-linejoin: round; }
 .plan-tg:hover { background: var(--hover); color: var(--text); }
-/* a day with a booking, closed: a ring in the logo's colours turns slowly round the icon, and a soft glow circles inside */
-@property --plan-a { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
-.plan-tg.has {
-  --plan-base: color-mix(in srgb, var(--accent) 14%, var(--panel));
-  color: var(--accent);
-  background:
-    radial-gradient(circle 13px at calc(50% + 32% * cos(var(--plan-a))) calc(50% + 32% * sin(var(--plan-a))),
-      rgb(244 114 182 / .32), transparent) padding-box,
-    linear-gradient(var(--plan-base), var(--plan-base)) padding-box,
-    conic-gradient(from var(--plan-a), #22d3ee, #a78bfa, #ec4899, var(--accent), #22d3ee) border-box;
-  box-shadow: 0 0 12px -3px rgb(167 139 250 / .55);
-  animation: plan-orbit 6s linear infinite;
-}
-.plan-tg.has:hover { filter: brightness(1.15) saturate(1.1); }
-@keyframes plan-orbit { to { --plan-a: 360deg; } }
-@media (prefers-reduced-motion: reduce) { .plan-tg.has { animation: none; } }
+/* a day with a booking not seen yet (the column not opened since it came): accent, and now and then a light sheen
+   crosses it; once seen, a quiet grey fill and no motion (the owner, 2026-11-13) */
+.plan-tg.has { --plan-sheen: color-mix(in srgb, var(--accent) 34%, transparent);  /* light: a deeper blue crosses the pale one */
+  position: relative; overflow: hidden; color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel)); border-color: color-mix(in srgb, var(--accent) 42%, transparent); }
+.plan-tg.has:not(.seen)::after { content: ''; position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(110deg, transparent 35%, var(--plan-sheen) 50%, transparent 65%) no-repeat;
+  background-size: 260% 100%; background-position: 100% 0; animation: plan-sheen 5s ease-in-out infinite; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .plan-tg.has { --plan-sheen: rgb(255 255 255 / .26); } }
+:root[data-theme="dark"] .plan-tg.has { --plan-sheen: rgb(255 255 255 / .26); }
+@keyframes plan-sheen { 0%, 62% { background-position: 100% 0; } 100% { background-position: 0% 0; } }
+@media (prefers-reduced-motion: reduce) { .plan-tg.has:not(.seen)::after { animation: none; display: none; } }
+.plan-tg.has.seen { background: color-mix(in srgb, var(--text) 9%, var(--panel)); border-color: transparent; }
+.plan-tg.has:hover { filter: brightness(1.12); }
 /* open: pressed, and still */
-.plan-open .plan-tg, .plan-open .plan-tg.has { color: var(--text); background: var(--seg-on, var(--hover)); border-color: var(--line);
-  box-shadow: none; animation: none; }
+.plan-open .plan-tg, .plan-open .plan-tg.has { color: var(--text); background: var(--seg-on, var(--hover)); border-color: var(--line); }
 .plan-open .plan-tg.has { color: var(--accent); }
 .plan-tg:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .no-plan .plan-tg { display: none; }  /* switched off in Settings */
