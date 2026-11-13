@@ -235,6 +235,9 @@ try {
     const cards = [...document.querySelectorAll('#lane-plan .card.plan')].map(c => c.getAttribute('aria-label'));
     const tops = [...document.querySelectorAll('#lane-plan .card.plan')].map(c => parseFloat(c.style.top));
     const away = q('#plan-allday').textContent, wide = q('#lane-plan').getBoundingClientRect().width;
+    document.querySelector('#lane-plan .card.plan')?.click();  // its popover: the booking and what is logged to it
+    const popText = pop.classList.contains('on') ? pop.textContent : '';
+    closePop();
     try { localStorage.setItem('pulsar-planned-open', '0'); } catch (e) { /* as above */ }
     render();
     const narrow = q('#lane-plan').getBoundingClientRect().width + q('.colhead.plancol').getBoundingClientRect().width;
@@ -249,8 +252,9 @@ try {
     render();
     check('Planned shows the bookings from 10:00; closed, only its icon, lit on a day with bookings, quiet once seen',
       cards.length === 2 && cards[0].includes('SEO audit') && cards[1].includes('tentative') && tops[1] > tops[0]
-      && away.includes('Vacation') && wide > 60 && narrow === 0 && unseenLit && lit && seenAfter && plain,
-      `${cards.join(' | ')} | ${tops.join(',')} | ${away} | ${Math.round(wide)} → ${Math.round(narrow)} | unseen ${unseenLit} lit ${lit} seen ${seenAfter} plain ${plain}`);
+      && away.includes('Vacation') && wide > 60 && narrow === 0 && unseenLit && lit && seenAfter && plain
+      && popText.includes('30 min planned on this day') && popText.includes('one after another from 10:00'),
+      `${cards.join(' | ')} | ${tops.join(',')} | ${away} | ${Math.round(wide)} → ${Math.round(narrow)} | unseen ${unseenLit} lit ${lit} seen ${seenAfter} plain ${plain} | pop ${popText.slice(0, 60)}`);
 
     // Claude's review kept after a restart on a plan that changed since: the rows' suggestions that still apply, and
     // a word on the ones left out (2026-11-13, the owner)
@@ -263,6 +267,49 @@ try {
     check('A kept review says when suggestions for changed rows were left out',
       carriedNote.includes('kept from the last review (2 more for rows that changed since left out)')
       && wholeNote.includes('kept from the last review of this plan'), `${carriedNote} | ${wholeNote}`);
+
+    // the time ActivityWatch missed, taken from MemTime: the column names both trackers, says how much in its title,
+    // and those cards have a dashed edge (2026-11-13, the owner)
+    const act0 = state.act;
+    const item = (s, e, app, fill) => ({s, e, app, title: app, host: '', cat: 'work', icon: null, workspace: '', url: '', ...(fill ? {fill: 'memtime'} : {})});
+    state.act = {source: 'aw', minutes: {aw: 150, memtime: 200}, problems: {}, away: [],
+                 items: [item(120, 180, 'FillTestApp', true), item(240, 330, 'AwTestApp', false)]};
+    render();
+    const fillHead = q('#h-act').textContent, fillTip = q('#h-act').title;
+    const dashed = document.querySelectorAll('#lane-act .card.act.fill').length, plainCards = document.querySelectorAll('#lane-act .card.act:not(.fill)').length;
+    state.act = act0; render();
+    check("Activity: the time ActivityWatch missed is MemTime's, said in its title, its cards dashed",
+      fillHead.startsWith('ActivityWatch + MemTime') && fillTip.startsWith('1 h from MemTime') && dashed === 1 && plainCards === 1,
+      `${fillHead} | ${fillTip.slice(0, 40)} | ${dashed} dashed, ${plainCards} plain`);
+
+    // a stretch of short turns of several tasks: one row, no task picked, its tasks offered, said on the row, and
+    // Tick all leaves it until it was opened, even once it has a task
+    let mxDetail = '', mxOk = false;
+    const ldRows0 = LD.rows;
+    try {
+      const mx = {id: 'mx1', s: 700, e: 720, minutes: 20, taskId: null, title: '', project: '', serviceId: null, services: [],
+                  flags: ['mixed', 'notask'], alts: [{taskId: '5', title: 'A', project: 'P'}, {taskId: '6', title: 'B', project: 'Q'}],
+                  why: 'w', note: '', status: null, checked: false, confidence: 'low'};
+      const mxHTML = rowHTML(mx, []);
+      LD.rows = [{...mx, taskId: '5', serviceId: '9'}];
+      const closed = ldTickAllRows().length;
+      LD.rows[0].opened = true;
+      const opened = ldTickAllRows().length;
+      mxOk = mxHTML.includes('No task yet.') && mxHTML.includes('Short turns of several tasks') && closed === 0 && opened === 1;
+      mxDetail = `tick all: ${closed} closed, ${opened} opened`;
+    } catch (e) { mxDetail = e.message; } finally { LD.rows = ldRows0; }
+    check('short turns of several tasks: no task picked, said, and Tick all waits until it is opened', mxOk, mxDetail);
+
+    // Ask Claude in Likely: blocks that had not changed keep their pick, and the message says only the new ones were
+    // asked (the request stood in for: Claude is never run here)
+    const claude0 = state.claude, postWas2 = postJSON;
+    let askSaid = '';
+    try {
+      postJSON = async () => ({picks: {}, reused: 2, asked: 1, cost: 0});
+      await q('#ask-claude').onclick();
+      askSaid = q('#toast').textContent;
+    } catch (e) { askSaid = e.message; } finally { postJSON = postWas2; state.claude = claude0; q('#toast').classList.remove('on'); render(); }
+    check('Ask Claude says when unchanged blocks kept their earlier pick', askSaid.includes('kept their earlier pick'), askSaid.slice(0, 120));
 
     // every layout keeps each column in its own place, Log the day's included (2026-11-13: without room for Planned
     // there, the Logged column fell under the time axis)
@@ -359,6 +406,10 @@ try {
   const shown = ADV_KEYS.map(k => fe[`adv_${k}`].value).join() + ',' + fe.adv_no_estimate.checked;
   const saved = ADV_KEYS.map(k => String(adv[k])).join() + ',' + (adv.no_estimate !== false);
   check('Settings shows the advanced choices', !q('#adv-more').open && shown === saved, shown);
+  // the settings since 1.6.20: Keep past days, the Planned column, the time ActivityWatch missed taken from MemTime
+  const newShown = [fe.likely_keep_days.value, fe.planned.checked, fe.tracker_fill.checked].join();
+  const newSaved = [String(CONFIG.likelyKeepDays || 31), CONFIG.planned !== false, CONFIG.trackerFill !== false].join();
+  check('Settings shows Keep past days, Planned and the MemTime fill as saved', newShown === newSaved, `${newShown} | ${newSaved}`);
 
   // Log the day drafts the note of every row of a repository's work by itself: an empty one or one from the commits
   const dr = x => ldDraftable({repo: 'site', note: '', noteFrom: '', ...x});
